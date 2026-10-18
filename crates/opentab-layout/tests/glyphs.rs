@@ -4,10 +4,17 @@ use opentab_layout::glyphs::{
     NOTEHEAD_DOUBLE_WHOLE, NOTEHEAD_HALF, NOTEHEAD_WHOLE, NOTEHEAD_X_BLACK, REST_8TH, REST_HALF,
     REST_QUARTER, REST_WHOLE, TAB_CLEF, TIME_SIG_0, UNPITCHED_PERCUSSION_CLEF_1,
 };
+use opentab_layout::glyphs::{
+    BRACKET_BOTTOM, BRACKET_TOP, REPEAT_DOT, TAB_CLEF_4, TIME_SIG_DIGITS,
+};
 use opentab_layout::text::text_font;
 use opentab_layout::{Point, REFERENCE_EM, Rect, STAFF_SPACE, Units};
 
-const ALL: [Glyph; 21] = [
+const ALL: [Glyph; 25] = [
+    TAB_CLEF_4,
+    REPEAT_DOT,
+    BRACKET_TOP,
+    BRACKET_BOTTOM,
     G_CLEF,
     G_CLEF_8VB,
     F_CLEF,
@@ -78,6 +85,14 @@ fn outline_bounds_match_metadata_bboxes_for_every_named_glyph() {
             glyph.name
         );
     }
+    for (digit, glyph) in TIME_SIG_DIGITS.iter().enumerate() {
+        assert_eq!(glyph.name, format!("timeSig{digit}"));
+        let bounds = metrics.outline(glyph.codepoint).bounds().unwrap();
+        assert!(
+            within_one(bounds, metrics.bbox(glyph.name).unwrap()),
+            "{digit}"
+        );
+    }
 }
 
 #[test]
@@ -123,7 +138,6 @@ fn anchors_are_points_in_units_with_y_down() {
 
 #[test]
 fn every_anchor_kind_names_a_key_used_by_bravura() {
-    let metrics = Metrics::bravura();
     let anchors = [
         Anchor::StemUpSE,
         Anchor::StemUpNW,
@@ -146,33 +160,23 @@ fn every_anchor_kind_names_a_key_used_by_bravura() {
         Anchor::OpticalCenter,
         Anchor::NumeralBottom,
     ];
-    let names = [
-        "noteheadBlack",
-        "noteheadHalf",
-        "accidentalSharp",
-        "accidentalFlat",
-        "graceNoteAcciaccaturaStemUp",
-        "graceNoteAcciaccaturaStemDown",
-        "graceNoteSlashStemUp",
-        "graceNoteSlashStemDown",
-        "repeat1Bar",
-        "noteheadParenthesis",
-        "fermataAbove",
-        "tuplet3",
-        "noteheadDiamondWhole",
-        "noteheadDoubleWhole",
-    ];
+    let metadata: serde_json::Value =
+        serde_json::from_str(opentab_layout::glyphs::BRAVURA_METADATA).unwrap();
+    let anchored = metadata["glyphsWithAnchors"].as_object().unwrap();
+    let metrics = Metrics::bravura();
     for anchor in anchors {
-        let found = names
+        let glyph = anchored
             .iter()
-            .any(|name| metrics.anchor(name, anchor).is_some())
-            || bravura_uses(anchor.key());
-        assert!(found, "{}", anchor.key());
+            .find(|(_, keys)| keys.get(anchor.key()).is_some())
+            .map(|(name, _)| name.clone());
+        let glyph = glyph.unwrap_or_else(|| panic!("{}", anchor.key()));
+        assert!(metrics.anchor(&glyph, anchor).is_some(), "{}", anchor.key());
     }
-}
-
-fn bravura_uses(key: &str) -> bool {
-    opentab_layout::glyphs::BRAVURA_METADATA.contains(&format!("\"{key}\""))
+    assert!(
+        anchored
+            .values()
+            .all(|keys| keys.get("noSuchAnchor").is_none())
+    );
 }
 
 #[test]

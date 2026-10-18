@@ -37,6 +37,22 @@ pub const TAB_CLEF: Glyph = Glyph {
     name: "6stringTabClef",
     codepoint: '\u{E06D}',
 };
+pub const TAB_CLEF_4: Glyph = Glyph {
+    name: "4stringTabClef",
+    codepoint: '\u{E06E}',
+};
+pub const REPEAT_DOT: Glyph = Glyph {
+    name: "repeatDot",
+    codepoint: '\u{E044}',
+};
+pub const BRACKET_TOP: Glyph = Glyph {
+    name: "bracketTop",
+    codepoint: '\u{E003}',
+};
+pub const BRACKET_BOTTOM: Glyph = Glyph {
+    name: "bracketBottom",
+    codepoint: '\u{E004}',
+};
 pub const NOTEHEAD_DOUBLE_WHOLE: Glyph = Glyph {
     name: "noteheadDoubleWhole",
     codepoint: '\u{E0A0}',
@@ -101,6 +117,45 @@ pub const TIME_SIG_0: Glyph = Glyph {
     name: "timeSig0",
     codepoint: '\u{E080}',
 };
+pub const TIME_SIG_DIGITS: [Glyph; 10] = [
+    TIME_SIG_0,
+    Glyph {
+        name: "timeSig1",
+        codepoint: '\u{E081}',
+    },
+    Glyph {
+        name: "timeSig2",
+        codepoint: '\u{E082}',
+    },
+    Glyph {
+        name: "timeSig3",
+        codepoint: '\u{E083}',
+    },
+    Glyph {
+        name: "timeSig4",
+        codepoint: '\u{E084}',
+    },
+    Glyph {
+        name: "timeSig5",
+        codepoint: '\u{E085}',
+    },
+    Glyph {
+        name: "timeSig6",
+        codepoint: '\u{E086}',
+    },
+    Glyph {
+        name: "timeSig7",
+        codepoint: '\u{E087}',
+    },
+    Glyph {
+        name: "timeSig8",
+        codepoint: '\u{E088}',
+    },
+    Glyph {
+        name: "timeSig9",
+        codepoint: '\u{E089}',
+    },
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Anchor {

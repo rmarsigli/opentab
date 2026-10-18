@@ -1,4 +1,8 @@
+use std::num::NonZeroI128;
+
 use crate::units::{STAFF_SPACE, Units, round_div};
+
+const TEN: NonZeroI128 = NonZeroI128::new(10).unwrap();
 
 const MAX_DIGITS: usize = 30;
 const MAX_EXPONENT_DIGITS: usize = 3;
@@ -51,7 +55,7 @@ pub fn staff_spaces_to_units(text: &str) -> Result<Units, DecimalError> {
             .and_then(|factor| scaled.checked_mul(factor))
             .ok_or_else(invalid)?
     } else {
-        match 10_i128.checked_pow(power.unsigned_abs()) {
+        match TEN.checked_pow(power.unsigned_abs()) {
             Some(divisor) => round_div(scaled, divisor),
             None => 0,
         }
@@ -124,7 +128,10 @@ mod tests {
             let sign = if thousandths < 0 { "-" } else { "" };
             let magnitude = thousandths.abs();
             let text = format!("{sign}{}.{:03}", magnitude / 1000, magnitude % 1000);
-            let expected = round_div(i128::from(thousandths) * 1024, 1000);
+            let expected = round_div(
+                i128::from(thousandths) * 1024,
+                NonZeroI128::new(1000).unwrap(),
+            );
             assert_eq!(i128::from(units(&text)), expected, "{text}");
         }
     }

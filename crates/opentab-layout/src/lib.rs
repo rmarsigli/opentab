@@ -9,7 +9,8 @@ mod units;
 pub use decimal::{DecimalError, staff_spaces_to_units};
 pub use display::{
     A4, Colour, DEFAULT_STAFF_SPACE, Dash, DisplayList, FilledRect, Font, Group, GroupId, Line,
-    Page, PageSize, PathSegment, PathStyle, PlacedGlyph, Primitive, Shape, TextAnchor, TextRun,
+    Page, PageSize, PathSegment, PathStyle, PlacedGlyph, Primitive, Shape, StaffSpace, TextAnchor,
+    TextRun,
 };
 pub use placeholder::{
     MARGIN, STAFF_GAP, STANDARD_LINES, SYSTEM_GAP, TAB_LINE_SPACING, placeholder_layout,
