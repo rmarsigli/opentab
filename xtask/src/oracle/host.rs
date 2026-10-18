@@ -13,6 +13,7 @@ pub const PID_WAIT_ENV: &str = "OPENTAB_ORACLE_PID_WAIT_MS";
 pub const DEFAULT_JOBS: &str = "C:\\gf-oracle\\jobs";
 pub const KILL_NOT_MATCHED_EXIT: i32 = 3;
 pub const SCRIPT_NAME: &str = "Invoke-GpExport";
+pub const EXAMPLE_SCRIPT_NAME: &str = "Invoke-GpExample";
 const POLL: Duration = Duration::from_millis(50);
 const KILL_WAIT: Duration = Duration::from_secs(30);
 
@@ -52,7 +53,7 @@ impl PidRecord {
         })
     }
 
-    pub fn kill_command(&self) -> String {
+    pub fn kill_command(&self, script: &str) -> String {
         let pid = self.pid;
         match self.start_filetime {
             Some(start) => format!(
@@ -62,7 +63,7 @@ impl PidRecord {
             ),
             None => format!(
                 "$p = Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}' -ErrorAction SilentlyContinue; \
-                 if ($p -and $p.Name -eq 'powershell.exe' -and $p.CommandLine -like '*{SCRIPT_NAME}*') \
+                 if ($p -and $p.Name -eq 'powershell.exe' -and $p.CommandLine -like '*{script}*') \
                  {{ Stop-Process -Id {pid} -Force; exit 0 }}; exit {KILL_NOT_MATCHED_EXIT}"
             ),
         }
@@ -259,10 +260,10 @@ impl Host {
         }
     }
 
-    pub fn stop_windows_process(&self, record: &PidRecord) -> KillOutcome {
+    pub fn stop_windows_process(&self, record: &PidRecord, script: &str) -> KillOutcome {
         let mut child = match Command::new(&self.powershell)
             .args(["-NoProfile", "-NonInteractive", "-Command"])
-            .arg(record.kill_command())
+            .arg(record.kill_command(script))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -290,7 +291,9 @@ impl Host {
 
 #[cfg(test)]
 mod tests {
-    use super::{KILL_NOT_MATCHED_EXIT, PidRecord, read_complete_pid};
+    use super::{
+        EXAMPLE_SCRIPT_NAME, KILL_NOT_MATCHED_EXIT, PidRecord, SCRIPT_NAME, read_complete_pid,
+    };
 
     #[test]
     fn pid_file_parses_with_and_without_start_time_and_bom() {
@@ -325,7 +328,7 @@ mod tests {
             pid: 4242,
             start_filetime: Some(99),
         }
-        .kill_command();
+        .kill_command(SCRIPT_NAME);
         assert!(command.contains("Get-Process -Id 4242"));
         assert!(command.contains("$p.ProcessName -eq 'powershell'"));
         assert!(command.contains("$p.StartTime.ToFileTimeUtc() -eq 99"));
@@ -339,10 +342,21 @@ mod tests {
             pid: 7,
             start_filetime: None,
         }
-        .kill_command();
+        .kill_command(SCRIPT_NAME);
         assert!(command.contains("Win32_Process"));
         assert!(command.contains("ProcessId = 7"));
         assert!(command.contains("$p.CommandLine -like '*Invoke-GpExport*'"));
         assert!(!command.contains("StartTime"));
+    }
+
+    #[test]
+    fn kill_without_start_time_names_the_example_script_for_example_runs() {
+        let command = PidRecord {
+            pid: 9,
+            start_filetime: None,
+        }
+        .kill_command(EXAMPLE_SCRIPT_NAME);
+        assert!(command.contains("$p.CommandLine -like '*Invoke-GpExample*'"));
+        assert!(!command.contains("Invoke-GpExport"));
     }
 }

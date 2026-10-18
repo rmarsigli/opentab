@@ -1,7 +1,7 @@
 use crate::oracle::error::OracleError;
 use crate::oracle::fixtures::{Fixture, discover};
 use crate::oracle::hash::sha256_hex;
-use crate::oracle::host::{Host, KillOutcome, PidGate, PidRecord, ScriptRun};
+use crate::oracle::host::{Host, KillOutcome, PidGate, PidRecord, SCRIPT_NAME, ScriptRun};
 use crate::oracle::layout::{MANIFEST_FILE, is_byte_identical, select_outputs};
 use crate::oracle::manifest::{Manifest, ManifestEntry, OutputEntry};
 use crate::oracle::normalize::normalize_output;
@@ -9,9 +9,9 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 pub const EXIT_GP_NOT_RUNNING: i32 = 2;
-const RESULT_FILE: &str = "result.json";
-const PID_FILE: &str = "pid.txt";
-const LOG_FILE: &str = "powershell.log";
+pub(crate) const RESULT_FILE: &str = "result.json";
+pub(crate) const PID_FILE: &str = "pid.txt";
+pub(crate) const LOG_FILE: &str = "powershell.log";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct StepResult {
@@ -75,11 +75,14 @@ fn script_path() -> Result<PathBuf, OracleError> {
         .map_err(|error| OracleError::io(format!("cannot find {}", path.display()), &error))
 }
 
-fn io<T>(result: std::io::Result<T>, context: impl FnOnce() -> String) -> Result<T, OracleError> {
+pub(crate) fn io<T>(
+    result: std::io::Result<T>,
+    context: impl FnOnce() -> String,
+) -> Result<T, OracleError> {
     result.map_err(|error| OracleError::io(context(), &error))
 }
 
-fn fresh_job_dir(jobs: &Path, index: usize) -> Result<PathBuf, OracleError> {
+pub(crate) fn fresh_job_dir(jobs: &Path, index: usize) -> Result<PathBuf, OracleError> {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());
@@ -101,11 +104,15 @@ fn fresh_job_dir(jobs: &Path, index: usize) -> Result<PathBuf, OracleError> {
 }
 
 fn describe_failure(result: &ExportResult) -> String {
+    describe_steps(result.error.as_deref(), &result.steps)
+}
+
+pub(crate) fn describe_steps(error: Option<&str>, steps: &[StepResult]) -> String {
     let mut parts = Vec::new();
-    if let Some(error) = &result.error {
-        parts.push(error.clone());
+    if let Some(error) = error {
+        parts.push(error.to_owned());
     }
-    for step in result.steps.iter().filter(|step| step.status != "ok") {
+    for step in steps.iter().filter(|step| step.status != "ok") {
         let mut text = format!("step {} {}", step.name, step.status);
         if let Some(error) = &step.error {
             text.push_str(&format!(": {error}"));
@@ -122,8 +129,8 @@ fn describe_failure(result: &ExportResult) -> String {
     }
 }
 
-fn stop_script(host: &Host, record: &PidRecord) -> &'static str {
-    match host.stop_windows_process(record) {
+pub(crate) fn stop_script(host: &Host, record: &PidRecord, script: &str) -> &'static str {
+    match host.stop_windows_process(record, script) {
         KillOutcome::Stopped => "stopped the PowerShell process",
         KillOutcome::NotMatched => {
             "did not stop PowerShell: pid no longer matches the recorded process"
@@ -219,7 +226,7 @@ fn run_fixture(
             )));
         }
         ScriptRun::TimedOut(record) => {
-            let stopped = stop_script(host, &record);
+            let stopped = stop_script(host, &record, SCRIPT_NAME);
             return Ok(FixtureOutcome::Failed(format!(
                 "timed out after {} ms ({stopped}); job kept in {}",
                 host.timeout.as_millis(),

@@ -1,6 +1,7 @@
 pub mod budget;
 pub mod check;
 pub mod error;
+pub mod examples;
 pub mod fixtures;
 pub mod harvest;
 pub mod hash;

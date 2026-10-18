@@ -60,9 +60,11 @@ fn oracle_source(name: &str) -> String {
 
 #[test]
 fn wm_close_is_only_sent_by_the_guarded_helper() {
-    let entry = oracle_source("Invoke-GpExport.ps1");
-    assert!(!entry.contains("0x0010"));
-    assert!(!entry.contains("PostMessage"));
+    for name in ["Invoke-GpExport.ps1", "Invoke-GpExample.ps1"] {
+        let entry = oracle_source(name);
+        assert!(!entry.contains("0x0010"), "{name}");
+        assert!(!entry.contains("PostMessage"), "{name}");
+    }
     let module = oracle_source("GpOracle.psm1");
     let sites: Vec<usize> = module.match_indices("0x0010").map(|(at, _)| at).collect();
     assert_eq!(sites.len(), 1);
@@ -130,6 +132,7 @@ fn powershell_sources_use_classes_and_carry_no_comments() {
     for name in [
         "GpOracle.psm1",
         "Invoke-GpExport.ps1",
+        "Invoke-GpExample.ps1",
         "tests/Test-GpOracle.ps1",
     ] {
         let source = oracle_source(name);
@@ -161,17 +164,36 @@ fn module_never_synthesises_keyboard_input_outside_the_guarded_sender() {
     let body = &module[start..end];
     assert!(body.contains("GetForegroundWindow() -eq $Handle"));
     assert!(body.find("GetForegroundWindow").unwrap() < body.find("SendWait").unwrap());
-    let entry = oracle_source("Invoke-GpExport.ps1");
-    assert!(!entry.contains("SendKeys"));
+    for name in ["Invoke-GpExport.ps1", "Invoke-GpExample.ps1"] {
+        assert!(!oracle_source(name).contains("SendKeys"), "{name}");
+    }
 }
 
 #[test]
 fn pid_file_is_published_by_rename_only() {
-    let entry = oracle_source("Invoke-GpExport.ps1");
-    assert!(!entry.contains("Write-Utf8File (Join-Path $OutDir 'pid.txt')"));
-    let temp = entry.find("Write-Utf8File $PidTemp").expect("temp write");
-    let publish = entry
-        .find("Move-Item -LiteralPath $PidTemp -Destination (Join-Path $OutDir 'pid.txt') -Force")
-        .expect("rename");
-    assert!(temp < publish);
+    for name in ["Invoke-GpExport.ps1", "Invoke-GpExample.ps1"] {
+        let entry = oracle_source(name);
+        assert!(!entry.contains("Write-Utf8File (Join-Path $OutDir 'pid.txt')"));
+        let temp = entry.find("Write-Utf8File $PidTemp").expect("temp write");
+        let publish = entry
+            .find(
+                "Move-Item -LiteralPath $PidTemp -Destination (Join-Path $OutDir 'pid.txt') -Force",
+            )
+            .expect("rename");
+        assert!(temp < publish, "{name}");
+    }
+}
+
+#[test]
+fn example_script_refuses_to_start_away_from_the_empty_document() {
+    let entry = oracle_source("Invoke-GpExample.ps1");
+    assert!(entry.contains("$EmptyTitle = \"Empty$GpSuffix\""));
+    let precheck = entry.find("Invoke-Step 'precheck'").expect("precheck");
+    let open = entry.find("Invoke-Step 'open'").expect("open");
+    let guard = entry
+        .find("(Get-GpTitle) -ne $EmptyTitle")
+        .expect("empty guard");
+    assert!(precheck < guard && guard < open);
+    assert!(entry.contains("$ExamplePrefix = 'FileFeature.actionNew'"));
+    assert!(!entry.contains("Stop-Process"));
 }

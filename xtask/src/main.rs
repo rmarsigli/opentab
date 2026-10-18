@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use xtask::mutants::{INSTALL_HINT, MutantsReport, mutants_args, output_dir, verdict};
 use xtask::oracle::check::check;
+use xtask::oracle::examples::{ExamplesOptions, harvest_examples};
 use xtask::oracle::harvest::{HarvestOptions, harvest};
 use xtask::oracle::host::Host;
 
@@ -37,6 +38,16 @@ enum OracleCommand {
     Harvest(HarvestArgs),
     #[command(about = "Report goldens that are stale, missing or orphaned")]
     Check(CheckArgs),
+    #[command(about = "Save every built-in Guitar Pro 8 example as a .gp into a local corpus")]
+    Examples(ExamplesArgs),
+}
+
+#[derive(Debug, Args)]
+struct ExamplesArgs {
+    #[arg(long, help = "Corpus directory outside the repository")]
+    out: PathBuf,
+    #[arg(long, help = "Keep C:\\gf-oracle\\jobs\\<id> after a successful save")]
+    keep_jobs: bool,
 }
 
 #[derive(Debug, Args)]
@@ -84,6 +95,30 @@ fn run_harvest(args: HarvestArgs) -> ExitCode {
             "{} of {} fixture(s) failed: {}",
             report.failures.len(),
             report.failures.len() + report.harvested.len(),
+            report.failures.join(", ")
+        )),
+        Err(error) => failure(error.message()),
+    }
+}
+
+fn run_examples(args: ExamplesArgs) -> ExitCode {
+    let host = match Host::from_env() {
+        Ok(host) => host,
+        Err(error) => return failure(error.message()),
+    };
+    let options = ExamplesOptions {
+        out: args.out,
+        keep_jobs: args.keep_jobs,
+    };
+    match harvest_examples(&host, &options) {
+        Ok(report) if report.failures.is_empty() => {
+            println!("saved {} example(s)", report.saved.len());
+            ExitCode::SUCCESS
+        }
+        Ok(report) => failure(&format!(
+            "{} of {} example(s) failed: {}",
+            report.failures.len(),
+            report.failures.len() + report.saved.len(),
             report.failures.join(", ")
         )),
         Err(error) => failure(error.message()),
@@ -162,6 +197,7 @@ fn main() -> ExitCode {
         TopCommand::Oracle(oracle) => match oracle.command {
             OracleCommand::Harvest(args) => run_harvest(args),
             OracleCommand::Check(args) => run_check(args),
+            OracleCommand::Examples(args) => run_examples(args),
         },
     }
 }
