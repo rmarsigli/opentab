@@ -1,12 +1,13 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-pub const CRATES: [&str; 5] = [
+pub const CRATES: [&str; 6] = [
     "opentab-model",
     "opentab-command",
     "opentab-gp",
     "opentab-layout",
     "opentab-render",
+    "opentab-mcp",
 ];
 pub const JOBS: u32 = 1;
 pub const TIMEOUT_SECS: u32 = 120;

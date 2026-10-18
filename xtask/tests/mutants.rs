@@ -26,6 +26,8 @@ fn arguments_select_the_five_crates_serially_with_a_timeout_and_target_output() 
             "opentab-layout",
             "--package",
             "opentab-render",
+            "--package",
+            "opentab-mcp",
             "--jobs",
             "1",
             "--timeout",
@@ -41,7 +43,8 @@ fn arguments_select_the_five_crates_serially_with_a_timeout_and_target_output() 
             "opentab-command",
             "opentab-gp",
             "opentab-layout",
-            "opentab-render"
+            "opentab-render",
+            "opentab-mcp"
         ]
     );
 }
