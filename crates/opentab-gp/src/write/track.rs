@@ -148,13 +148,18 @@ pub(crate) fn staff_contexts(
     Ok(contexts)
 }
 
-fn add_chords(properties: &mut Element, items: &mut [Item], generated: &[ChordItem]) {
-    if generated.is_empty() {
+fn add_chords(properties: &mut Element, items: &mut [Item], context: Option<&StaffContext>) {
+    let Some(context) = context else {
+        return;
+    };
+    if context.generated_chords.is_empty() {
         return;
     }
-    let elements: Vec<Element> = generated
+    let strings = context.tuning.len();
+    let elements: Vec<Element> = context
+        .generated_chords
         .iter()
-        .map(|item| canon::chord_item(&item.id, &item.name))
+        .map(|item| canon::chord_item(&item.id, &item.name, strings))
         .collect();
     let kept = items.iter_mut().find(|item| {
         item.guard.is_none()
@@ -194,29 +199,16 @@ fn staff_element(
     index: usize,
     owners: &mut Owners<'_>,
 ) -> Result<Element, Refusal> {
-    let mut properties = Element::new(PROPERTIES);
-    if index == 0 {
-        properties.push(Element::property(
-            "CapoFret",
-            Element::leaf("Fret", &track.capo.to_string()),
-        ));
-        if !track.tuning.strings.is_empty() {
-            let pitches: Vec<String> = track
-                .tuning
-                .strings
-                .iter()
-                .rev()
-                .map(|pitch| pitch.0.to_string())
-                .collect();
-            properties.push(Element::property(
-                "Tuning",
-                Element::leaf("Pitches", &pitches.join(" ")),
-            ));
-        }
-    }
     let mut items = payload::surviving(owners.items(staff.id.0)?, &Env::Plain)?;
-    let generated = context.map_or(&[][..], |context| &context.generated_chords[..]);
-    add_chords(&mut properties, &mut items, generated);
+    let mut properties = Element::new(PROPERTIES);
+    let kept = |key: &str| index > 0 && staff_property(&items, key).is_some();
+    if !kept("Property@CapoFret") {
+        properties.push(canon::capo_property(track.capo));
+    }
+    if !track.tuning.strings.is_empty() && !kept("Property@Tuning") {
+        properties.push(canon::tuning_property(&track.tuning.strings));
+    }
+    add_chords(&mut properties, &mut items, context);
     let mut element = Element::new("Staff").with_child(properties);
     apply_own(&mut element, items)?;
     Ok(element)
@@ -228,6 +220,15 @@ pub(crate) fn apply_own(element: &mut Element, items: Vec<Item>) -> Result<(), R
         return Err(malformed("parent root does not apply here"));
     }
     payload::apply(element, split.own)
+}
+
+fn has_drum_kit(items: &[Item]) -> bool {
+    items.iter().any(|item| {
+        item.parent == "InstrumentSet"
+            && item
+                .element()
+                .is_some_and(|element| element.name == "Elements")
+    })
 }
 
 fn sounds(program: u8) -> Element {
@@ -243,6 +244,9 @@ fn track_element(
     owners: &mut Owners<'_>,
 ) -> Result<Element, Fail> {
     let items = payload::surviving(owners.items(track.id.0)?, &Env::Track(track))?;
+    if track.instrument.kind == InstrumentKind::Percussion && !has_drum_kit(&items) {
+        return Err(Fail::new(Refusal::DrumKit));
+    }
     let id = Layouts::id(&layouts.tracks, index);
     let mut element = Element::new("Track").with_attribute("id", &id.to_string());
     element.push(xml::text("Name", &track.name).within(|| "name".to_string())?);
@@ -261,12 +265,7 @@ fn track_element(
                 &track.transpose.octave().to_string(),
             )),
     );
-    let targets_sounds = items
-        .iter()
-        .any(|item| item.parent == "Sounds" || item.parent.starts_with("Sounds/"));
-    if track.instrument.midi_program != 0 || targets_sounds {
-        element.push(sounds(track.instrument.midi_program));
-    }
+    element.push(sounds(track.instrument.midi_program));
     let mut staves = Element::new("Staves");
     for (staff_index, staff) in track.staves.iter().enumerate() {
         let context = contexts

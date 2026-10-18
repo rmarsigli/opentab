@@ -1,7 +1,9 @@
 use std::io::{Cursor, Write};
 
 use opentab_gp::{GpError, Refusal, read_gp};
-use opentab_model::{Beat, ElementId, MasterBar, Note, OpaquePayload, Score, Track};
+use opentab_model::{
+    Beat, ElementId, InstrumentKind, MasterBar, Note, OpaquePayload, Score, Track,
+};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -179,6 +181,32 @@ pub fn gpif_path(error: &GpError) -> String {
     }
 }
 
+pub const DRUM_KIT: &str = "<Keep parent=\"InstrumentSet\" index=\"1\"><Elements/></Keep>";
+
+pub fn add_drum_kits(score: &mut Score) -> bool {
+    let drums: Vec<ElementId> = score
+        .tracks
+        .iter()
+        .filter(|track| track.instrument.kind == InstrumentKind::Percussion)
+        .map(|track| track.id.0)
+        .collect();
+    let mut changed = false;
+    for id in drums {
+        let payloads = score.extensions.0.entry(id).or_default();
+        if !payloads
+            .iter()
+            .any(|payload| payload.data.contains("<Elements"))
+        {
+            payloads.push(OpaquePayload {
+                format: "gpif".to_string(),
+                data: DRUM_KIT.to_string(),
+            });
+            changed = true;
+        }
+    }
+    changed
+}
+
 pub fn documented(reason: &Refusal) -> bool {
     matches!(
         reason,
@@ -199,5 +227,6 @@ pub fn documented(reason: &Refusal) -> bool {
             | Refusal::TempoPosition { .. }
             | Refusal::HarmonicFret { .. }
             | Refusal::RightHandOpen
+            | Refusal::DrumKit
     )
 }

@@ -7,7 +7,7 @@ use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, FileFailurePersistence, TestRunner};
 
-use crate::support::documented;
+use crate::support::{add_drum_kits, documented};
 
 const CASES: u32 = 256;
 
@@ -134,9 +134,19 @@ fn run<S: Strategy<Value = Score>>(strategy: S) -> Outcome {
     }
 }
 
+fn with_drum_kits(mut score: Score) -> Score {
+    if !add_drum_kits(&mut score) {
+        return score;
+    }
+    write_gp(&score)
+        .ok()
+        .and_then(|bytes| read_gp(&bytes).ok())
+        .unwrap_or(score)
+}
+
 #[test]
 fn writable_scores_read_back_equal() {
-    let outcome = run(arb_score_with(writable()));
+    let outcome = run(arb_score_with(writable()).prop_map(with_drum_kits));
     println!(
         "acceptance gp-writable: {}/{} {:?}",
         outcome.accepted,
@@ -149,8 +159,9 @@ fn writable_scores_read_back_equal() {
     }
 }
 
-const GENUINE_LIMITS: [&str; 5] = [
+const GENUINE_LIMITS: [&str; 6] = [
     "Character",
+    "DrumKit",
     "HarmonicFret",
     "Pitch",
     "RightHandOpen",
@@ -248,6 +259,7 @@ fn clean_kind(score: &mut Score, kind: &str) -> bool {
     let mut changed = false;
     match kind {
         "Character" => changed = clean_texts(score),
+        "DrumKit" => changed = add_drum_kits(score),
         "TempoPosition" => {
             for master in &mut score.master_bars {
                 let bar = master.time_signature.bar_length();

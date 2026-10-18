@@ -313,7 +313,18 @@ fn read_staff(
     };
     ctx.visit(&scope, element, |ctx, visit| match visit.key.as_str() {
         "Properties" => {
-            read_staff_properties(ctx, &scope.enter(visit), visit.element, first, &mut head)?;
+            let track_head = TrackHead {
+                first,
+                tuning: &track.tuning.strings,
+                capo: track.capo,
+            };
+            read_staff_properties(
+                ctx,
+                &scope.enter(visit),
+                visit.element,
+                &track_head,
+                &mut head,
+            )?;
             Ok(Handled::Mapped(&[]))
         }
         _ => Ok(Handled::Unknown),
@@ -347,15 +358,32 @@ fn read_staff(
     Ok(Staff { id, bars })
 }
 
+struct TrackHead<'t> {
+    first: bool,
+    tuning: &'t [Pitch],
+    capo: u8,
+}
+
 fn read_staff_properties(
     ctx: &mut Context,
     scope: &Scope,
     element: &Element,
-    first: bool,
+    track: &TrackHead<'_>,
     head: &mut StaffHead,
 ) -> Result<(), Fault> {
+    let first = track.first;
+    let strings = element
+        .elements()
+        .find(|(_, child)| child.key() == "Property@Tuning")
+        .and_then(|(_, property)| property.child("Pitches"))
+        .map_or(track.tuning.len(), |(_, pitches)| {
+            pitches.text().split_whitespace().count()
+        });
     ctx.visit(scope, element, |ctx, visit| match visit.key.as_str() {
         "Property@Tuning" => {
+            if !first && *visit.element == canon::tuning_property(track.tuning) {
+                return Ok(Handled::Mapped(&["name"]));
+            }
             if !first {
                 head.tuning = own_value(visit, "Pitches", read_pitches)?;
                 return Ok(Handled::Unknown);
@@ -371,6 +399,9 @@ fn read_staff_properties(
             Ok(Handled::Mapped(&["name"]))
         }
         "Property@CapoFret" => {
+            if !first && *visit.element == canon::capo_property(track.capo) {
+                return Ok(Handled::Mapped(&["name"]));
+            }
             if !first {
                 head.capo = own_value(visit, "Fret", read_fret)?;
                 return Ok(Handled::Unknown);
@@ -387,7 +418,7 @@ fn read_staff_properties(
         }
         "Property@DiagramCollection" => {
             head.chords = chord_items(visit.element);
-            Ok(canon::strip_name_only(visit.element))
+            Ok(canon::strip_generated_items(visit.element, strings))
         }
         _ => Ok(Handled::Unknown),
     })

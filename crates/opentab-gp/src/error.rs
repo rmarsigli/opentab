@@ -121,6 +121,10 @@ pub enum Refusal {
     HarmonicFret { numer: i64, denom: i64 },
     #[error("the right hand has no open-string fingering in GPIF")]
     RightHandOpen,
+    #[error(
+        "a percussion track needs Guitar Pro's drum kit (InstrumentSet/Elements kept from a .gp file); Guitar Pro cannot open a kit-less drum track"
+    )]
+    DrumKit,
 }
 
 #[derive(Debug, Clone, PartialEq, Error)]

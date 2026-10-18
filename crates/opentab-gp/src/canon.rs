@@ -1,4 +1,4 @@
-use opentab_model::{Fraction, InstrumentKind, KeySignature, NoteKind, TimeSignature};
+use opentab_model::{Fraction, InstrumentKind, KeySignature, NoteKind, Pitch, TimeSignature};
 
 use crate::codes::{DRUM_KIT, TEMPO_POSITION_GRID};
 use crate::dom::{self, Element, Node};
@@ -6,10 +6,13 @@ use crate::guard::PitchInputs;
 use crate::read::Handled;
 
 pub(crate) const GP_REVISION: &str = "GPRevision";
+pub(crate) const GP_VERSION: &str = "GPVersion";
+const VERSION: &str = "8.1.5";
 const REVISION: &str = "13008";
 const REVISION_REQUIRED: &str = "12024";
 const REVISION_RECOMMENDED: &str = "13000";
 const FRETTED_TYPE: &str = "electricGuitar";
+const DIAGRAM_FRETS: &str = "5";
 const MAX_MIDI: i32 = 127;
 const SEMITONES: i32 = 12;
 const FIFTH: i32 = 7;
@@ -48,6 +51,10 @@ pub(crate) const MIDI: &str = "Midi";
 pub(crate) const CONCERT_PITCH: &str = "ConcertPitch";
 pub(crate) const TRANSPOSED_PITCH: &str = "TransposedPitch";
 
+pub(crate) fn gp_version() -> Element {
+    Element::leaf(GP_VERSION, VERSION)
+}
+
 pub(crate) fn gp_revision() -> Element {
     Element::leaf(GP_REVISION, REVISION)
         .with_attribute("required", REVISION_REQUIRED)
@@ -60,6 +67,19 @@ pub(crate) fn instrument_type(kind: InstrumentKind) -> Element {
         InstrumentKind::Percussion => DRUM_KIT,
     };
     Element::leaf("Type", name)
+}
+
+pub(crate) fn capo_property(capo: u8) -> Element {
+    Element::property("CapoFret", Element::leaf("Fret", &capo.to_string()))
+}
+
+pub(crate) fn tuning_property(strings: &[Pitch]) -> Element {
+    let pitches: Vec<String> = strings
+        .iter()
+        .rev()
+        .map(|pitch| pitch.0.to_string())
+        .collect();
+    Element::property("Tuning", Element::leaf("Pitches", &pitches.join(" ")))
 }
 
 pub(crate) fn chord(id: &str) -> Element {
@@ -174,21 +194,30 @@ pub(crate) fn pitch_property(
     Some(Element::property(name, value))
 }
 
-pub(crate) fn chord_item(id: &str, name: &str) -> Element {
+fn empty_diagram(strings: usize) -> Element {
+    Element::new("Diagram")
+        .with_attribute("stringCount", &strings.to_string())
+        .with_attribute("fretCount", DIAGRAM_FRETS)
+}
+
+pub(crate) fn chord_item(id: &str, name: &str, strings: usize) -> Element {
     Element::new("Item")
         .with_attribute("id", id)
         .with_attribute("name", name)
+        .with_child(empty_diagram(strings))
 }
 
-fn is_name_only(node: &Node) -> bool {
+fn is_generated_item(node: &Node, strings: usize) -> bool {
     let Node::Element(item) = node else {
         return false;
     };
+    let diagram = empty_diagram(strings);
     item.name == "Item"
-        && item.children.is_empty()
         && item.attributes.len() == 2
         && item.attribute("id").is_some()
         && item.attribute("name").is_some()
+        && item.children.len() == 1
+        && matches!(item.children.first(), Some(Node::Element(child)) if *child == diagram)
 }
 
 pub(crate) fn diagram_collection(items: Vec<Element>) -> Element {
@@ -197,23 +226,24 @@ pub(crate) fn diagram_collection(items: Vec<Element>) -> Element {
     Element::property("DiagramCollection", list)
 }
 
-pub(crate) fn strip_name_only(collection: &Element) -> Handled {
+pub(crate) fn strip_generated_items(collection: &Element, strings: usize) -> Handled {
+    let generated_item = |node: &Node| is_generated_item(node, strings);
     let Some((index, items)) = collection.child("Items") else {
         return Handled::Unknown;
     };
-    if !items.children.iter().any(is_name_only) {
+    if !items.children.iter().any(generated_item) {
         return Handled::Unknown;
     }
     let generated = collection.attributes.len() == 1
         && collection.children.len() == 1
         && items.attributes.is_empty()
-        && items.children.iter().all(is_name_only);
+        && items.children.iter().all(generated_item);
     if generated {
         return Handled::Mapped(&["name"]);
     }
     let mut filtered = collection.clone();
     if let Some(Node::Element(list)) = filtered.children.get_mut(index) {
-        list.children.retain(|node| !is_name_only(node));
+        list.children.retain(|node| !generated_item(node));
     }
     Handled::Substitute(Node::Element(filtered))
 }

@@ -153,6 +153,7 @@ fn refusal(score: &Score) -> (String, Refusal) {
 
 const MINIMAL_GPIF: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<GPIF>\n",
+    "<GPVersion>8.1.5</GPVersion>\n",
     "<GPRevision required=\"12024\" recommended=\"13000\">13008</GPRevision>\n",
     "<Score>\n<Title><![CDATA[]]></Title>\n<SubTitle><![CDATA[]]></SubTitle>\n",
     "<Artist><![CDATA[]]></Artist>\n<Album><![CDATA[]]></Album>\n<Words><![CDATA[]]></Words>\n",
@@ -163,6 +164,7 @@ const MINIMAL_GPIF: &str = concat!(
     "<Tracks>\n<Track id=\"0\">\n<Name><![CDATA[Guitar]]></Name>\n<ShortName><![CDATA[gtr]]></ShortName>\n",
     "<InstrumentSet>\n<Type>electricGuitar</Type>\n</InstrumentSet>\n",
     "<Transpose>\n<Chromatic>0</Chromatic>\n<Octave>0</Octave>\n</Transpose>\n",
+    "<Sounds>\n<Sound>\n<MIDI>\n<Program>0</Program>\n</MIDI>\n</Sound>\n</Sounds>\n",
     "<Staves>\n<Staff>\n<Properties>\n",
     "<Property name=\"CapoFret\">\n<Fret>0</Fret>\n</Property>\n",
     "<Property name=\"Tuning\">\n<Pitches>40 45 50 55 59 64</Pitches>\n</Property>\n",
@@ -376,6 +378,41 @@ fn unreferenced_pool_elements_are_renumbered_with_their_references() {
         written_gpif.contains("<Beat id=\"0\">\n<Rhythm ref=\"0\"/>\n</Beat>\n<Beat id=\"1\">")
     );
     assert_eq!(read_gp(&bytes).expect("read"), score);
+}
+
+#[test]
+fn a_second_staff_without_its_own_tuning_gets_the_track_tuning_and_capo() {
+    let mut score = one_note();
+    score.tracks[0].capo = 2;
+    let mut second = score.tracks[0].staves[0].clone();
+    second.id = score.alloc().expect("id");
+    second.bars[0].id = score.alloc().expect("id");
+    second.bars[0].voices[0].id = score.alloc().expect("id");
+    second.bars[0].voices[0].beats[0].id = score.alloc().expect("id");
+    second.bars[0].voices[0].beats[0].notes[0].id = score.alloc().expect("id");
+    score.tracks[0].staves.push(second);
+    let bytes = written(&score);
+    let gpif = gpif_of(&bytes);
+    let staff = concat!(
+        "<Staff>\n<Properties>\n<Property name=\"CapoFret\">\n<Fret>2</Fret>\n</Property>\n",
+        "<Property name=\"Tuning\">\n<Pitches>40 45 50 55 59 64</Pitches>\n</Property>\n",
+        "</Properties>\n</Staff>\n"
+    );
+    assert_eq!(gpif.matches(staff).count(), 2);
+    let read = read_gp(&bytes).expect("read");
+    assert_eq!(read, score);
+    assert!(read.extensions.0.is_empty());
+    let mut own = score.clone();
+    own.extensions.0.insert(
+        own.tracks[0].staves[1].id.0,
+        vec![OpaquePayload {
+            format: "gpif".to_string(),
+            data: "<Keep parent=\"Properties\" index=\"1\"><Property name=\"Tuning\"><Pitches>38 45 50 55 59 64</Pitches></Property></Keep>".to_string(),
+        }],
+    );
+    let gpif = gpif_of(&written(&own));
+    assert_eq!(gpif.matches("<Pitches>").count(), 2);
+    assert!(gpif.contains("<Pitches>38 45 50 55 59 64</Pitches>"));
 }
 
 #[test]
@@ -613,6 +650,20 @@ fn every_documented_refusal_is_reachable() {
         .effects
         .right_hand_finger = Some(Finger::Open);
     assert_eq!(refusal(&open).1, Refusal::RightHandOpen);
+    let mut drums = Scratch::new(1);
+    drums.track(
+        InstrumentKind::Percussion,
+        vec![vec![(
+            NoteValue::Whole,
+            vec![NoteKind::Percussion { articulation: 3 }],
+        )]],
+    );
+    assert_eq!(
+        refusal(&drums.score),
+        ("tracks[0]".to_string(), Refusal::DrumKit)
+    );
+    assert!(crate::support::add_drum_kits(&mut drums.score));
+    assert_eq!(read_gp(&written(&drums.score)).expect("read"), drums.score);
     let mut chord = one_note();
     chord.tracks[0].staves[0].bars[0].voices[0].beats[0]
         .effects
@@ -693,7 +744,7 @@ fn a_gp_archive_keeps_its_entries_in_order() {
 }
 
 #[test]
-fn chord_names_without_diagrams_get_name_only_items() {
+fn chord_names_without_diagrams_get_empty_diagram_items() {
     let mut score = one_note();
     let mut scratch = Scratch::new(1);
     scratch.track(
@@ -717,7 +768,9 @@ fn chord_names_without_diagrams_get_name_only_items() {
     let gpif = gpif_of(&bytes);
     assert!(gpif.contains(concat!(
         "<Property name=\"DiagramCollection\">\n<Items>\n",
-        "<Item id=\"0\" name=\"Am\"/>\n<Item id=\"1\" name=\"G &lt;&amp;&gt;&quot;x\"/>\n",
+        "<Item id=\"0\" name=\"Am\">\n<Diagram stringCount=\"6\" fretCount=\"5\"/>\n</Item>\n",
+        "<Item id=\"1\" name=\"G &lt;&amp;&gt;&quot;x\">\n",
+        "<Diagram stringCount=\"6\" fretCount=\"5\"/>\n</Item>\n",
         "</Items>\n</Property>"
     )));
     assert!(gpif.contains("<Chord><![CDATA[1]]></Chord>"));
@@ -734,7 +787,7 @@ fn a_new_chord_name_joins_the_kept_diagram_collection() {
     let bytes = written(&score);
     let gpif = gpif_of(&bytes);
     assert!(gpif.contains(
-        "<Item id=\"1\" name=\"Am\">\n<Diagram/>\n</Item>\n<Item id=\"2\" name=\"C#m7\"/>"
+        "<Item id=\"1\" name=\"Am\">\n<Diagram/>\n</Item>\n<Item id=\"2\" name=\"C#m7\">\n<Diagram stringCount=\"6\" fretCount=\"5\"/>\n</Item>"
     ));
     assert!(gpif.contains("<Chord><![CDATA[2]]></Chord>"));
     let again = read_gp(&bytes).expect("read");
@@ -800,6 +853,8 @@ fn a_pitched_articulation_is_dropped_when_the_note_becomes_percussion() {
             note.kind = NoteKind::Percussion { articulation: 7 };
         }
     }
+    assert_eq!(refusal(&score), ("tracks[0]".to_string(), Refusal::DrumKit));
+    assert!(crate::support::add_drum_kits(&mut score));
     let bytes = written(&score);
     let gpif = gpif_of(&bytes);
     assert_eq!(gpif.matches("<InstrumentArticulation>").count(), 2);
