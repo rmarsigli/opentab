@@ -1,6 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
+use xtask::fixtures::write_fixtures;
 use xtask::mutants::{INSTALL_HINT, MutantsReport, mutants_args, output_dir, verdict};
 use xtask::oracle::check::check;
 use xtask::oracle::examples::{ExamplesOptions, harvest_examples};
@@ -24,6 +25,14 @@ enum TopCommand {
     Oracle(OracleArgs),
     #[command(about = "Run cargo-mutants on opentab-model and opentab-command")]
     Mutants,
+    #[command(about = "Write the synthetic .gp fixtures, one per feature family")]
+    Fixtures(FixturesArgs),
+}
+
+#[derive(Debug, Args)]
+struct FixturesArgs {
+    #[arg(long, help = "Directory that receives the .gp fixtures")]
+    out: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -141,6 +150,16 @@ fn run_check(args: CheckArgs) -> ExitCode {
     }
 }
 
+fn run_fixtures(args: FixturesArgs) -> ExitCode {
+    match write_fixtures(&args.out) {
+        Ok(paths) => {
+            println!("wrote {} fixture(s) to {}", paths.len(), args.out.display());
+            ExitCode::SUCCESS
+        }
+        Err(error) => failure(error.message()),
+    }
+}
+
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -194,6 +213,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         TopCommand::Mutants => run_mutants(),
+        TopCommand::Fixtures(args) => run_fixtures(args),
         TopCommand::Oracle(oracle) => match oracle.command {
             OracleCommand::Harvest(args) => run_harvest(args),
             OracleCommand::Check(args) => run_check(args),

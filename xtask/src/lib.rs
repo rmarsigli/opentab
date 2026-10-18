@@ -1,3 +1,4 @@
+pub mod fixtures;
 pub mod mutants;
 pub mod oracle;
 
