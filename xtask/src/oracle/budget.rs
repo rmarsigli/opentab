@@ -5,6 +5,7 @@ pub const STEP_TIMEOUT_MS: u64 = 60_000;
 pub const MAX_ATTEMPTS: u64 = 3;
 pub const STEP_COUNT: u64 = 10;
 pub const BACKSTOP_MARGIN_MS: u64 = 120_000;
+pub const STARTUP_TIMEOUT_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StepBudget {
@@ -13,6 +14,7 @@ pub struct StepBudget {
     pub max_attempts: u64,
     pub steps: u64,
     pub margin_ms: u64,
+    pub startup_ms: u64,
 }
 
 impl Default for StepBudget {
@@ -23,6 +25,7 @@ impl Default for StepBudget {
             max_attempts: MAX_ATTEMPTS,
             steps: STEP_COUNT,
             margin_ms: BACKSTOP_MARGIN_MS,
+            startup_ms: STARTUP_TIMEOUT_MS,
         }
     }
 }
@@ -38,6 +41,10 @@ impl StepBudget {
 
     pub fn backstop(&self) -> Duration {
         Duration::from_millis(self.sum_ms() + self.margin_ms)
+    }
+
+    pub fn startup(&self) -> Duration {
+        Duration::from_millis(self.startup_ms)
     }
 
     pub fn script_args(&self) -> [(&'static str, String); 3] {
@@ -65,6 +72,14 @@ mod tests {
         let backstop_ms = u64::try_from(budget.backstop().as_millis()).expect("fits");
         assert_eq!(backstop_ms, budget.sum_ms() + budget.margin_ms);
         assert!(backstop_ms > budget.sum_ms());
+        assert_eq!(
+            StepBudget {
+                startup_ms: 1,
+                ..budget
+            }
+            .backstop(),
+            budget.backstop()
+        );
     }
 
     #[test]

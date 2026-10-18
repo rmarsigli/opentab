@@ -24,7 +24,7 @@ $GpSuffix = ' - Guitar Pro 8'
 
 $Diag = Join-Path $OutDir 'diagnostics'
 New-Item -ItemType Directory -Force -Path $Diag | Out-Null
-Write-Utf8File (Join-Path $OutDir 'pid.txt') ([string]$PID + "`n" + [string](Get-Process -Id $PID).StartTime.ToFileTimeUtc())
+Write-Utf8File (Join-Path $OutDir 'pid.txt') ([string]$PID + "`n" + [string](Get-Process -Id $PID).StartTime.ToFileTimeUtc() + "`n")
 
 $Steps = New-Object System.Collections.ArrayList
 $ModalsAtStart = New-Object System.Collections.ArrayList

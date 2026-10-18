@@ -1,4 +1,5 @@
 use crate::oracle::error::OracleError;
+use crate::oracle::manifest::is_safe_fixture_key;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -81,6 +82,14 @@ pub fn discover(input: &Path) -> Result<Vec<Fixture>, OracleError> {
     } else {
         walk(input, "", &mut found)?;
     }
+    for fixture in &found {
+        if !is_safe_fixture_key(&fixture.key) {
+            return Err(OracleError::new(format!(
+                "fixture name {:?} is not supported: names may not contain '\\' or ':'",
+                fixture.key
+            )));
+        }
+    }
     Ok(found)
 }
 
@@ -119,6 +128,23 @@ mod tests {
         assert_eq!(single[0].key, "b.gp");
         assert!(discover(&root.join("notes.txt")).is_err());
         assert!(discover(&root.join("absent.gp")).is_err());
+    }
+
+    #[test]
+    fn names_with_backslash_or_colon_are_rejected_at_discovery() {
+        for name in ["a\\b.gp", "a:b.gp", "C:x.gp"] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            std::fs::write(dir.path().join("fine.gp"), b"1").expect("write");
+            std::fs::write(dir.path().join(name), b"2").expect("write");
+            let error = discover(dir.path()).expect_err(name);
+            assert!(error.message().contains("not supported"), "{name}");
+            let single = discover(&dir.path().join(name)).expect_err(name);
+            assert!(single.message().contains("not supported"), "{name}");
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join("sub:dir")).expect("mkdir");
+        std::fs::write(dir.path().join("sub:dir/x.gp"), b"1").expect("write");
+        assert!(discover(dir.path()).is_err());
     }
 
     #[test]
