@@ -2,12 +2,13 @@ use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::container::check_container;
 use crate::{
     ContainerEntry, Extensions, IdAllocator, MasterBar, ModelError, OpaquePayload, Score,
     ScoreMeta, Track,
 };
 
-const VERSION: u64 = 1;
+const VERSION: u64 = 2;
 
 #[derive(Serialize)]
 struct DocumentOut<'a> {
@@ -43,6 +44,7 @@ struct VersionProbe {
 }
 
 pub fn to_json(score: &Score) -> Result<String, ModelError> {
+    check_container(&score.container)?;
     let document = DocumentOut {
         opentab_json: VERSION,
         meta: &score.meta,
@@ -69,6 +71,7 @@ pub fn from_json(input: &str) -> Result<Score, ModelError> {
         Some(_) => {}
     }
     let document: DocumentIn = serde_json::from_str(input).map_err(json_error)?;
+    check_container(&document.container)?;
     Ok(Score {
         meta: document.meta,
         anacrusis: document.anacrusis,

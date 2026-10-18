@@ -139,11 +139,14 @@ fn rich_score() -> Score {
         data: "<GPRevision/>".to_string(),
     }];
     score.container = vec![
-        ContainerEntry {
+        ContainerEntry::File {
             name: "Content/PartConfiguration".to_string(),
             data: Base64Bytes(Vec::new()),
         },
-        ContainerEntry {
+        ContainerEntry::Score {
+            name: "Content/score.gpif".to_string(),
+        },
+        ContainerEntry::File {
             name: "Content/Assets/\u{e9}.bin".to_string(),
             data: Base64Bytes((0..=255).collect()),
         },
@@ -189,7 +192,7 @@ fn empty_score_round_trips() {
 #[test]
 fn document_carries_version_and_score_fields_at_top_level() {
     let text = to_json(&Score::new()).unwrap();
-    assert!(text.contains("\n  \"opentab_json\": 1,"), "{text}");
+    assert!(text.contains("\n  \"opentab_json\": 2,"), "{text}");
     let value: Value = serde_json::from_str(&text).unwrap();
     let keys: Vec<&str> = value
         .as_object()
@@ -234,7 +237,8 @@ fn missing_version_is_rejected() {
 #[test]
 fn unknown_versions_are_rejected() {
     for (version, found) in [
-        (json!(2), "2"),
+        (json!(1), "1"),
+        (json!(3), "3"),
         (json!(0), "0"),
         (json!("1"), "\"1\""),
         (json!(1.5), "1.5"),
@@ -282,11 +286,11 @@ fn garbage_inputs_are_errors() {
     for input in inputs {
         assert!(from_json(input).is_err(), "{input:?} accepted");
     }
-    assert!(from_json(r#"{"opentab_json": 1}"#).is_err());
+    assert!(from_json(r#"{"opentab_json": 2}"#).is_err());
     assert!(from_json(&"[".repeat(100_000)).is_err());
     assert!(
         from_json(&format!(
-            "{{\"opentab_json\": 1, \"meta\": {}",
+            "{{\"opentab_json\": 2, \"meta\": {}",
             "[".repeat(100_000)
         ))
         .is_err()
@@ -435,9 +439,9 @@ fn extension_keys_survive_round_trip() {
 fn container_serialises_as_base64_text() {
     let value = document();
     assert_eq!(value["container"][0]["data"], json!(""));
-    assert_eq!(value["container"][1]["data"].as_str().unwrap().len(), 344);
+    assert_eq!(value["container"][2]["data"].as_str().unwrap().len(), 344);
     assert!(
-        value["container"][1]["data"]
+        value["container"][2]["data"]
             .as_str()
             .unwrap()
             .starts_with("AAECAwQF")
@@ -448,11 +452,11 @@ fn container_serialises_as_base64_text() {
 fn invalid_base64_is_rejected() {
     for data in ["!!!!", "AAE", "AAF=", "AA==AA==", " AAAA"] {
         let mut value = document();
-        value["container"][1]["data"] = json!(data);
+        value["container"][2]["data"] = json!(data);
         rejects(&value, "base64");
     }
     let mut value = document();
-    value["container"][1]["data"] = json!(7);
+    value["container"][2]["data"] = json!(7);
     assert!(from_json(&value.to_string()).is_err());
 }
 
@@ -479,6 +483,9 @@ fn new_fields_are_required_and_closed() {
     let mut value = document();
     value["container"][0]["extra"] = json!(1);
     rejects(&value, "extra");
+    let mut value = document();
+    value["container"][1]["data"] = json!("AA==");
+    rejects(&value, "data");
 }
 
 #[test]
@@ -539,4 +546,44 @@ fn new_values_are_validated_on_load() {
     let mut value = document();
     value.pointer_mut(&format!("{note}/bend")).unwrap()["points"] = json!([]);
     rejects(&value, "points");
+}
+
+#[test]
+fn container_entries_use_a_kind_tag() {
+    let value = document();
+    assert_eq!(value["container"][0]["kind"], json!("file"));
+    assert_eq!(
+        value["container"][1],
+        json!({"kind": "score", "name": "Content/score.gpif"})
+    );
+}
+
+#[test]
+fn at_most_one_score_entry_is_allowed() {
+    let mut score = rich_score();
+    score.container.push(ContainerEntry::Score {
+        name: "Other.gpif".to_string(),
+    });
+    assert_eq!(
+        to_json(&score),
+        Err(ModelError::InvalidContainer { scores: 2 })
+    );
+    let mut value = document();
+    value["container"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"kind": "score", "name": "Other.gpif"}));
+    assert_eq!(
+        from_json(&value.to_string()),
+        Err(ModelError::InvalidContainer { scores: 2 })
+    );
+    score.container.retain(|entry| !entry.is_score());
+    assert_eq!(from_json(&to_json(&score).unwrap()), Ok(score));
+}
+
+#[test]
+fn container_entry_names_are_reachable() {
+    let score = rich_score();
+    let names: Vec<&str> = score.container.iter().map(ContainerEntry::name).collect();
+    assert_eq!(names[1], "Content/score.gpif");
 }

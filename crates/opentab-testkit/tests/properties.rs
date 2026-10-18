@@ -1,6 +1,6 @@
 use opentab_model::{
-    Clef, Diagnostic, Dynamic, Finger, Fraction, Grace, NoteKind, NoteValue, Score, Tap, TempoUnit,
-    Transpose, Voice, diagnose, from_json, to_json,
+    Clef, ContainerEntry, Diagnostic, Dynamic, Finger, Fraction, Grace, NoteKind, NoteValue, Score,
+    Tap, TempoUnit, Transpose, Voice, diagnose, from_json, to_json,
 };
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with, min_beats_for_bar};
 use proptest::prelude::*;
@@ -255,6 +255,8 @@ struct Coverage {
     pickup_underfull: bool,
     container: bool,
     container_empty_entry: bool,
+    container_score_entry: bool,
+    container_score_not_last: bool,
     document_extensions: bool,
     marker_letter: bool,
     double_bar: bool,
@@ -303,7 +305,16 @@ fn observe(coverage: &mut Coverage, score: &Score) {
     coverage.zero_bars |= score.master_bars.is_empty();
     coverage.anacrusis |= score.anacrusis;
     coverage.container |= !score.container.is_empty();
-    coverage.container_empty_entry |= score.container.iter().any(|entry| entry.data.0.is_empty());
+    coverage.container_empty_entry |= score
+        .container
+        .iter()
+        .any(|entry| matches!(entry, ContainerEntry::File { data, .. } if data.0.is_empty()));
+    coverage.container_score_entry |= score.container.iter().any(ContainerEntry::is_score);
+    coverage.container_score_not_last |= score
+        .container
+        .iter()
+        .position(ContainerEntry::is_score)
+        .is_some_and(|index| index + 1 < score.container.len());
     coverage.document_extensions |= !score.document_extensions.is_empty();
     for master_bar in &score.master_bars {
         coverage.marker_letter |= master_bar
@@ -461,6 +472,11 @@ fn generator_covers_every_feature() {
         ("pickup_underfull", coverage.pickup_underfull),
         ("container", coverage.container),
         ("container_empty_entry", coverage.container_empty_entry),
+        ("container_score_entry", coverage.container_score_entry),
+        (
+            "container_score_not_last",
+            coverage.container_score_not_last,
+        ),
         ("document_extensions", coverage.document_extensions),
         ("marker_letter", coverage.marker_letter),
         ("double_bar", coverage.double_bar),

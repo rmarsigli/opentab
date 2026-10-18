@@ -32,9 +32,11 @@ pub enum ModelError {
     InvalidVoiceSlot { slot: u8 },
     #[error("key signature with {accidentals} accidentals is outside -7..=7")]
     InvalidKeySignature { accidentals: i8 },
+    #[error("container has {scores} score entries; at most one is allowed")]
+    InvalidContainer { scores: usize },
     #[error("missing \"opentab_json\" version field")]
     MissingVersion,
-    #[error("unsupported opentab_json version {found}, expected 1")]
+    #[error("unsupported opentab_json version {found}, expected 2")]
     UnsupportedVersion { found: String },
     #[error("invalid opentab JSON: {message}")]
     Json { message: String },

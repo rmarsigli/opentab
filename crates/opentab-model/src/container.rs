@@ -1,3 +1,4 @@
+use crate::ModelError;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use serde::de::Error;
@@ -29,8 +30,28 @@ impl<'de> Deserialize<'de> for Base64Bytes {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ContainerEntry {
-    pub name: String,
-    pub data: Base64Bytes,
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ContainerEntry {
+    File { name: String, data: Base64Bytes },
+    Score { name: String },
+}
+
+impl ContainerEntry {
+    pub fn name(&self) -> &str {
+        match self {
+            ContainerEntry::File { name, .. } | ContainerEntry::Score { name } => name,
+        }
+    }
+
+    pub fn is_score(&self) -> bool {
+        matches!(self, ContainerEntry::Score { .. })
+    }
+}
+
+pub(crate) fn check_container(entries: &[ContainerEntry]) -> Result<(), ModelError> {
+    let scores = entries.iter().filter(|entry| entry.is_score()).count();
+    if scores > 1 {
+        return Err(ModelError::InvalidContainer { scores });
+    }
+    Ok(())
 }
