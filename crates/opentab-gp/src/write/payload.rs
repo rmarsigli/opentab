@@ -4,6 +4,7 @@ use opentab_model::{
     Bar, Beat, BeatEffects, MasterBar, Note, OpaquePayload, TempoChange, TimeSignature, Track,
 };
 
+use crate::anchor::ANCHORS;
 use crate::dom::{self, Attribute, Element, Node};
 use crate::error::Refusal;
 use crate::guard::{self, PitchInputs};
@@ -23,6 +24,7 @@ pub(crate) struct Item {
     pub parent: String,
     pub index: usize,
     pub guard: Option<String>,
+    pub anchors: Option<String>,
     pub content: Content,
 }
 
@@ -83,9 +85,11 @@ pub(crate) fn parse(payload: &OpaquePayload) -> Result<Item, Refusal> {
         .and_then(number::integer::<usize>)
         .ok_or_else(|| malformed("missing or invalid index"))?;
     let guard = root.attribute("guard").map(str::to_string);
+    let mut anchors = None;
     let content = match root.name.as_str() {
         KEEP => {
-            let known = ["parent", "index", "guard"];
+            let known = ["parent", "index", "guard", ANCHORS];
+            anchors = root.attribute(ANCHORS).map(str::to_string);
             if root
                 .attributes
                 .iter()
@@ -124,6 +128,7 @@ pub(crate) fn parse(payload: &OpaquePayload) -> Result<Item, Refusal> {
         parent,
         index,
         guard,
+        anchors,
         content,
     })
 }

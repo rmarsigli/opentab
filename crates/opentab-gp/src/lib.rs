@@ -1,3 +1,4 @@
+mod anchor;
 mod archive;
 mod canon;
 mod codes;

@@ -5,17 +5,20 @@ use opentab_model::{ElementId, Extensions, InstrumentKind, Pitch, Transpose};
 use crate::dom::Element;
 use crate::error::Refusal;
 use crate::read::ChordItem;
+use crate::write::anchor::BarAnchors;
 use crate::write::payload::{self, Item};
 
 pub(crate) struct Owners<'s> {
     extensions: &'s Extensions,
+    anchors: &'s BarAnchors<'s>,
     used: BTreeSet<ElementId>,
 }
 
 impl<'s> Owners<'s> {
-    pub fn new(extensions: &'s Extensions) -> Owners<'s> {
+    pub fn new(extensions: &'s Extensions, anchors: &'s BarAnchors<'s>) -> Owners<'s> {
         Owners {
             extensions,
+            anchors,
             used: BTreeSet::new(),
         }
     }
@@ -23,7 +26,7 @@ impl<'s> Owners<'s> {
     pub fn items(&mut self, id: ElementId) -> Result<Vec<Item>, Refusal> {
         self.used.insert(id);
         match self.extensions.0.get(&id) {
-            Some(payloads) => payload::parse_all(payloads),
+            Some(payloads) => self.anchors.resolve_all(payload::parse_all(payloads)?),
             None => Ok(Vec::new()),
         }
     }
