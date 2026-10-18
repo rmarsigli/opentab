@@ -8,13 +8,14 @@ publish.workspace = true
 
 [dependencies]
 opentab-layout = { path = "../opentab-layout" }
+opentab-model = { path = "../opentab-model" }
 num-rational.workspace = true
 resvg.workspace = true
 thiserror.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 opentab-gp = { path = "../opentab-gp" }
-opentab-model = { path = "../opentab-model" }
 insta.workspace = true
 
 [lints]

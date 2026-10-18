@@ -591,6 +591,7 @@ dependencies = [
  "opentab-layout",
  "opentab-model",
  "resvg",
+ "serde",
  "thiserror",
 ]
 
