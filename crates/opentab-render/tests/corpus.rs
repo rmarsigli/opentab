@@ -3,11 +3,14 @@ use std::path::{Path, PathBuf};
 
 use opentab_gp::read_gp;
 use opentab_layout::{DisplayList, LayoutError, LayoutOptions, layout};
+use opentab_model::{InstrumentKind, Score};
 use opentab_render::{Ratio, to_png, to_svg};
 use resvg::tiny_skia::Pixmap;
+use resvg::usvg;
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
+const EXPECTED_DRUM_TRACKS: usize = 10;
 const PNG_PAGE_ONE: (u32, u32) = (794, 1123);
 
 struct Row {
@@ -45,9 +48,8 @@ fn summarise(list: &DisplayList) -> Result<Summary, String> {
     let mut svg_bytes = 0;
     for page in &list.pages {
         let svg = to_svg(page);
-        if !svg.starts_with("<svg ") {
-            return Err("an svg page does not start with <svg".to_string());
-        }
+        usvg::Tree::from_str(&svg, &usvg::Options::default())
+            .map_err(|error| format!("an svg page does not parse: {error}"))?;
         svg_bytes += svg.len();
     }
     let first = list.pages.first().ok_or("no page")?;
@@ -75,10 +77,20 @@ fn summarise(list: &DisplayList) -> Result<Summary, String> {
     })
 }
 
-fn render(path: &Path) -> Result<Outcome, String> {
+fn read(path: &Path) -> Result<Score, String> {
     let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
-    let score = read_gp(&bytes).map_err(|error| format!("read: {error}"))?;
-    match layout(&score, &LayoutOptions::default()) {
+    read_gp(&bytes).map_err(|error| format!("read: {error}"))
+}
+
+fn drums(score: &Score) -> Option<usize> {
+    score
+        .tracks
+        .iter()
+        .position(|track| track.instrument.kind == InstrumentKind::Percussion)
+}
+
+fn render(score: &Score, options: &LayoutOptions) -> Result<Outcome, String> {
+    match layout(score, options) {
         Ok(list) => summarise(&list).map(Outcome::Rendered),
         Err(error @ (LayoutError::PageTooSmall | LayoutError::Rhythm { .. })) => {
             Ok(Outcome::Limit(error.to_string()))
@@ -111,6 +123,7 @@ fn line(row: &Row) -> String {
 #[test]
 fn every_corpus_example_lays_out_and_renders_every_page() {
     let Some(paths) = corpus() else {
+        println!("corpus smoke skipped: set {CORPUS_VARIABLE} to the examples directory");
         return;
     };
     assert_eq!(paths.len(), EXPECTED_FILES);
@@ -122,10 +135,32 @@ fn every_corpus_example_lays_out_and_renders_every_page() {
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        match catch_unwind(AssertUnwindSafe(|| render(path))) {
-            Ok(Ok(outcome)) => rows.push(Row { name, outcome }),
-            Ok(Err(error)) => failures.push(format!("{name}: {error}")),
-            Err(_) => failures.push(format!("{name}: panicked")),
+        let score = match read(path) {
+            Ok(score) => score,
+            Err(error) => {
+                failures.push(format!("{name}: {error}"));
+                continue;
+            }
+        };
+        let mut runs = vec![(name.clone(), LayoutOptions::default())];
+        if let Some(track) = drums(&score) {
+            runs.push((
+                format!("{name} (drums only)"),
+                LayoutOptions {
+                    tracks: Some(vec![track]),
+                    ..LayoutOptions::default()
+                },
+            ));
+        }
+        for (label, options) in runs {
+            match catch_unwind(AssertUnwindSafe(|| render(&score, &options))) {
+                Ok(Ok(outcome)) => rows.push(Row {
+                    name: label,
+                    outcome,
+                }),
+                Ok(Err(error)) => failures.push(format!("{label}: {error}")),
+                Err(_) => failures.push(format!("{label}: panicked")),
+            }
         }
     }
     println!(
@@ -136,5 +171,5 @@ fn every_corpus_example_lays_out_and_renders_every_page() {
         println!("{}", line(row));
     }
     assert!(failures.is_empty(), "{failures:#?}");
-    assert_eq!(rows.len(), EXPECTED_FILES);
+    assert_eq!(rows.len(), EXPECTED_FILES + EXPECTED_DRUM_TRACKS);
 }

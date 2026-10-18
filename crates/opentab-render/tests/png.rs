@@ -2,10 +2,11 @@ use opentab_layout::{
     A4, DEFAULT_STAFF_SPACE, Line, Micrometres, Page, PageSize, Point, Primitive, Units,
 };
 use opentab_render::{
-    BYTES_PER_PIXEL, MAX_PIXELS, MAX_TOTAL_PIXELS, PixelSize, Ratio, RenderError, pixel_size,
-    to_png,
+    MAX_PIXELS, MAX_TOTAL_PIXELS, PixelSize, Ratio, RenderError, pixel_size, to_png,
 };
 use resvg::tiny_skia::Pixmap;
+
+const RGBA_BYTES: u64 = 4;
 
 fn a4() -> Page {
     Page::new(A4, DEFAULT_STAFF_SPACE)
@@ -120,7 +121,7 @@ fn sized(width: i64, height: i64) -> Page {
 
 #[test]
 fn the_total_pixel_count_is_capped_so_the_pixmap_stays_under_256_mebibytes() {
-    const { assert!(MAX_TOTAL_PIXELS * BYTES_PER_PIXEL <= 256 * 1024 * 1024) };
+    const { assert!(MAX_TOTAL_PIXELS * RGBA_BYTES <= 256 * 1024 * 1024) };
     let one = Ratio::from_integer(1);
     assert_eq!(
         pixel_size(&sized(2_645_834, 1_587_500), one),
