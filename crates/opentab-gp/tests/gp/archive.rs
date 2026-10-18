@@ -1,7 +1,7 @@
 use opentab_gp::{GpError, read_gp, write_gp};
 use opentab_model::ContainerEntry;
 
-use crate::rawzip::{CENTRAL_HEADER_SIZE, METHOD_DEFLATED, RawEntry, build};
+use crate::rawzip::{CENTRAL_HEADER_SIZE, CENTRAL_SIGNATURE, METHOD_DEFLATED, RawEntry, build};
 use crate::support::{Doc, SCORE_ENTRY};
 
 fn gpif() -> String {
@@ -109,10 +109,7 @@ fn duplicate_entry_names_are_a_typed_error() {
     ];
     for (entries, name) in cases {
         match read_gp(&build(&entries)) {
-            Err(GpError::Entry { entry, reason }) => {
-                assert_eq!(entry, name);
-                assert!(reason.contains("duplicate"), "{reason}");
-            }
+            Err(GpError::DuplicateEntry { name: found }) => assert_eq!(found, name),
             other => panic!("{other:?}"),
         }
     }
@@ -140,7 +137,10 @@ fn duplicates_are_found_behind_leading_junk() {
         RawEntry::stored("a", b"1"),
         RawEntry::stored("a", b"2"),
     ]));
-    assert!(matches!(read_gp(&bytes), Err(GpError::Entry { .. })));
+    assert!(matches!(
+        read_gp(&bytes),
+        Err(GpError::DuplicateEntry { .. })
+    ));
 }
 
 #[test]
@@ -152,11 +152,14 @@ fn duplicates_are_found_when_the_central_directory_is_the_only_witness() {
     let mut bytes = build(&entries);
     let at = bytes
         .windows(4)
-        .rposition(|window| window == [0x50, 0x4b, 0x01, 0x02])
+        .rposition(|window| window == CENTRAL_SIGNATURE)
         .expect("last record");
     assert_eq!(bytes[at + CENTRAL_HEADER_SIZE], b'y');
     bytes[at + CENTRAL_HEADER_SIZE] = b'x';
-    assert!(matches!(read_gp(&bytes), Err(GpError::Entry { .. })));
+    assert!(matches!(
+        read_gp(&bytes),
+        Err(GpError::DuplicateEntry { .. })
+    ));
 }
 
 fn corrupt_entry(mutate: impl FnOnce(&mut RawEntry)) -> Result<opentab_model::Score, GpError> {

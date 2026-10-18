@@ -8,10 +8,10 @@ pub const METHOD_DEFLATED: u16 = 8;
 const FLAG_DESCRIPTOR: u16 = 1 << 3;
 const DOS_DATE: u16 = 0x0021;
 const VERSION: u16 = 20;
-const LOCAL_SIGNATURE: u32 = 0x0403_4b50;
-const CENTRAL_SIGNATURE: u32 = 0x0201_4b50;
-const END_SIGNATURE: u32 = 0x0605_4b50;
-const DESCRIPTOR_SIGNATURE: u32 = 0x0807_4b50;
+pub const LOCAL_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
+pub const CENTRAL_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+pub const END_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+const DESCRIPTOR_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x07, 0x08];
 
 pub const LOCAL_HEADER_SIZE: usize = 30;
 pub const CENTRAL_HEADER_SIZE: usize = 46;
@@ -98,7 +98,7 @@ fn push32(out: &mut Vec<u8>, value: u32) {
 }
 
 fn write_local(out: &mut Vec<u8>, entry: &RawEntry) {
-    push32(out, LOCAL_SIGNATURE);
+    out.extend_from_slice(&LOCAL_SIGNATURE);
     push16(out, VERSION);
     push16(out, entry.flags());
     push16(out, entry.method);
@@ -118,7 +118,7 @@ fn write_local(out: &mut Vec<u8>, entry: &RawEntry) {
     out.extend_from_slice(&entry.name);
     out.extend_from_slice(&entry.payload);
     if entry.descriptor {
-        push32(out, DESCRIPTOR_SIGNATURE);
+        out.extend_from_slice(&DESCRIPTOR_SIGNATURE);
         push32(out, entry.crc);
         push32(out, entry.compressed_size);
         push32(out, entry.size);
@@ -126,7 +126,7 @@ fn write_local(out: &mut Vec<u8>, entry: &RawEntry) {
 }
 
 fn write_central(out: &mut Vec<u8>, entry: &RawEntry, offset: u32) {
-    push32(out, CENTRAL_SIGNATURE);
+    out.extend_from_slice(&CENTRAL_SIGNATURE);
     push16(out, VERSION);
     push16(out, VERSION);
     push16(out, entry.flags());
@@ -159,7 +159,7 @@ pub fn build(entries: &[RawEntry]) -> Vec<u8> {
     }
     let directory_size = length(out.len()) - directory_start;
     let count = u16::try_from(entries.len()).expect("entry count");
-    push32(&mut out, END_SIGNATURE);
+    out.extend_from_slice(&END_SIGNATURE);
     push16(&mut out, 0);
     push16(&mut out, 0);
     push16(&mut out, count);

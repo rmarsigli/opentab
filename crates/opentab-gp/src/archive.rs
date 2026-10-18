@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Seek};
 
 use opentab_model::{Base64Bytes, ContainerEntry};
 use zip::ZipArchive;
@@ -102,7 +102,7 @@ fn central_records(bytes: &[u8], start: usize) -> Vec<&[u8]> {
     names
 }
 
-fn reject_duplicate_names<R: Read + std::io::Seek>(
+fn reject_duplicate_names<R: Read + Seek>(
     bytes: &[u8],
     archive: &ZipArchive<R>,
 ) -> Result<(), GpError> {
@@ -112,9 +112,8 @@ fn reject_duplicate_names<R: Read + std::io::Seek>(
     let mut seen = HashSet::new();
     for name in central_records(bytes, start) {
         if !seen.insert(name) {
-            return Err(GpError::Entry {
-                entry: String::from_utf8_lossy(name).into_owned(),
-                reason: "duplicate archive entry".to_string(),
+            return Err(GpError::DuplicateEntry {
+                name: String::from_utf8_lossy(name).into_owned(),
             });
         }
     }

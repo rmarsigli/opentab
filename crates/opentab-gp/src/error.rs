@@ -127,6 +127,8 @@ pub enum Refusal {
 pub enum GpError {
     #[error("archive: {reason}")]
     Archive { reason: String },
+    #[error("duplicate archive entry \"{name}\"")]
+    DuplicateEntry { name: String },
     #[error("{entry}: {reason}")]
     Entry { entry: String, reason: String },
     #[error("{entry}: {problem}")]
