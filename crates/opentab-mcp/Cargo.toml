@@ -1,0 +1,30 @@
+[package]
+name = "opentab-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "opentab-mcp"
+path = "src/main.rs"
+
+[dependencies]
+opentab-model = { path = "../opentab-model" }
+opentab-command = { path = "../opentab-command" }
+opentab-gp = { path = "../opentab-gp" }
+opentab-layout = { path = "../opentab-layout" }
+opentab-render = { path = "../opentab-render" }
+rmcp.workspace = true
+tokio = { workspace = true, features = ["io-util", "io-std", "sync", "macros"] }
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+resvg.workspace = true
+
+[lints]
+workspace = true

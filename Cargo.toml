@@ -8,6 +8,7 @@ members = [
     "crates/opentab-gp",
     "crates/opentab-layout",
     "crates/opentab-render",
+    "crates/opentab-mcp",
     "xtask",
 ]
 
@@ -35,6 +36,8 @@ flate2 = { version = "1.1", default-features = false, features = ["rust_backend"
 ttf-parser = { version = "0.25.1", default-features = false, features = ["std"] }
 resvg = { version = "0.48.1", default-features = false }
 insta = { version = "1.49.0", default-features = false }
+rmcp = { version = "=3.5.0", default-features = false, features = ["server", "transport-io"] }
+tokio = { version = "1", default-features = false, features = ["rt"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
