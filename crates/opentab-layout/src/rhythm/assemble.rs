@@ -8,9 +8,10 @@ use super::{
 };
 use crate::display::{Line, Primitive};
 use crate::glyphs::{Anchor, FLAG_8TH_UP};
-use crate::units::{Point, Rect, Units};
+use crate::units::{Point, Rect, STAFF_SPACE, Units};
 
 pub const SLOPE_SHARE: i64 = 4;
+pub const MAX_BEAM_RANGE: Units = Units(STAFF_SPACE.0 * 7);
 const SLOPE_DIVISOR: NonZeroI64 = NonZeroI64::new(SLOPE_SHARE).unwrap();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,11 +125,10 @@ pub fn group(time: TimeSignature, per_whole: i128, events: &[RhythmEvent]) -> Rh
                 }
             })
             .collect();
-        groups.beams.extend(
-            beam_groups(time, per_whole, &timings)
-                .into_iter()
-                .map(|group| group.into_iter().map(|offset| members[offset]).collect()),
-        );
+        for group in beam_groups(time, per_whole, &timings) {
+            let group: Vec<usize> = group.into_iter().map(|offset| members[offset]).collect();
+            groups.beams.extend(split_wide(group, events));
+        }
         let durations: Vec<Duration> = members
             .iter()
             .map(|index| events[*index].duration)
@@ -141,6 +141,44 @@ pub fn group(time: TimeSignature, per_whole: i128, events: &[RhythmEvent]) -> Rh
             }));
     }
     groups
+}
+
+fn range_of(members: &[usize], events: &[RhythmEvent]) -> Option<Units> {
+    let found: Vec<Extremes> = members
+        .iter()
+        .filter_map(|member| events.get(*member)?.extremes)
+        .collect();
+    let top = found.iter().map(|extremes| extremes.top).min()?;
+    let bottom = found.iter().map(|extremes| extremes.bottom).max()?;
+    Some(bottom - top)
+}
+
+fn middle_of(event: Option<&RhythmEvent>) -> Option<Units> {
+    event?
+        .extremes
+        .map(|extremes| extremes.top + (extremes.bottom - extremes.top).half())
+}
+
+pub fn split_wide(group: Vec<usize>, events: &[RhythmEvent]) -> Vec<Vec<usize>> {
+    if group.len() < 2 || range_of(&group, events).is_none_or(|range| range <= MAX_BEAM_RANGE) {
+        return vec![group];
+    }
+    let leap = |at: usize| match (
+        middle_of(events.get(group[at - 1])),
+        middle_of(events.get(group[at])),
+    ) {
+        (Some(before), Some(after)) => (after - before).0.abs(),
+        _ => 0,
+    };
+    let cut = (1..group.len())
+        .rev()
+        .max_by_key(|at| leap(*at))
+        .unwrap_or(1);
+    let (left, right) = group.split_at(cut);
+    let mut out = split_wide(left.to_vec(), events);
+    out.extend(split_wide(right.to_vec(), events));
+    out.retain(|part| part.len() >= 2);
+    out
 }
 
 pub fn directions(

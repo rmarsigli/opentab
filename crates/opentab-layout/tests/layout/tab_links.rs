@@ -124,3 +124,54 @@ fn a_shift_slide_across_a_system_break_draws_both_halves() {
     }
     assert_eq!(total, BARS - 1 + rows.len() - 1);
 }
+
+fn two_voices(lower: (u8, u8)) -> Score {
+    build(&[measure(
+        (4, 4),
+        0,
+        vec![
+            (0, quarters(&[(2, 5), (1, 3), (2, 5), (1, 3)])),
+            (1, quarters(&[lower, (3, 2), lower, (3, 2)])),
+        ],
+    )])
+}
+
+fn label_texts(score: &Score) -> Vec<(u64, Vec<String>)> {
+    let list = render(score, &options(StaffMode::Tab));
+    let (_, bar) = crate::tab_effects::tab_bar(&list, 0);
+    crate::tab::note_groups(bar)
+        .into_iter()
+        .map(|(id, labels)| {
+            (
+                id,
+                labels
+                    .into_iter()
+                    .map(|label| label.text.text)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_unison_of_two_voices_on_one_string_draws_one_label() {
+    let unison = two_voices((2, 5));
+    let found = label_texts(&unison);
+    let upper = note_at(&mut unison.clone(), 0, 0, 0, 0).id.0.0;
+    let lower = note_at(&mut unison.clone(), 0, 1, 0, 0).id.0.0;
+    let of = |id: u64| {
+        found
+            .iter()
+            .find(|(key, _)| *key == id)
+            .map(|(_, texts)| texts.clone())
+            .unwrap_or_default()
+    };
+    assert_eq!(of(upper), vec!["5".to_string()]);
+    assert!(of(lower).is_empty(), "{found:?}");
+    let drawn: usize = found.iter().map(|(_, texts)| texts.len()).sum();
+    assert_eq!(drawn, 6);
+    let apart = two_voices((2, 7));
+    let found = label_texts(&apart);
+    let drawn: usize = found.iter().map(|(_, texts)| texts.len()).sum();
+    assert_eq!(drawn, 8);
+}

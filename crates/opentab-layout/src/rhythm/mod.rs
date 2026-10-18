@@ -27,9 +27,9 @@ pub const PLAIN_BEAMS: u8 = 2;
 pub const WRITTEN_WHOLE: i64 = 1024;
 
 pub use assemble::{
-    FittedBeam, FittedStem, FittedTuplet, RhythmCanvas, RhythmEvent, RhythmGroups, RhythmPlan,
-    SLOPE_SHARE, StemAnchor, TupletGroup, clamp_slope, directions, draw_rhythm, fit_stems, group,
-    slash,
+    FittedBeam, FittedStem, FittedTuplet, MAX_BEAM_RANGE, RhythmCanvas, RhythmEvent, RhythmGroups,
+    RhythmPlan, SLOPE_SHARE, StemAnchor, TupletGroup, clamp_slope, directions, draw_rhythm,
+    fit_stems, group, slash, split_wide,
 };
 
 const SPACE_DIVISOR: NonZeroI64 = NonZeroI64::new(STAFF_SPACE.0).unwrap();
