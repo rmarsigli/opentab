@@ -449,6 +449,7 @@ name = "opentab-gp"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "opentab-command",
  "opentab-model",
  "opentab-testkit",
  "proptest",
