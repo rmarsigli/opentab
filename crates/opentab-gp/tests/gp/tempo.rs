@@ -1,0 +1,113 @@
+use opentab_gp::GpifProblem;
+use opentab_model::{Fraction, TempoUnit};
+
+use crate::support::{Doc, document_payloads, gpif_path, master_bar, payloads};
+
+fn automation(bar: &str, position: &str, value: &str) -> String {
+    format!(
+        "<Automation><Type>Tempo</Type><Linear>false</Linear><Bar>{bar}</Bar><Position>{position}</Position><Visible>true</Visible><Value>{value}</Value></Automation>"
+    )
+}
+
+fn with_automations(automations: &str, time: &str) -> Doc {
+    Doc {
+        master_track: format!("<Automations>{automations}</Automations>"),
+        time: time.to_string(),
+        ..Doc::default()
+    }
+}
+
+#[test]
+fn tempo_value_and_unit_are_mapped() {
+    let codes = [
+        ("1", TempoUnit::Eighth),
+        ("2", TempoUnit::Quarter),
+        ("3", TempoUnit::DottedQuarter),
+        ("4", TempoUnit::Half),
+        ("5", TempoUnit::DottedHalf),
+        ("0", TempoUnit::Quarter),
+    ];
+    for (code, unit) in codes {
+        let doc = with_automations(&automation("0", "0", &format!("137.5 {code}")), "4/4");
+        let score = doc.read();
+        let change = &master_bar(&score).tempo_changes[0];
+        assert_eq!(change.bpm.bpm(), 137.5);
+        assert_eq!(change.unit, unit, "code {code}");
+        assert_eq!(change.position, Fraction::from_integer(0));
+    }
+}
+
+#[test]
+fn position_is_rounded_to_the_grid_and_its_text_replayed() {
+    let doc = with_automations(&automation("0", "0.333333", "120 2"), "3/4");
+    let score = doc.read();
+    let bar = master_bar(&score);
+    assert_eq!(bar.tempo_changes[0].position, Fraction::new(1, 4));
+    assert_eq!(
+        payloads(&score, bar.id.0),
+        vec![
+            "<Keep parent=\"*Tempo#0\" index=\"1\"><Linear>false</Linear></Keep>".to_string(),
+            "<Keep parent=\"*Tempo#0\" index=\"3\" guard=\"tempo-position:1/4\"><Position>0.333333</Position></Keep>".to_string(),
+            "<Keep parent=\"*Tempo#0\" index=\"4\"><Visible>true</Visible></Keep>".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn several_tempos_in_one_bar_and_other_automations() {
+    let sync = "<Automation><Type>SyncPoint</Type><Bar>0</Bar><Value><BarIndex>0</BarIndex></Value></Automation>";
+    let automations = format!(
+        "{}{}{sync}",
+        automation("0", "0", "100 2"),
+        automation("0", "0.5", "80 1")
+    );
+    let score = with_automations(&automations, "4/4").read();
+    let changes = &master_bar(&score).tempo_changes;
+    assert_eq!(changes.len(), 2);
+    assert_eq!(changes[1].position, Fraction::new(1, 2));
+    assert_eq!(changes[1].unit, TempoUnit::Eighth);
+    assert!(
+        payloads(&score, master_bar(&score).id.0)
+            .iter()
+            .any(|payload| payload.starts_with("<Keep parent=\"*Tempo#1\" index=\"3\""))
+    );
+    assert!(document_payloads(&score).contains(&format!(
+        "<Keep parent=\"MasterTrack/Automations\" index=\"2\">{sync}</Keep>"
+    )));
+}
+
+#[test]
+fn a_tempo_for_a_missing_bar_is_rejected() {
+    let error = with_automations(&automation("4", "0", "120 2"), "4/4").error();
+    assert_eq!(
+        gpif_path(&error),
+        "/GPIF/MasterTrack/Automations/Automation/Bar"
+    );
+    assert!(matches!(
+        error,
+        opentab_gp::GpError::Gpif {
+            problem: GpifProblem::TempoBarOutOfRange {
+                bar: 4,
+                master_bars: 1
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn invalid_tempo_values_are_rejected() {
+    for value in ["fast 2", "120 9", "0 2", "NaN 2", "120 2 7"] {
+        let error = with_automations(&automation("0", "0", value), "4/4").error();
+        assert_eq!(
+            gpif_path(&error),
+            "/GPIF/MasterTrack/Automations/Automation/Value",
+            "{value}"
+        );
+    }
+    let error = with_automations(&automation("0", "-0.5", "120 2"), "4/4").error();
+    assert_eq!(
+        gpif_path(&error),
+        "/GPIF/MasterTrack/Automations/Automation/Position"
+    );
+}
