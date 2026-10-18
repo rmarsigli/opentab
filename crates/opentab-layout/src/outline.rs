@@ -107,6 +107,24 @@ impl OutlineFont {
         }
     }
 
+    pub fn codepoints(&self) -> Vec<char> {
+        let mut found = std::collections::BTreeSet::new();
+        if let Some(cmap) = self.face.tables().cmap {
+            for subtable in cmap
+                .subtables
+                .into_iter()
+                .filter(|table| table.is_unicode())
+            {
+                subtable.codepoints(|codepoint| {
+                    if let Some(character) = char::from_u32(codepoint) {
+                        found.insert(character);
+                    }
+                });
+            }
+        }
+        found.into_iter().collect()
+    }
+
     pub fn advance_font_units(&self, character: char) -> i64 {
         self.face
             .glyph_hor_advance(self.glyph(character))

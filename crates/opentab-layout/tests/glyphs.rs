@@ -208,3 +208,53 @@ fn the_text_font_measures_runs_from_its_advances() {
     assert!(font.outline(' ').bounds().is_none());
     assert!(font.outline('\u{E050}').bounds().is_some());
 }
+
+const BRAVURA_BLANK: [u32; 44] = [
+    0x0000, 0x0020, 0xE07F, 0xE09E, 0xE09F, 0xE0A5, 0xE31A, 0xE31B, 0xE3DE, 0xE3DF, 0xE548, 0xE8E0,
+    0xE8E1, 0xE8E2, 0xE8E3, 0xE8E4, 0xE8E5, 0xE8E6, 0xE8E7, 0xEB90, 0xEB91, 0xEB92, 0xEB93, 0xEB94,
+    0xEB95, 0xEB96, 0xEB97, 0xEB98, 0xEB99, 0xEB9A, 0xEB9B, 0xEB9C, 0xEB9D, 0xEB9E, 0xEB9F,
+    0x1D159, 0x1D173, 0x1D174, 0x1D175, 0x1D176, 0x1D177, 0x1D178, 0x1D179, 0x1D17A,
+];
+
+fn blank_characters(font: &opentab_layout::text::OutlineFont) -> Vec<u32> {
+    font.codepoints()
+        .into_iter()
+        .filter(|character| font.outline(*character).segments.is_empty())
+        .map(u32::from)
+        .collect()
+}
+
+#[test]
+fn only_the_smufl_control_characters_of_bravura_have_no_outline() {
+    let font = Metrics::bravura().font();
+    assert!(font.codepoints().len() > 2_000);
+    assert_eq!(blank_characters(font), BRAVURA_BLANK);
+    for glyph in ALL.iter().chain(TIME_SIG_DIGITS.iter()) {
+        assert!(font.has(glyph.codepoint), "{}", glyph.name);
+        assert!(
+            !BRAVURA_BLANK.contains(&u32::from(glyph.codepoint)),
+            "{}",
+            glyph.name
+        );
+    }
+}
+
+#[test]
+fn only_blank_characters_of_the_text_font_have_no_outline() {
+    let font = text_font();
+    assert!(font.codepoints().len() > 200);
+    let blank = blank_characters(font);
+    assert_eq!(
+        blank,
+        [
+            0x20, 0xA0, 0x34F, 0x2007, 0x2009, 0x200A, 0x200B, 0x202F, 0xFEFF
+        ]
+    );
+    for code in blank {
+        let character = char::from_u32(code).unwrap();
+        assert!(
+            character.is_whitespace() || matches!(character, '\u{34F}' | '\u{200B}' | '\u{FEFF}'),
+            "U+{code:04X}"
+        );
+    }
+}
