@@ -587,7 +587,9 @@ version = "0.1.0"
 dependencies = [
  "insta",
  "num-rational",
+ "opentab-gp",
  "opentab-layout",
+ "opentab-model",
  "resvg",
  "thiserror",
 ]
