@@ -7,6 +7,8 @@ use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, FileFailurePersistence, TestRunner};
 
+use crate::support::documented;
+
 const CASES: u32 = 256;
 
 fn config() -> Config {
@@ -22,29 +24,6 @@ fn writable() -> ScoreGenConfig {
         gp_writable: true,
         ..ScoreGenConfig::default()
     }
-}
-
-fn documented(reason: &Refusal) -> bool {
-    matches!(
-        reason,
-        Refusal::Character { .. }
-            | Refusal::ScoreEntries { .. }
-            | Refusal::ScoreEntryName { .. }
-            | Refusal::DuplicateEntry { .. }
-            | Refusal::EntryName { .. }
-            | Refusal::DirectoryData { .. }
-            | Refusal::PayloadFormat { .. }
-            | Refusal::MalformedPayload { .. }
-            | Refusal::DanglingExtension { .. }
-            | Refusal::BarCount { .. }
-            | Refusal::VoiceSlots
-            | Refusal::NoteKind
-            | Refusal::String { .. }
-            | Refusal::Pitch
-            | Refusal::TempoPosition { .. }
-            | Refusal::HarmonicFret { .. }
-            | Refusal::RightHandOpen
-    )
 }
 
 fn round_trip(score: &Score) -> Result<bool, TestCaseError> {

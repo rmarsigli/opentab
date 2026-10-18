@@ -158,7 +158,7 @@ fn every_corpus_example_reads() {
     assert_eq!(diagnostics, expected);
 }
 
-fn corpus_paths() -> Option<Vec<PathBuf>> {
+pub fn corpus_paths() -> Option<Vec<PathBuf>> {
     let directory = std::env::var(CORPUS_VARIABLE).ok()?;
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&directory)
         .expect("corpus directory")
