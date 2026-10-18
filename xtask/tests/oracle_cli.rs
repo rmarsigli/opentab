@@ -8,16 +8,41 @@ use std::process::{Command, Output};
 const FAKE_POWERSHELL: &str = r#"#!/bin/sh
 src=""
 out=""
+cmd=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -Source) src="$2"; shift ;;
     -OutDir) out="$2"; shift ;;
+    -Command) cmd="$2"; shift ;;
   esac
   shift
 done
+if [ -n "$cmd" ]; then
+  printf '%s\n' "$cmd" >> "$FAKE_GP_KILL_LOG"
+  exit "${FAKE_GP_KILL_EXIT:-0}"
+fi
 [ -n "$out" ] || exit 0
-echo 4242 > "$out/pid.txt"
+if [ "$FAKE_GP_PID_START" = "none" ]; then
+  echo 4242 > "$out/pid.txt"
+else
+  printf '4242\n133000000000000000\n' > "$out/pid.txt"
+fi
 case "$FAKE_GP_MODE" in
+  silent_hang)
+    rm -f "$out/pid.txt"
+    i=0
+    while [ ! -e "$FAKE_GP_SENTINEL" ] && [ "$i" -lt 600 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    exit 0 ;;
+  hang)
+    i=0
+    while [ ! -e "$FAKE_GP_SENTINEL" ] && [ "$i" -lt 600 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    exit 0 ;;
   not_running)
     printf '{"ok":false,"gp_running":false,"error":"Guitar Pro is not running; start it and leave it on Empty"}' > "$out/result.json"
     exit 2 ;;
@@ -299,4 +324,91 @@ fn same_stem_pair_is_harvested_into_separate_golden_dirs() {
     assert_eq!(files["song.gp5/resave.gp"], b"exported");
     let fresh = check(&sandbox, &goldens);
     assert_eq!(fresh.status.code(), Some(0), "{}", text(&fresh));
+}
+
+fn hang_envs<'a>(sandbox: &'a Sandbox, extra: &[(&'a str, &'a str)]) -> Vec<(&'a str, String)> {
+    let mut envs = vec![
+        ("FAKE_GP_MODE", String::from("hang")),
+        ("OPENTAB_ORACLE_TIMEOUT_MS", String::from("300")),
+        (
+            "FAKE_GP_SENTINEL",
+            sandbox.root.join("never-created").display().to_string(),
+        ),
+        (
+            "FAKE_GP_KILL_LOG",
+            sandbox.root.join("kill.log").display().to_string(),
+        ),
+    ];
+    envs.extend(extra.iter().map(|(key, value)| (*key, (*value).to_owned())));
+    envs
+}
+
+fn harvest_hanging(sandbox: &Sandbox, extra: &[(&str, &str)]) -> Output {
+    let envs = hang_envs(sandbox, extra);
+    let borrowed: Vec<(&str, &str)> = envs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    harvest(sandbox, &sandbox.root.join("out"), &borrowed)
+}
+
+fn kill_log(sandbox: &Sandbox) -> Vec<String> {
+    std::fs::read_to_string(sandbox.root.join("kill.log"))
+        .map(|text| text.lines().map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn hung_powershell_is_killed_by_pid_and_start_time_and_reported() {
+    let sandbox = sandbox();
+    let output = harvest_hanging(&sandbox, &[]);
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    let report = text(&output);
+    assert!(report.contains("timed out after 300 ms"), "{report}");
+    assert!(
+        report.contains("stopped the PowerShell process"),
+        "{report}"
+    );
+    let log = kill_log(&sandbox);
+    assert_eq!(log.len(), 2);
+    for line in &log {
+        assert!(line.contains("Get-Process -Id 4242"), "{line}");
+        assert!(line.contains("ProcessName -eq 'powershell'"), "{line}");
+        assert!(
+            line.contains("ToFileTimeUtc() -eq 133000000000000000"),
+            "{line}"
+        );
+    }
+    assert_eq!(std::fs::read_dir(&sandbox.jobs).expect("jobs").count(), 2);
+    assert!(!sandbox.root.join("out/manifest.json").exists());
+}
+
+#[test]
+fn pid_without_start_time_is_matched_by_command_line_never_by_name() {
+    let sandbox = sandbox();
+    let output = harvest_hanging(&sandbox, &[("FAKE_GP_PID_START", "none")]);
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    let log = kill_log(&sandbox);
+    assert_eq!(log.len(), 2);
+    for line in &log {
+        assert!(line.contains("Win32_Process"), "{line}");
+        assert!(
+            line.contains("CommandLine -like '*Invoke-GpExport*'"),
+            "{line}"
+        );
+    }
+}
+
+#[test]
+fn kill_that_matches_nothing_is_reported() {
+    let sandbox = sandbox();
+    let output = harvest_hanging(&sandbox, &[("FAKE_GP_KILL_EXIT", "3")]);
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    assert!(text(&output).contains("did not stop PowerShell: pid no longer matches"));
+}
+
+#[test]
+fn hang_before_any_pid_is_recorded_reports_that_nothing_was_killed() {
+    let sandbox = sandbox();
+    let output = harvest_hanging(&sandbox, &[("FAKE_GP_MODE", "silent_hang")]);
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    assert!(text(&output).contains("no pid recorded"));
+    assert!(kill_log(&sandbox).is_empty());
 }
