@@ -1,0 +1,15 @@
+[build]
+jobs = 2
+
+[env]
+RUST_TEST_THREADS = "2"
+
+[alias]
+xtask = "run --package xtask --"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 1
+debug = false
