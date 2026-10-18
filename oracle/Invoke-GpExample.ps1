@@ -175,8 +175,8 @@ function Save-Example([string]$Path) {
   } $StepTimeoutMs 300
   if (-not $done) { throw "no stable output at $Path; open dialogs: $(Get-ModalTitles)" }
   $t = "$([System.IO.Path]::GetFileNameWithoutExtension($Path))$GpSuffix"
+  $script:savedTitle = $t
   if (-not (Wait-For { if ((Get-GpTitle) -eq $t) { $true } } 5000)) { throw "title did not switch to '$t'" }
-  $t
 }
 
 $proc = Get-GpProcess
@@ -190,6 +190,7 @@ $Result.gp_pid = $proc.Id
 $Result.gp_version = Get-GpVersion $proc
 
 $script:openedTitle = $null
+$script:savedTitle = $null
 
 try {
   $ready = Invoke-Step 'precheck' {
@@ -216,7 +217,7 @@ try {
       Skip-Step 'open' 'precheck failed'
     }
     if ($opened) {
-      [void](Invoke-Step 'saveas' { $script:openedTitle = Save-Example $Target })
+      [void](Invoke-Step 'saveas' { Save-Example $Target })
     } else {
       Skip-Step 'saveas' 'example not open'
     }
@@ -227,7 +228,8 @@ try {
         $c = Clear-GpModals $MaxAttempts
         if (-not $c.Cleared) { throw "cannot clear dialogs before close: $($c.Seen -join ', ')" }
         $before = Get-GpTitle
-        if ($before -ne $script:openedTitle) { throw "active document is '$before', not '$script:openedTitle'; left open" }
+        $ours = @($script:openedTitle, $script:savedTitle) | Where-Object { $_ }
+        if ($ours -notcontains $before) { throw "active document is '$before', not '$($ours -join "' or '")'; left open" }
         [void](Invoke-MenuAsync $Menus.Close)
         $closed = Wait-For { $t = Get-GpTitle; if ($t -ne $before -and $t -ne '') { $true } } $StepTimeoutMs 200
         if (-not $closed) { throw "document did not close; open dialogs: $(Get-ModalTitles)" }

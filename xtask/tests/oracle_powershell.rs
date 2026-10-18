@@ -195,5 +195,14 @@ fn example_script_refuses_to_start_away_from_the_empty_document() {
         .expect("empty guard");
     assert!(precheck < guard && guard < open);
     assert!(entry.contains("$ExamplePrefix = 'FileFeature.actionNew'"));
+    let save = function_body(&entry, "Save-Example");
+    let confirmed = save.find("if (-not $done)").expect("stable output check");
+    let recorded = save
+        .find("$script:savedTitle = $t")
+        .expect("saved title recorded");
+    let title_wait = save.find("(Get-GpTitle) -eq $t").expect("title wait");
+    assert!(confirmed < recorded && recorded < title_wait);
+    assert!(entry.contains("$ours = @($script:openedTitle, $script:savedTitle)"));
+    assert!(entry.contains("$ours -notcontains $before"));
     assert!(!entry.contains("Stop-Process"));
 }
