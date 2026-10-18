@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use opentab_gp::read_gp;
+use opentab_gp::{read_gp, write_gp};
 use opentab_model::{
     Accent, Clef, Diagnostic, Dynamic, Score, TempoUnit, diagnose, from_json, to_json,
 };
@@ -156,4 +156,66 @@ fn every_corpus_example_reads() {
         .map(|(name, amount)| (name.to_string(), *amount))
         .collect();
     assert_eq!(diagnostics, expected);
+}
+
+fn corpus_paths() -> Option<Vec<PathBuf>> {
+    let directory = std::env::var(CORPUS_VARIABLE).ok()?;
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&directory)
+        .expect("corpus directory")
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().is_some_and(|extension| extension == "gp"))
+        .collect();
+    paths.sort();
+    Some(paths)
+}
+
+fn first_difference(left: &Score, right: &Score) -> String {
+    let left = to_json(left).unwrap_or_default();
+    let right = to_json(right).unwrap_or_default();
+    let at = left
+        .chars()
+        .zip(right.chars())
+        .position(|(a, b)| a != b)
+        .unwrap_or(left.len().min(right.len()));
+    let start = at.saturating_sub(300);
+    let left: String = left.chars().skip(start).take(600).collect();
+    let right: String = right.chars().skip(start).take(600).collect();
+    format!("\nsource: {left}\nreread: {right}")
+}
+
+#[test]
+fn every_corpus_example_survives_a_write() {
+    let Some(paths) = corpus_paths() else {
+        return;
+    };
+    assert_eq!(paths.len(), EXPECTED_FILES);
+    let mut failures = Vec::new();
+    for path in &paths {
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let bytes = std::fs::read(path).expect("corpus file");
+        let score = read_gp(&bytes).expect("corpus reads");
+        let written = match write_gp(&score) {
+            Ok(written) => written,
+            Err(error) => {
+                failures.push(format!("{name}: write: {error}"));
+                continue;
+            }
+        };
+        assert_eq!(write_gp(&score).as_ref(), Ok(&written), "{name}");
+        match read_gp(&written) {
+            Ok(again) if again == score => {
+                println!("corpus {name}: {} -> {} bytes", bytes.len(), written.len());
+            }
+            Ok(again) => failures.push(format!(
+                "{name}: differs{}",
+                first_difference(&score, &again)
+            )),
+            Err(error) => failures.push(format!("{name}: reread: {error}")),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
