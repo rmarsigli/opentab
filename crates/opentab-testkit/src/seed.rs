@@ -9,7 +9,7 @@ use proptest::prelude::*;
 use proptest::sample::select;
 
 use crate::effects::{arb_beat_effects, arb_note_effects};
-use crate::text::{arb_meta_text, arb_text};
+use crate::text::{arb_meta_text, arb_text, arb_text_for};
 
 const MAX_VOICES_PER_BAR: usize = 2;
 const MAX_STAVES_PER_TRACK: usize = 2;
@@ -26,6 +26,19 @@ const MAX_PICK: usize = 4096;
 const MIN_BPM: f64 = 1.0;
 const MAX_BPM: f64 = 1000.0;
 const DENOMINATORS: [u8; 4] = [2, 4, 8, 16];
+const MAX_WRITABLE_OPEN: u8 = 91;
+const GRID_DENOMINATORS: [i64; 11] = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 16];
+const MAX_EXTRA_CHARS: usize = 12;
+const SCORE_ENTRY: &str = "Content/score.gpif";
+const DIRECTORY_ENTRY: &str = "Content/";
+const CONTAINER_NAMES: [&str; 6] = [
+    DIRECTORY_ENTRY,
+    "Content/BinaryStylesheet",
+    "Content/LayoutConfiguration",
+    "Content/Preferences.json",
+    "meta.json",
+    "VERSION",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScoreGenConfig {
@@ -33,6 +46,7 @@ pub struct ScoreGenConfig {
     pub max_master_bars: usize,
     pub max_beats_per_voice: usize,
     pub max_notes_per_beat: usize,
+    pub gp_writable: bool,
 }
 
 impl Default for ScoreGenConfig {
@@ -42,6 +56,7 @@ impl Default for ScoreGenConfig {
             max_master_bars: 6,
             max_beats_per_voice: 8,
             max_notes_per_beat: 4,
+            gp_writable: false,
         }
     }
 }
@@ -128,6 +143,7 @@ pub struct MasterBarSeed {
 pub struct ExtensionSeed {
     pub target: usize,
     pub payloads: Vec<OpaquePayload>,
+    pub extras: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -144,19 +160,32 @@ pub struct ScoreSeed {
     pub tracks: Vec<TrackSeed>,
     pub extensions: Vec<ExtensionSeed>,
     pub document_extensions: Vec<OpaquePayload>,
+    pub document_extras: Vec<String>,
     pub container: Vec<ContainerEntry>,
     pub score_entry: Option<ScoreEntrySeed>,
 }
 
-fn arb_note_seed() -> impl Strategy<Value = NoteSeed> {
-    (any::<u8>(), 0..=MAX_FRET, any::<u16>(), arb_note_effects()).prop_map(
-        |(string, fret, articulation, effects)| NoteSeed {
+#[derive(Debug, Clone)]
+struct DocumentSeed {
+    document_extensions: Vec<OpaquePayload>,
+    document_extras: Vec<String>,
+    container: Vec<ContainerEntry>,
+    score_entry: Option<ScoreEntrySeed>,
+}
+
+fn arb_note_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = NoteSeed> {
+    (
+        any::<u8>(),
+        0..=MAX_FRET,
+        any::<u16>(),
+        arb_note_effects(cfg.gp_writable),
+    )
+        .prop_map(|(string, fret, articulation, effects)| NoteSeed {
             string,
             fret,
             articulation,
             effects,
-        },
-    )
+        })
 }
 
 fn arb_grace_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = GraceSeed> {
@@ -168,7 +197,7 @@ fn arb_grace_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = GraceSeed> {
             NoteValue::ThirtySecond,
             NoteValue::SixtyFourth,
         ]),
-        vec(arb_note_seed(), 0..=cfg.max_notes_per_beat),
+        vec(arb_note_seed(cfg), 0..=cfg.max_notes_per_beat),
     )
         .prop_map(|(kind, value, notes)| GraceSeed { kind, value, notes })
 }
@@ -176,8 +205,8 @@ fn arb_grace_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = GraceSeed> {
 fn arb_beat_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = BeatSeed> {
     (
         0..MAX_PICK,
-        vec(arb_note_seed(), 0..=cfg.max_notes_per_beat),
-        arb_beat_effects(),
+        vec(arb_note_seed(cfg), 0..=cfg.max_notes_per_beat),
+        arb_beat_effects(cfg.gp_writable),
         option::of(arb_grace_seed(cfg)),
     )
         .prop_map(|(pick, notes, effects, grace)| BeatSeed {
@@ -221,11 +250,19 @@ fn arb_staff_seed(cfg: ScoreGenConfig, bars: usize) -> impl Strategy<Value = Sta
 }
 
 fn arb_track_seed(cfg: ScoreGenConfig, bars: usize) -> impl Strategy<Value = TrackSeed> {
+    let highest_open = if cfg.gp_writable {
+        MAX_WRITABLE_OPEN
+    } else {
+        MAX_MIDI
+    };
     (
-        (arb_text(16), arb_text(6)),
+        (
+            arb_text_for(16, cfg.gp_writable),
+            arb_text_for(6, cfg.gp_writable),
+        ),
         select(vec![InstrumentKind::Fretted, InstrumentKind::Percussion]),
         (0..=MAX_MIDI, 0..=MAX_CAPO),
-        vec((0..=MAX_MIDI).prop_map(Pitch), 1..=MAX_STRINGS),
+        vec((0..=highest_open).prop_map(Pitch), 1..=MAX_STRINGS),
         arb_transpose(),
         vec(arb_staff_seed(cfg, bars), 1..=MAX_STAVES_PER_TRACK),
     )
@@ -251,10 +288,18 @@ fn arb_time_signature() -> impl Strategy<Value = TimeSignature> {
     })
 }
 
-fn arb_tempo_change() -> impl Strategy<Value = TempoChangeSeed> {
+fn arb_share_denominator(gp_writable: bool) -> BoxedStrategy<i64> {
+    if gp_writable {
+        select(GRID_DENOMINATORS.to_vec()).boxed()
+    } else {
+        (1i64..=16).boxed()
+    }
+}
+
+fn arb_tempo_change(gp_writable: bool) -> impl Strategy<Value = TempoChangeSeed> {
     (
         0i64..=64,
-        1i64..=16,
+        arb_share_denominator(gp_writable),
         MIN_BPM..=MAX_BPM,
         select(vec![
             TempoUnit::Eighth,
@@ -277,7 +322,7 @@ fn arb_key_signature() -> impl Strategy<Value = KeySignature> {
     })
 }
 
-fn arb_master_bar_seed() -> impl Strategy<Value = MasterBarSeed> {
+fn arb_master_bar_seed(gp_writable: bool) -> impl Strategy<Value = MasterBarSeed> {
     (
         arb_time_signature(),
         arb_key_signature(),
@@ -285,10 +330,11 @@ fn arb_master_bar_seed() -> impl Strategy<Value = MasterBarSeed> {
         (
             any::<bool>(),
             option::of(
-                (arb_text(12), arb_text(3)).prop_map(|(text, letter)| MarkerSeed { text, letter }),
+                (arb_text_for(12, gp_writable), arb_text_for(3, gp_writable))
+                    .prop_map(|(text, letter)| MarkerSeed { text, letter }),
             ),
         ),
-        vec(arb_tempo_change(), 0..=MAX_TEMPO_CHANGES),
+        vec(arb_tempo_change(gp_writable), 0..=MAX_TEMPO_CHANGES),
     )
         .prop_map(
             |(
@@ -323,20 +369,114 @@ fn arb_container_entry() -> impl Strategy<Value = ContainerEntry> {
     })
 }
 
-fn arb_extension_seed() -> impl Strategy<Value = ExtensionSeed> {
-    (
-        any::<usize>(),
-        vec(arb_payload(), 1..=MAX_EXTENSION_PAYLOADS),
-    )
-        .prop_map(|(target, payloads)| ExtensionSeed { target, payloads })
+fn arb_extension_seed(gp_writable: bool) -> BoxedStrategy<ExtensionSeed> {
+    if gp_writable {
+        (
+            any::<usize>(),
+            vec(
+                arb_text_for(MAX_EXTRA_CHARS, true),
+                1..=MAX_EXTENSION_PAYLOADS,
+            ),
+        )
+            .prop_map(|(target, extras)| ExtensionSeed {
+                target,
+                payloads: Vec::new(),
+                extras,
+            })
+            .boxed()
+    } else {
+        (
+            any::<usize>(),
+            vec(arb_payload(), 1..=MAX_EXTENSION_PAYLOADS),
+        )
+            .prop_map(|(target, payloads)| ExtensionSeed {
+                target,
+                payloads,
+                extras: Vec::new(),
+            })
+            .boxed()
+    }
 }
 
-fn arb_meta() -> impl Strategy<Value = ScoreMeta> {
+fn arb_writable_container() -> impl Strategy<Value = Vec<ContainerEntry>> {
+    let files = proptest::sample::subsequence(CONTAINER_NAMES.to_vec(), 0..=CONTAINER_NAMES.len())
+        .prop_shuffle()
+        .prop_flat_map(|names| {
+            let count = names.len();
+            (
+                Just(names),
+                vec(vec(any::<u8>(), 0..=MAX_CONTAINER_BYTES), count..=count),
+                0..=count,
+            )
+        })
+        .prop_map(|(names, data, position)| {
+            let mut entries: Vec<ContainerEntry> = names
+                .into_iter()
+                .zip(data)
+                .map(|(name, bytes)| ContainerEntry::File {
+                    name: name.to_string(),
+                    data: Base64Bytes(if name == DIRECTORY_ENTRY {
+                        Vec::new()
+                    } else {
+                        bytes
+                    }),
+                })
+                .collect();
+            entries.insert(
+                position,
+                ContainerEntry::Score {
+                    name: SCORE_ENTRY.to_string(),
+                },
+            );
+            entries
+        });
+    prop_oneof![1 => Just(Vec::new()), 2 => files]
+}
+
+fn arb_document_seed(gp_writable: bool) -> BoxedStrategy<DocumentSeed> {
+    if gp_writable {
+        (
+            vec(
+                arb_text_for(MAX_EXTRA_CHARS, true),
+                0..=MAX_EXTENSION_PAYLOADS,
+            ),
+            arb_writable_container(),
+        )
+            .prop_map(|(document_extras, container)| DocumentSeed {
+                document_extensions: Vec::new(),
+                document_extras,
+                container,
+                score_entry: None,
+            })
+            .boxed()
+    } else {
+        (
+            vec(arb_payload(), 0..=MAX_EXTENSION_PAYLOADS),
+            vec(arb_container_entry(), 0..=MAX_CONTAINER_ENTRIES),
+            option::of(
+                (any::<usize>(), arb_text(16))
+                    .prop_map(|(position, name)| ScoreEntrySeed { position, name }),
+            ),
+        )
+            .prop_map(
+                |(document_extensions, container, score_entry)| DocumentSeed {
+                    document_extensions,
+                    document_extras: Vec::new(),
+                    container,
+                    score_entry,
+                },
+            )
+            .boxed()
+    }
+}
+
+fn arb_meta(gp_writable: bool) -> impl Strategy<Value = ScoreMeta> {
+    let text = move || arb_meta_text(gp_writable);
     (
-        (arb_meta_text(), arb_meta_text(), arb_meta_text()),
-        (arb_meta_text(), arb_meta_text(), arb_meta_text()),
-        (arb_meta_text(), arb_meta_text(), arb_meta_text()),
-        arb_meta_text(),
+        (text(), text(), text()),
+        (text(), text(), text()),
+        (text(), text(), text()),
+        text(),
     )
         .prop_map(
             |(
@@ -361,25 +501,19 @@ fn arb_meta() -> impl Strategy<Value = ScoreMeta> {
 
 pub fn arb_score_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = ScoreSeed> {
     (
-        (arb_meta(), any::<bool>()),
-        vec(arb_master_bar_seed(), 0..=cfg.max_master_bars),
-        vec(arb_extension_seed(), 0..=MAX_EXTENSION_ENTRIES),
-        (
-            vec(arb_payload(), 0..=MAX_EXTENSION_PAYLOADS),
-            vec(arb_container_entry(), 0..=MAX_CONTAINER_ENTRIES),
-            option::of(
-                (any::<usize>(), arb_text(16))
-                    .prop_map(|(position, name)| ScoreEntrySeed { position, name }),
-            ),
+        (arb_meta(cfg.gp_writable), any::<bool>()),
+        vec(
+            arb_master_bar_seed(cfg.gp_writable),
+            0..=cfg.max_master_bars,
         ),
+        vec(
+            arb_extension_seed(cfg.gp_writable),
+            0..=MAX_EXTENSION_ENTRIES,
+        ),
+        arb_document_seed(cfg.gp_writable),
     )
         .prop_flat_map(
-            move |(
-                (meta, anacrusis),
-                master_bars,
-                extensions,
-                (document_extensions, container, score_entry),
-            )| {
+            move |((meta, anacrusis), master_bars, extensions, document)| {
                 let bars = master_bars.len();
                 vec(arb_track_seed(cfg, bars), 0..=cfg.max_tracks).prop_map(move |tracks| {
                     ScoreSeed {
@@ -388,9 +522,10 @@ pub fn arb_score_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = ScoreSeed> {
                         master_bars: master_bars.clone(),
                         tracks,
                         extensions: extensions.clone(),
-                        document_extensions: document_extensions.clone(),
-                        container: container.clone(),
-                        score_entry: score_entry.clone(),
+                        document_extensions: document.document_extensions.clone(),
+                        document_extras: document.document_extras.clone(),
+                        container: document.container.clone(),
+                        score_entry: document.score_entry.clone(),
                     }
                 })
             },

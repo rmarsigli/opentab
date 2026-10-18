@@ -8,6 +8,15 @@ const SHORT_TEXT_WEIGHT: u32 = 40;
 const ACCENTED: [char; 8] = ['é', 'ñ', 'ü', 'ç', 'ø', 'ß', 'Ω', 'ж'];
 const WIDE: [char; 6] = ['日', '本', '語', '한', '글', 'あ'];
 const EMOJI: [char; 6] = ['🎸', '🥁', '🎼', '😀', '🎶', '🤘'];
+const MARKUP: [char; 6] = ['<', '>', '&', ']', '\'', '\t'];
+const REPLACEMENT: char = '?';
+
+fn writable(character: char) -> char {
+    match character {
+        '\t' | '\n' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'.. => character,
+        _ => REPLACEMENT,
+    }
+}
 
 fn arb_char() -> impl Strategy<Value = char> {
     prop_oneof![
@@ -23,18 +32,37 @@ fn arb_char() -> impl Strategy<Value = char> {
     ]
 }
 
-pub fn arb_text(max_chars: usize) -> impl Strategy<Value = String> {
-    vec(arb_char(), 0..=max_chars).prop_map(|chars| chars.into_iter().collect())
+fn arb_writable_char() -> impl Strategy<Value = char> {
+    prop_oneof![
+        12 => arb_char().prop_map(writable),
+        2 => select(MARKUP.to_vec()),
+    ]
 }
 
-fn arb_long_text() -> impl Strategy<Value = String> {
-    vec(arb_char(), 1..=8)
+fn arb_char_for(gp_writable: bool) -> BoxedStrategy<char> {
+    if gp_writable {
+        arb_writable_char().boxed()
+    } else {
+        arb_char().boxed()
+    }
+}
+
+pub fn arb_text(max_chars: usize) -> impl Strategy<Value = String> {
+    arb_text_for(max_chars, false)
+}
+
+pub fn arb_text_for(max_chars: usize, gp_writable: bool) -> impl Strategy<Value = String> {
+    vec(arb_char_for(gp_writable), 0..=max_chars).prop_map(|chars| chars.into_iter().collect())
+}
+
+fn arb_long_text(gp_writable: bool) -> impl Strategy<Value = String> {
+    vec(arb_char_for(gp_writable), 1..=8)
         .prop_map(|chars| chars.into_iter().cycle().take(LONG_TEXT_CHARS).collect())
 }
 
-pub fn arb_meta_text() -> impl Strategy<Value = String> {
+pub fn arb_meta_text(gp_writable: bool) -> impl Strategy<Value = String> {
     prop_oneof![
-        SHORT_TEXT_WEIGHT => arb_text(24),
-        LONG_TEXT_WEIGHT => arb_long_text(),
+        SHORT_TEXT_WEIGHT => arb_text_for(24, gp_writable),
+        LONG_TEXT_WEIGHT => arb_long_text(gp_writable),
     ]
 }
