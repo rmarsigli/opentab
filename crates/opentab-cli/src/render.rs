@@ -322,7 +322,31 @@ fn names_a_directory(out: &Path) -> bool {
     out.extension().is_none() || text.ends_with('/') || text.ends_with(MAIN_SEPARATOR)
 }
 
+fn stemless(out: &Path, format: ImageFormat) -> bool {
+    out.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case(format.suffix()))
+}
+
 fn check_out_file(out: &Path, format: ImageFormat) -> Result<(), CliError> {
+    if stemless(out, format) {
+        return Err(CliError::InvalidInput {
+            message: format!(
+                "{}: the file name needs a name before {}",
+                out.display(),
+                format.suffix()
+            ),
+        });
+    }
+    if out.exists() && !out.is_dir() && names_a_directory(out) {
+        return Err(CliError::Io {
+            path: out.to_path_buf(),
+            message: format!(
+                "exists and is not a directory; give a directory, or a file name ending in {}",
+                format.suffix()
+            ),
+        });
+    }
     if names_a_directory(out) {
         return Err(CliError::Io {
             path: out.to_path_buf(),

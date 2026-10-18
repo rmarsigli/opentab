@@ -140,6 +140,51 @@ fn a_missing_out_directory_is_named_in_an_io_error() {
 }
 
 #[test]
+fn a_plain_file_or_a_bare_suffix_as_out_get_their_own_errors() {
+    let dir = temp();
+    let input = fixture("multi-track.gp");
+    let plain = dir.path().join("plainfile");
+    std::fs::write(&plain, b"keep").unwrap();
+    let render_to = |out: &str| {
+        run(&[
+            "render",
+            path_str(&input),
+            "--format",
+            "svg",
+            "--out",
+            out,
+            "--json",
+        ])
+    };
+    let file = render_to(path_str(&plain));
+    file.assert_no_panic();
+    assert_eq!(file.code, 2);
+    assert_eq!(file.json()["error"]["kind"], "io");
+    let message = file.json()["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        message.contains("exists and is not a directory"),
+        "{message}"
+    );
+    assert_eq!(std::fs::read(&plain).unwrap(), b"keep");
+    for bare in [".svg", ".SVG"] {
+        let out = dir.path().join(bare);
+        let stem = render_to(path_str(&out));
+        stem.assert_no_panic();
+        assert_eq!(stem.code, 2, "{bare}");
+        assert_eq!(stem.json()["error"]["kind"], "invalid_input", "{bare}");
+        let message = stem.json()["error"]["message"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(message.contains("needs a name before .svg"), "{message}");
+    }
+    assert_eq!(file_names(dir.path()), vec!["plainfile"]);
+}
+
+#[test]
 fn a_png_over_the_pixel_cap_is_refused_with_the_limit() {
     let dir = temp();
     let input = fixture("multi-track.gp");
