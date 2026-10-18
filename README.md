@@ -20,7 +20,7 @@ The repository ships a `.cargo/config.toml` that limits build parallelism to two
 
 ## Command line
 
-The `opentab` binary works on `.opentab.json` scores and on Guitar Pro `.gp` files. The format of every path is picked by its suffix: `.gp` or `.opentab.json`, in any letter case and in any combination. It has four subcommands; `opentab <command> --help` shows the full help.
+The `opentab` binary works on `.opentab.json` scores and on Guitar Pro `.gp` files. The format of every path is picked by its suffix: `.gp` or `.opentab.json`, in any letter case and in any combination. It has five subcommands; `opentab <command> --help` shows the full help.
 
 ```
 opentab new --out song.opentab.json --title "My song"
@@ -31,12 +31,15 @@ opentab apply song.opentab.json edits.jsonl --out edited.opentab.json
 opentab apply song.gp edits.jsonl --out edited.gp
 opentab convert song.gp song.opentab.json
 opentab convert song.opentab.json song.gp --json
+opentab render song.gp --format svg --out song.svg
+opentab render song.opentab.json --format png --scale 2 --out pages/
 ```
 
 - `new` creates a one-bar score with a six-string guitar track. It writes only `.opentab.json` and never overwrites an existing file.
 - `info` prints the title, artist, tracks, time signatures and diagnostics. `--ids` also lists the id of every element; the JSON output always contains them in an `ids` section.
 - `apply` reads one JSON command per line from the commands file (blank lines and lines starting with `//` are ignored, and line numbers count them), applies all of them and writes the result to `--out`. Nothing is written unless every command succeeds. `--out` may be the input file, and a symbolic link at `--out` is kept while its target is replaced. The output format follows the suffix of `--out`, so editing a `.gp` and writing `--out edited.gp` gives a `.gp`.
 - `convert` reads the first path and writes the second, in the format of each suffix: `.gp` to `.opentab.json`, the reverse, or the same format on both sides. Writing is atomic and replaces an existing output. `convert --json` prints `{"converted": {"from": "song.gp", "to": "song.opentab.json"}}`.
+- `render` lays the score out on A4 portrait pages and writes one SVG or PNG file per page. When `--out` is an existing directory the pages are named after the input (`song.svg`, or `song-p1.svg`, `song-p2.svg`… for several pages); otherwise `--out` must end in `.svg` or `.png` to match `--format`, and several pages become `<stem>-p<N>.<ext>` next to it. `--scale` sets the PNG size, where 1 means 96 pixels per inch (an A4 page is 794×1123 pixels); it accepts `2`, `1.5` or `3/2`. `render --json` prints `{"pages": 2, "files": ["song-p1.svg", "song-p2.svg"]}`. The layout is still a placeholder: one empty system per track.
 
 Supported formats are `.gp` (Guitar Pro 7 and 8) and `.opentab.json`. Any other suffix is an `unsupported_format` error that lists them.
 
@@ -44,9 +47,9 @@ Add `--json` to any subcommand to get a single JSON line on standard output, for
 
 - `usage`: the command line is wrong (exit 1).
 - `io`: a file could not be read or written, or the result could not be printed.
-- `unsupported_format`: a path has a suffix that is neither `.gp` nor `.opentab.json`.
+- `unsupported_format`: a path has a suffix that is neither `.gp` nor `.opentab.json`, or a `render --out` file does not end in the suffix of `--format`.
 - `invalid_score`: an `.opentab.json` file is not a valid score.
-- `invalid_input`: a `.gp` file or a commands file could not be read; the message names the place in the file that is wrong.
+- `invalid_input`: a `.gp` file or a commands file could not be read; the message names the place in the file that is wrong. `render` also uses it when `--scale` is given for SVG output or when a page would be larger than 16384 pixels on a side.
 - `invalid_command`: a line of the commands file is not a valid command.
 - `command_failed`: a command could not be applied.
 - `output_exists`: `new` refused to overwrite a file.
@@ -94,6 +97,13 @@ The scope sets `OOMPolicy=continue`, so when one process is OOM-killed only that
 ## Platforms
 
 Linux and Windows are the primary targets. macOS is verified by continuous integration only; nobody on the team runs it day to day.
+
+## Fonts
+
+OpenTab draws music symbols and text as outlines from two bundled fonts, stored unmodified with their licences under `assets/fonts/` (see `assets/fonts/README.md` for versions, sources and checksums):
+
+- [Bravura](https://github.com/steinbergmedia/bravura) by Steinberg Media Technologies GmbH, the SMuFL reference music font, with its metadata. Licensed under the SIL Open Font License, Version 1.1.
+- [Source Sans 3](https://github.com/adobe-fonts/source-sans) by Paul D. Hunt for Adobe. Licensed under the SIL Open Font License, Version 1.1.
 
 ## Licence
 
