@@ -1,7 +1,10 @@
 use opentab_layout::{
     A4, DEFAULT_STAFF_SPACE, Line, Micrometres, Page, PageSize, Point, Primitive, Units,
 };
-use opentab_render::{MAX_PIXELS, PixelSize, Ratio, RenderError, pixel_size, to_png};
+use opentab_render::{
+    BYTES_PER_PIXEL, MAX_PIXELS, MAX_TOTAL_PIXELS, PixelSize, Ratio, RenderError, pixel_size,
+    to_png,
+};
 use resvg::tiny_skia::Pixmap;
 
 fn a4() -> Page {
@@ -93,9 +96,66 @@ fn zero_and_absurd_scales_are_refused() {
         pixel_size(&a4(), Ratio::new(1, 100_000)),
         Err(RenderError::ImageSize { .. })
     ));
+    let strip = Page::new(
+        PageSize {
+            width: Micrometres(10_000),
+            height: Micrometres(297_000),
+        },
+        DEFAULT_STAFF_SPACE,
+    );
     let largest = Ratio::new(16_384 * 25_400, 297_000 * 96);
-    let fitting = pixel_size(&a4(), largest).unwrap();
+    let fitting = pixel_size(&strip, largest).unwrap();
     assert!(fitting.height <= MAX_PIXELS && fitting.height >= MAX_PIXELS - 1);
+}
+
+fn sized(width: i64, height: i64) -> Page {
+    Page::new(
+        PageSize {
+            width: Micrometres(width),
+            height: Micrometres(height),
+        },
+        DEFAULT_STAFF_SPACE,
+    )
+}
+
+#[test]
+fn the_total_pixel_count_is_capped_so_the_pixmap_stays_under_256_mebibytes() {
+    const { assert!(MAX_TOTAL_PIXELS * BYTES_PER_PIXEL <= 256 * 1024 * 1024) };
+    let one = Ratio::from_integer(1);
+    assert_eq!(
+        pixel_size(&sized(2_645_834, 1_587_500), one),
+        Ok(size(10_000, 6_000))
+    );
+    assert_eq!(10_000 * 6_000, MAX_TOTAL_PIXELS);
+    assert_eq!(
+        pixel_size(&sized(2_645_834, 1_587_765), one),
+        Err(RenderError::TooManyPixels {
+            width: 10_000,
+            height: 6_001,
+            pixels: 60_010_000
+        })
+    );
+    assert_eq!(
+        pixel_size(&a4(), Ratio::from_integer(8)),
+        Ok(size(6_350, 8_980))
+    );
+    let refused = to_png(&a4(), Ratio::from_integer(9));
+    assert!(
+        matches!(
+            refused,
+            Err(RenderError::TooManyPixels {
+                width: 7_143,
+                height: 10_103,
+                ..
+            })
+        ),
+        "{refused:?}"
+    );
+    let message = refused.unwrap_err().to_string();
+    assert!(
+        message.contains("7143x10103") && message.contains("60000000"),
+        "{message}"
+    );
 }
 
 #[test]

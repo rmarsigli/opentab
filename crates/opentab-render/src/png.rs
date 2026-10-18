@@ -7,6 +7,8 @@ use crate::svg::to_svg;
 pub const PIXELS_PER_INCH: u128 = 96;
 pub const MICROMETRES_PER_INCH: u128 = 25_400;
 pub const MAX_PIXELS: u32 = 16_384;
+pub const MAX_TOTAL_PIXELS: u64 = 60_000_000;
+pub const BYTES_PER_PIXEL: u64 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RenderError {
@@ -16,6 +18,14 @@ pub enum RenderError {
         "the image would be {width}x{height} pixels; each side must be between 1 and {MAX_PIXELS}"
     )]
     ImageSize { width: u128, height: u128 },
+    #[error(
+        "the image would be {width}x{height} pixels, {pixels} in all; at most {MAX_TOTAL_PIXELS} pixels are allowed, so lower the scale"
+    )]
+    TooManyPixels {
+        width: u32,
+        height: u32,
+        pixels: u64,
+    },
     #[error("cannot rasterise the page: {0}")]
     Rasterise(String),
 }
@@ -36,10 +46,18 @@ pub fn pixel_size(page: &Page, scale: Ratio<u32>) -> Result<PixelSize, RenderErr
     if !fits(width) || !fits(height) {
         return Err(RenderError::ImageSize { width, height });
     }
-    match (u32::try_from(width), u32::try_from(height)) {
-        (Ok(width), Ok(height)) => Ok(PixelSize { width, height }),
-        _ => Err(RenderError::ImageSize { width, height }),
+    let (Ok(width), Ok(height)) = (u32::try_from(width), u32::try_from(height)) else {
+        return Err(RenderError::ImageSize { width, height });
+    };
+    let pixels = u64::from(width) * u64::from(height);
+    if pixels > MAX_TOTAL_PIXELS {
+        return Err(RenderError::TooManyPixels {
+            width,
+            height,
+            pixels,
+        });
     }
+    Ok(PixelSize { width, height })
 }
 
 fn pixels(length: Micrometres, scale: Ratio<u32>) -> u128 {
