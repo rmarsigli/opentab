@@ -9,7 +9,8 @@ use serde::Serialize;
 
 use crate::error::CliError;
 use crate::files::{self, Overwrite};
-use crate::output::Report;
+use crate::output::Rendered;
+use crate::text::escape_controls;
 
 const GUITAR_PROGRAM: u8 = 25;
 const STANDARD_TUNING: [u8; 6] = [64, 59, 55, 50, 45, 40];
@@ -20,19 +21,16 @@ pub struct Created {
     created: String,
 }
 
-impl Report for Created {
-    fn human(&self) -> String {
-        format!("created {}", self.created)
-    }
-}
-
-pub fn run(out: &Path, title: Option<String>) -> Result<Created, CliError> {
+pub fn run(out: &Path, title: Option<String>) -> Result<Rendered<Created>, CliError> {
     files::require_format(out)?;
     let mut score = blank_score()?;
     score.meta.title = title.unwrap_or_default();
     files::write_score(out, &score, Overwrite::Refused)?;
-    Ok(Created {
-        created: out.display().to_string(),
+    let created = out.display().to_string();
+    let human = format!("created {}", escape_controls(&created));
+    Ok(Rendered {
+        wire: Created { created },
+        human,
     })
 }
 

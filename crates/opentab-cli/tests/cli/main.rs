@@ -1,4 +1,7 @@
 mod apply;
+mod disk;
+mod errors;
+mod escaping;
 mod formats;
 mod hostile;
 mod info;

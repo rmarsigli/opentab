@@ -2,9 +2,11 @@ mod apply;
 mod cli;
 mod error;
 mod files;
+mod ids;
 mod info;
 mod new;
 mod output;
+mod text;
 
 use std::ffi::OsString;
 use std::process::ExitCode;
@@ -31,7 +33,7 @@ fn main() -> ExitCode {
 fn run(command: Subcommand) -> Result<(), CliError> {
     match command {
         Subcommand::New { out, title, json } => output::emit(&new::run(&out, title)?, json),
-        Subcommand::Info { path, json } => output::emit(&info::run(&path)?, json),
+        Subcommand::Info { path, ids, json } => output::emit(&info::run(&path, ids)?, json),
         Subcommand::Apply {
             path,
             commands,
