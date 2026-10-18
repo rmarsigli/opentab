@@ -1,4 +1,6 @@
-use opentab_model::{Beat, BeatPath, ElementId, Note, NotePath, Track, Voice, VoicePath};
+use opentab_model::{
+    Beat, BeatPath, ElementId, Note, NotePath, Score, StaffId, Track, TrackId, Voice, VoicePath,
+};
 
 use crate::CommandError;
 
@@ -9,7 +11,7 @@ pub(crate) fn not_found(what: &'static str, id: impl Into<ElementId>) -> Command
     }
 }
 
-fn voice_path(path: BeatPath) -> VoicePath {
+pub(crate) fn voice_path(path: BeatPath) -> VoicePath {
     VoicePath {
         track: path.track,
         staff: path.staff,
@@ -50,4 +52,36 @@ pub(crate) fn beat_in(tracks: &mut [Track], path: BeatPath) -> Option<&mut Beat>
 
 pub(crate) fn note_in(tracks: &mut [Track], path: NotePath) -> Option<&mut Note> {
     beat_in(tracks, path.beat)?.notes.get_mut(path.note)
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct StaffPath {
+    pub(crate) track: usize,
+    pub(crate) staff: usize,
+}
+
+pub(crate) fn find_staff(
+    score: &Score,
+    track: TrackId,
+    staff: StaffId,
+) -> Result<StaffPath, CommandError> {
+    let track_index = score
+        .tracks
+        .iter()
+        .position(|candidate| candidate.id == track)
+        .ok_or(not_found("track", track))?;
+    let staff_index = score
+        .tracks
+        .get(track_index)
+        .and_then(|found| {
+            found
+                .staves
+                .iter()
+                .position(|candidate| candidate.id == staff)
+        })
+        .ok_or(not_found("staff", staff))?;
+    Ok(StaffPath {
+        track: track_index,
+        staff: staff_index,
+    })
 }

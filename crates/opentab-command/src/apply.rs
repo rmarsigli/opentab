@@ -1,6 +1,6 @@
 use opentab_model::Score;
 
-use crate::{Command, CommandError, beat, master_bar, meta, note, tempo};
+use crate::{Command, CommandError, beat, master_bar, meta, note, staff, tempo};
 
 pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandError> {
     match command {
@@ -51,5 +51,21 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
             master_bar,
             tempo_changes,
         } => tempo::restore(score, *master_bar, tempo_changes),
+        Command::PadStaffBars { track, staff } => staff::pad(score, *track, *staff),
+        Command::TrimStaffBars { track, staff, len } => staff::trim(score, *track, *staff, *len),
+        Command::RestoreStaffBars {
+            track,
+            staff,
+            bars,
+            extensions,
+        } => staff::restore(
+            score,
+            staff::Appended {
+                track: *track,
+                staff: *staff,
+                bars,
+                extensions,
+            },
+        ),
     }
 }

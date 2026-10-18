@@ -1,8 +1,9 @@
 use std::iter::once;
 
-use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature, Voice};
+use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature};
 
 use crate::ids::{bar_ids, check_restorable, next_id, put_extensions, reserve, take_extensions};
+use crate::rules::{check_bar, check_tempo_changes, empty_bar};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const WHAT: &str = "master bar";
@@ -33,7 +34,7 @@ fn check_staves(score: &Score) -> Result<usize, CommandError> {
     for staff in score.tracks.iter().flat_map(|track| &track.staves) {
         if staff.bars.len() != expected {
             return Err(CommandError::invalid(format!(
-                "staff {} has {} bars but the score has {expected} master bars",
+                "staff {} has {} bars but the score has {expected} master bars; repair it with pad_staff_bars",
                 staff.id.0.0,
                 staff.bars.len()
             )));
@@ -73,14 +74,7 @@ pub(crate) fn insert(
     score.master_bars.insert(index, master_bar);
     let ids = &mut score.ids;
     for staff in score.tracks.iter_mut().flat_map(|track| &mut track.staves) {
-        let bar = Bar {
-            id: next_id(ids)?,
-            voices: vec![Voice {
-                id: next_id(ids)?,
-                beats: Vec::new(),
-            }],
-        };
-        staff.bars.insert(index, bar);
+        staff.bars.insert(index, empty_bar(ids)?);
     }
     Ok(Command::RemoveMasterBar { index })
 }
@@ -117,6 +111,17 @@ pub(crate) fn restore(
             "restore_master_bar carries {} bars for {staves} staves",
             snapshot.bars.len()
         )));
+    }
+    check_tempo_changes(
+        snapshot.master_bar.time_signature,
+        &snapshot.master_bar.tempo_changes,
+    )?;
+    let staves = score
+        .tracks
+        .iter()
+        .flat_map(|track| track.staves.iter().map(move |_| track));
+    for (track, bar) in staves.zip(snapshot.bars) {
+        check_bar(track, bar)?;
     }
     let restored = once(snapshot.master_bar.id.0).chain(snapshot.bars.iter().flat_map(bar_ids));
     check_restorable(score, restored, snapshot.extensions)?;

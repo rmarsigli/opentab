@@ -1,7 +1,7 @@
 use opentab_command::{Command, CommandError, History, MetaField};
 use opentab_model::{BeatId, ElementId, NoteValue};
 
-use crate::support::{duration, fixture, four_four, guitar_voice};
+use crate::support::{duration, fixture, four_four, guitar_voice, score_ids};
 
 fn title(value: &str) -> Command {
     Command::SetMeta {
@@ -135,7 +135,7 @@ fn undone_ids_are_never_handed_out_again() {
     let undone_ids = [ElementId::from(undone), ElementId::from(undone_note)];
     history.undo(&mut fx.score).unwrap();
     history.undo(&mut fx.score).unwrap();
-    let existing: Vec<ElementId> = all_ids(&fx.score);
+    let existing: Vec<ElementId> = score_ids(&fx.score);
     history
         .execute(
             &mut fx.score,
@@ -155,7 +155,7 @@ fn undone_ids_are_never_handed_out_again() {
             },
         )
         .unwrap();
-    let created: Vec<ElementId> = all_ids(&fx.score)
+    let created: Vec<ElementId> = score_ids(&fx.score)
         .into_iter()
         .filter(|id| !existing.contains(id))
         .collect();
@@ -177,25 +177,4 @@ fn undone_ids_are_never_handed_out_again() {
             id: undone_note.0.0
         })
     );
-}
-
-fn all_ids(score: &opentab_model::Score) -> Vec<ElementId> {
-    let mut ids: Vec<ElementId> = score.master_bars.iter().map(|m| m.id.0).collect();
-    for track in &score.tracks {
-        ids.push(track.id.0);
-        for staff in &track.staves {
-            ids.push(staff.id.0);
-            for bar in &staff.bars {
-                ids.push(bar.id.0);
-                for voice in &bar.voices {
-                    ids.push(voice.id.0);
-                    for beat in &voice.beats {
-                        ids.push(beat.id.0);
-                        ids.extend(beat.notes.iter().map(|note| note.id.0));
-                    }
-                }
-            }
-        }
-    }
-    ids
 }

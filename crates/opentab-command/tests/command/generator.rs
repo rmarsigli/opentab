@@ -1,6 +1,7 @@
 use opentab_command::{Command, MetaField};
 use opentab_model::{
-    BeatId, Duration, ElementId, NoteId, NoteValue, Score, TimeSignature, Tuplet, VoiceId,
+    BeatId, Duration, ElementId, InstrumentKind, NoteId, NoteKind, NoteValue, Score, StaffId,
+    TimeSignature, TrackId, Tuplet, VoiceId,
 };
 use opentab_testkit::arb_score;
 use proptest::collection::vec;
@@ -8,9 +9,17 @@ use proptest::option;
 use proptest::prelude::*;
 use proptest::sample::select;
 
+use crate::support::score_ids;
+
 const MAX_STEPS: usize = 20;
 const VALID_RATE: f64 = 0.8;
-const PERTURB_RATE: f64 = 0.25;
+const PERTURB_RATE: f64 = 0.75;
+const WRONG_TRACK_EVERY: usize = 4;
+const ALL_POOL_EVERY: usize = 4;
+const PERTURB_SHIFT: usize = 7;
+const MAX_DROPPED_BARS: usize = 2;
+const SELECTOR_BITS: usize = 32;
+const CLEAR_SHIFT: usize = 16;
 const FIELDS: [MetaField; 10] = [
     MetaField::Title,
     MetaField::Subtitle,
@@ -83,6 +92,15 @@ pub enum Step {
         master_bar: Pick,
         bpm: f64,
     },
+    PadStaffBars {
+        track: Pick,
+        staff: Pick,
+    },
+    TrimStaffBars {
+        track: Pick,
+        staff: Pick,
+        len: Pick,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -91,36 +109,67 @@ pub struct Case {
     pub steps: Vec<Step>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct StaffInfo {
+    track: TrackId,
+    staff: StaffId,
+    bars: usize,
+    empty_tail: usize,
+}
+
 struct Catalog {
     all: Vec<ElementId>,
+    tracks: Vec<TrackId>,
+    staves: Vec<StaffInfo>,
     voices: Vec<VoiceId>,
     beats: Vec<BeatId>,
+    open_beats: Vec<BeatId>,
     notes: Vec<NoteId>,
+    fretted_notes: Vec<NoteId>,
 }
 
 impl Catalog {
     fn of(score: &Score) -> Catalog {
         let mut catalog = Catalog {
-            all: score.master_bars.iter().map(|m| m.id.0).collect(),
+            all: score_ids(score),
+            tracks: Vec::new(),
+            staves: Vec::new(),
             voices: Vec::new(),
             beats: Vec::new(),
+            open_beats: Vec::new(),
             notes: Vec::new(),
+            fretted_notes: Vec::new(),
         };
         for track in &score.tracks {
-            catalog.all.push(track.id.0);
+            catalog.tracks.push(track.id);
             for staff in &track.staves {
-                catalog.all.push(staff.id.0);
+                let empty_tail = staff
+                    .bars
+                    .iter()
+                    .rev()
+                    .take_while(|bar| bar.voices.iter().all(|voice| voice.beats.is_empty()))
+                    .count();
+                catalog.staves.push(StaffInfo {
+                    track: track.id,
+                    staff: staff.id,
+                    bars: staff.bars.len(),
+                    empty_tail,
+                });
                 for bar in &staff.bars {
-                    catalog.all.push(bar.id.0);
                     for voice in &bar.voices {
-                        catalog.all.push(voice.id.0);
                         catalog.voices.push(voice.id);
                         for beat in &voice.beats {
-                            catalog.all.push(beat.id.0);
                             catalog.beats.push(beat.id);
-                            for note in &beat.notes {
-                                catalog.all.push(note.id.0);
-                                catalog.notes.push(note.id);
+                            if track.instrument.kind == InstrumentKind::Fretted
+                                && beat.notes.len() < track.tuning.strings.len()
+                            {
+                                catalog.open_beats.push(beat.id);
+                            }
+                            catalog.notes.extend(beat.notes.iter().map(|note| note.id));
+                            if track.instrument.kind == InstrumentKind::Fretted {
+                                catalog
+                                    .fretted_notes
+                                    .extend(beat.notes.iter().map(|note| note.id));
                             }
                         }
                     }
@@ -128,6 +177,29 @@ impl Catalog {
             }
         }
         catalog
+    }
+
+    fn staff(&self, track: Pick, staff: Pick, preferred: &[StaffInfo]) -> StaffInfo {
+        let pool = if preferred.is_empty() {
+            &self.staves
+        } else {
+            preferred
+        };
+        let mut info = if staff.valid && !pool.is_empty() {
+            pool[staff.selector % pool.len()]
+        } else {
+            let ids: Vec<StaffId> = self.staves.iter().map(|info| info.staff).collect();
+            StaffInfo {
+                track: self.id(track, &self.tracks),
+                staff: self.id(staff, &ids),
+                bars: 0,
+                empty_tail: 0,
+            }
+        };
+        if !track.valid && track.selector.is_multiple_of(WRONG_TRACK_EVERY) {
+            info.track = self.id(track, &self.tracks);
+        }
+        info
     }
 
     fn id<T: Copy + From<ElementId>>(&self, pick: Pick, pool: &[T]) -> T {
@@ -168,11 +240,45 @@ fn voice_len(score: &Score, voice: VoiceId) -> usize {
         .unwrap_or(0)
 }
 
-fn string_count(score: &Score, beat: BeatId) -> usize {
-    score
-        .find_beat(beat)
-        .map(|path| score.tracks[path.track].tuning.strings.len())
-        .unwrap_or(0)
+fn strings_of(score: &Score, beat: BeatId) -> Strings {
+    let Some(path) = score.find_beat(beat) else {
+        return Strings::default();
+    };
+    let track = &score.tracks[path.track];
+    let used: Vec<u8> = track.staves[path.staff].bars[path.bar].voices[path.voice].beats[path.beat]
+        .notes
+        .iter()
+        .filter_map(|note| match note.kind {
+            NoteKind::Fretted { string, .. } => Some(string),
+            NoteKind::Percussion { .. } => None,
+        })
+        .collect();
+    let count = track.tuning.strings.len();
+    Strings {
+        count,
+        free: (0..count)
+            .filter_map(|string| u8::try_from(string).ok())
+            .filter(|string| !used.contains(string))
+            .collect(),
+        used,
+    }
+}
+
+#[derive(Debug, Default)]
+struct Strings {
+    count: usize,
+    free: Vec<u8>,
+    used: Vec<u8>,
+}
+
+fn pick_string(pick: Pick, strings: &Strings) -> u8 {
+    if pick.valid && !strings.free.is_empty() {
+        return strings.free[pick.selector % strings.free.len()];
+    }
+    if pick.selector % 2 == 1 && !strings.used.is_empty() {
+        return strings.used[pick.selector % strings.used.len()];
+    }
+    u8::try_from(strings.count + pick.selector % 3).unwrap_or(u8::MAX)
 }
 
 pub fn resolve(step: &Step, score: &Score) -> Command {
@@ -215,26 +321,68 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
             duration: *duration,
         },
         Step::AddNote { beat, string, fret } => {
-            let beat = catalog.id(*beat, &catalog.beats);
-            let strings = string_count(score, beat);
-            let string = existing_index(*string, strings);
+            let pool = if beat.selector.is_multiple_of(ALL_POOL_EVERY) {
+                &catalog.beats
+            } else {
+                &catalog.open_beats
+            };
+            let beat = catalog.id(*beat, pool);
             Command::AddNote {
                 beat,
-                string: u8::try_from(string).unwrap_or(u8::MAX),
+                string: pick_string(*string, &strings_of(score, beat)),
                 fret: *fret,
             }
         }
         Step::RemoveNote { note } => Command::RemoveNote {
             note: catalog.id(*note, &catalog.notes),
         },
-        Step::SetFret { note, fret } => Command::SetFret {
-            note: catalog.id(*note, &catalog.notes),
-            fret: *fret,
-        },
+        Step::SetFret { note, fret } => {
+            let pool = if note.selector.is_multiple_of(ALL_POOL_EVERY) {
+                &catalog.notes
+            } else {
+                &catalog.fretted_notes
+            };
+            Command::SetFret {
+                note: catalog.id(*note, pool),
+                fret: *fret,
+            }
+        }
         Step::SetTempo { master_bar, bpm } => Command::SetTempo {
             master_bar: existing_index(*master_bar, master_bars),
             bpm: *bpm,
         },
+        Step::PadStaffBars { track, staff } => {
+            let short: Vec<StaffInfo> = catalog
+                .staves
+                .iter()
+                .copied()
+                .filter(|info| info.bars < master_bars)
+                .collect();
+            let info = catalog.staff(*track, *staff, &short);
+            Command::PadStaffBars {
+                track: info.track,
+                staff: info.staff,
+            }
+        }
+        Step::TrimStaffBars { track, staff, len } => {
+            let trimmable: Vec<StaffInfo> = catalog
+                .staves
+                .iter()
+                .copied()
+                .filter(|info| info.empty_tail > 0)
+                .collect();
+            let info = catalog.staff(*track, *staff, &trimmable);
+            let len = if len.valid && info.empty_tail > 0 {
+                info.bars - info.empty_tail + len.selector % info.empty_tail
+            } else {
+                info.bars + len.selector % 3
+            };
+            Command::TrimStaffBars {
+                track: info.track,
+                staff: info.staff,
+                len,
+            }
+        }
     }
 }
 
@@ -300,21 +448,63 @@ fn arb_step() -> impl Strategy<Value = Step> {
         arb_pick().prop_map(|note| Step::RemoveNote { note }),
         (arb_pick(), 0u8..=30).prop_map(|(note, fret)| Step::SetFret { note, fret }),
         (arb_pick(), arb_bpm()).prop_map(|(master_bar, bpm)| Step::SetTempo { master_bar, bpm }),
+        (arb_pick(), arb_pick()).prop_map(|(track, staff)| Step::PadStaffBars { track, staff }),
+        (arb_pick(), arb_pick(), arb_pick()).prop_map(|(track, staff, len)| Step::TrimStaffBars {
+            track,
+            staff,
+            len
+        }),
     ]
 }
 
+#[derive(Debug, Clone, Copy)]
+struct StaffSlot {
+    track: usize,
+    staff: usize,
+}
+
 fn perturb(score: &mut Score, selector: usize) {
-    let staves: Vec<(usize, usize)> = score
+    let staves: Vec<StaffSlot> = score
         .tracks
         .iter()
         .enumerate()
-        .flat_map(|(track, t)| (0..t.staves.len()).map(move |staff| (track, staff)))
+        .flat_map(|(track, t)| (0..t.staves.len()).map(move |staff| StaffSlot { track, staff }))
         .collect();
-    if staves.len() < 2 {
+    for (index, slot) in staves.iter().enumerate() {
+        if (selector >> ((index + CLEAR_SHIFT) % SELECTOR_BITS)) & 1 == 1
+            && let Some(last) = score.tracks[slot.track].staves[slot.staff].bars.last_mut()
+        {
+            for voice in &mut last.voices {
+                voice.beats.clear();
+            }
+        }
+    }
+    let candidates = match staves.split_first() {
+        Some((_, rest)) if !rest.is_empty() => rest.to_vec(),
+        _ => staves,
+    };
+    if candidates.is_empty() {
         return;
     }
-    let (track, staff) = staves[1 + selector % (staves.len() - 1)];
-    score.tracks[track].staves[staff].bars.pop();
+    let forced = selector % candidates.len();
+    for (index, slot) in candidates.iter().enumerate() {
+        let chosen = index == forced || (selector >> (index % SELECTOR_BITS)) & 1 == 1;
+        if !chosen {
+            continue;
+        }
+        let bars = &mut score.tracks[slot.track].staves[slot.staff].bars;
+        let dropped = 1 + (selector / PERTURB_SHIFT + index) % MAX_DROPPED_BARS;
+        bars.truncate(bars.len().saturating_sub(dropped));
+    }
+}
+
+fn keep_tempo_changes_inside_their_bars(score: &mut Score) {
+    for master_bar in &mut score.master_bars {
+        let length = master_bar.time_signature.bar_length();
+        for change in &mut master_bar.tempo_changes {
+            change.position %= length;
+        }
+    }
 }
 
 pub fn arb_case() -> impl Strategy<Value = Case> {
@@ -324,6 +514,7 @@ pub fn arb_case() -> impl Strategy<Value = Case> {
         vec(arb_step(), 0..=MAX_STEPS),
     )
         .prop_map(|(mut score, perturbation, steps)| {
+            keep_tempo_changes_inside_their_bars(&mut score);
             if let Some(selector) = perturbation {
                 perturb(&mut score, selector);
             }

@@ -72,6 +72,7 @@ where
 {
     let next = score.ids.peek();
     let mut fresh = HashSet::new();
+    let mut order = Vec::new();
     for id in restored {
         if id >= next {
             return Err(CommandError::invalid(format!(
@@ -85,10 +86,17 @@ where
                 id.0
             )));
         }
+        order.push(id);
     }
     if let Some(id) = score_ids(score).find(|id| fresh.contains(id)) {
         return Err(CommandError::invalid(format!(
             "element id {} already exists in the score",
+            id.0
+        )));
+    }
+    if let Some(id) = order.iter().find(|id| score.extensions.0.contains_key(id)) {
+        return Err(CommandError::invalid(format!(
+            "element id {} already has orphan extension payloads in the score",
             id.0
         )));
     }
@@ -100,7 +108,7 @@ where
                 entry.id.0
             )));
         }
-        if !entries.insert(entry.id) || score.extensions.0.contains_key(&entry.id) {
+        if !entries.insert(entry.id) {
             return Err(CommandError::invalid(format!(
                 "extension entry {} is duplicated",
                 entry.id.0

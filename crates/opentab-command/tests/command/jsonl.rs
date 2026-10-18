@@ -1,4 +1,6 @@
-use opentab_command::{Command, MetaField, ParseError, parse_jsonl};
+use opentab_command::{
+    Command, MetaField, NumberedCommand, ParseError, parse_jsonl, parse_jsonl_lines,
+};
 use opentab_model::{BeatId, ElementId};
 
 fn title() -> Command {
@@ -55,4 +57,42 @@ fn crlf_line_endings_and_a_byte_order_mark_are_accepted() {
 fn a_second_line_error_after_crlf_keeps_its_line_number() {
     let input = "{\"op\": \"set_meta\", \"field\": \"title\", \"value\": \"Song\"}\r\nnot json\r\n";
     assert_eq!(parse_jsonl(input).unwrap_err().line, 2);
+}
+
+#[test]
+fn numbered_commands_keep_their_source_lines() {
+    let input = "\u{feff}// header\r\n\n{\"op\": \"set_meta\", \"field\": \"title\", \"value\": \"Song\"}\n  \n// c\n{\"op\": \"remove_beat\", \"beat\": 4}\n";
+    assert_eq!(
+        parse_jsonl_lines(input),
+        Ok(vec![
+            NumberedCommand {
+                line: 3,
+                command: title()
+            },
+            NumberedCommand {
+                line: 6,
+                command: Command::RemoveBeat {
+                    beat: BeatId(ElementId(4))
+                }
+            },
+        ])
+    );
+    assert_eq!(
+        parse_jsonl(input),
+        Ok(vec![
+            title(),
+            Command::RemoveBeat {
+                beat: BeatId(ElementId(4))
+            }
+        ])
+    );
+}
+
+#[test]
+fn numbered_parsing_reports_the_failing_line() {
+    let input = "{\"op\": \"set_meta\", \"field\": \"title\", \"value\": \"Song\"}\n\n{\"op\": \"pad_staff_bars\", \"track\": 1}\n";
+    let ParseError { line, message } = parse_jsonl_lines(input).unwrap_err();
+    assert_eq!(line, 3);
+    assert!(message.contains("staff"), "{message}");
+    assert_eq!(parse_jsonl_lines(""), Ok(Vec::new()));
 }
