@@ -1,11 +1,13 @@
+mod guitar;
 mod heads;
 mod marks;
 
 use opentab_model::{
     Bar, BeatId, Duration, Grace, InstrumentKind, KeySignature, Note, NoteId, NoteValue,
-    TimeSignature, Track,
+    TimeSignature, Track, TremoloPicking,
 };
 
+pub use guitar::guitar_rects;
 pub use heads::{head_glyph, notehead_glyphs, parenthesis_origins};
 
 use crate::glyphs::Glyph;
@@ -80,6 +82,14 @@ pub struct ArticulationPlan {
     pub y: Units,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FingerPlan {
+    pub text: &'static str,
+    pub right: Units,
+    pub baseline: Units,
+    pub width: Units,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Ink {
     pub left: Units,
@@ -123,6 +133,8 @@ pub struct BeatPlan {
     pub dot_ys: Vec<Units>,
     pub ledgers: Vec<LedgerPlan>,
     pub articulations: Vec<ArticulationPlan>,
+    pub tremolo: Option<ArticulationPlan>,
+    pub fingers: Vec<FingerPlan>,
     pub ink: Option<Ink>,
 }
 
@@ -221,6 +233,7 @@ pub fn analyse(input: &RowInput<'_>) -> Option<StaffNotation> {
     let mut beats: Vec<BeatPlan> = Vec::new();
     let mut notes: Vec<&[Note]> = Vec::new();
     let mut lengths: Vec<Duration> = Vec::new();
+    let mut tremolos: Vec<Option<TremoloPicking>> = Vec::new();
     for slot in input.slots {
         let Some(voice) = bar.voices.get(slot.voice) else {
             continue;
@@ -231,6 +244,7 @@ pub fn analyse(input: &RowInput<'_>) -> Option<StaffNotation> {
         beats.push(heads::new_beat(input, slot, voice.slot.get(), beat));
         notes.push(&beat.notes);
         lengths.push(beat.duration);
+        tremolos.push(beat.effects.tremolo_picking);
     }
     heads::mark_accidentals(&mut beats, input.key);
     let with_notes = voices_with(&beats, |beat| !beat.heads.is_empty());
@@ -315,6 +329,8 @@ pub fn analyse(input: &RowInput<'_>) -> Option<StaffNotation> {
         if beat.slot.grace.is_none() {
             let end = rhythm.stem(index).map(|fitted| fitted.end);
             beat.articulations = marks::articulations(beat, notes[index], end, with_notes >= 2);
+            beat.tremolo = guitar::tremolo(beat, tremolos[index], rhythm.stem(index));
+            beat.fingers = guitar::fingers(beat, notes[index]);
         }
         let event = &mut events[index];
         let geometry = staff.for_event(event);

@@ -7,7 +7,7 @@ use opentab_model::{Clef, InstrumentKind, KeySignature, NoteValue, Score};
 
 use crate::support::{
     BarSpec, Item, add_track, bar_glyphs, bar_of, check, content, guitar, lines, note, notehead,
-    quarter_bars, systems, texts, whole_bars,
+    quarter_bars, system_texts, systems, texts, whole_bars,
 };
 
 fn laid_out(score: &Score) -> opentab_layout::DisplayList {
@@ -379,7 +379,7 @@ fn a_pickup_bar_is_numbered_zero_and_numbers_mark_system_starts() {
     assert_eq!((first[0].number, first[1].number), (0, 1));
     assert!(first[0].inline_width < first[1].inline_width);
     let page = &list.pages[0];
-    let numbers = texts(page);
+    let numbers = system_texts(page);
     assert!(!numbers.contains(&"0".to_string()));
     for system in &all[1..] {
         let number = system.staves[0].bars[0].number.to_string();
@@ -388,7 +388,7 @@ fn a_pickup_bar_is_numbered_zero_and_numbers_mark_system_starts() {
             .iter()
             .find(|page| page.systems.contains(system))
             .unwrap();
-        assert!(texts(page).contains(&number), "{number}");
+        assert!(system_texts(page).contains(&number), "{number}");
     }
 }
 

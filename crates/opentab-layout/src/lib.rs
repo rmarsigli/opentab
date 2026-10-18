@@ -8,6 +8,7 @@ mod furniture;
 mod geometry;
 pub mod glyphs;
 mod grid;
+mod lanes;
 mod notation;
 mod notes;
 mod options;
@@ -18,6 +19,7 @@ pub mod rhythm;
 mod select;
 mod spacing;
 mod structure;
+mod tab;
 pub mod text;
 mod ties;
 mod units;
@@ -31,6 +33,7 @@ pub use display::{
     TextRun,
 };
 pub use draw::ending_label;
+pub use engine::Stack;
 pub use engine::layout;
 pub use furniture::StaffShape;
 pub use geometry::{
@@ -39,6 +42,7 @@ pub use geometry::{
     TAB_LINE_SPACING,
 };
 pub use grid::{Grid, GridColumn};
+pub use lanes::{Band, BandLayout, LANE_GAP, LANE_HEIGHT, LANES, Lane, LanePlacement, LaneSet};
 pub use notation::{
     AccidentalMark, ArticulationPlan, BeatPlan, ColumnNeed, HeadPlan, Ink, LedgerPlan, RestPlan,
     RowInput, StaffNotation, analyse, head_glyph, notehead_glyphs,
@@ -51,6 +55,11 @@ pub use spacing::{DURATION_WIDTHS, WIDTH_PER_DOUBLING_BEYOND_WHOLE, duration_wid
 pub use structure::{
     BarLayout, BeatSlot, ClefSign, Column, GRACE_ADVANCE, GraceSlot, StaffKind, StaffLayout,
     SystemLayout,
+};
+pub use tab::{
+    BEND_RISE, BendPlan, ColumnMarks, FINGER_EM, FRET_EM, FretPlan, LABEL_PAD, Link, LinkKind,
+    MARK_EM, RHYTHM_GAP, TabBeat, TabInput, TabNotation, TabRhythm, analyse_tab,
+    baseline_below_centre, bend_text, fret_text, tab_staff,
 };
 pub use ties::{TieAnchor, TieSpan, draw_ties, tie};
 pub use units::{Micrometres, Point, REFERENCE_EM, Rect, STAFF_SPACE, STAVES_PER_EM, Units};

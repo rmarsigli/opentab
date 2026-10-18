@@ -436,6 +436,7 @@ pub fn beat_ink(beat: &BeatPlan, stem: Option<Rect>, staff: &RhythmStaff) -> Opt
             },
         ));
     }
+    rects.extend(super::guitar_rects(beat));
     let (first, rest) = rects.split_first()?;
     let mut ink = Ink::of(*first);
     for rect in rest {

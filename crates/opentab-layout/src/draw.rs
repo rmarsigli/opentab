@@ -20,6 +20,7 @@ use crate::plan::{BarPlan, SystemPlan};
 use crate::select::Selection;
 use crate::spacing::{Piece, place};
 use crate::structure::{BarLayout, ClefSign, Column, StaffKind, StaffLayout, SystemLayout};
+use crate::tab::{LinkAnchor, RowEnds, RowParts, TabNotation, TabRow, finish_row};
 use crate::text::text_font;
 use crate::ties::{TIE_END_GAP, TieAnchor, TieSpan, draw_ties};
 use crate::units::{Point, Rect, STAFF_SPACE, Units};
@@ -134,6 +135,11 @@ pub fn draw_system(
         let mut bar_groups: Vec<(GroupId, Vec<Primitive>)> = Vec::with_capacity(plans.len());
         let mut anchors: Vec<TieAnchor> = Vec::new();
         let mut sequences: BTreeMap<u8, usize> = BTreeMap::new();
+        let mut links: Vec<LinkAnchor> = Vec::new();
+        let mut link_sequences: BTreeMap<u8, usize> = BTreeMap::new();
+        let mut tab_ties: Vec<TieAnchor> = Vec::new();
+        let mut tab_tie_sequences: BTreeMap<u8, usize> = BTreeMap::new();
+        let band = stack.bands.get(row).cloned().unwrap_or_default();
         for (offset, plan) in plans.iter().enumerate() {
             let at_start = offset == 0;
             let base = bases[offset];
@@ -230,6 +236,22 @@ pub fn draw_system(
                     },
                 );
             }
+            if let (Some(Some(tab)), Some(layout)) = (plan.tab.get(row), staff.bars.last()) {
+                crate::tab::draw_bar(
+                    tab,
+                    layout,
+                    &staff,
+                    &band,
+                    &mut bar_items,
+                    &mut TabRow {
+                        position: offset,
+                        links: &mut links,
+                        sequences: &mut link_sequences,
+                        ties: &mut tab_ties,
+                        tie_sequences: &mut tab_tie_sequences,
+                    },
+                );
+            }
             bar_groups.push((group, bar_items));
         }
         let mut contents: Vec<Vec<Primitive>> = bar_groups
@@ -244,6 +266,38 @@ pub fn draw_system(
             last_bar: plans.len().saturating_sub(1),
         };
         draw_ties(&anchors, span, &sequences, &mut contents);
+        if spec.kind == StaffKind::Tab {
+            let tabs: Vec<Option<&TabNotation>> = plans
+                .iter()
+                .map(|plan| plan.tab.get(row).and_then(Option::as_ref))
+                .collect();
+            let next = context
+                .plans
+                .get(system.end)
+                .and_then(|plan| plan.tab.get(row))
+                .and_then(Option::as_ref)
+                .and_then(|tab| tab.marks.first())
+                .copied();
+            finish_row(
+                &RowParts {
+                    tabs: &tabs,
+                    bars: &staff.bars,
+                    band: &band,
+                    top: staff.top,
+                    next,
+                    links: &links,
+                    sequences: &link_sequences,
+                    ties: &tab_ties,
+                    tie_sequences: &tab_tie_sequences,
+                },
+                RowEnds {
+                    incoming: span.incoming,
+                    outgoing: span.outgoing,
+                    last_bar: span.last_bar,
+                },
+                &mut contents,
+            );
+        }
         for ((group, _), bar_items) in bar_groups.into_iter().zip(contents) {
             items.push(Primitive::Group(Group {
                 id: group,
