@@ -22,21 +22,21 @@ proptest! {
 
     #[test]
     fn p2_json_round_trips(score in arb_score()) {
-        let json = to_json(&score);
+        let json = to_json(&score).expect("serialises");
         let back = from_json(&json).expect("generated score must parse");
         prop_assert_eq!(back, score);
     }
 
     #[test]
     fn json_text_is_a_fixed_point(score in arb_score()) {
-        let json = to_json(&score);
+        let json = to_json(&score).expect("serialises");
         let back = from_json(&json).expect("generated score must parse");
-        prop_assert_eq!(to_json(&back), json);
+        prop_assert_eq!(to_json(&back).expect("serialises"), json);
     }
 
     #[test]
     fn round_tripped_scores_still_diagnose_clean(score in arb_score()) {
-        let back = from_json(&to_json(&score)).expect("generated score must parse");
+        let back = from_json(&to_json(&score).expect("serialises")).expect("generated score must parse");
         prop_assert_eq!(diagnose(&back), Vec::new());
     }
 
@@ -123,7 +123,7 @@ proptest! {
         })
     ) {
         prop_assert_eq!(diagnose(&score), Vec::new());
-        prop_assert_eq!(from_json(&to_json(&score)).expect("parses"), score);
+        prop_assert_eq!(from_json(&to_json(&score).expect("serialises")).expect("parses"), score);
     }
 }
 

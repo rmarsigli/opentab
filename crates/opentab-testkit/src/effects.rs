@@ -78,7 +78,9 @@ fn arb_harmonic() -> impl Strategy<Value = Harmonic> {
 
 fn arb_bend() -> impl Strategy<Value = Bend> {
     vec(
-        (0u8..=100, -48i16..=48).prop_map(|(offset, value)| BendPoint { offset, value }),
+        (0u8..=100, -48i16..=48).prop_map(|(offset, value)| {
+            BendPoint::new(offset, value).expect("offset and value are within range")
+        }),
         0..=MAX_BEND_POINTS,
     )
     .prop_map(|points| Bend { points })

@@ -6,6 +6,7 @@ use crate::{Fraction, MasterBarId, ModelError};
 const MIN_BPM: f64 = 1.0;
 const MAX_BPM: f64 = 1000.0;
 const MAX_ACCIDENTALS: i8 = 7;
+const MAX_DENOMINATOR: u8 = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "TimeSignatureRepr")]
@@ -23,7 +24,10 @@ struct TimeSignatureRepr {
 
 impl TimeSignature {
     pub fn new(numerator: u8, denominator: u8) -> Result<TimeSignature, ModelError> {
-        if numerator == 0 || denominator == 0 {
+        if numerator == 0
+            || !(1..=MAX_DENOMINATOR).contains(&denominator)
+            || !denominator.is_power_of_two()
+        {
             return Err(ModelError::InvalidTimeSignature {
                 numerator,
                 denominator,
@@ -51,11 +55,11 @@ impl TryFrom<TimeSignatureRepr> for TimeSignature {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "KeySignatureRepr")]
 pub struct KeySignature {
-    pub accidentals: i8,
-    pub minor: bool,
+    accidentals: i8,
+    minor: bool,
 }
 
 #[derive(Deserialize)]
@@ -71,6 +75,14 @@ impl KeySignature {
             return Err(ModelError::InvalidKeySignature { accidentals });
         }
         Ok(KeySignature { accidentals, minor })
+    }
+
+    pub fn accidentals(&self) -> i8 {
+        self.accidentals
+    }
+
+    pub fn minor(&self) -> bool {
+        self.minor
     }
 }
 

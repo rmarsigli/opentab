@@ -1,5 +1,6 @@
 use opentab_model::{
-    Diagnostic, Duration, ElementId, Fraction, NoteValue, Score, TimeSignature, Tuplet, diagnose,
+    BarId, Diagnostic, Duration, ElementId, Fraction, Instrument, InstrumentKind, NoteId, NoteKind,
+    NoteValue, OpaquePayload, Score, TimeSignature, TrackId, Tuning, Tuplet, diagnose,
 };
 
 use crate::support::{bar, four_four, guitar, master_bar, quarters};
@@ -226,7 +227,7 @@ fn zero_denominator_time_signature_does_not_panic() {
 }
 
 #[test]
-fn fill_beyond_i64_is_skipped_without_panic() {
+fn fill_beyond_i64_is_reported_as_not_computable() {
     let primes = [
         2u8, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61,
     ];
@@ -242,8 +243,12 @@ fn fill_beyond_i64_is_skipped_without_panic() {
         })
         .collect();
     let score = four_four(&durations);
-    let diagnostics = diagnose(&score);
-    assert!(diagnostics.is_empty());
+    assert_eq!(
+        diagnose(&score),
+        vec![Diagnostic::FillNotComputable {
+            voice: first_voice(&score)
+        }]
+    );
 }
 
 #[test]
@@ -274,4 +279,268 @@ fn diagnostic_serialises_with_kind_tag() {
     );
     let back: Diagnostic = serde_json::from_str(&json).unwrap();
     assert_eq!(back, diagnostic);
+}
+
+fn payload() -> Vec<OpaquePayload> {
+    vec![OpaquePayload {
+        format: "gp8:xml".to_string(),
+        data: "<x/>".to_string(),
+    }]
+}
+
+fn percussion_score() -> Score {
+    let mut score = four_four(&quarters(4));
+    let track = &mut score.tracks[0];
+    track.instrument = Instrument {
+        kind: InstrumentKind::Percussion,
+        midi_program: 0,
+    };
+    track.tuning = Tuning {
+        strings: Vec::new(),
+    };
+    for beat in &mut track.staves[0].bars[0].voices[0].beats {
+        beat.notes[0].kind = NoteKind::Percussion { articulation: 42 };
+    }
+    score
+}
+
+#[test]
+fn extension_on_every_kind_of_element_is_not_an_orphan() {
+    let mut score = four_four(&quarters(4));
+    let track = &score.tracks[0];
+    let staff = &track.staves[0];
+    let bar = &staff.bars[0];
+    let voice = &bar.voices[0];
+    let beat = &voice.beats[0];
+    let ids = [
+        score.master_bars[0].id.0,
+        track.id.0,
+        staff.id.0,
+        bar.id.0,
+        voice.id.0,
+        beat.id.0,
+        beat.notes[0].id.0,
+    ];
+    for id in ids {
+        score.extensions.0.insert(id, payload());
+    }
+    assert_eq!(diagnose(&score), Vec::new());
+}
+
+#[test]
+fn orphan_extensions_are_reported_last_and_sorted_by_id() {
+    let mut score = four_four(&quarters(3));
+    for id in [900, 5000, 700] {
+        score.extensions.0.insert(ElementId(id), payload());
+    }
+    let expected = vec![
+        Diagnostic::IncompleteBar {
+            voice: first_voice(&score),
+            filled: Fraction::new(3, 4),
+            expected: Fraction::new(1, 1),
+        },
+        Diagnostic::OrphanExtension { id: ElementId(700) },
+        Diagnostic::OrphanExtension { id: ElementId(900) },
+        Diagnostic::OrphanExtension {
+            id: ElementId(5000),
+        },
+    ];
+    assert_eq!(diagnose(&score), expected);
+}
+
+#[test]
+fn extension_on_a_removed_element_becomes_an_orphan() {
+    let mut score = four_four(&quarters(4));
+    let beat = score.tracks[0].staves[0].bars[0].voices[0].beats.remove(3);
+    score.extensions.0.insert(beat.id.0, payload());
+    let note = beat.notes[0].id.0;
+    score.extensions.0.insert(note, payload());
+    let mut ids = vec![beat.id.0, note];
+    ids.sort();
+    let mut found = Vec::new();
+    for diagnostic in diagnose(&score) {
+        if let Diagnostic::OrphanExtension { id } = diagnostic {
+            found.push(id);
+        }
+    }
+    assert_eq!(found, ids);
+}
+
+#[test]
+fn fretted_note_on_percussion_track_is_a_kind_mismatch_only() {
+    let mut score = percussion_score();
+    score.tracks[0].staves[0].bars[0].voices[0].beats[2].notes[0].kind =
+        NoteKind::Fretted { string: 0, fret: 3 };
+    let note = score.tracks[0].staves[0].bars[0].voices[0].beats[2].notes[0].id;
+    assert_eq!(
+        diagnose(&score),
+        vec![Diagnostic::NoteKindMismatch {
+            note,
+            track: score.tracks[0].id
+        }]
+    );
+}
+
+#[test]
+fn percussion_note_on_fretted_track_is_a_kind_mismatch() {
+    let mut score = four_four(&quarters(4));
+    let beats = &mut score.tracks[0].staves[0].bars[0].voices[0].beats;
+    beats[1].notes[0].kind = NoteKind::Percussion { articulation: 38 };
+    beats[3].notes[0].kind = NoteKind::Percussion { articulation: 36 };
+    let track: TrackId = score.tracks[0].id;
+    let beats = &score.tracks[0].staves[0].bars[0].voices[0].beats;
+    let notes: Vec<NoteId> = vec![beats[1].notes[0].id, beats[3].notes[0].id];
+    assert_eq!(
+        diagnose(&score),
+        notes
+            .into_iter()
+            .map(|note| Diagnostic::NoteKindMismatch { note, track })
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn matching_kinds_on_both_instruments_are_clean() {
+    assert_eq!(diagnose(&percussion_score()), Vec::new());
+}
+
+#[test]
+fn bar_without_voices_is_reported() {
+    let mut score = four_four(&quarters(4));
+    let extra = bar(&mut score, &quarters(4));
+    let second_master = master_bar(&mut score, 4, 4);
+    score.master_bars.push(second_master);
+    score.tracks[0].staves[0].bars.push(extra);
+    score.tracks[0].staves[0].bars[1].voices.clear();
+    let bar_id: BarId = score.tracks[0].staves[0].bars[1].id;
+    assert_eq!(
+        diagnose(&score),
+        vec![Diagnostic::BarWithoutVoices { bar: bar_id }]
+    );
+}
+
+#[test]
+fn bar_without_voices_precedes_later_bar_diagnostics() {
+    let mut score = four_four(&quarters(4));
+    let second_master = master_bar(&mut score, 4, 4);
+    score.master_bars.push(second_master);
+    let empty = bar(&mut score, &quarters(4));
+    let short = bar(&mut score, &quarters(2));
+    score.tracks[0].staves[0].bars.push(empty);
+    score.tracks[0].staves[0].bars.push(short);
+    score.tracks[0].staves[0].bars[1].voices.clear();
+    let staff = &score.tracks[0].staves[0];
+    assert_eq!(
+        diagnose(&score),
+        vec![
+            Diagnostic::StaffBarCountMismatch {
+                staff: staff.id,
+                bars: 3,
+                master_bars: 2,
+            },
+            Diagnostic::BarWithoutVoices {
+                bar: staff.bars[1].id
+            },
+        ]
+    );
+}
+
+#[test]
+fn fill_not_computable_is_reported_even_without_a_master_bar() {
+    let primes = [
+        2u8, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61,
+    ];
+    let durations: Vec<Duration> = primes
+        .iter()
+        .map(|p| {
+            Duration::new(
+                NoteValue::OneTwentyEighth,
+                3,
+                Some(Tuplet { num: *p, den: 1 }),
+            )
+            .unwrap()
+        })
+        .collect();
+    let mut score = four_four(&durations);
+    score.master_bars.clear();
+    let staff = score.tracks[0].staves[0].id;
+    assert_eq!(
+        diagnose(&score),
+        vec![
+            Diagnostic::StaffBarCountMismatch {
+                staff,
+                bars: 1,
+                master_bars: 0,
+            },
+            Diagnostic::FillNotComputable {
+                voice: first_voice(&score)
+            },
+        ]
+    );
+}
+
+#[test]
+fn new_diagnostics_round_trip_through_json() {
+    let cases = [
+        (
+            Diagnostic::FillNotComputable {
+                voice: opentab_model::VoiceId(ElementId(4)),
+            },
+            r#"{"kind":"fill_not_computable","voice":4}"#,
+        ),
+        (
+            Diagnostic::OrphanExtension { id: ElementId(9) },
+            r#"{"kind":"orphan_extension","id":9}"#,
+        ),
+        (
+            Diagnostic::NoteKindMismatch {
+                note: NoteId(ElementId(6)),
+                track: TrackId(ElementId(2)),
+            },
+            r#"{"kind":"note_kind_mismatch","note":6,"track":2}"#,
+        ),
+        (
+            Diagnostic::BarWithoutVoices {
+                bar: BarId(ElementId(8)),
+            },
+            r#"{"kind":"bar_without_voices","bar":8}"#,
+        ),
+    ];
+    for (diagnostic, expected) in cases {
+        let json = serde_json::to_string(&diagnostic).unwrap();
+        assert_eq!(json, expected);
+        assert_eq!(
+            serde_json::from_str::<Diagnostic>(&json).unwrap(),
+            diagnostic
+        );
+    }
+}
+
+#[test]
+fn diagnostic_fractions_are_validated_on_deserialise() {
+    for fraction in ["[1,0]", "[-3,4]", "[3,-4]", "[0,0]"] {
+        for kind in ["incomplete_bar", "overfull_bar"] {
+            for field in ["filled", "expected"] {
+                let (filled, expected) = if field == "filled" {
+                    (fraction, "[1,1]")
+                } else {
+                    ("[1,1]", fraction)
+                };
+                let text = format!(
+                    r#"{{"kind":"{kind}","voice":3,"filled":{filled},"expected":{expected}}}"#
+                );
+                let error = serde_json::from_str::<Diagnostic>(&text).unwrap_err();
+                assert!(error.to_string().contains("fraction"), "{text}: {error}");
+            }
+        }
+    }
+    let ok = r#"{"kind":"overfull_bar","voice":3,"filled":[6,8],"expected":[1,1]}"#;
+    assert_eq!(
+        serde_json::from_str::<Diagnostic>(ok).unwrap(),
+        Diagnostic::OverfullBar {
+            voice: opentab_model::VoiceId(ElementId(3)),
+            filled: Fraction::new(3, 4),
+            expected: Fraction::new(1, 1),
+        }
+    );
 }

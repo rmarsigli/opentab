@@ -42,10 +42,13 @@ pub struct IdAllocator {
 
 impl IdAllocator {
     #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> ElementId {
+    pub fn next(&mut self) -> Option<ElementId> {
+        if self.next == u64::MAX {
+            return None;
+        }
         let id = ElementId(self.next);
-        self.next = self.next.saturating_add(1);
-        id
+        self.next += 1;
+        Some(id)
     }
 
     pub fn peek(&self) -> ElementId {

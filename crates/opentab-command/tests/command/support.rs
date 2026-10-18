@@ -37,12 +37,9 @@ pub fn payload(data: &str) -> Vec<OpaquePayload> {
 
 pub fn master_bar(score: &mut Score, bpm: Option<f64>) -> MasterBar {
     MasterBar {
-        id: score.alloc(),
+        id: score.alloc().unwrap(),
         time_signature: four_four(),
-        key_signature: KeySignature {
-            accidentals: 2,
-            minor: false,
-        },
+        key_signature: KeySignature::new(2, false).unwrap(),
         repeat_start: false,
         repeat_end: None,
         alternate_endings: 0,
@@ -58,11 +55,11 @@ pub fn master_bar(score: &mut Score, bpm: Option<f64>) -> MasterBar {
 }
 
 pub fn beat(score: &mut Score, value: NoteValue, notes: &[NoteSpec]) -> Beat {
-    let id = score.alloc();
+    let id = score.alloc().unwrap();
     let notes = notes
         .iter()
         .map(|spec| Note {
-            id: score.alloc(),
+            id: score.alloc().unwrap(),
             kind: match spec {
                 NoteSpec::Fretted(string, fret) => NoteKind::Fretted {
                     string: *string,
@@ -84,9 +81,9 @@ pub fn beat(score: &mut Score, value: NoteValue, notes: &[NoteSpec]) -> Beat {
 }
 
 pub fn bar(score: &mut Score, beats: Vec<Beat>) -> Bar {
-    let id = score.alloc();
+    let id = score.alloc().unwrap();
     let voice = Voice {
-        id: score.alloc(),
+        id: score.alloc().unwrap(),
         beats,
     };
     Bar {
@@ -101,7 +98,7 @@ pub fn track(score: &mut Score, kind: InstrumentKind, bars: Vec<Bar>) -> Track {
         InstrumentKind::Percussion => Vec::new(),
     };
     Track {
-        id: score.alloc(),
+        id: score.alloc().unwrap(),
         name: "track".to_owned(),
         short_name: "t".to_owned(),
         instrument: Instrument {
@@ -111,7 +108,7 @@ pub fn track(score: &mut Score, kind: InstrumentKind, bars: Vec<Bar>) -> Track {
         tuning: Tuning { strings },
         capo: 0,
         staves: vec![Staff {
-            id: score.alloc(),
+            id: score.alloc().unwrap(),
             bars,
         }],
     }

@@ -1,6 +1,6 @@
 use opentab_model::{Beat, BeatEffects, BeatId, BeatPath, Duration, Score, VoiceId, VoicePath};
 
-use crate::ids::{beat_ids, check_restorable, put_extensions, reserve, take_extensions};
+use crate::ids::{beat_ids, check_restorable, next_id, put_extensions, reserve, take_extensions};
 use crate::locate::{beat_in, not_found, voice_in, voice_ref};
 use crate::{Command, CommandError, ExtensionEntry};
 
@@ -42,7 +42,7 @@ pub(crate) fn insert(
     reserve(score, 1)?;
     let Score { tracks, ids, .. } = score;
     let target = voice_in(tracks, path).ok_or(not_found(VOICE, voice))?;
-    let id = BeatId(ids.next());
+    let id: BeatId = next_id(ids)?;
     target.beats.insert(
         index,
         Beat {

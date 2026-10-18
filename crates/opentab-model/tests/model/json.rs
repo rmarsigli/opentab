@@ -1,8 +1,8 @@
 use opentab_model::{
-    Accent, Bend, BendPoint, Duration, ElementId, Extensions, Fraction, Harmonic, HarmonicKind,
-    Instrument, InstrumentKind, Marker, ModelError, Note, NoteEffects, NoteKind, NoteValue,
-    OpaquePayload, Pitch, Score, Slide, Staff, Stroke, StrokeDirection, Tempo, TempoChange, Track,
-    Tuning, Tuplet, Vibrato, diagnose, from_json, to_json,
+    Accent, Bend, BendPoint, Diagnostic, Duration, ElementId, Extensions, Fraction, Harmonic,
+    HarmonicKind, Instrument, InstrumentKind, Marker, ModelError, Note, NoteEffects, NoteKind,
+    NoteValue, OpaquePayload, Pitch, Score, Slide, Staff, Stroke, StrokeDirection, Tempo,
+    TempoChange, Track, Tuning, Tuplet, Vibrato, diagnose, from_json, to_json,
 };
 use serde_json::{Value, json};
 
@@ -61,14 +61,8 @@ fn rich_score() -> Score {
         }),
         bend: Some(Bend {
             points: vec![
-                BendPoint {
-                    offset: 0,
-                    value: 0,
-                },
-                BendPoint {
-                    offset: 100,
-                    value: -48,
-                },
+                BendPoint::new(0, 0).unwrap(),
+                BendPoint::new(100, -48).unwrap(),
             ],
         }),
         left_hand_finger: Some(2),
@@ -76,10 +70,10 @@ fn rich_score() -> Score {
     };
     first_voice.beats[1].duration =
         Duration::new(NoteValue::Eighth, 2, Some(Tuplet { num: 7, den: 8 })).unwrap();
-    let drum_id = score.alloc();
-    let staff_id = score.alloc();
+    let drum_id = score.alloc().unwrap();
+    let staff_id = score.alloc().unwrap();
     let drum_note = Note {
-        id: score.alloc(),
+        id: score.alloc().unwrap(),
         kind: NoteKind::Percussion { articulation: 42 },
         effects: NoteEffects::default(),
     };
@@ -88,8 +82,8 @@ fn rich_score() -> Score {
         Duration::new(NoteValue::Whole, 0, None).unwrap(),
         vec![drum_note],
     );
-    let bar_id = score.alloc();
-    let voice_id = score.alloc();
+    let bar_id = score.alloc().unwrap();
+    let voice_id = score.alloc().unwrap();
     score.tracks.push(Track {
         id: drum_id,
         name: "Bateria".to_string(),
@@ -128,7 +122,7 @@ fn rich_score() -> Score {
 }
 
 fn document() -> Value {
-    serde_json::from_str(&to_json(&rich_score())).unwrap()
+    serde_json::from_str(&to_json(&rich_score()).unwrap()).unwrap()
 }
 
 fn rejects(value: &Value, needle: &str) {
@@ -143,23 +137,28 @@ fn rejects(value: &Value, needle: &str) {
 #[test]
 fn rich_score_round_trips_losslessly() {
     let score = rich_score();
-    assert_eq!(diagnose(&score), Vec::new());
-    let text = to_json(&score);
+    assert_eq!(
+        diagnose(&score),
+        vec![Diagnostic::OrphanExtension {
+            id: ElementId(u64::MAX)
+        }]
+    );
+    let text = to_json(&score).unwrap();
     assert_eq!(from_json(&text), Ok(score.clone()));
-    assert_eq!(to_json(&from_json(&text).unwrap()), text);
+    assert_eq!(to_json(&from_json(&text).unwrap()).unwrap(), text);
 }
 
 #[test]
 fn empty_score_round_trips() {
     let score = Score::new();
-    let back = from_json(&to_json(&score)).unwrap();
+    let back = from_json(&to_json(&score).unwrap()).unwrap();
     assert_eq!(back, score);
     assert_eq!(diagnose(&back), Vec::new());
 }
 
 #[test]
 fn document_carries_version_and_score_fields_at_top_level() {
-    let text = to_json(&Score::new());
+    let text = to_json(&Score::new()).unwrap();
     assert!(text.contains("\n  \"opentab_json\": 1,"), "{text}");
     let value: Value = serde_json::from_str(&text).unwrap();
     let keys: Vec<&str> = value
@@ -222,7 +221,7 @@ fn unknown_versions_are_rejected() {
 fn every_truncation_is_an_error() {
     let mut score = four_four(&quarters(1));
     score.meta.title = "ação 🎸".to_string();
-    let text = to_json(&score);
+    let text = to_json(&score).unwrap();
     let mut checked = 0;
     for (index, _) in text.char_indices().skip(1) {
         assert!(
@@ -364,23 +363,37 @@ fn mismatched_staff_from_json_is_diagnosed() {
     value["master_bars"] = json!([]);
     let score = from_json(&value.to_string()).unwrap();
     let diagnostics = diagnose(&score);
-    assert_eq!(diagnostics.len(), 2);
-    assert!(diagnostics.iter().all(|d| matches!(
-        d,
-        opentab_model::Diagnostic::StaffBarCountMismatch { master_bars: 0, .. }
-    )));
+    assert_eq!(diagnostics.len(), 4);
+    let mismatches = diagnostics
+        .iter()
+        .filter(|d| matches!(d, Diagnostic::StaffBarCountMismatch { master_bars: 0, .. }))
+        .count();
+    assert_eq!(mismatches, 2);
+    assert_eq!(
+        &diagnostics[2..],
+        &[
+            Diagnostic::OrphanExtension { id: ElementId(1) },
+            Diagnostic::OrphanExtension {
+                id: ElementId(u64::MAX)
+            },
+        ]
+    );
 }
 
 #[test]
 fn extension_keys_survive_round_trip() {
     let score = rich_score();
-    let back = from_json(&to_json(&score)).unwrap();
+    let back = from_json(&to_json(&score).unwrap()).unwrap();
     assert_eq!(back.extensions, score.extensions);
-    assert!(to_json(&score).contains("\"18446744073709551615\""));
+    assert!(
+        to_json(&score)
+            .unwrap()
+            .contains("\"18446744073709551615\"")
+    );
     let mut extra = Score::new();
-    let id = extra.alloc::<ElementId>();
+    let id = extra.alloc::<ElementId>().unwrap();
     let master = master_bar(&mut extra, 3, 4);
     extra.master_bars.push(master);
     extra.extensions.0.insert(id, Vec::new());
-    assert_eq!(from_json(&to_json(&extra)), Ok(extra));
+    assert_eq!(from_json(&to_json(&extra).unwrap()), Ok(extra));
 }

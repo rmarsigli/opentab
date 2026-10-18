@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::iter::once;
 
-use opentab_model::{Bar, Beat, ElementId, Extensions, Score, Track, Voice};
+use opentab_model::{Bar, Beat, ElementId, Extensions, IdAllocator, Score, Track, Voice};
 
 use crate::{CommandError, ExtensionEntry};
 
@@ -34,13 +34,22 @@ pub(crate) fn beat_ids(beat: &Beat) -> impl Iterator<Item = ElementId> + '_ {
     once(beat.id.0).chain(beat.notes.iter().map(|note| note.id.0))
 }
 
+fn exhausted(next: ElementId, count: u64) -> CommandError {
+    CommandError::invalid(format!(
+        "the id space is exhausted: allocator at {} cannot provide {count} more ids",
+        next.0
+    ))
+}
+
+pub(crate) fn next_id<T: From<ElementId>>(ids: &mut IdAllocator) -> Result<T, CommandError> {
+    let next = ids.peek();
+    ids.next().map(T::from).ok_or_else(|| exhausted(next, 1))
+}
+
 pub(crate) fn reserve(score: &Score, count: u64) -> Result<(), CommandError> {
     let next = score.ids.peek();
     if next.0.checked_add(count).is_none() {
-        return Err(CommandError::invalid(format!(
-            "the id space is exhausted: allocator at {} cannot provide {count} more ids",
-            next.0
-        )));
+        return Err(exhausted(next, count));
     }
     if let Some(highest) = score_ids(score).max()
         && highest >= next

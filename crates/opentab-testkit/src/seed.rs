@@ -186,7 +186,9 @@ fn arb_tempo_change() -> impl Strategy<Value = TempoChangeSeed> {
 }
 
 fn arb_key_signature() -> impl Strategy<Value = KeySignature> {
-    (-7i8..=7, any::<bool>()).prop_map(|(accidentals, minor)| KeySignature { accidentals, minor })
+    (-7i8..=7, any::<bool>()).prop_map(|(accidentals, minor)| {
+        KeySignature::new(accidentals, minor).expect("accidentals are within range")
+    })
 }
 
 fn arb_master_bar_seed() -> impl Strategy<Value = MasterBarSeed> {

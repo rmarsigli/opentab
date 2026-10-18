@@ -2,20 +2,27 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::fraction::checked_sum;
-use crate::{ElementId, Fraction, NoteId, NoteKind, Score, Staff, StaffId, Track, Voice, VoiceId};
+use crate::fraction::{checked_sum, deserialize_non_negative};
+use crate::{
+    Bar, BarId, ElementId, Fraction, InstrumentKind, NoteId, NoteKind, Score, Staff, StaffId,
+    Track, TrackId, Voice, VoiceId,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Diagnostic {
     IncompleteBar {
         voice: VoiceId,
+        #[serde(deserialize_with = "deserialize_non_negative")]
         filled: Fraction,
+        #[serde(deserialize_with = "deserialize_non_negative")]
         expected: Fraction,
     },
     OverfullBar {
         voice: VoiceId,
+        #[serde(deserialize_with = "deserialize_non_negative")]
         filled: Fraction,
+        #[serde(deserialize_with = "deserialize_non_negative")]
         expected: Fraction,
     },
     StaffBarCountMismatch {
@@ -34,6 +41,19 @@ pub enum Diagnostic {
     IdAboveAllocator {
         id: ElementId,
     },
+    FillNotComputable {
+        voice: VoiceId,
+    },
+    OrphanExtension {
+        id: ElementId,
+    },
+    NoteKindMismatch {
+        note: NoteId,
+        track: TrackId,
+    },
+    BarWithoutVoices {
+        bar: BarId,
+    },
 }
 
 pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
@@ -50,6 +70,13 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
         report.id(track.id.0);
         for staff in &track.staves {
             report.staff(score, track, staff);
+        }
+    }
+    for id in score.extensions.0.keys() {
+        if !report.seen.contains(id) {
+            report
+                .diagnostics
+                .push(Diagnostic::OrphanExtension { id: *id });
         }
     }
     report.diagnostics
@@ -84,6 +111,7 @@ impl Report {
         }
         for (index, bar) in staff.bars.iter().enumerate() {
             self.id(bar.id.0);
+            self.bar_voices(bar);
             let expected = score
                 .master_bars
                 .get(index)
@@ -94,32 +122,52 @@ impl Report {
         }
     }
 
+    fn bar_voices(&mut self, bar: &Bar) {
+        if bar.voices.is_empty() {
+            self.diagnostics
+                .push(Diagnostic::BarWithoutVoices { bar: bar.id });
+        }
+    }
+
+    fn note(&mut self, track: &Track, note: NoteId, kind: NoteKind) {
+        match (track.instrument.kind, kind) {
+            (InstrumentKind::Fretted, NoteKind::Fretted { string, .. }) => {
+                let strings = track.tuning.strings.len();
+                if usize::from(string) >= strings {
+                    self.diagnostics.push(Diagnostic::StringOutOfRange {
+                        note,
+                        string,
+                        strings,
+                    });
+                }
+            }
+            (InstrumentKind::Percussion, NoteKind::Percussion { .. }) => {}
+            _ => self.diagnostics.push(Diagnostic::NoteKindMismatch {
+                note,
+                track: track.id,
+            }),
+        }
+    }
+
     fn voice(&mut self, track: &Track, voice: &Voice, expected: Option<Fraction>) {
         self.id(voice.id.0);
         for beat in &voice.beats {
             self.id(beat.id.0);
             for note in &beat.notes {
                 self.id(note.id.0);
-                if let NoteKind::Fretted { string, .. } = note.kind {
-                    let strings = track.tuning.strings.len();
-                    if usize::from(string) >= strings {
-                        self.diagnostics.push(Diagnostic::StringOutOfRange {
-                            note: note.id,
-                            string,
-                            strings,
-                        });
-                    }
-                }
+                self.note(track, note.id, note.kind);
             }
         }
         if voice.beats.is_empty() {
             return;
         }
-        let Some(expected) = expected else {
-            return;
-        };
         let Some(filled) = checked_sum(voice.beats.iter().map(|beat| beat.duration.length()))
         else {
+            self.diagnostics
+                .push(Diagnostic::FillNotComputable { voice: voice.id });
+            return;
+        };
+        let Some(expected) = expected else {
             return;
         };
         if filled < expected {
