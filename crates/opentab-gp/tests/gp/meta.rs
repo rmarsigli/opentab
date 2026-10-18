@@ -64,7 +64,7 @@ fn non_ascii_text_survives() {
 #[test]
 fn root_level_unknowns_are_document_payloads_with_their_position() {
     let doc = Doc {
-        root: "<GPVersion>8.1.5</GPVersion><BackingTrack><Name><![CDATA[x]]></Name></BackingTrack>"
+        root: "<GPVersion>7.6.0</GPVersion><BackingTrack><Name><![CDATA[x]]></Name></BackingTrack>"
             .to_string(),
         ..Doc::default()
     };
@@ -75,11 +75,20 @@ fn root_level_unknowns_are_document_payloads_with_their_position() {
     );
     assert_eq!(
         payloads[1],
-        "<Keep parent=\"\" index=\"1\"><GPVersion>8.1.5</GPVersion></Keep>"
+        "<Keep parent=\"\" index=\"1\"><GPVersion>7.6.0</GPVersion></Keep>"
     );
     assert_eq!(
         payloads[2],
         "<Keep parent=\"\" index=\"2\"><BackingTrack><Name><![CDATA[x]]></Name></BackingTrack></Keep>"
+    );
+    let current = Doc {
+        root: "<GPVersion>8.1.5</GPVersion>".to_string(),
+        ..Doc::default()
+    };
+    let payloads = document_payloads(&current.read());
+    assert_eq!(
+        payloads,
+        vec!["<Keep parent=\"\" index=\"0\"><GPRevision>13008</GPRevision></Keep>".to_string()]
     );
 }
 

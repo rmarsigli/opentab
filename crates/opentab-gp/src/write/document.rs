@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use opentab_model::{MasterBar, Score, TempoChange};
 
-use crate::canon::{self, GP_REVISION};
+use crate::canon::{self, GP_REVISION, GP_VERSION};
 use crate::codes::{MINOR, TEMPO_UNITS};
 use crate::dom::{Element, Node};
 use crate::error::Refusal;
@@ -316,13 +316,15 @@ pub(crate) fn write_gpif(score: &Score) -> Result<String, Fail> {
         return Err(Fail::new(Refusal::DanglingExtension { id: id.0 }));
     }
     let mut root = Element::new("GPIF");
-    let carries_revision = document.iter().any(|item| {
-        item.parent.is_empty()
-            && item
-                .element()
-                .is_some_and(|element| element.name == GP_REVISION)
-    });
-    if !carries_revision {
+    let carries = |name: &str| {
+        document.iter().any(|item| {
+            item.parent.is_empty() && item.element().is_some_and(|element| element.name == name)
+        })
+    };
+    if !carries(GP_VERSION) {
+        root.push(canon::gp_version());
+    }
+    if !carries(GP_REVISION) {
         root.push(canon::gp_revision());
     }
     root.push(meta(score)?);
