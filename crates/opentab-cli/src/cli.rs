@@ -73,19 +73,21 @@ It may be written as 2, 1.5 or 3/2.\n\n\
 Every track is drawn unless --track picks some; tracks are numbered from 1 as in `opentab info`, \
 and the option may be repeated. --bars A-B (or a single A) draws only the master bars A to B, \
 counted from 1. --staff forces the staves of every fretted track: standard notation, tablature \
-or both; by default a track with 4 to 8 strings gets both and other tracks get standard notation.\n\n\
+or both; by default a guitar-family track (General MIDI programs 25-40 and 105-108, counted from 1) with 4 to 8 strings gets both and other tracks get standard notation.\n\n\
 The staff space is 1.75 mm unless a system is too tall for the page or a bar too wide for a \
 line; then it shrinks, down to 0.9 mm, and the output says so. A bar still too wide at 0.9 mm \
 is squeezed until its notes may touch and is listed as crowded. A system still too tall at \
 0.9 mm is the error layout_limit.\n\n\
-Some notation is read but not drawn yet: chord diagrams, fermatas, hairpins, legato slurs, \
-lyrics, multi-bar rests and drum articulations beyond a plain head on the instrument's line. \
-Drum tracks get a percussion clef and one line per General MIDI drum class. Features present \
-in the drawn tracks and bars are listed under \"unrendered\". A PNG may hold at most 60 million \
+Drum tracks get a percussion clef and one line per General MIDI drum class. Notation that \
+is read but not drawn for the chosen tracks, bars and staves is listed under \"unrendered\": \
+features out of scope (lyrics, chord diagrams, fermatas...), effects the staff mode hides (bends \
+or palm mute with --staff standard, accents with --staff tab), score texts such as the copyright, \
+and characters the bundled font cannot draw. \"unrendered\", \"dropped\" and \"crowded\" describe \
+the whole selected layout, every page of it, also with --page. A PNG may hold at most 60 million \
 pixels; lower --scale for larger pages.";
 
 const RENDER_AFTER_HELP: &str = "Examples:\n  opentab render song.gp --format svg --out song.svg\n  opentab render song.opentab.json --format png --scale 2 --out pages/\n  opentab render song.gp --format png --track 2 --bars 5-12 --staff tab --out riff.png\n  opentab render song.gp --format svg --page 2 --out page2.svg --json\n\n\
-JSON result: {\"pages\": <count>, \"systems\": <count>, \"bars\": <count>, \"staff_space\": <micrometres>, \"crowded\": [<bar numbers from 1>], \"dropped\": [{\"bar\": <number from 1>, \"kind\": \"title|tempo|section|chord|text|dynamic\"}], \"title_page\": <true when page 1 holds only the title block>, \"unrendered\": [<sorted names: chord_diagrams, fermatas, hairpins, legato_slurs, lyrics, multi_bar_rests, percussion_articulations>], \"files\": [<written paths in page order>]}\n\
+JSON result: {\"pages\": <count>, \"systems\": <count>, \"bars\": <count>, \"staff_space\": <micrometres>, \"crowded\": [<bar numbers from 1>], \"dropped\": [{\"bar\": <number from 1>, \"kind\": \"title|tempo|section|chord|text|dynamic\"}], \"title_page\": <true when page 1 holds only the title block>, \"unrendered\": [<sorted feature names, such as \"bends\", \"fermatas\", \"lyrics\">], \"files\": [<written paths in page order>]}\n\
 A dropped title block has no \"bar\": {\"kind\": \"title\"}.";
 
 #[derive(Parser)]
