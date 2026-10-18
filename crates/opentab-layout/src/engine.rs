@@ -75,7 +75,13 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         width: widest,
         height: tallest.height,
     };
-    let staff_space = effective_staff_space(options.page, requested, need)?;
+    let staff_space = match effective_staff_space(options.page, requested, need) {
+        Err(LayoutError::PageTooSmall) => {
+            StaffSpace::new(requested.micrometres().min(MIN_STAFF_SPACE))
+                .ok_or(LayoutError::PageTooSmall)?
+        }
+        other => other?,
+    };
     let template = Page::new(options.page, staff_space);
     let frame = Frame {
         left: template.units(MARGIN),
@@ -108,6 +114,9 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
                 .iter()
                 .map(|plan| &plan.vertical),
         );
+        if own.height > frame.bottom - frame.top {
+            return Err(LayoutError::PageTooSmall);
+        }
         if pages.is_empty() || cursor + own.height > frame.bottom {
             pages.push(template.clone());
             cursor = frame.top;
@@ -152,17 +161,21 @@ pub fn stack<'a>(specs: &[StaffSpec], needs: impl Iterator<Item = &'a VerticalNe
     let mut above_system = Units::ZERO;
     let mut below_system = Units::ZERO;
     let mut above_staff = vec![Units::ZERO; specs.len()];
+    let mut below_staff = vec![Units::ZERO; specs.len()];
     for need in needs {
         above_system = above_system.max(need.above_system);
         below_system = below_system.max(need.below_system);
         for (slot, extra) in above_staff.iter_mut().zip(&need.above_staff) {
             *slot = (*slot).max(*extra);
         }
+        for (slot, extra) in below_staff.iter_mut().zip(&need.below_staff) {
+            *slot = (*slot).max(*extra);
+        }
     }
     let mut tops = Vec::with_capacity(specs.len());
     let mut cursor = HEADROOM + above_system;
     let mut previous: Option<&StaffSpec> = None;
-    for (spec, extra) in specs.iter().zip(&above_staff) {
+    for ((spec, extra), below) in specs.iter().zip(&above_staff).zip(&below_staff) {
         if let Some(before) = previous {
             cursor += if before.source == spec.source {
                 STAFF_GAP
@@ -172,7 +185,7 @@ pub fn stack<'a>(specs: &[StaffSpec], needs: impl Iterator<Item = &'a VerticalNe
         }
         cursor += *extra;
         tops.push(cursor);
-        cursor += spec.shape.height();
+        cursor += spec.shape.height() + *below;
         previous = Some(spec);
     }
     Stack {
@@ -266,11 +279,13 @@ mod tests {
             VerticalNeeds {
                 above_system: Units(1000),
                 above_staff: vec![Units(0), Units(500), Units(0)],
+                below_staff: vec![Units(0), Units(0), Units(0)],
                 below_system: Units(0),
             },
             VerticalNeeds {
                 above_system: Units(300),
                 above_staff: vec![Units(0), Units(200), Units(50)],
+                below_staff: vec![Units(0), Units(300), Units(100)],
                 below_system: Units(700),
             },
         ];
@@ -280,10 +295,10 @@ mod tests {
             vec![
                 Units(5096),
                 Units(5096 + 4096 + 6144 + 500),
-                Units(15836 + 7680 + 7168 + 50)
+                Units(15836 + 7680 + 300 + 7168 + 50)
             ]
         );
-        assert_eq!(grown.height, Units(30734 + 4096 + 3072 + 700));
+        assert_eq!(grown.height, Units(31034 + 4096 + 100 + 3072 + 700));
     }
 
     #[test]

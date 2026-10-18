@@ -1,3 +1,4 @@
+mod accidentals;
 mod barline;
 mod decimal;
 mod display;
@@ -7,16 +8,21 @@ mod furniture;
 mod geometry;
 pub mod glyphs;
 mod grid;
+mod notation;
+mod notes;
 mod options;
 mod outline;
+mod pitch;
 mod plan;
 pub mod rhythm;
 mod select;
 mod spacing;
 mod structure;
 pub mod text;
+mod ties;
 mod units;
 
+pub use accidentals::{Accidental, Carry};
 pub use barline::EndSign;
 pub use decimal::{DecimalError, staff_spaces_to_units};
 pub use display::{
@@ -33,7 +39,12 @@ pub use geometry::{
     TAB_LINE_SPACING,
 };
 pub use grid::{Grid, GridColumn};
+pub use notation::{
+    AccidentalMark, ArticulationPlan, BeamPlan, BeatPlan, ColumnNeed, HeadPlan, Ink, LedgerPlan,
+    RestPlan, RowInput, StaffNotation, StemPlan, TupletPlan, analyse, head_glyph, notehead_glyphs,
+};
 pub use options::{BarRange, LayoutError, LayoutOptions, StaffMode};
+pub use pitch::{Spelling, key_alter, position, spell, written_midi};
 pub use plan::{BarInput, Extent, VerticalNeeds};
 pub use select::{Selection, StaffSpec};
 pub use spacing::{DURATION_WIDTHS, WIDTH_PER_DOUBLING_BEYOND_WHOLE, duration_width};
@@ -41,4 +52,5 @@ pub use structure::{
     BarLayout, BeatSlot, ClefSign, Column, GRACE_ADVANCE, GraceSlot, StaffKind, StaffLayout,
     SystemLayout,
 };
+pub use ties::{TieAnchor, TieSpan, draw_ties, tie};
 pub use units::{Micrometres, Point, REFERENCE_EM, Rect, STAFF_SPACE, STAVES_PER_EM, Units};

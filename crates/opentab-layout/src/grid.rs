@@ -110,6 +110,25 @@ fn flush(placed: &mut Vec<Placed>, voice: usize, pending: &mut Vec<usize>, time:
     }
 }
 
+fn share_graces(placed: &mut [Placed]) {
+    let mut totals: BTreeMap<i128, usize> = BTreeMap::new();
+    for item in placed.iter().filter(|item| item.grace.is_some()) {
+        *totals.entry(item.ticks).or_insert(0) += 1;
+    }
+    let mut seen: BTreeMap<i128, usize> = BTreeMap::new();
+    for item in placed.iter_mut() {
+        if item.grace.is_none() {
+            continue;
+        }
+        let order = seen.entry(item.ticks).or_insert(0);
+        item.grace = Some(GraceSlot {
+            order: *order,
+            count: totals.get(&item.ticks).copied().unwrap_or(1),
+        });
+        *order += 1;
+    }
+}
+
 pub fn grid(bars: &[Option<&Bar>], length: Fraction, pickup: bool) -> Option<Grid> {
     let mut per_whole = i128::from(*length.denom());
     for item in timed_lengths(bars) {
@@ -128,6 +147,9 @@ pub fn grid(bars: &[Option<&Bar>], length: Fraction, pickup: bool) -> Option<Gri
                 end: None,
             },
         });
+    }
+    for walk in &mut walks {
+        share_graces(&mut walk.placed);
     }
     let mut graces: BTreeMap<i128, usize> = BTreeMap::new();
     for item in walks.iter().flat_map(|walk| &walk.placed) {
@@ -284,6 +306,37 @@ mod tests {
         assert_eq!((slots[2].column, slots[2].grace), (0, None));
         assert_eq!((slots[4].beat, slots[4].column), (4, 2));
         assert_eq!(slots[4].grace, Some(GraceSlot { order: 0, count: 1 }));
+    }
+
+    #[test]
+    fn graces_of_several_voices_on_one_onset_queue_one_after_another() {
+        let both = bar(vec![
+            vec![
+                beat(NoteValue::Eighth, 0, None, Some(Grace::BeforeBeat)),
+                plain(NoteValue::Whole),
+            ],
+            vec![
+                beat(NoteValue::Eighth, 0, None, Some(Grace::BeforeBeat)),
+                beat(NoteValue::Eighth, 0, None, Some(Grace::OnBeat)),
+                plain(NoteValue::Whole),
+            ],
+        ]);
+        let grid = grid(&[Some(&both)], Fraction::new(4, 4), false).unwrap();
+        assert_eq!(grid.columns[0].graces, 3);
+        let graces: Vec<(usize, Option<GraceSlot>)> = grid.slots[0]
+            .iter()
+            .map(|slot| (slot.voice, slot.grace))
+            .collect();
+        assert_eq!(
+            graces,
+            vec![
+                (0, Some(GraceSlot { order: 0, count: 3 })),
+                (0, None),
+                (1, Some(GraceSlot { order: 1, count: 3 })),
+                (1, Some(GraceSlot { order: 2, count: 3 })),
+                (1, None)
+            ]
+        );
     }
 
     #[test]

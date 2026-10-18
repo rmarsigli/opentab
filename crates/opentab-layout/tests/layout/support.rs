@@ -1,17 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroI64;
 
-use opentab_layout::glyphs::{
-    ACCIDENTAL_FLAT, ACCIDENTAL_NATURAL, ACCIDENTAL_SHARP, F_CLEF, G_CLEF, G_CLEF_8VB, Glyph,
-    Metrics, NOTEHEAD_BLACK, REPEAT_DOT, TAB_CLEF, TAB_CLEF_4, TIME_SIG_DIGITS,
-    UNPITCHED_PERCUSSION_CLEF_1,
-};
+use opentab_layout::glyphs::{Metrics, NAMED, NOTEHEAD_BLACK, TIME_SIG_DIGITS, TUPLET_DIGITS};
 use opentab_layout::{
-    BarLayout, DisplayList, GroupId, LayoutOptions, Line, MARGIN, Page, PlacedGlyph, Point,
-    Primitive, Rect, STAFF_SPACE, StaffKind, StaffMode, SystemLayout, Units,
+    BarLayout, DisplayList, GroupId, LayoutOptions, Line, MARGIN, MIN_STAFF_SPACE, Micrometres,
+    Page, PageSize, PlacedGlyph, Point, Primitive, Rect, STAFF_SPACE, StaffKind, StaffMode,
+    StaffSpace, SystemLayout, Units, layout,
 };
 use opentab_model::{
-    Bar, Beat, BeatEffects, Clef, Duration, Grace, InstrumentKind, KeySignature, MasterBar,
-    NoteValue, Score, Staff, TimeSignature, Track, Tuplet, Voice, VoiceSlot, blank_score,
+    Bar, Beat, BeatEffects, Clef, Duration, Grace, InstrumentKind, KeySignature, MasterBar, Note,
+    NoteEffects, NoteKind, NoteValue, Score, Staff, TimeSignature, Track, Tuplet, Voice, VoiceSlot,
+    blank_score,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +18,8 @@ pub enum Item {
     Note(NoteValue, u8, Option<(u8, u8)>),
     Grace(NoteValue),
 }
+
+pub const DEFAULT_STRING: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BarSpec {
@@ -59,10 +60,18 @@ fn beat(score: &mut Score, item: Item) -> Beat {
             Some(Grace::BeforeBeat),
         ),
     };
+    let notes = vec![Note {
+        id: score.alloc().unwrap(),
+        kind: NoteKind::Fretted {
+            string: DEFAULT_STRING,
+            fret: 0,
+        },
+        effects: NoteEffects::default(),
+    }];
     Beat {
         id: score.alloc().unwrap(),
         duration,
-        notes: Vec::new(),
+        notes,
         effects: BeatEffects {
             grace,
             ..BeatEffects::default()
@@ -352,12 +361,18 @@ pub fn check(score: &Score, options: &LayoutOptions, list: &DisplayList) {
                 for glyph in bar_glyphs(page, bar.group) {
                     let ink = ink(&glyph);
                     assert!(
-                        ink.min.x >= bar.rect.min.x && ink.max.x <= bar.rect.max.x,
+                        crowded || (ink.min.x >= bar.rect.min.x && ink.max.x <= bar.rect.max.x),
                         "glyph U+{:04X} outside bar {}",
                         u32::from(glyph.codepoint),
                         bar.index
                     );
-                    assert!(inside(content(page), ink), "glyph outside the content area");
+                    let area = content(page);
+                    let fits = if crowded {
+                        area.min.y <= ink.min.y && ink.max.y <= area.max.y
+                    } else {
+                        inside(area, ink)
+                    };
+                    assert!(fits, "glyph outside the content area");
                 }
                 for slot in &bar.beats {
                     let x = bar.x_of(slot).unwrap();
@@ -503,23 +518,11 @@ pub fn notehead() -> Units {
     Metrics::bravura().bbox(NOTEHEAD_BLACK.name).unwrap().max.x
 }
 
-const FURNITURE: [Glyph; 10] = [
-    G_CLEF,
-    G_CLEF_8VB,
-    F_CLEF,
-    UNPITCHED_PERCUSSION_CLEF_1,
-    TAB_CLEF,
-    TAB_CLEF_4,
-    ACCIDENTAL_SHARP,
-    ACCIDENTAL_FLAT,
-    ACCIDENTAL_NATURAL,
-    REPEAT_DOT,
-];
-
-fn glyph_name(codepoint: char) -> &'static str {
-    FURNITURE
+pub fn glyph_name(codepoint: char) -> &'static str {
+    NAMED
         .iter()
         .chain(TIME_SIG_DIGITS.iter())
+        .chain(TUPLET_DIGITS.iter())
         .find(|glyph| glyph.codepoint == codepoint)
         .map(|glyph| glyph.name)
         .unwrap_or_else(|| panic!("unexpected glyph U+{:04X}", u32::from(codepoint)))
@@ -529,7 +532,8 @@ pub fn ink(glyph: &PlacedGlyph) -> Rect {
     let bbox = Metrics::bravura()
         .bbox(glyph_name(glyph.codepoint))
         .unwrap();
-    let scale = |value: Units| Units(value.0 * glyph.staff_space.0 / STAFF_SPACE.0);
+    let divisor = NonZeroI64::new(STAFF_SPACE.0).unwrap();
+    let scale = |value: Units| value.scaled(glyph.staff_space.0, divisor);
     Rect::new(
         Point {
             x: glyph.origin.x + scale(bbox.min.x),
@@ -572,4 +576,31 @@ pub fn bar_of(list: &DisplayList, index: usize) -> &BarLayout {
         .flat_map(|system| &system.staves[0].bars)
         .find(|bar| bar.index == index)
         .unwrap()
+}
+
+pub const TALL_PAGE_MM: i64 = 20_000;
+
+pub fn assert_too_tall(score: &Score, options: &LayoutOptions) {
+    let tall = LayoutOptions {
+        page: PageSize {
+            width: options.page.width,
+            height: Micrometres::from_mm(TALL_PAGE_MM),
+        },
+        staff_space: options.staff_space.min(MIN_STAFF_SPACE),
+        ..options.clone()
+    };
+    let list = layout(score, &tall).expect("a page tall enough holds every system");
+    let tallest = systems(&list)
+        .iter()
+        .map(|system| system.rect.height())
+        .max()
+        .unwrap();
+    let floor = StaffSpace::new(options.staff_space.min(MIN_STAFF_SPACE)).unwrap();
+    let room = floor.units(options.page.height) - floor.units(MARGIN) - floor.units(MARGIN);
+    assert!(
+        tallest > room,
+        "PageTooSmall although the tallest system ({}) fits the page ({})",
+        tallest.0,
+        room.0
+    );
 }
