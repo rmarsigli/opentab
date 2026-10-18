@@ -85,7 +85,8 @@ fn new_beats_have_the_default_dynamic_and_no_grace() {
     apply(
         &mut fx.score,
         &Command::InsertBeat {
-            voice,
+            voice: Some(voice),
+            bar: None,
             index: 0,
             duration: opentab_model::Duration::new(NoteValue::Eighth, 0, None).unwrap(),
         },

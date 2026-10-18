@@ -16,3 +16,4 @@ mod staff;
 mod support;
 mod tempo;
 mod undoable;
+mod voice;

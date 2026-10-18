@@ -9,7 +9,6 @@ use crate::support::{Fixture, fixture};
 const OUT_OF_RANGE: &str = "out of range";
 const OCCUPIED: &str = "already has a note on string";
 const PERCUSSION: &str = "percussion note";
-const NO_VOICES: &str = "no voices";
 const OUTSIDE: &str = "outside the bar";
 
 fn invalid(error: CommandError, expected: &str) {
@@ -152,7 +151,7 @@ fn a_drum_note_and_a_drum_beat_still_round_trip() {
 }
 
 #[test]
-fn restore_master_bar_rejects_a_bar_without_voices() {
+fn restore_master_bar_accepts_a_bar_without_voices() {
     let mut fx = fixture();
     let mut restore = removed(&mut fx.score, Command::RemoveMasterBar { index: 1 });
     let Command::RestoreMasterBar {
@@ -163,7 +162,9 @@ fn restore_master_bar_rejects_a_bar_without_voices() {
     };
     bars[1].voices.clear();
     extensions.clear();
-    invalid(rejected(&mut fx.score, &restore), NO_VOICES);
+    let inverse = apply(&mut fx.score, &restore).expect("a voiceless bar is restored");
+    assert!(fx.score.tracks[1].staves[0].bars[1].voices.is_empty());
+    assert_eq!(inverse, Command::RemoveMasterBar { index: 1 });
 }
 
 #[test]

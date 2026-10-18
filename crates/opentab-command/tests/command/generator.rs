@@ -1,8 +1,8 @@
 use opentab_command::{Command, MetaField};
 use opentab_model::{
-    Beat, BeatId, BeatPath, Duration, ElementId, InstrumentKind, Note, NoteEffects, NoteId,
+    BarId, Beat, BeatId, BeatPath, Duration, ElementId, InstrumentKind, Note, NoteEffects, NoteId,
     NoteKind, NoteValue, Score, StaffId, Tempo, TempoChange, TempoUnit, TimeSignature, TrackId,
-    Tuplet, VoiceId,
+    Tuplet, VoiceId, VoiceSlot,
 };
 use opentab_testkit::arb_score;
 use proptest::collection::vec;
@@ -74,8 +74,16 @@ pub enum Step {
         index: Pick,
         duration: Duration,
     },
+    InsertBeatInBar {
+        bar: Pick,
+        index: Pick,
+        duration: Duration,
+    },
     RemoveBeat {
         beat: Pick,
+    },
+    RemoveVoice {
+        voice: Pick,
     },
     SetBeatDuration {
         beat: Pick,
@@ -113,7 +121,7 @@ pub enum Corruption {
     TempoOutsideBar,
     DuplicateString,
     PercussionOnFretted,
-    BarWithoutVoices,
+    VoicelessBar,
     DuplicateId,
     IdAboveAllocator,
     StringOutOfRange,
@@ -123,7 +131,7 @@ pub const CORRUPTIONS: [Corruption; 7] = [
     Corruption::TempoOutsideBar,
     Corruption::DuplicateString,
     Corruption::PercussionOnFretted,
-    Corruption::BarWithoutVoices,
+    Corruption::VoicelessBar,
     Corruption::DuplicateId,
     Corruption::IdAboveAllocator,
     Corruption::StringOutOfRange,
@@ -148,6 +156,8 @@ struct Catalog {
     all: Vec<ElementId>,
     tracks: Vec<TrackId>,
     staves: Vec<StaffInfo>,
+    bars: Vec<BarId>,
+    voiceless: Vec<BarId>,
     voices: Vec<VoiceId>,
     beats: Vec<BeatId>,
     open_beats: Vec<BeatId>,
@@ -161,6 +171,8 @@ impl Catalog {
             all: score_ids(score),
             tracks: Vec::new(),
             staves: Vec::new(),
+            bars: Vec::new(),
+            voiceless: Vec::new(),
             voices: Vec::new(),
             beats: Vec::new(),
             open_beats: Vec::new(),
@@ -183,6 +195,10 @@ impl Catalog {
                     empty_tail,
                 });
                 for bar in &staff.bars {
+                    catalog.bars.push(bar.id);
+                    if bar.voices.is_empty() {
+                        catalog.voiceless.push(bar.id);
+                    }
                     for voice in &bar.voices {
                         catalog.voices.push(voice.id);
                         for beat in &voice.beats {
@@ -267,6 +283,22 @@ fn voice_len(score: &Score, voice: VoiceId) -> usize {
         .unwrap_or(0)
 }
 
+fn first_slot_len(score: &Score, bar: BarId) -> usize {
+    score
+        .tracks
+        .iter()
+        .flat_map(|track| &track.staves)
+        .flat_map(|staff| &staff.bars)
+        .find(|candidate| candidate.id == bar)
+        .and_then(|found| {
+            found
+                .voices
+                .iter()
+                .find(|voice| voice.slot == VoiceSlot::default())
+        })
+        .map_or(0, |voice| voice.beats.len())
+}
+
 fn strings_of(score: &Score, beat: BeatId) -> Strings {
     let Some(path) = score.find_beat(beat) else {
         return Strings::default();
@@ -335,13 +367,37 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
         } => {
             let voice = catalog.id(*voice, &catalog.voices);
             Command::InsertBeat {
-                voice,
+                voice: Some(voice),
+                bar: None,
                 index: insert_index(*index, voice_len(score, voice)),
+                duration: *duration,
+            }
+        }
+        Step::InsertBeatInBar {
+            bar,
+            index,
+            duration,
+        } => {
+            let pool = if bar.selector.is_multiple_of(2) && !catalog.voiceless.is_empty() {
+                &catalog.voiceless
+            } else {
+                &catalog.bars
+            };
+            let target = catalog.id(*bar, pool);
+            let voice = (!index.valid && index.selector.is_multiple_of(2))
+                .then(|| catalog.id(*bar, &catalog.voices));
+            Command::InsertBeat {
+                voice,
+                bar: Some(target),
+                index: insert_index(*index, first_slot_len(score, target)),
                 duration: *duration,
             }
         }
         Step::RemoveBeat { beat } => Command::RemoveBeat {
             beat: catalog.id(*beat, &catalog.beats),
+        },
+        Step::RemoveVoice { voice } => Command::RemoveVoice {
+            voice: catalog.id(*voice, &catalog.voices),
         },
         Step::SetBeatDuration { beat, duration } => Command::SetBeatDuration {
             beat: catalog.id(*beat, &catalog.beats),
@@ -465,7 +521,15 @@ fn arb_step() -> impl Strategy<Value = Step> {
                 duration,
             }
         }),
+        (arb_pick(), arb_pick(), arb_duration()).prop_map(|(bar, index, duration)| {
+            Step::InsertBeatInBar {
+                bar,
+                index,
+                duration,
+            }
+        }),
         arb_pick().prop_map(|beat| Step::RemoveBeat { beat }),
+        arb_pick().prop_map(|voice| Step::RemoveVoice { voice }),
         (arb_pick(), arb_duration())
             .prop_map(|(beat, duration)| Step::SetBeatDuration { beat, duration }),
         (arb_pick(), arb_pick(), 0u8..=30).prop_map(|(beat, string, fret)| Step::AddNote {
@@ -609,7 +673,7 @@ fn corrupt(score: &mut Score, corruption: Corruption, pick: usize) {
                 effects: NoteEffects::default(),
             });
         }
-        Corruption::BarWithoutVoices => {
+        Corruption::VoicelessBar => {
             let bars: Vec<StaffSlot> = score
                 .tracks
                 .iter()

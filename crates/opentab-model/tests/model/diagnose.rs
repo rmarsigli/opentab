@@ -403,44 +403,14 @@ fn matching_kinds_on_both_instruments_are_clean() {
 }
 
 #[test]
-fn bar_without_voices_is_reported() {
+fn a_bar_without_voices_is_a_normal_empty_bar() {
     let mut score = four_four(&quarters(4));
     let extra = bar(&mut score, &quarters(4));
     let second_master = master_bar(&mut score, 4, 4);
     score.master_bars.push(second_master);
     score.tracks[0].staves[0].bars.push(extra);
     score.tracks[0].staves[0].bars[1].voices.clear();
-    let bar_id: BarId = score.tracks[0].staves[0].bars[1].id;
-    assert_eq!(
-        diagnose(&score),
-        vec![Diagnostic::BarWithoutVoices { bar: bar_id }]
-    );
-}
-
-#[test]
-fn bar_without_voices_precedes_later_bar_diagnostics() {
-    let mut score = four_four(&quarters(4));
-    let second_master = master_bar(&mut score, 4, 4);
-    score.master_bars.push(second_master);
-    let empty = bar(&mut score, &quarters(4));
-    let short = bar(&mut score, &quarters(2));
-    score.tracks[0].staves[0].bars.push(empty);
-    score.tracks[0].staves[0].bars.push(short);
-    score.tracks[0].staves[0].bars[1].voices.clear();
-    let staff = &score.tracks[0].staves[0];
-    assert_eq!(
-        diagnose(&score),
-        vec![
-            Diagnostic::StaffBarCountMismatch {
-                staff: staff.id,
-                bars: 3,
-                master_bars: 2,
-            },
-            Diagnostic::BarWithoutVoices {
-                bar: staff.bars[1].id
-            },
-        ]
-    );
+    assert_eq!(diagnose(&score), Vec::new());
 }
 
 #[test]
@@ -496,12 +466,6 @@ fn new_diagnostics_round_trip_through_json() {
                 track: TrackId(ElementId(2)),
             },
             r#"{"kind":"note_kind_mismatch","note":6,"track":2}"#,
-        ),
-        (
-            Diagnostic::BarWithoutVoices {
-                bar: BarId(ElementId(8)),
-            },
-            r#"{"kind":"bar_without_voices","bar":8}"#,
         ),
     ];
     for (diagnostic, expected) in cases {

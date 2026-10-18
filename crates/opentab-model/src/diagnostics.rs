@@ -51,9 +51,6 @@ pub enum Diagnostic {
         note: NoteId,
         track: TrackId,
     },
-    BarWithoutVoices {
-        bar: BarId,
-    },
     DuplicateString {
         beat: BeatId,
         string: u8,
@@ -163,10 +160,6 @@ impl Report {
     }
 
     fn bar_voices(&mut self, bar: &Bar) {
-        if bar.voices.is_empty() {
-            self.diagnostics
-                .push(Diagnostic::BarWithoutVoices { bar: bar.id });
-        }
         let ordered = bar.voices.windows(2).all(|pair| match pair {
             [first, second] => first.slot < second.slot,
             _ => true,

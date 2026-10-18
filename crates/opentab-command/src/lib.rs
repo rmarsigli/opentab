@@ -12,6 +12,7 @@ mod note;
 mod rules;
 mod staff;
 mod tempo;
+mod voice;
 
 pub use apply::apply;
 pub use command::{Command, ExtensionEntry, MetaField};

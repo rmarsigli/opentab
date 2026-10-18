@@ -12,13 +12,14 @@ const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 256;
 const SHIFTS: [usize; 4] = [0, 1, 2, usize::MAX];
 const MIN_SUCCESS_RATIO: f64 = 0.2;
-const FORWARD_OPS: [&str; 13] = [
+const FORWARD_OPS: [&str; 14] = [
     "set_meta",
     "set_anacrusis",
     "insert_master_bar",
     "remove_master_bar",
     "insert_beat",
     "remove_beat",
+    "remove_voice",
     "set_beat_duration",
     "add_note",
     "remove_note",
@@ -90,6 +91,7 @@ fn is_restore(command: &Command) -> bool {
         command,
         Command::RestoreMasterBar { .. }
             | Command::RestoreBeat { .. }
+            | Command::RestoreVoice { .. }
             | Command::RestoreNote { .. }
             | Command::RestoreTempoChanges { .. }
             | Command::RestoreStaffBars { .. }
@@ -101,6 +103,7 @@ fn shifted(command: &Command, shift: usize) -> Command {
     match &mut moved {
         Command::RestoreMasterBar { index, .. }
         | Command::RestoreBeat { index, .. }
+        | Command::RestoreVoice { index, .. }
         | Command::RestoreNote { index, .. } => *index = index.saturating_add(shift),
         Command::RestoreTempoChanges { master_bar, .. } => {
             *master_bar = master_bar.saturating_add(shift);
@@ -323,6 +326,7 @@ fn restore_replay_exercises_applied_and_rejected_restores_of_every_kind() {
     for op in [
         "restore_master_bar",
         "restore_beat",
+        "restore_voice",
         "restore_note",
         "restore_tempo_changes",
         "restore_staff_bars",

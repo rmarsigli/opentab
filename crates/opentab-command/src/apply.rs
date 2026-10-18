@@ -1,6 +1,6 @@
 use opentab_model::Score;
 
-use crate::{Command, CommandError, beat, master_bar, meta, note, staff, tempo};
+use crate::{Command, CommandError, beat, master_bar, meta, note, staff, tempo, voice};
 
 pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandError> {
     match command {
@@ -27,10 +27,26 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
         ),
         Command::InsertBeat {
             voice,
+            bar,
             index,
             duration,
-        } => beat::insert(score, *voice, *index, *duration),
+        } => beat::insert(score, beat::target(*voice, *bar)?, *index, *duration),
         Command::RemoveBeat { beat } => beat::remove(score, *beat),
+        Command::RemoveVoice { voice } => voice::remove(score, *voice),
+        Command::RestoreVoice {
+            bar,
+            index,
+            voice,
+            extensions,
+        } => voice::restore(
+            score,
+            voice::Restored {
+                bar: *bar,
+                index: *index,
+                voice,
+                extensions,
+            },
+        ),
         Command::RestoreBeat {
             voice,
             index,

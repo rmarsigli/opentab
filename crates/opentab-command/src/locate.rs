@@ -1,5 +1,6 @@
 use opentab_model::{
-    Beat, BeatPath, ElementId, Note, NotePath, Score, StaffId, Track, TrackId, Voice, VoicePath,
+    Bar, BarId, Beat, BeatPath, ElementId, Note, NotePath, Score, StaffId, Track, TrackId, Voice,
+    VoicePath,
 };
 
 use crate::CommandError;
@@ -84,4 +85,40 @@ pub(crate) fn find_staff(
         track: track_index,
         staff: staff_index,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BarPath {
+    pub(crate) track: usize,
+    pub(crate) staff: usize,
+    pub(crate) bar: usize,
+}
+
+pub(crate) fn find_bar(score: &Score, id: BarId) -> Option<BarPath> {
+    for (track, owner) in score.tracks.iter().enumerate() {
+        for (staff, held) in owner.staves.iter().enumerate() {
+            if let Some(bar) = held.bars.iter().position(|bar| bar.id == id) {
+                return Some(BarPath { track, staff, bar });
+            }
+        }
+    }
+    None
+}
+
+pub(crate) fn bar_ref(tracks: &[Track], path: BarPath) -> Option<&Bar> {
+    tracks
+        .get(path.track)?
+        .staves
+        .get(path.staff)?
+        .bars
+        .get(path.bar)
+}
+
+pub(crate) fn bar_in(tracks: &mut [Track], path: BarPath) -> Option<&mut Bar> {
+    tracks
+        .get_mut(path.track)?
+        .staves
+        .get_mut(path.staff)?
+        .bars
+        .get_mut(path.bar)
 }

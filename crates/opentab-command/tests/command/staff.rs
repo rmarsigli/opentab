@@ -237,11 +237,10 @@ fn bars_of(command: &mut Command) -> &mut Vec<opentab_model::Bar> {
 }
 
 #[test]
-fn restore_staff_bars_rejects_a_bar_without_voices() {
+fn restore_staff_bars_accepts_a_bar_without_voices() {
     let (mut fx, mut restore) = trimmed();
     bars_of(&mut restore)[1].voices.clear();
-    let message = message_of(rejected(&mut fx.score, &restore));
-    assert!(message.contains("no voices"), "{message}");
+    apply(&mut fx.score, &restore).expect("a voiceless bar is restored");
 }
 
 #[test]
@@ -315,7 +314,7 @@ fn trim_staff_bars_refuses_an_overfull_staff() {
 }
 
 #[test]
-fn trim_staff_bars_refuses_a_bar_without_voices() {
+fn trim_staff_bars_accepts_a_bar_without_voices() {
     let mut fx = short_drums();
     let pad = pad_drums(&fx);
     apply(&mut fx.score, &pad).unwrap();
@@ -325,8 +324,7 @@ fn trim_staff_bars_refuses_a_bar_without_voices() {
         staff: drum_staff(&fx),
         len: 1,
     };
-    let message = message_of(rejected(&mut fx.score, &trim));
-    assert!(message.contains("no voices"), "{message}");
+    round_trip(&mut fx.score, &trim);
     let healthy = Command::TrimStaffBars {
         track: fx.drums,
         staff: drum_staff(&fx),

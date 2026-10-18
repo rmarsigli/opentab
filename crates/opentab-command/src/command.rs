@@ -1,6 +1,6 @@
 use opentab_model::{
-    Bar, Beat, BeatId, Duration, ElementId, MasterBar, Note, NoteId, OpaquePayload, StaffId,
-    TempoChange, TimeSignature, TrackId, VoiceId,
+    Bar, BarId, Beat, BeatId, Duration, ElementId, MasterBar, Note, NoteId, OpaquePayload, StaffId,
+    TempoChange, TimeSignature, TrackId, Voice, VoiceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -44,12 +44,18 @@ pub enum Command {
         index: usize,
     },
     InsertBeat {
-        voice: VoiceId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        voice: Option<VoiceId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bar: Option<BarId>,
         index: usize,
         duration: Duration,
     },
     RemoveBeat {
         beat: BeatId,
+    },
+    RemoveVoice {
+        voice: VoiceId,
     },
     SetBeatDuration {
         beat: BeatId,
@@ -90,6 +96,12 @@ pub enum Command {
         voice: VoiceId,
         index: usize,
         beat: Beat,
+        extensions: Vec<ExtensionEntry>,
+    },
+    RestoreVoice {
+        bar: BarId,
+        index: usize,
+        voice: Voice,
         extensions: Vec<ExtensionEntry>,
     },
     RestoreNote {
