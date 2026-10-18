@@ -246,6 +246,37 @@ fn a_writer_refusal_is_reported_as_unsupported() {
 }
 
 #[test]
+fn removing_the_last_master_bar_cannot_be_saved_as_gp() {
+    let dir = temp();
+    let path = dir.path().join("song.gp");
+    std::fs::copy(fixture("tempo.gp"), &path).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let count = gp_score(&path).master_bars.len();
+    let commands = dir.path().join("c.jsonl");
+    let lines: Vec<String> = (0..count)
+        .map(|_| json!({"op": "remove_master_bar", "index": 0}).to_string())
+        .collect();
+    std::fs::write(&commands, lines.join("\n")).unwrap();
+    let result = run(&[
+        "apply",
+        path_str(&path),
+        path_str(&commands),
+        "--out",
+        path_str(&path),
+        "--json",
+    ]);
+    assert_eq!(result.code, 2, "{}", result.stdout);
+    let body = result.json();
+    assert_eq!(body["error"]["kind"], "unsupported");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("master_bars: the score has no master bars"),
+        "{message}"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
 fn a_refused_apply_keeps_the_existing_gp() {
     let dir = temp();
     let path = dir.path().join("song.gp");

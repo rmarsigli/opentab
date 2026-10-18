@@ -105,6 +105,10 @@ pub enum Refusal {
     MalformedPayload { problem: String },
     #[error("opaque payloads belong to element {id}, which the score does not contain")]
     DanglingExtension { id: u64 },
+    #[error("the score has no master bars; Guitar Pro needs at least one")]
+    NoMasterBars,
+    #[error("the score has no tracks; Guitar Pro needs at least one")]
+    NoTracks,
     #[error("the staff has {found} bars, but the score has {expected} master bars")]
     BarCount { expected: usize, found: usize },
     #[error("voice slots are not strictly increasing")]

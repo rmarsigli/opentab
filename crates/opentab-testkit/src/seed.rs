@@ -504,7 +504,7 @@ pub fn arb_score_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = ScoreSeed> {
         (arb_meta(cfg.gp_writable), any::<bool>()),
         vec(
             arb_master_bar_seed(cfg.gp_writable),
-            0..=cfg.max_master_bars,
+            usize::from(cfg.gp_writable)..=cfg.max_master_bars.max(usize::from(cfg.gp_writable)),
         ),
         vec(
             arb_extension_seed(cfg.gp_writable),
@@ -515,18 +515,20 @@ pub fn arb_score_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = ScoreSeed> {
         .prop_flat_map(
             move |((meta, anacrusis), master_bars, extensions, document)| {
                 let bars = master_bars.len();
-                vec(arb_track_seed(cfg, bars), 0..=cfg.max_tracks).prop_map(move |tracks| {
-                    ScoreSeed {
-                        meta: meta.clone(),
-                        anacrusis,
-                        master_bars: master_bars.clone(),
-                        tracks,
-                        extensions: extensions.clone(),
-                        document_extensions: document.document_extensions.clone(),
-                        document_extras: document.document_extras.clone(),
-                        container: document.container.clone(),
-                        score_entry: document.score_entry.clone(),
-                    }
+                vec(
+                    arb_track_seed(cfg, bars),
+                    usize::from(cfg.gp_writable)..=cfg.max_tracks.max(usize::from(cfg.gp_writable)),
+                )
+                .prop_map(move |tracks| ScoreSeed {
+                    meta: meta.clone(),
+                    anacrusis,
+                    master_bars: master_bars.clone(),
+                    tracks,
+                    extensions: extensions.clone(),
+                    document_extensions: document.document_extensions.clone(),
+                    document_extras: document.document_extras.clone(),
+                    container: document.container.clone(),
+                    score_entry: document.score_entry.clone(),
                 })
             },
         )

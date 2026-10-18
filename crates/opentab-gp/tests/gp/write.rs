@@ -664,6 +664,21 @@ fn every_documented_refusal_is_reachable() {
     );
     assert!(crate::support::add_drum_kits(&mut drums.score));
     assert_eq!(read_gp(&written(&drums.score)).expect("read"), drums.score);
+    let mut bare = one_note();
+    bare.tracks.clear();
+    assert_eq!(refusal(&bare), ("tracks".to_string(), Refusal::NoTracks));
+    let mut barless = one_note();
+    barless.master_bars.clear();
+    barless.tracks[0].staves[0].bars.clear();
+    assert_eq!(
+        refusal(&barless),
+        ("master_bars".to_string(), Refusal::NoMasterBars)
+    );
+    barless.tracks.clear();
+    assert_eq!(
+        refusal(&barless),
+        ("master_bars".to_string(), Refusal::NoMasterBars)
+    );
     let mut chord = one_note();
     chord.tracks[0].staves[0].bars[0].voices[0].beats[0]
         .effects
