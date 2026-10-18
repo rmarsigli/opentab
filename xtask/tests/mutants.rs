@@ -5,7 +5,7 @@ use xtask::mutants::{
 };
 
 #[test]
-fn arguments_select_the_four_crates_serially_with_a_timeout_and_target_output() {
+fn arguments_select_the_five_crates_serially_with_a_timeout_and_target_output() {
     let output = output_dir(Path::new("/work"));
     let args = mutants_args(&output, None, false);
     let expected_output = Path::new("/work")
@@ -24,6 +24,8 @@ fn arguments_select_the_four_crates_serially_with_a_timeout_and_target_output() 
             "opentab-gp",
             "--package",
             "opentab-layout",
+            "--package",
+            "opentab-render",
             "--jobs",
             "1",
             "--timeout",
@@ -38,7 +40,8 @@ fn arguments_select_the_four_crates_serially_with_a_timeout_and_target_output() 
             "opentab-model",
             "opentab-command",
             "opentab-gp",
-            "opentab-layout"
+            "opentab-layout",
+            "opentab-render"
         ]
     );
 }
