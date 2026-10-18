@@ -1,6 +1,8 @@
 mod behaviour;
 mod music;
+mod musicxml;
 mod notation;
 mod properties;
 mod snapshots;
 mod support;
+mod voices;
