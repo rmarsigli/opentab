@@ -1,7 +1,8 @@
 use crate::oracle::error::OracleError;
 use crate::oracle::fixtures::{Fixture, discover};
 use crate::oracle::hash::sha256_hex;
-use crate::oracle::layout::{MANIFEST_FILE, PNG_DIR, REQUIRED_OUTPUTS, list_files};
+use crate::oracle::layout::{MANIFEST_FILE, PNG_DIR, list_files, required_outputs};
+use crate::oracle::manifest::GoldenSet;
 use crate::oracle::manifest::Manifest;
 use crate::oracle::manifest::ManifestEntry;
 use std::collections::BTreeSet;
@@ -56,7 +57,7 @@ pub fn check_fixtures(
             findings.push(Finding::Stale(fixture.key.clone()));
             continue;
         }
-        for name in missing_required(entry) {
+        for name in missing_required(entry, manifest.set) {
             findings.push(Finding::Missing(format!("{}: {name}", fixture.key)));
         }
         let dir = goldens.join(fixture.golden_dir());
@@ -89,13 +90,13 @@ pub fn check_fixtures(
     Ok(findings)
 }
 
-fn missing_required(entry: &ManifestEntry) -> Vec<String> {
+fn missing_required(entry: &ManifestEntry, set: GoldenSet) -> Vec<String> {
     let listed: BTreeSet<&str> = entry
         .outputs
         .iter()
         .map(|output| output.path.as_str())
         .collect();
-    let mut missing: Vec<String> = REQUIRED_OUTPUTS
+    let mut missing: Vec<String> = required_outputs(set)
         .iter()
         .filter(|name| !listed.contains(**name))
         .map(|name| (*name).to_owned())

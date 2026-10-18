@@ -1,7 +1,7 @@
 use opentab_model::{
-    Bar, Beat, BeatEffects, Clef, Duration, ElementId, Instrument, InstrumentKind, KeySignature,
-    MasterBar, Note, NoteEffects, NoteKind, NoteValue, Pitch, Score, Staff, TimeSignature, Track,
-    Transpose, Tuning, Tuplet, Voice, VoiceSlot,
+    Bar, Beat, BeatEffects, Clef, Duration, ElementId, IdAllocator, Instrument, InstrumentKind,
+    KeySignature, MasterBar, Note, NoteEffects, NoteKind, NoteValue, Pitch, Score, Staff,
+    TimeSignature, Track, Transpose, Tuning, Tuplet, Voice, VoiceSlot,
 };
 
 use crate::fixtures::FixtureError;
@@ -297,7 +297,35 @@ impl Sketch {
         Ok(())
     }
 
-    pub fn finish(self) -> Score {
+    pub fn from_score(score: Score) -> Sketch {
+        Sketch { score }
+    }
+
+    pub fn finish(mut self) -> Score {
+        let mut ids = IdAllocator::default();
+        let mut next = || ids.next().unwrap_or(ElementId(0));
+        for master_bar in &mut self.score.master_bars {
+            master_bar.id = next().into();
+        }
+        for track in &mut self.score.tracks {
+            track.id = next().into();
+            for staff in &mut track.staves {
+                staff.id = next().into();
+                for bar in &mut staff.bars {
+                    bar.id = next().into();
+                    for voice in &mut bar.voices {
+                        voice.id = next().into();
+                        for beat in &mut voice.beats {
+                            beat.id = next().into();
+                            for note in &mut beat.notes {
+                                note.id = next().into();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        self.score.ids = ids;
         self.score
     }
 }

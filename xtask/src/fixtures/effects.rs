@@ -255,7 +255,7 @@ const BENDS: [[(u8, i16); 4]; 8] = [
 
 pub fn note_effects() -> Result<Score, FixtureError> {
     let mut sketch = Sketch::new("Note effects");
-    sketch.master_bars(12, 4, 4)?;
+    sketch.master_bars(13, 4, 4)?;
     let track = sketch.track(TrackSetup::guitar("Guitar", "Gtr"))?;
     let tie_both = NoteEffects {
         tie_origin: true,
@@ -506,5 +506,44 @@ pub fn note_effects() -> Result<Score, FixtureError> {
             ],
         )],
     )?;
+    let ringing = |effects: NoteEffects| NoteEffects {
+        let_ring: true,
+        ..effects
+    };
+    let pairs = vec![
+        on(
+            1,
+            7,
+            ringing(NoteEffects {
+                palm_mute: true,
+                ..NoteEffects::default()
+            }),
+        ),
+        on(
+            1,
+            7,
+            ringing(NoteEffects {
+                staccato: true,
+                ..NoteEffects::default()
+            }),
+        ),
+        on(
+            1,
+            7,
+            ringing(NoteEffects {
+                accent: Some(Accent::Normal),
+                ..NoteEffects::default()
+            }),
+        ),
+        on(
+            1,
+            7,
+            ringing(NoteEffects {
+                vibrato: Some(Vibrato::Slight),
+                ..NoteEffects::default()
+            }),
+        ),
+    ];
+    sketch.fill(track, 12, vec![voice(0, quarter_notes(pairs)?)])?;
     Ok(sketch.finish())
 }

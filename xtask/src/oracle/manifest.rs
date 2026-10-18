@@ -19,10 +19,26 @@ pub struct ManifestEntry {
     pub outputs: Vec<OutputEntry>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GoldenSet {
+    #[default]
+    Full,
+    Published,
+}
+
+impl GoldenSet {
+    pub fn is_full(&self) -> bool {
+        *self == GoldenSet::Full
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub gp_version: String,
+    #[serde(default, skip_serializing_if = "GoldenSet::is_full")]
+    pub set: GoldenSet,
     pub entries: Vec<ManifestEntry>,
 }
 
@@ -53,6 +69,7 @@ impl Manifest {
     pub fn new(gp_version: impl Into<String>) -> Self {
         Self {
             gp_version: gp_version.into(),
+            set: GoldenSet::Full,
             entries: Vec::new(),
         }
     }
