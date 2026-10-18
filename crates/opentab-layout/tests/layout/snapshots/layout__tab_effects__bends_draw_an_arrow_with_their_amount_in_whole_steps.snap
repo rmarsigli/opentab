@@ -60,9 +60,9 @@ group 5
         text "7" 44912,16435 em 1536 Middle Text
       shape Stroke(Units(123)) [MoveTo(Point { x: Units(45447), y: Units(15945) }), CubicTo(Point { x: Units(46407), y: Units(15945) }, Point { x: Units(46727), y: Units(14008) }, Point { x: Units(46727), y: Units(12072) })]
       glyph U+EB78 46447,12072 size 614
-      shape Stroke(Units(123)) [MoveTo(Point { x: Units(46727), y: Units(11337) }), CubicTo(Point { x: Units(47367), y: Units(11337) }, Point { x: Units(48007), y: Units(12140) }, Point { x: Units(48007), y: Units(14549) })]
-      glyph U+EB7C 47727,15284 size 614
       text "full" 46727,11133 em 1126 Middle Text
+      shape Stroke(Units(123)) [MoveTo(Point { x: Units(46727), y: Units(11337) }), CubicTo(Point { x: Units(47367), y: Units(11337) }, Point { x: Units(48007), y: Units(12306) }, Point { x: Units(48007), y: Units(15210) })]
+      glyph U+EB7C 47727,15945 size 614
       line 44912,21577 44912,25161 thick 123
     group 23
       group 22
@@ -78,9 +78,9 @@ group 5
         text "7" 59008,16435 em 1536 Middle Text
       line 59008,15284 59008,12072 thick 123
       glyph U+EB78 58728,12072 size 614
-      shape Stroke(Units(123)) [MoveTo(Point { x: Units(59008), y: Units(11337) }), CubicTo(Point { x: Units(59648), y: Units(11337) }, Point { x: Units(60288), y: Units(12140) }, Point { x: Units(60288), y: Units(14549) })]
-      glyph U+EB7C 60008,15284 size 614
       text "full" 59008,11133 em 1126 Middle Text
+      shape Stroke(Units(123)) [MoveTo(Point { x: Units(59008), y: Units(11337) }), CubicTo(Point { x: Units(59916), y: Units(11337) }, Point { x: Units(60823), y: Units(12306) }, Point { x: Units(60823), y: Units(15210) })]
+      glyph U+EB7C 60543,15945 size 614
       line 59008,21577 59008,25161 thick 123
     group 27
       group 26

@@ -365,10 +365,6 @@ pub fn stem_anchor(beat: &BeatPlan, staff: &RhythmStaff) -> Option<StemAnchor> {
     }
 }
 
-fn overlaps(a: Rect, b: Rect) -> bool {
-    a.min.x < b.max.x && b.min.x < a.max.x && a.min.y < b.max.y && b.min.y < a.max.y
-}
-
 fn shifted(rect: Rect, by: Units) -> Rect {
     offset_rect(
         rect,
@@ -428,7 +424,7 @@ pub fn place_voices(
                 .filter(|(other_offset, other)| {
                     this.rects.iter().any(|mine| {
                         other.rects.iter().any(|theirs| {
-                            overlaps(shifted(*mine, offset), shifted(*theirs, *other_offset))
+                            shifted(*mine, offset).overlaps(&shifted(*theirs, *other_offset))
                         })
                     })
                 })

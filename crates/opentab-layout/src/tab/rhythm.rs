@@ -4,7 +4,7 @@ use super::{TabBeat, TabInput};
 use crate::display::Primitive;
 use crate::glyphs::{Glyph, TREMOLO_1, TREMOLO_2, TREMOLO_3};
 use crate::rhythm::{
-    DOT_GAP, Extremes, RhythmCanvas, RhythmEvent, RhythmGroups, RhythmPlan, RhythmStaff,
+    BeamSlope, DOT_GAP, Extremes, RhythmCanvas, RhythmEvent, RhythmGroups, RhythmPlan, RhythmStaff,
     STEM_LENGTH, StemAnchor, StemDirection, StemPolicy, draw_rhythm, fit_stems, glyph, glyph_box,
     group, rest_glyph, stemmed,
 };
@@ -20,6 +20,7 @@ pub fn tab_staff(height: Units) -> RhythmStaff {
         policy: StemPolicy::Fixed(StemDirection::Down),
         size: STAFF_SPACE,
         reach_reference: false,
+        slope: BeamSlope::Flat,
     }
 }
 
@@ -44,12 +45,21 @@ pub fn tremolo_glyph(tremolo: TremoloPicking) -> Glyph {
     }
 }
 
-fn voice_of(beats: &[TabBeat]) -> Option<usize> {
-    beats
+fn voice_of(bar: &Bar, beats: &[TabBeat]) -> Option<usize> {
+    let timed: Vec<usize> = beats
         .iter()
         .filter(|beat| beat.slot.grace.is_none())
         .map(|beat| beat.slot.voice)
-        .min()
+        .collect();
+    let sounding = timed.iter().copied().filter(|voice| {
+        bar.voices.get(*voice).is_some_and(|found| {
+            found
+                .beats
+                .iter()
+                .any(|beat| beat.effects.grace.is_none() && !beat.notes.is_empty())
+        })
+    });
+    sounding.min().or_else(|| timed.iter().copied().min())
 }
 
 pub fn analyse(
@@ -58,7 +68,7 @@ pub fn analyse(
     beats: &[TabBeat],
     height: Units,
 ) -> Option<TabRhythm> {
-    let voice = voice_of(beats)?;
+    let voice = voice_of(bar, beats)?;
     let staff = tab_staff(height);
     let base = height + RHYTHM_GAP;
     let mut members = Vec::new();

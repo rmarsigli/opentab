@@ -62,6 +62,12 @@ pub enum StemPolicy {
     AwayFromReference,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BeamSlope {
+    Follow,
+    Flat,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RhythmStaff {
     pub reference: Units,
@@ -69,6 +75,7 @@ pub struct RhythmStaff {
     pub policy: StemPolicy,
     pub size: Units,
     pub reach_reference: bool,
+    pub slope: BeamSlope,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -430,7 +437,7 @@ impl RhythmStaff {
             StemDirection::Down => *value > start.max(end),
         };
         let limit = self.length(MAX_BEAM_SLOPE);
-        let delta = if inner.iter().any(beyond) {
+        let delta = if self.slope == BeamSlope::Flat || inner.iter().any(beyond) {
             Units::ZERO
         } else {
             (end - start).clamp(-limit, limit)
@@ -891,6 +898,7 @@ mod tests {
             policy: StemPolicy::AwayFromReference,
             size: STAFF_SPACE,
             reach_reference: true,
+            slope: BeamSlope::Follow,
         }
     }
 

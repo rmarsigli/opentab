@@ -7,15 +7,15 @@ use opentab_model::{
     TimeSignature, Track, TremoloPicking,
 };
 
-pub use guitar::guitar_rects;
+pub use guitar::{finger_rect, guitar_rects};
 pub use heads::{head_glyph, notehead_glyphs, parenthesis_origins};
 
 use crate::glyphs::Glyph;
 use crate::grid::GridColumn;
 use crate::pitch::Spelling;
 use crate::rhythm::{
-    Extremes, RhythmEvent, RhythmGroups, RhythmPlan, RhythmStaff, StemDirection, StemPolicy,
-    directions, fit_stems, glyph_box, group,
+    BeamSlope, Extremes, RhythmEvent, RhythmGroups, RhythmPlan, RhythmStaff, StemDirection,
+    StemPolicy, directions, fit_stems, glyph_box, group,
 };
 use crate::structure::{BeatSlot, ClefSign};
 use crate::units::{Point, Rect, STAFF_SPACE, Units};
@@ -181,6 +181,7 @@ pub fn staff_geometry(size: Units, policy: StemPolicy) -> RhythmStaff {
         policy,
         size,
         reach_reference: size == STAFF_SPACE,
+        slope: BeamSlope::Follow,
     }
 }
 

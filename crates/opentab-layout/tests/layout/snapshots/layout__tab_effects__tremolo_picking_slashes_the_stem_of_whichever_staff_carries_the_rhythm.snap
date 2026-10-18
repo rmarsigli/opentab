@@ -64,14 +64,16 @@ group 5
         glyph U+E0A4 53280,17481 size 1024
       line 54426,17309 54426,9801 thick 123
     group 25
+      rect 59453,15082 59962,15760 White
+      text "1" 59962,15760 em 1024 End Text
       group 24
         glyph U+E0A4 60132,15433 size 1024
-      text "1" 59962,15760 em 1024 End Text
       line 61278,15261 61278,11849 thick 123
     group 27
+      rect 66265,15082 66814,15760 White
+      text "T" 66814,15760 em 1024 End Text
       group 26
         glyph U+E0A4 66984,15433 size 1024
-      text "T" 66814,15760 em 1024 End Text
       line 68130,15261 68130,11849 thick 123
   line 8777,23113 74922,23113 thick 133
   line 8777,24649 74922,24649 thick 133

@@ -38,6 +38,7 @@ pub struct LinkAnchor {
     pub y: Units,
     pub top: Units,
     pub link: Option<Link>,
+    pub incoming: Option<Link>,
     pub size: Units,
 }
 
@@ -45,6 +46,21 @@ pub struct TextLane {
     pub lane: Lane,
     pub label: &'static str,
     pub flag: fn(&ColumnMarks) -> bool,
+}
+
+pub fn text_lanes() -> [TextLane; 2] {
+    [
+        TextLane {
+            lane: Lane::LetRing,
+            label: LET_RING,
+            flag: |marks| marks.let_ring,
+        },
+        TextLane {
+            lane: Lane::PalmMute,
+            label: PALM_MUTE,
+            flag: |marks| marks.palm_mute,
+        },
+    ]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,16 +93,26 @@ fn letter(link: Link) -> &'static str {
     }
 }
 
-fn draw_link(origin: &LinkAnchor, link: Link, end: Units, until: Units, out: &mut Vec<Primitive>) {
-    match link.kind {
+pub struct LinkSpan {
+    pub link: Link,
+    pub arc_from: Units,
+    pub arc_to: Units,
+    pub line_from: Units,
+    pub line_to: Units,
+    pub top: Units,
+    pub y: Units,
+    pub size: Units,
+}
+
+fn draw_span(span: &LinkSpan, out: &mut Vec<Primitive>) {
+    match span.link.kind {
         LinkKind::Hammer => {
-            let from = origin.centre;
-            let to = end.max(from + STAFF_SPACE.half());
-            out.push(tie(from, to, origin.top, true, origin.size));
-            let peak =
-                origin.top - crate::notation::TIE_OFFSET - arc_height(to - from) - LETTER_GAP;
+            let from = span.arc_from;
+            let to = span.arc_to.max(from + STAFF_SPACE.half());
+            out.push(tie(from, to, span.top, true, span.size));
+            let peak = span.top - crate::notation::TIE_OFFSET - arc_height(to - from) - LETTER_GAP;
             out.push(text(
-                letter(link),
+                letter(span.link),
                 Point {
                     x: from + (to - from).half(),
                     y: peak,
@@ -96,13 +122,13 @@ fn draw_link(origin: &LinkAnchor, link: Link, end: Units, until: Units, out: &mu
             ));
         }
         LinkKind::Slide => {
-            let start = origin.right + SLIDE_GAP;
-            let stop = (until - SLIDE_GAP).max(start + SLIDE_GAP);
-            let rising = link.to.is_none_or(|to| to >= link.from);
+            let start = span.line_from;
+            let stop = span.line_to.max(start + SLIDE_GAP);
+            let rising = span.link.to.is_none_or(|to| to >= span.link.from);
             let (first, second) = if rising {
-                (origin.y + SLIDE_RISE, origin.y - SLIDE_RISE)
+                (span.y + SLIDE_RISE, span.y - SLIDE_RISE)
             } else {
-                (origin.y - SLIDE_RISE, origin.y + SLIDE_RISE)
+                (span.y - SLIDE_RISE, span.y + SLIDE_RISE)
             };
             out.push(line(
                 Point { x: start, y: first },
@@ -112,24 +138,57 @@ fn draw_link(origin: &LinkAnchor, link: Link, end: Units, until: Units, out: &mu
     }
 }
 
+fn outgoing(origin: &LinkAnchor, link: Link, end: Units, until: Units) -> LinkSpan {
+    LinkSpan {
+        link,
+        arc_from: origin.centre,
+        arc_to: end,
+        line_from: origin.right + SLIDE_GAP,
+        line_to: until - SLIDE_GAP,
+        top: origin.top,
+        y: origin.y,
+        size: origin.size,
+    }
+}
+
+fn incoming(target: &LinkAnchor, link: Link, edge: Units) -> LinkSpan {
+    LinkSpan {
+        link,
+        arc_from: edge,
+        arc_to: target.centre,
+        line_from: edge,
+        line_to: target.left - SLIDE_GAP,
+        top: target.top,
+        y: target.y,
+        size: target.size,
+    }
+}
+
 fn draw_links(parts: &RowParts<'_>, ends: RowEnds, contents: &mut [Vec<Primitive>]) {
     for origin in parts.links {
-        let Some(link) = origin.link else {
-            continue;
-        };
-        let destination = parts.links.iter().find(|candidate| {
-            candidate.voice == origin.voice
-                && candidate.sequence == origin.sequence + 1
-                && candidate.line == origin.line
-        });
         let mut drawn = Vec::new();
-        match destination {
-            Some(target) => draw_link(origin, link, target.centre, target.left, &mut drawn),
-            None => {
-                let last = parts.sequences.get(&origin.voice).copied().unwrap_or(0);
-                let leaves = origin.bar == ends.last_bar && origin.sequence + 1 == last;
-                if let (true, Some(_), Some(edge)) = (leaves, link.to, ends.outgoing) {
-                    draw_link(origin, link, edge, edge, &mut drawn);
+        if let (Some(link), Some(edge), 0, 0) =
+            (origin.incoming, ends.incoming, origin.bar, origin.sequence)
+        {
+            draw_span(&incoming(origin, link, edge), &mut drawn);
+        }
+        if let Some(link) = origin.link {
+            let destination = parts.links.iter().find(|candidate| {
+                candidate.voice == origin.voice
+                    && candidate.sequence == origin.sequence + 1
+                    && candidate.line == origin.line
+            });
+            match destination {
+                Some(target) => draw_span(
+                    &outgoing(origin, link, target.centre, target.left),
+                    &mut drawn,
+                ),
+                None => {
+                    let last = parts.sequences.get(&origin.voice).copied().unwrap_or(0);
+                    let leaves = origin.bar == ends.last_bar && origin.sequence + 1 == last;
+                    if let (true, Some(_), Some(edge)) = (leaves, link.to, ends.outgoing) {
+                        draw_span(&outgoing(origin, link, edge, edge), &mut drawn);
+                    }
                 }
             }
         }
@@ -332,18 +391,7 @@ fn draw_lanes(parts: &RowParts<'_>, contents: &mut [Vec<Primitive>]) {
             vibrato_run(parts, lane, &run, contents);
         }
     }
-    let flags = [
-        TextLane {
-            lane: Lane::LetRing,
-            label: LET_RING,
-            flag: |marks| marks.let_ring,
-        },
-        TextLane {
-            lane: Lane::PalmMute,
-            label: PALM_MUTE,
-            flag: |marks| marks.palm_mute,
-        },
-    ];
+    let flags = text_lanes();
     for kind in flags {
         let Some(lane) = parts.band.lane(kind.lane) else {
             continue;

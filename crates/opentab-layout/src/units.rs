@@ -126,6 +126,13 @@ impl Rect {
         self.max.y - self.min.y
     }
 
+    pub fn overlaps(&self, other: &Rect) -> bool {
+        self.min.x < other.max.x
+            && other.min.x < self.max.x
+            && self.min.y < other.max.y
+            && other.min.y < self.max.y
+    }
+
     pub fn including(self, point: Point) -> Rect {
         Rect {
             min: Point {

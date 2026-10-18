@@ -1,7 +1,8 @@
 use opentab_model::{Slide, StrokeDirection};
 
+use super::bend::{ARROW_SIZE, bend_rects};
 use super::label::{LABEL_PAD, baseline_below_centre, digit_height, measure};
-use super::{FINGER_EM, FretPlan, LinkKind, TabBeat};
+use super::{FINGER_EM, FretPlan, LinkKind, MARK_EM, TabBeat};
 use crate::display::{
     Colour, FilledRect, Font, Line, PathSegment, PathStyle, Primitive, Shape, TextAnchor, TextRun,
 };
@@ -14,19 +15,13 @@ pub const SLIDE_LENGTH: Units = STAFF_SPACE;
 pub const SLIDE_RISE: Units = Units(STAFF_SPACE.0 * 7 / 20);
 pub const SLIDE_GAP: Units = Units(STAFF_SPACE.0 / 8);
 pub const LINK_ROOM: Units = Units(STAFF_SPACE.0 * 3 / 5);
-pub const BEND_WIDTH: Units = Units(STAFF_SPACE.0 * 5 / 4);
-pub const RELEASE_WIDTH: Units = Units(STAFF_SPACE.0 * 5 / 4);
-pub const BEND_RISE: Units = Units(STAFF_SPACE.0 * 3 / 2);
-pub const BEND_LABEL_GAP: Units = Units(STAFF_SPACE.0 / 5);
-pub const BEND_EM: Units = Units(STAFF_SPACE.0 * 11 / 10);
-pub const ARROW_SIZE: Units = Units(STAFF_SPACE.0 * 3 / 5);
 pub const STROKE_GAP: Units = Units(STAFF_SPACE.0 * 3 / 10);
 pub const STROKE_REACH: Units = Units(STAFF_SPACE.0 * 3 / 5);
 pub const HAMMER_EM: Units = STAFF_SPACE;
 pub const LETTER_GAP: Units = Units(STAFF_SPACE.0 / 8);
 pub const LABEL_ASCENT: i64 = 6;
 pub const LABEL_ASCENT_PARTS: i64 = 5;
-pub const FINGER_GAP: Units = Units(STAFF_SPACE.0 / 10);
+pub const TAB_FINGER_GAP: Units = Units(STAFF_SPACE.0 / 10);
 
 pub fn effect_thickness() -> Units {
     Metrics::bravura().engraving_defaults().stem_thickness
@@ -34,10 +29,6 @@ pub fn effect_thickness() -> Units {
 
 pub fn text_height(em: Units) -> Units {
     Units(digit_height(em).0.saturating_mul(LABEL_ASCENT) / LABEL_ASCENT_PARTS)
-}
-
-pub fn bend_top() -> Units {
-    -(BEND_RISE + BEND_LABEL_GAP + text_height(BEND_EM))
 }
 
 pub fn hammer_top(fret: &FretPlan) -> Units {
@@ -99,136 +90,6 @@ pub fn curve(segments: Vec<PathSegment>) -> Primitive {
     })
 }
 
-pub struct BendGeometry {
-    pub start: Point,
-    pub apex: Point,
-    pub release: Option<Point>,
-}
-
-pub fn bend_geometry(fret: &FretPlan, prebend: bool, release: bool) -> BendGeometry {
-    let label = fret.label();
-    let apex_y = -BEND_RISE;
-    let (start, apex) = if prebend {
-        (
-            Point {
-                x: fret.dx,
-                y: label.min.y,
-            },
-            Point {
-                x: fret.dx,
-                y: apex_y,
-            },
-        )
-    } else {
-        (
-            Point {
-                x: label.max.x,
-                y: fret.y,
-            },
-            Point {
-                x: label.max.x + BEND_WIDTH,
-                y: apex_y,
-            },
-        )
-    };
-    BendGeometry {
-        start,
-        apex,
-        release: release.then_some(Point {
-            x: apex.x + RELEASE_WIDTH,
-            y: label.min.y,
-        }),
-    }
-}
-
-pub fn bend_rects(fret: &FretPlan) -> Vec<Rect> {
-    let Some(bend) = &fret.bend else {
-        return Vec::new();
-    };
-    let geometry = bend_geometry(fret, bend.prebend, bend.release);
-    let arrow = arrow_box(ARROWHEAD_BLACK_UP);
-    let half_text = measure(&bend.text, BEND_EM).half();
-    let mut rects = vec![
-        Rect::new(
-            Point {
-                x: geometry.apex.x - half_text.max(arrow.width().half()),
-                y: bend_top(),
-            },
-            Point {
-                x: geometry.apex.x + half_text.max(arrow.width().half()),
-                y: geometry.start.y,
-            },
-        ),
-        Rect::new(geometry.start, geometry.start).including(geometry.apex),
-    ];
-    if let Some(end) = geometry.release {
-        rects.push(Rect::new(geometry.apex, geometry.apex).including(Point {
-            x: end.x + arrow.width().half(),
-            y: end.y,
-        }));
-    }
-    rects
-}
-
-pub fn draw_bend(fret: &FretPlan, at: Point, items: &mut Vec<Primitive>) {
-    let Some(bend) = &fret.bend else {
-        return;
-    };
-    let geometry = bend_geometry(fret, bend.prebend, bend.release);
-    let shift = |point: Point| point.offset(at);
-    let apex = shift(geometry.apex);
-    let start = shift(geometry.start);
-    let (head, base) = arrow_up(apex);
-    if bend.prebend {
-        items.push(line(start, Point { x: apex.x, y: base }));
-    } else {
-        let quarter = (apex.x - start.x).half().half();
-        items.push(curve(vec![
-            PathSegment::MoveTo(start),
-            PathSegment::CubicTo(
-                Point {
-                    x: apex.x - quarter,
-                    y: start.y,
-                },
-                Point {
-                    x: apex.x,
-                    y: start.y + (base - start.y).half(),
-                },
-                Point { x: apex.x, y: base },
-            ),
-        ]));
-    }
-    items.push(glyph(ARROWHEAD_BLACK_UP, head, ARROW_SIZE));
-    if let Some(end) = geometry.release {
-        let end = shift(end);
-        let (down, tail) = arrow_down(end);
-        items.push(curve(vec![
-            PathSegment::MoveTo(apex),
-            PathSegment::CubicTo(
-                Point {
-                    x: apex.x + (end.x - apex.x).half(),
-                    y: apex.y,
-                },
-                Point {
-                    x: end.x,
-                    y: apex.y + (tail - apex.y).half().half(),
-                },
-                Point { x: end.x, y: tail },
-            ),
-        ]));
-        items.push(glyph(ARROWHEAD_BLACK_DOWN, down, ARROW_SIZE));
-    }
-    items.push(text(
-        &bend.text,
-        Point {
-            x: apex.x,
-            y: apex.y - BEND_LABEL_GAP,
-        },
-        BEND_EM,
-        TextAnchor::Middle,
-    ));
-}
-
 pub fn slide_segment(fret: &FretPlan, slide: Slide) -> Option<(Point, Point)> {
     let label = fret.label();
     let before_end = label.min.x - SLIDE_GAP;
@@ -253,8 +114,8 @@ pub fn finger_rect(fret: &FretPlan, finger: &str) -> Rect {
     let bottom = fret.y - LABEL_PAD;
     Rect::new(
         Point {
-            x: label.min.x - width - FINGER_GAP,
-            y: bottom - digit_height(FINGER_EM) - FINGER_GAP,
+            x: label.min.x - width - TAB_FINGER_GAP,
+            y: bottom - digit_height(FINGER_EM) - TAB_FINGER_GAP,
         },
         Point {
             x: label.min.x,
@@ -269,7 +130,7 @@ pub fn draw_finger(fret: &FretPlan, finger: &str, at: Point, items: &mut Vec<Pri
     items.push(text(
         finger,
         Point {
-            x: at.x + rect.max.x - FINGER_GAP,
+            x: at.x + rect.max.x - TAB_FINGER_GAP,
             y: at.y + rect.max.y,
         },
         FINGER_EM,
@@ -362,7 +223,18 @@ fn fret_rects(fret: &FretPlan, alone: bool) -> Vec<Rect> {
             ));
         }
     }
-    rects.extend(bend_rects(fret));
+    if fret
+        .incoming
+        .is_some_and(|link| link.kind == LinkKind::Hammer)
+    {
+        rects.push(Rect::new(
+            Point {
+                x: label.min.x,
+                y: hammer_top(fret),
+            },
+            label.max,
+        ));
+    }
     if alone && (fret.tie_origin || fret.tie_destination) {
         rects.push(Rect::new(
             label.min,
@@ -381,6 +253,20 @@ pub fn beat_ink(beat: &TabBeat, alone: bool) -> Option<Ink> {
         .iter()
         .flat_map(|fret| fret_rects(fret, alone))
         .collect();
+    rects.extend(bend_rects(&beat.bends));
+    if let Some(mark) = &beat.mark {
+        let half = measure(mark, MARK_EM).half();
+        rects.push(Rect::new(
+            Point {
+                x: -half,
+                y: Units::ZERO,
+            },
+            Point {
+                x: half,
+                y: Units::ZERO,
+            },
+        ));
+    }
     if let Some(geometry) = stroke_geometry(beat) {
         let half = arrow_box(ARROWHEAD_BLACK_UP).width().half();
         rects.push(Rect::new(

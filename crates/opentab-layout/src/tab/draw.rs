@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use super::TabNotation;
-use super::effects::{draw_bend, draw_finger, draw_label, draw_stroke, line, slide_segment, text};
+use super::bend::draw_bends;
+use super::effects::{draw_finger, draw_label, draw_stroke, line, slide_segment, text};
 use super::label::{LABEL_PAD, MARK_EM};
 use super::runs::LinkAnchor;
 use crate::display::{Group, GroupId, Primitive, TextAnchor};
@@ -39,6 +40,7 @@ fn record(tab: &TabNotation, index: usize, x: Units, top: Units, row: &mut TabRo
             y: top + fret.y,
             top: top + label.min.y,
             link: fret.link,
+            incoming: fret.incoming,
             size: beat.size,
         });
     }
@@ -103,8 +105,8 @@ pub fn draw_bar(
             if let Some((from, to)) = fret.slide.and_then(|slide| slide_segment(fret, slide)) {
                 beat_items.push(line(from.offset(at), to.offset(at)));
             }
-            draw_bend(fret, at, &mut beat_items);
         }
+        draw_bends(&beat.bends, at, &mut beat_items);
         draw_stroke(beat, at, &mut beat_items);
         if let (Some(mark), Some(lane)) = (&beat.mark, marks) {
             beat_items.push(text(

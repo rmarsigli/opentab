@@ -57,9 +57,9 @@ pub use structure::{
     SystemLayout,
 };
 pub use tab::{
-    BEND_RISE, BendPlan, ColumnMarks, FINGER_EM, FRET_EM, FretPlan, LABEL_PAD, Link, LinkKind,
-    MARK_EM, RHYTHM_GAP, TabBeat, TabInput, TabNotation, TabRhythm, analyse_tab,
-    baseline_below_centre, bend_text, fret_text, tab_staff,
+    BEND_RISE, BendDraw, BendSegment, BendShape, ColumnMarks, FINGER_EM, FRET_EM, FretPlan,
+    Heading, LABEL_PAD, Link, LinkKind, MARK_EM, RHYTHM_GAP, TabBeat, TabInput, TabNotation,
+    TabRhythm, analyse_tab, baseline_below_centre, bend_text, fret_text, tab_staff,
 };
 pub use ties::{TieAnchor, TieSpan, draw_ties, tie};
 pub use units::{Micrometres, Point, REFERENCE_EM, Rect, STAFF_SPACE, STAVES_PER_EM, Units};

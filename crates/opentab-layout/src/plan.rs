@@ -409,6 +409,9 @@ pub fn tab_notation(
             analyse_tab(&TabInput {
                 track,
                 bar: bars.get(spec.source).copied().flatten(),
+                previous: index
+                    .checked_sub(1)
+                    .and_then(|before| model_bar(score, source, before)),
                 next: model_bar(score, source, index + 1),
                 slots: grid.slots.get(spec.source).map_or(&[], Vec::as_slice),
                 columns: &grid.columns,

@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 
-use crate::display::{Font, Group, GroupId, Line, Primitive, TextAnchor, TextRun};
+use crate::display::{
+    Colour, FilledRect, Font, Group, GroupId, Line, Primitive, TextAnchor, TextRun,
+};
 use crate::glyphs::{Metrics, NOTEHEAD_PARENTHESIS_LEFT, NOTEHEAD_PARENTHESIS_RIGHT};
-use crate::notation::{BeatPlan, StaffNotation, parenthesis_origins, staff_geometry};
+use crate::notation::{BeatPlan, StaffNotation, finger_rect, parenthesis_origins, staff_geometry};
 use crate::rhythm::{RhythmCanvas, RhythmStaff, StemPolicy, draw_rhythm, glyph};
 use crate::structure::{BarLayout, StaffLayout};
 use crate::tab::FINGER_EM;
 use crate::ties::TieAnchor;
-use crate::units::{Point, STAFF_SPACE, Units};
+use crate::units::{Point, Rect, STAFF_SPACE, Units};
 
 fn beat_x(beat: &BeatPlan, bar: &BarLayout) -> Units {
     if let Some(rest) = &beat.rest
@@ -27,6 +29,32 @@ pub struct TieRow<'a> {
 fn beat_items(beat: &BeatPlan, x: Units, top: Units, geometry: &RhythmStaff) -> Vec<Primitive> {
     let mut items = Vec::new();
     let thickness = Metrics::bravura().engraving_defaults().leger_line_thickness;
+    for finger in &beat.fingers {
+        let rect = finger_rect(finger);
+        items.push(Primitive::FilledRect(FilledRect {
+            rect: Rect::new(
+                Point {
+                    x: x + rect.min.x,
+                    y: top + rect.min.y,
+                },
+                Point {
+                    x: x + rect.max.x,
+                    y: top + rect.max.y,
+                },
+            ),
+            colour: Colour::White,
+        }));
+        items.push(Primitive::Text(TextRun {
+            origin: Point {
+                x: x + finger.right,
+                y: top + finger.baseline,
+            },
+            text: finger.text.to_string(),
+            font: Font::Text,
+            em: FINGER_EM,
+            anchor: TextAnchor::End,
+        }));
+    }
     for ledger in &beat.ledgers {
         items.push(Primitive::Line(Line {
             from: Point {
@@ -95,18 +123,6 @@ fn beat_items(beat: &BeatPlan, x: Units, top: Units, geometry: &RhythmStaff) -> 
             },
             beat.size,
         ));
-    }
-    for finger in &beat.fingers {
-        items.push(Primitive::Text(TextRun {
-            origin: Point {
-                x: x + finger.right,
-                y: top + finger.baseline,
-            },
-            text: finger.text.to_string(),
-            font: Font::Text,
-            em: FINGER_EM,
-            anchor: TextAnchor::End,
-        }));
     }
     items
 }
