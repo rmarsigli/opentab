@@ -361,23 +361,17 @@ pub fn check(score: &Score, options: &LayoutOptions, list: &DisplayList) {
                 for glyph in bar_glyphs(page, bar.group) {
                     let ink = ink(&glyph);
                     assert!(
-                        crowded || (ink.min.x >= bar.rect.min.x && ink.max.x <= bar.rect.max.x),
+                        ink.min.x >= bar.rect.min.x && ink.max.x <= bar.rect.max.x,
                         "glyph U+{:04X} outside bar {}",
                         u32::from(glyph.codepoint),
                         bar.index
                     );
-                    let area = content(page);
-                    let fits = if crowded {
-                        area.min.y <= ink.min.y && ink.max.y <= area.max.y
-                    } else {
-                        inside(area, ink)
-                    };
-                    assert!(fits, "glyph outside the content area");
+                    assert!(inside(content(page), ink), "glyph outside the content area");
                 }
                 for slot in &bar.beats {
                     let x = bar.x_of(slot).unwrap();
                     assert!(x < bar.rect.max.x, "beat x of bar {}", bar.index);
-                    assert!(crowded || x >= bar.content, "grace before content");
+                    assert!(x >= bar.content, "grace before content");
                     let column = &bar.columns[slot.column];
                     match slot.grace {
                         Some(grace) => {

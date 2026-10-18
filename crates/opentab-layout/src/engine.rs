@@ -1,5 +1,6 @@
 use opentab_model::Score;
 
+use crate::barline::Strokes;
 use crate::barline::strokes;
 use crate::display::{DisplayList, Page, PageSize, StaffSpace};
 use crate::draw::{Context, draw_system, labels};
@@ -9,7 +10,7 @@ use crate::geometry::{
 };
 use crate::glyphs::Metrics;
 use crate::options::{LayoutError, LayoutOptions};
-use crate::plan::{VerticalNeeds, break_systems, plan_bars};
+use crate::plan::{BarPlan, SystemPlan, VerticalNeeds, break_systems, plan_bars};
 use crate::select::{StaffSpec, select};
 use crate::text::text_font;
 use crate::units::{Micrometres, STAFF_SPACE, Units};
@@ -54,7 +55,6 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         .max()
         .filter(|width| *width > Units::ZERO)
         .map_or(Units::ZERO, |width| width + NAME_GAP);
-    let tallest = stack(&selection.specs, plans.iter().map(|plan| &plan.vertical));
     let widest = plans
         .iter()
         .enumerate()
@@ -73,29 +73,21 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         .unwrap_or_default();
     let need = Need {
         width: widest,
-        height: tallest.height,
+        height: Units::ZERO,
     };
-    let staff_space = match effective_staff_space(options.page, requested, need) {
-        Err(LayoutError::PageTooSmall) => {
-            StaffSpace::new(requested.micrometres().min(MIN_STAFF_SPACE))
-                .ok_or(LayoutError::PageTooSmall)?
-        }
-        other => other?,
-    };
-    let template = Page::new(options.page, staff_space);
-    let frame = Frame {
-        left: template.units(MARGIN),
-        right: template.width() - template.units(MARGIN),
-        top: template.units(MARGIN),
-        bottom: template.height() - template.units(MARGIN),
-    };
-    let systems = break_systems(
-        &plans,
+    let widest_fit = effective_staff_space(options.page, requested, need)?;
+    let fit = Fit {
+        plans: &plans,
+        specs: &selection.specs,
         strokes,
-        frame.left + bracket_space,
-        frame.right,
+        bracket_space,
         name_indent,
-    );
+        page: options.page,
+    };
+    let staff_space = fit.largest(requested, widest_fit)?;
+    let template = Page::new(options.page, staff_space);
+    let frame = fit.frame(staff_space);
+    let systems = fit.systems(&frame);
     let context = Context {
         score,
         selection: &selection,
@@ -140,6 +132,87 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         staff_space,
         crowded,
     })
+}
+
+pub struct Fit<'a> {
+    pub plans: &'a [BarPlan],
+    pub specs: &'a [StaffSpec],
+    pub strokes: Strokes,
+    pub bracket_space: Units,
+    pub name_indent: Units,
+    pub page: PageSize,
+}
+
+impl Fit<'_> {
+    pub fn frame(&self, space: StaffSpace) -> Frame {
+        let template = Page::new(self.page, space);
+        Frame {
+            left: template.units(MARGIN),
+            right: template.width() - template.units(MARGIN),
+            top: template.units(MARGIN),
+            bottom: template.height() - template.units(MARGIN),
+        }
+    }
+
+    pub fn systems(&self, frame: &Frame) -> Vec<SystemPlan> {
+        break_systems(
+            self.plans,
+            self.strokes,
+            frame.left + self.bracket_space,
+            frame.right,
+            self.name_indent,
+        )
+    }
+
+    pub fn tallest(&self, space: StaffSpace) -> Units {
+        let frame = self.frame(space);
+        self.systems(&frame)
+            .iter()
+            .map(|system| {
+                stack(
+                    self.specs,
+                    self.plans[system.first..system.end]
+                        .iter()
+                        .map(|plan| &plan.vertical),
+                )
+                .height
+            })
+            .max()
+            .unwrap_or_default()
+    }
+
+    pub fn fits(&self, space: StaffSpace) -> bool {
+        let frame = self.frame(space);
+        self.tallest(space) <= frame.bottom - frame.top
+    }
+
+    pub fn largest(
+        &self,
+        requested: StaffSpace,
+        upper: StaffSpace,
+    ) -> Result<StaffSpace, LayoutError> {
+        if self.fits(upper) {
+            return Ok(upper);
+        }
+        let floor = requested
+            .micrometres()
+            .min(MIN_STAFF_SPACE)
+            .min(upper.micrometres());
+        let lowest = StaffSpace::new(floor).ok_or(LayoutError::PageTooSmall)?;
+        if !self.fits(lowest) {
+            return Err(LayoutError::PageTooSmall);
+        }
+        let mut low = floor.0;
+        let mut high = upper.micrometres().0;
+        while high - low > 1 {
+            let middle = low + (high - low) / 2;
+            match StaffSpace::new(Micrometres(middle)) {
+                Some(space) if self.fits(space) => low = middle,
+                _ => high = middle,
+            }
+        }
+        StaffSpace::new(Micrometres(low)).ok_or(LayoutError::PageTooSmall)
+    }
 }
 
 pub fn check_page(page: PageSize) -> Result<(), LayoutError> {
