@@ -74,13 +74,18 @@ pub fn duration_width(numerator: i128, denominator: NonZeroI128) -> Units {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Piece {
     Fixed(Units),
-    Space { natural: Units, weight: Units },
+    Space {
+        natural: Units,
+        minimum: Units,
+        weight: Units,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct Totals {
     fixed: i128,
     natural: i128,
+    minimum: i128,
     weight: i128,
 }
 
@@ -91,8 +96,13 @@ impl Totals {
                 fixed: self.fixed + i128::from(width.0),
                 ..self
             },
-            Piece::Space { natural, weight } => Totals {
+            Piece::Space {
+                natural,
+                minimum,
+                weight,
+            } => Totals {
                 natural: self.natural + i128::from(natural.0),
+                minimum: self.minimum + i128::from(minimum.0),
                 weight: self.weight + i128::from(weight.0),
                 ..self
             },
@@ -105,29 +115,71 @@ pub fn natural_width(pieces: &[Piece]) -> Units {
     Units(narrow(totals.fixed + totals.natural))
 }
 
-pub fn place(pieces: &[Piece], target: Units) -> Option<Vec<Units>> {
+pub fn minimum_width(pieces: &[Piece]) -> Units {
     let totals = pieces.iter().fold(Totals::default(), Totals::add);
-    let target = i128::from(target.0);
-    let room = target.checked_sub(totals.fixed).filter(|room| *room >= 0)?;
-    let extra = room - totals.natural;
-    let weight = NonZeroI128::new(totals.weight)?;
-    let natural = NonZeroI128::new(totals.natural)?;
+    Units(narrow(totals.fixed + totals.minimum))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Placement {
+    pub positions: Vec<Units>,
+    pub crowded: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Regime {
+    Stretch { extra: i128, weight: NonZeroI128 },
+    Squeeze { slack: i128, range: NonZeroI128 },
+    Crowd { room: i128, minimum: NonZeroI128 },
+}
+
+impl Regime {
+    fn spaces(self, running: Totals) -> i128 {
+        match self {
+            Regime::Stretch { extra, weight } => {
+                running.natural + extra * running.weight / weight.get()
+            }
+            Regime::Squeeze { slack, range } => {
+                running.minimum + (running.natural - running.minimum) * slack / range.get()
+            }
+            Regime::Crowd { room, minimum } => running.minimum * room / minimum.get(),
+        }
+    }
+}
+
+pub fn place(pieces: &[Piece], target: Units) -> Option<Placement> {
+    let totals = pieces.iter().fold(Totals::default(), Totals::add);
+    let room = i128::from(target.0)
+        .checked_sub(totals.fixed)
+        .filter(|room| *room >= 0)?;
+    let regime = if room >= totals.natural {
+        Regime::Stretch {
+            extra: room - totals.natural,
+            weight: NonZeroI128::new(totals.weight)?,
+        }
+    } else if room >= totals.minimum {
+        Regime::Squeeze {
+            slack: room - totals.minimum,
+            range: NonZeroI128::new(totals.natural - totals.minimum)?,
+        }
+    } else {
+        Regime::Crowd {
+            room,
+            minimum: NonZeroI128::new(totals.minimum)?,
+        }
+    };
     let mut running = Totals::default();
     let mut positions = Vec::with_capacity(pieces.len() + 1);
-    let position = |running: Totals| {
-        let spaces = if extra >= 0 {
-            running.natural + extra * running.weight / weight.get()
-        } else {
-            running.natural * room / natural.get()
-        };
-        Units(narrow(running.fixed + spaces))
-    };
+    let position = |running: Totals| Units(narrow(running.fixed + regime.spaces(running)));
     positions.push(position(running));
     for piece in pieces {
         running = running.add(piece);
         positions.push(position(running));
     }
-    Some(positions)
+    Some(Placement {
+        positions,
+        crowded: matches!(regime, Regime::Crowd { .. }),
+    })
 }
 
 #[cfg(test)]
@@ -207,50 +259,72 @@ mod tests {
         }
     }
 
-    fn space(natural: i64, weight: i64) -> Piece {
+    fn space(natural: i64, minimum: i64, weight: i64) -> Piece {
         Piece::Space {
             natural: Units(natural),
+            minimum: Units(minimum),
             weight: Units(weight),
         }
     }
 
+    fn positions(pieces: &[Piece], target: i64) -> Vec<Units> {
+        place(pieces, Units(target)).unwrap().positions
+    }
+
+    fn sample() -> [Piece; 4] {
+        [
+            Piece::Fixed(Units(100)),
+            space(300, 200, 100),
+            space(300, 100, 300),
+            Piece::Fixed(Units(50)),
+        ]
+    }
+
     #[test]
     fn stretching_adds_space_in_proportion_to_the_duration_weight() {
-        let pieces = [
-            Piece::Fixed(Units(100)),
-            space(300, 100),
-            space(300, 300),
-            Piece::Fixed(Units(50)),
-        ];
+        let pieces = sample();
         assert_eq!(natural_width(&pieces), Units(750));
-        let placed = place(&pieces, Units(1150)).unwrap();
+        assert_eq!(minimum_width(&pieces), Units(450));
         assert_eq!(
-            placed,
+            positions(&pieces, 1150),
             vec![Units(0), Units(100), Units(500), Units(1100), Units(1150)]
         );
-        let exact = place(&pieces, Units(750)).unwrap();
         assert_eq!(
-            exact,
+            positions(&pieces, 750),
             vec![Units(0), Units(100), Units(400), Units(700), Units(750)]
+        );
+        assert!(!place(&pieces, Units(750)).unwrap().crowded);
+    }
+
+    #[test]
+    fn squeezing_moves_each_space_toward_its_minimum() {
+        let pieces = sample();
+        let squeezed = place(&pieces, Units(600)).unwrap();
+        assert!(!squeezed.crowded);
+        assert_eq!(
+            squeezed.positions,
+            vec![Units(0), Units(100), Units(350), Units(550), Units(600)]
+        );
+        assert_eq!(
+            positions(&pieces, 450),
+            vec![Units(0), Units(100), Units(300), Units(400), Units(450)]
         );
     }
 
     #[test]
-    fn compressing_scales_only_the_spaces() {
-        let pieces = [
-            Piece::Fixed(Units(100)),
-            space(300, 100),
-            space(300, 300),
-            Piece::Fixed(Units(50)),
-        ];
-        let placed = place(&pieces, Units(450)).unwrap();
+    fn crowding_scales_the_minimums_and_is_reported() {
+        let pieces = sample();
+        let crowded = place(&pieces, Units(300)).unwrap();
+        assert!(crowded.crowded);
         assert_eq!(
-            placed,
-            vec![Units(0), Units(100), Units(250), Units(400), Units(450)]
+            crowded.positions,
+            vec![Units(0), Units(100), Units(200), Units(250), Units(300)]
         );
+        assert!(!place(&pieces, Units(450)).unwrap().crowded);
+        assert!(place(&pieces, Units(449)).unwrap().crowded);
         assert_eq!(place(&pieces, Units(149)), None);
         assert_eq!(
-            place(&pieces, Units(150)).unwrap(),
+            positions(&pieces, 150),
             vec![Units(0), Units(100), Units(100), Units(100), Units(150)]
         );
     }
@@ -259,14 +333,14 @@ mod tests {
     fn placement_always_ends_exactly_on_the_target_and_never_goes_back() {
         let pieces = [
             Piece::Fixed(Units(7)),
-            space(1536, 1536),
-            space(2000, 1792),
+            space(1536, 1413, 1536),
+            space(2000, 1413, 1792),
             Piece::Fixed(Units(13)),
-            space(4096, 4096),
-            space(1700, 1536),
+            space(4096, 1413, 4096),
+            space(1720, 1413, 1536),
         ];
         for target in 20..20_000 {
-            let placed = place(&pieces, Units(target)).unwrap();
+            let placed = positions(&pieces, target);
             assert_eq!(placed.first(), Some(&Units(0)));
             assert_eq!(placed.last(), Some(&Units(target)), "{target}");
             assert!(placed.windows(2).all(|pair| pair[0] <= pair[1]), "{target}");

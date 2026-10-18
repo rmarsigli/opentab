@@ -70,9 +70,11 @@ impl Page {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisplayList {
     pub pages: Vec<Page>,
+    pub staff_space: StaffSpace,
+    pub crowded: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

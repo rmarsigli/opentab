@@ -344,4 +344,31 @@ mod tests {
         assert_eq!(grid.columns.len(), 1 + 2 + 4 + 6 + 10 + 12);
         assert_eq!(grid.span, grid.per_whole * 15 / 8);
     }
+
+    #[test]
+    fn rhythm_overflow_is_reported_instead_of_wrapping() {
+        assert_eq!(lcm(i128::MAX / 3 + 1, 7), None);
+        assert_eq!(lcm(6, 4), Some(12));
+        assert_eq!(ticks(Fraction::new(255, 1), i128::MAX / 2), None);
+        assert_eq!(ticks(Fraction::new(3, 4), 8), Some(6));
+        let long = bar(vec![vec![plain(NoteValue::Whole), plain(NoteValue::Whole)]]);
+        assert!(walk(&long, i128::MAX / 2 + 1).is_none());
+        assert!(walk(&long, i128::MAX / 2 - 1).is_some());
+    }
+
+    #[test]
+    fn the_worst_possible_tick_base_still_fits() {
+        let beats: Vec<Beat> = (1..=64_u8)
+            .flat_map(|num| {
+                [
+                    beat(NoteValue::OneTwentyEighth, 3, Some((num, 1)), None),
+                    beat(NoteValue::OneTwentyEighth, 3, Some((num, 64)), None),
+                ]
+            })
+            .collect();
+        let worst = bar(vec![beats]);
+        let grid = grid(&[Some(&worst)], Fraction::new(255, 1), false).unwrap();
+        assert!(grid.per_whole > 1_000_000_000_000_000_000_000_000);
+        assert_eq!(grid.columns.len(), 128);
+    }
 }

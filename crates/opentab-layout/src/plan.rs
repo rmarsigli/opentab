@@ -1,16 +1,18 @@
 use std::num::NonZeroI128;
 
-use opentab_model::{Bar, MasterBar, Score, TimeSignature};
+use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature};
 
 use crate::barline::{EndSign, Strokes};
 use crate::display::GroupId;
 use crate::furniture::{HEAD_GAP, HEAD_PAD, KeyDraw, clef_glyph, time_width};
-use crate::geometry::{BAR_LEAD, COLUMN_GAP, EMPTY_BAR, END_PAD};
+use crate::geometry::{
+    BAR_LEAD, COLUMN_GAP, EMPTY_BAR, EMPTY_BAR_MINIMUM, END_PAD, MIN_COLUMN_GAP,
+};
 use crate::glyphs::{Metrics, NOTEHEAD_BLACK};
 use crate::grid::{Grid, grid};
 use crate::options::LayoutError;
 use crate::select::{Selection, StaffSpec, model_bar, standard_clef};
-use crate::spacing::{Piece, duration_width, natural_width};
+use crate::spacing::{Piece, duration_width, minimum_width, natural_width};
 use crate::structure::{ClefSign, GRACE_ADVANCE, StaffKind};
 use crate::units::{STAFF_SPACE, Units};
 
@@ -25,6 +27,30 @@ pub struct Head {
     pub width: Units,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Extent {
+    pub left: Units,
+    pub right: Units,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct VerticalNeeds {
+    pub above_system: Units,
+    pub above_staff: Vec<Units>,
+    pub below_system: Units,
+}
+
+pub struct BarInput<'a> {
+    pub score: &'a Score,
+    pub selection: &'a Selection,
+    pub index: usize,
+    pub master: &'a MasterBar,
+    pub bars: &'a [Option<&'a Bar>],
+    pub clefs: &'a [ClefSign],
+    pub key: KeySignature,
+    pub grid: &'a Grid,
+}
+
 pub struct BarPlan {
     pub index: usize,
     pub number: usize,
@@ -33,12 +59,24 @@ pub struct BarPlan {
     pub start: Head,
     pub inline: Head,
     pub repeat_start: bool,
-    pub extents: Vec<(Units, Units)>,
+    pub shares_thick: bool,
+    pub extents: Vec<Extent>,
     pub spaces: Vec<Piece>,
     pub end: EndSign,
     pub ending: u8,
     pub repeat_count: Option<u8>,
     pub groups: Vec<GroupId>,
+    pub vertical: VerticalNeeds,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Slots {
+    pub head: usize,
+    pub repeat: usize,
+    pub lead: usize,
+    pub columns: usize,
+    pub end: usize,
+    pub right: usize,
 }
 
 impl BarPlan {
@@ -48,29 +86,42 @@ impl BarPlan {
 
     pub fn repeat_width(&self, at_start: bool, strokes: Strokes) -> Units {
         if !self.repeat_start {
-            return Units::ZERO;
-        }
-        let gap = if self.head(at_start).width == Units::ZERO {
-            strokes.thin_thick_gap
-        } else {
             Units::ZERO
-        };
-        gap + strokes.start_repeat_width()
+        } else if !at_start && self.shares_thick {
+            strokes.shared_start_repeat_width()
+        } else {
+            strokes.start_repeat_width()
+        }
     }
 
     pub fn lead(&self) -> Units {
         match self.extents.first() {
-            Some((left, _)) => BAR_LEAD + *left,
+            Some(extent) => BAR_LEAD + extent.left,
             None => Units::ZERO,
         }
     }
 
+    pub fn slots(&self, at_start: bool) -> Slots {
+        let (head, repeat) = if at_start { (0, 1) } else { (1, 0) };
+        Slots {
+            head,
+            repeat,
+            lead: 2,
+            columns: 3,
+            end: 3 + self.spaces.len(),
+            right: 4 + self.spaces.len(),
+        }
+    }
+
     pub fn pieces(&self, at_start: bool, strokes: Strokes) -> Vec<Piece> {
-        let mut pieces = vec![
-            Piece::Fixed(self.head(at_start).width),
-            Piece::Fixed(self.repeat_width(at_start, strokes)),
-            Piece::Fixed(self.lead()),
-        ];
+        let head = Piece::Fixed(self.head(at_start).width);
+        let repeat = Piece::Fixed(self.repeat_width(at_start, strokes));
+        let mut pieces = if at_start {
+            vec![head, repeat]
+        } else {
+            vec![repeat, head]
+        };
+        pieces.push(Piece::Fixed(self.lead()));
         pieces.extend(self.spaces.iter().copied());
         pieces.push(Piece::Fixed(strokes.end_width(self.end)));
         pieces
@@ -78,6 +129,10 @@ impl BarPlan {
 
     pub fn natural(&self, at_start: bool, strokes: Strokes) -> Units {
         natural_width(&self.pieces(at_start, strokes))
+    }
+
+    pub fn minimum(&self, at_start: bool, strokes: Strokes) -> Units {
+        minimum_width(&self.pieces(at_start, strokes))
     }
 }
 
@@ -130,47 +185,70 @@ pub fn build_head(
     }
 }
 
-pub fn extents(grid: &Grid) -> Vec<(Units, Units)> {
-    let notehead = Metrics::bravura()
+pub fn notehead_width() -> Units {
+    Metrics::bravura()
         .bbox(NOTEHEAD_BLACK.name)
-        .map_or(STAFF_SPACE, |rect| rect.max.x);
-    grid.columns
+        .map_or(STAFF_SPACE, |rect| rect.max.x)
+}
+
+pub fn extents(input: &BarInput<'_>) -> Vec<Extent> {
+    let notehead = notehead_width();
+    input
+        .grid
+        .columns
         .iter()
         .map(|column| {
             let graces = i64::try_from(column.graces).unwrap_or(i64::MAX);
-            (Units(GRACE_ADVANCE.0.saturating_mul(graces)), notehead)
+            Extent {
+                left: Units(GRACE_ADVANCE.0.saturating_mul(graces)),
+                right: notehead,
+            }
         })
         .collect()
 }
 
-pub fn spaces(grid: &Grid, extents: &[(Units, Units)]) -> Vec<Piece> {
+pub fn vertical_needs(input: &BarInput<'_>) -> VerticalNeeds {
+    VerticalNeeds {
+        above_system: Units::ZERO,
+        above_staff: vec![Units::ZERO; input.selection.specs.len()],
+        below_system: Units::ZERO,
+    }
+}
+
+pub fn spaces(grid: &Grid, extents: &[Extent]) -> Vec<Piece> {
+    let empty = vec![Piece::Space {
+        natural: EMPTY_BAR,
+        minimum: EMPTY_BAR_MINIMUM,
+        weight: EMPTY_BAR,
+    }];
     let Some(per_whole) = NonZeroI128::new(grid.per_whole) else {
-        return vec![Piece::Space {
-            natural: EMPTY_BAR,
-            weight: EMPTY_BAR,
-        }];
+        return empty;
     };
     if grid.columns.is_empty() {
-        return vec![Piece::Space {
-            natural: EMPTY_BAR,
-            weight: EMPTY_BAR,
-        }];
+        return empty;
     }
     let mut pieces = Vec::with_capacity(grid.columns.len());
     for (index, column) in grid.columns.iter().enumerate() {
-        let right = extents.get(index).map_or(Units::ZERO, |extent| extent.1);
-        let (until, collision) = match grid.columns.get(index + 1) {
+        let right = extents
+            .get(index)
+            .map_or(Units::ZERO, |extent| extent.right);
+        let (until, comfortable, minimum) = match grid.columns.get(index + 1) {
             Some(next) => {
                 let left = extents
                     .get(index + 1)
-                    .map_or(Units::ZERO, |extent| extent.0);
-                (next.ticks, right + COLUMN_GAP + left)
+                    .map_or(Units::ZERO, |extent| extent.left);
+                (
+                    next.ticks,
+                    right + COLUMN_GAP + left,
+                    right + MIN_COLUMN_GAP + left,
+                )
             }
-            None => (grid.span, right + END_PAD),
+            None => (grid.span, right + END_PAD, right + MIN_COLUMN_GAP),
         };
         let weight = duration_width(until.saturating_sub(column.ticks), per_whole);
         pieces.push(Piece::Space {
-            natural: weight.max(collision),
+            natural: weight.max(comfortable),
+            minimum,
             weight,
         });
     }
@@ -189,9 +267,37 @@ pub fn end_sign(score: &Score, index: usize, master: &MasterBar) -> EndSign {
     }
 }
 
+fn largest_id(score: &Score) -> u64 {
+    let mut largest = score.ids.peek().0;
+    let mut see = |id: u64| largest = largest.max(id.saturating_add(1));
+    for master in &score.master_bars {
+        see(master.id.0.0);
+    }
+    for track in &score.tracks {
+        see(track.id.0.0);
+        for staff in &track.staves {
+            see(staff.id.0.0);
+            for bar in &staff.bars {
+                see(bar.id.0.0);
+                for voice in &bar.voices {
+                    see(voice.id.0.0);
+                    for beat in &voice.beats {
+                        see(beat.id.0.0);
+                        for note in &beat.notes {
+                            see(note.id.0.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    largest
+}
+
 pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, LayoutError> {
     let mut plans: Vec<BarPlan> = Vec::new();
     let mut previous_clefs: Vec<Option<ClefSign>> = vec![None; selection.specs.len()];
+    let mut synthetic = largest_id(score);
     for index in selection.first..=selection.last {
         let Some(master) = score.master_bars.get(index) else {
             continue;
@@ -224,10 +330,14 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
         let time_changed =
             previous_master.is_none_or(|before| before.time_signature != master.time_signature);
         let time = time_changed.then_some(master.time_signature);
+        let start_key = match (previous_master, KeyDraw::of(master.key_signature)) {
+            (Some(before), None) => KeyDraw::change(before.key_signature, master.key_signature),
+            (_, key) => key,
+        };
         let start = build_head(
             &selection.specs,
             clefs.iter().copied().map(Some).collect(),
-            KeyDraw::of(master.key_signature),
+            start_key,
             time,
         );
         let inline = match previous_master {
@@ -248,14 +358,32 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
                 )
             }
         };
-        let extents = extents(&grid);
+        let input = BarInput {
+            score,
+            selection,
+            index,
+            master,
+            bars: &bars,
+            clefs: &clefs,
+            key: master.key_signature,
+            grid: &grid,
+        };
+        let extents = extents(&input);
+        let vertical = vertical_needs(&input);
         let spaces = spaces(&grid, &extents);
-        let groups = selection
-            .sources
-            .iter()
-            .zip(&bars)
-            .map(|(_, bar)| GroupId(bar.map_or(master.id.0.0, |bar| bar.id.0.0)))
-            .collect();
+        let mut groups = Vec::with_capacity(bars.len());
+        for bar in &bars {
+            groups.push(GroupId(match bar {
+                Some(bar) => bar.id.0.0,
+                None => {
+                    synthetic = synthetic.saturating_add(1);
+                    synthetic
+                }
+            }));
+        }
+        let shares_thick = plans
+            .last()
+            .is_some_and(|before| before.end == EndSign::Repeat);
         previous_clefs = clefs.iter().copied().map(Some).collect();
         plans.push(BarPlan {
             index,
@@ -265,12 +393,14 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
             start,
             inline,
             repeat_start: master.repeat_start,
+            shares_thick,
             extents,
             spaces,
             end: end_sign(score, index, master),
             ending: master.alternate_endings,
             repeat_count: master.repeat_end,
             groups,
+            vertical,
         });
     }
     Ok(plans)

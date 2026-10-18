@@ -1,7 +1,7 @@
 use crate::units::{Micrometres, STAFF_SPACE, Units};
 
 pub const MARGIN: Micrometres = Micrometres(15_000);
-pub const MIN_STAFF_SPACE: Micrometres = Micrometres(100);
+pub const MIN_STAFF_SPACE: Micrometres = Micrometres(900);
 pub const STANDARD_LINES: usize = 5;
 pub const TAB_LINE_SPACING: Units = Units(STAFF_SPACE.0 * 3 / 2);
 pub const HEADROOM: Units = Units(STAFF_SPACE.0 * 4);
@@ -10,12 +10,14 @@ pub const STAFF_GAP: Units = Units(STAFF_SPACE.0 * 6);
 pub const GROUP_GAP: Units = Units(STAFF_SPACE.0 * 7);
 pub const BAR_LEAD: Units = Units(STAFF_SPACE.0);
 pub const COLUMN_GAP: Units = Units(STAFF_SPACE.0 / 2);
+pub const MIN_COLUMN_GAP: Units = Units(STAFF_SPACE.0 / 5);
 pub const END_PAD: Units = Units(STAFF_SPACE.0);
 pub const EMPTY_BAR: Units = Units(STAFF_SPACE.0 * 4);
+pub const EMPTY_BAR_MINIMUM: Units = Units(STAFF_SPACE.0 * 2);
 pub const BRACKET_GAP: Units = Units(STAFF_SPACE.0 / 2);
 pub const NAME_GAP: Units = Units(STAFF_SPACE.0);
 pub const NAME_EM: Units = Units(STAFF_SPACE.0 * 3 / 2);
-pub const NAME_SHARE: i64 = 5;
+pub const NAME_MAX: Units = Units(STAFF_SPACE.0 * 16);
 pub const NUMBER_EM: Units = Units(STAFF_SPACE.0 * 5 / 4);
 pub const NUMBER_RISE: Units = Units(STAFF_SPACE.0 * 7 / 4);
 pub const ENDING_EM: Units = Units(STAFF_SPACE.0 * 5 / 4);

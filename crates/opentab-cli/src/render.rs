@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use opentab_layout::{BarRange, DisplayList, LayoutOptions, StaffMode, layout};
+use opentab_layout::{BarRange, DisplayList, LayoutError, LayoutOptions, StaffMode, layout};
 use opentab_model::Score;
 use opentab_render::{Ratio, RenderError, to_png, to_svg};
 use serde::Serialize;
@@ -63,6 +63,8 @@ pub struct RenderedPages {
     pages: usize,
     systems: usize,
     bars: usize,
+    staff_space: i64,
+    crowded: Vec<usize>,
     files: Vec<String>,
 }
 
@@ -141,9 +143,9 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
     }
     let score = files::read_score(request.path)?;
     let options = options(request, &score)?;
-    let list = layout(&score, &options).map_err(|error| CliError::InvalidInput {
-        message: error.to_string(),
-    })?;
+    let list = layout(&score, &options).map_err(layout_failure)?;
+    let staff_space = list.staff_space.micrometres().0;
+    let crowded: Vec<usize> = list.crowded.iter().map(|index| index + 1).collect();
     let count = list.pages.len();
     let systems = list.pages.iter().map(|page| page.systems.len()).sum();
     let bars = bar_count(&list);
@@ -182,6 +184,19 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
         "rendered {count} {}",
         if count == 1 { "page" } else { "pages" }
     )];
+    if staff_space != options.staff_space.0 {
+        lines.push(format!(
+            "staff space reduced from {} to {staff_space} micrometres to fit the page",
+            options.staff_space.0
+        ));
+    }
+    if !crowded.is_empty() {
+        let numbers: Vec<String> = crowded.iter().map(ToString::to_string).collect();
+        lines.push(format!(
+            "crowded bars (notes may touch): {}",
+            numbers.join(", ")
+        ));
+    }
     lines.extend(
         written
             .iter()
@@ -192,10 +207,23 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
             pages: count,
             systems,
             bars,
+            staff_space,
+            crowded,
             files: written,
         },
         human: lines.join("\n"),
     })
+}
+
+fn layout_failure(error: LayoutError) -> CliError {
+    match error {
+        LayoutError::PageTooSmall | LayoutError::Rhythm { .. } => CliError::LayoutLimit {
+            message: error.to_string(),
+        },
+        other => CliError::InvalidInput {
+            message: other.to_string(),
+        },
+    }
 }
 
 fn render_failure(error: RenderError) -> CliError {

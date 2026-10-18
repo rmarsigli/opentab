@@ -85,7 +85,7 @@ fn json_reports_the_pages_and_the_written_files() {
     assert_eq!(result.code, 0, "{}", result.stderr);
     assert_eq!(
         result.json(),
-        json!({"pages": 1, "systems": 1, "bars": 2, "files": [path_str(&out)]})
+        json!({"pages": 1, "systems": 1, "bars": 2, "staff_space": 1750, "crowded": [], "files": [path_str(&out)]})
     );
     assert_eq!(file_names(dir.path()), vec!["song.svg"]);
 }
@@ -164,7 +164,7 @@ fn a_directory_out_names_pages_after_the_input() {
     let expected = dir.path().join("My.Song.svg");
     assert_eq!(
         single.json(),
-        json!({"pages": 1, "systems": 1, "bars": 1, "files": [path_str(&expected)]})
+        json!({"pages": 1, "systems": 1, "bars": 1, "staff_space": 1750, "crowded": [], "files": [path_str(&expected)]})
     );
 }
 
@@ -340,6 +340,10 @@ fn render_help_documents_the_options_and_the_json_shape() {
         "96 pixels per inch",
         "\"files\"",
         "\"systems\"",
+        "\"staff_space\"",
+        "\"crowded\"",
+        "0.9 mm",
+        "layout_limit",
         "Examples:",
     ] {
         assert!(help.stdout.contains(needle), "{needle}\n{}", help.stdout);
@@ -406,4 +410,108 @@ fn out_of_range_tracks_and_bars_are_refused() {
         .unwrap()
         .to_string();
     assert!(message.contains("4 track(s)"), "{message}");
+}
+
+fn tall_score(dir: &Path, tracks: usize) -> PathBuf {
+    let path = new_score(dir, &format!("blank-{tracks}.opentab.json"));
+    let mut score = read_json(&path);
+    let track = score["tracks"][0].clone();
+    let mut next = score["ids"]["next"].as_u64().unwrap();
+    let mut all = Vec::new();
+    for _ in 0..tracks {
+        let mut copy = track.clone();
+        for pointer in [
+            "/id",
+            "/staves/0/id",
+            "/staves/0/bars/0/id",
+            "/staves/0/bars/0/voices/0/id",
+            "/staves/0/bars/0/voices/0/beats/0/id",
+        ] {
+            *copy.pointer_mut(pointer).unwrap() = json!(next);
+            next += 1;
+        }
+        all.push(copy);
+    }
+    score["tracks"] = json!(all);
+    score["ids"]["next"] = json!(next);
+    let path = dir.join(format!("tall-{tracks}.opentab.json"));
+    std::fs::write(&path, serde_json::to_string(&score).unwrap()).unwrap();
+    path
+}
+
+#[test]
+fn a_shrunk_staff_space_is_reported_and_a_hopeless_one_is_a_layout_limit() {
+    let input = fixture("tunings.gp");
+    let (shrunk, _dir) = render_json(&input, &[]);
+    assert_eq!(shrunk.code, 0, "{}", shrunk.stdout);
+    let used = shrunk.json()["staff_space"].as_i64().unwrap();
+    assert!((900..1750).contains(&used), "{used}");
+    let dir = temp();
+    let human = run(&[
+        "render",
+        path_str(&input),
+        "--format",
+        "svg",
+        "--out",
+        path_str(&dir.path().join("t.svg")),
+    ]);
+    assert_eq!(human.code, 0);
+    assert!(
+        human.stdout.contains(&format!(
+            "staff space reduced from 1750 to {used} micrometres"
+        )),
+        "{}",
+        human.stdout
+    );
+    let scores = temp();
+    let tall = tall_score(scores.path(), 14);
+    let (refused, out) = render_json(&tall, &[]);
+    refused.assert_no_panic();
+    assert_eq!(refused.code, 2, "{}", refused.stdout);
+    assert_eq!(refused.json()["error"]["kind"], "layout_limit");
+    assert!(file_names(out.path()).is_empty());
+    let (fits, _out) = render_json(&tall_score(scores.path(), 8), &[]);
+    assert_eq!(fits.code, 0, "{}", fits.stdout);
+    assert_eq!(fits.json()["crowded"], json!([]));
+}
+
+#[test]
+fn a_bar_too_dense_for_any_line_is_reported_as_crowded() {
+    let dir = temp();
+    let path = new_score(dir.path(), "dense.opentab.json");
+    let mut score = read_json(&path);
+    let beat = score["tracks"][0]["staves"][0]["bars"][0]["voices"][0]["beats"][0].clone();
+    let mut next = score["ids"]["next"].as_u64().unwrap();
+    let beats: Vec<serde_json::Value> = (0..512)
+        .map(|_| {
+            let mut copy = beat.clone();
+            copy["id"] = json!(next);
+            copy["duration"]["value"] = json!("one_twenty_eighth");
+            next += 1;
+            copy
+        })
+        .collect();
+    score["master_bars"][0]["time_signature"] = json!({"numerator": 16, "denominator": 4});
+    score["tracks"][0]["staves"][0]["bars"][0]["voices"][0]["beats"] = json!(beats);
+    score["ids"]["next"] = json!(next);
+    let input = dir.path().join("dense-bar.opentab.json");
+    std::fs::write(&input, serde_json::to_string(&score).unwrap()).unwrap();
+    let (result, _out) = render_json(&input, &[]);
+    assert_eq!(result.code, 0, "{}", result.stdout);
+    assert_eq!(result.json()["crowded"], json!([1]));
+    assert_eq!(result.json()["staff_space"], 900);
+    let out = temp();
+    let human = run(&[
+        "render",
+        path_str(&input),
+        "--format",
+        "svg",
+        "--out",
+        path_str(&out.path().join("d.svg")),
+    ]);
+    assert!(
+        human.stdout.contains("crowded bars (notes may touch): 1"),
+        "{}",
+        human.stdout
+    );
 }
