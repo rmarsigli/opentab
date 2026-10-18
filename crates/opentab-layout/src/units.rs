@@ -1,3 +1,4 @@
+use std::num::{NonZeroI64, NonZeroI128};
 use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -9,25 +10,27 @@ pub const STAVES_PER_EM: i64 = 4;
 
 pub const REFERENCE_EM: Units = Units(STAFF_SPACE.0 * STAVES_PER_EM);
 
+pub const REFERENCE_EM_DIVISOR: NonZeroI64 = NonZeroI64::new(REFERENCE_EM.0).unwrap();
+
+pub const TWO: NonZeroI64 = NonZeroI64::new(2).unwrap();
+
 impl Units {
     pub const ZERO: Units = Units(0);
 
-    pub fn scaled(self, numerator: i64, denominator: i64) -> Units {
+    pub fn scaled(self, numerator: i64, denominator: NonZeroI64) -> Units {
         Units(narrow(round_div(
             i128::from(self.0) * i128::from(numerator),
-            i128::from(denominator),
+            NonZeroI128::from(denominator),
         )))
     }
 
     pub fn half(self) -> Units {
-        self.scaled(1, 2)
+        self.scaled(1, TWO)
     }
 }
 
-pub fn round_div(numerator: i128, denominator: i128) -> i128 {
-    if denominator == 0 {
-        return 0;
-    }
+pub fn round_div(numerator: i128, denominator: NonZeroI128) -> i128 {
+    let denominator = denominator.get();
     let (numerator, denominator) = if denominator < 0 {
         (-numerator, -denominator)
     } else {
@@ -158,12 +161,12 @@ mod tests {
 
     #[test]
     fn rounding_is_half_away_from_zero() {
-        assert_eq!(round_div(5, 2), 3);
-        assert_eq!(round_div(-5, 2), -3);
-        assert_eq!(round_div(4, 3), 1);
-        assert_eq!(round_div(-4, 3), -1);
-        assert_eq!(round_div(7, -2), -4);
-        assert_eq!(round_div(1, 0), 0);
+        let by = |value: i128| NonZeroI128::new(value).unwrap();
+        assert_eq!(round_div(5, by(2)), 3);
+        assert_eq!(round_div(-5, by(2)), -3);
+        assert_eq!(round_div(4, by(3)), 1);
+        assert_eq!(round_div(-4, by(3)), -1);
+        assert_eq!(round_div(7, by(-2)), -4);
         assert_eq!(Units(3).half(), Units(2));
         assert_eq!(Units(-3).half(), Units(-2));
     }
@@ -172,7 +175,7 @@ mod tests {
     fn round_div_matches_exact_rational_rounding_for_every_small_pair() {
         for numerator in -300_i128..=300 {
             for denominator in 1_i128..=40 {
-                let rounded = round_div(numerator, denominator);
+                let rounded = round_div(numerator, NonZeroI128::new(denominator).unwrap());
                 let twice = 2 * numerator;
                 let low = (2 * rounded - 1) * denominator;
                 let high = (2 * rounded + 1) * denominator;
@@ -192,7 +195,10 @@ mod tests {
         assert_eq!(Units(i64::MAX) + Units(1), Units(i64::MAX));
         assert_eq!(Units(i64::MIN) - Units(1), Units(i64::MIN));
         assert_eq!(-Units(i64::MIN), Units(i64::MAX));
-        assert_eq!(Units(i64::MAX).scaled(4, 1), Units(i64::MAX));
+        assert_eq!(
+            Units(i64::MAX).scaled(4, NonZeroI64::new(1).unwrap()),
+            Units(i64::MAX)
+        );
         let mut value = Units(2);
         value += Units(3);
         value -= Units(1);

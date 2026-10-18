@@ -1,7 +1,9 @@
+use std::num::{NonZeroI64, NonZeroI128};
+
 use ttf_parser::{Face, GlyphId, OutlineBuilder};
 
 use crate::display::PathSegment;
-use crate::units::{Point, REFERENCE_EM, Rect, Units, narrow, round_div};
+use crate::units::{Point, REFERENCE_EM, REFERENCE_EM_DIVISOR, Rect, Units, narrow, round_div};
 
 const FLOAT_MANTISSA_BITS: u32 = 23;
 const FLOAT_EXPONENT_MASK: u32 = 0xff;
@@ -9,6 +11,7 @@ const FLOAT_EXPONENT_BIAS: i32 = 150;
 const FLOAT_SUBNORMAL_POWER: i32 = -149;
 const MAX_SHIFT: u32 = 64;
 const NOTDEF: GlyphId = GlyphId(0);
+const TWO: NonZeroI128 = NonZeroI128::new(2).unwrap();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontError(pub String);
@@ -40,8 +43,8 @@ impl Outline {
 
     pub fn placed(&self, origin: Point, em: Units) -> Vec<PathSegment> {
         let place = |point: Point| Point {
-            x: origin.x + point.x.scaled(em.0, REFERENCE_EM.0),
-            y: origin.y + point.y.scaled(em.0, REFERENCE_EM.0),
+            x: origin.x + point.x.scaled(em.0, REFERENCE_EM_DIVISOR),
+            y: origin.y + point.y.scaled(em.0, REFERENCE_EM_DIVISOR),
         };
         self.segments
             .iter()
@@ -69,21 +72,20 @@ fn segment_points(segment: &PathSegment) -> Vec<Point> {
 
 pub struct OutlineFont {
     face: Face<'static>,
-    units_per_em: i64,
+    units_per_em: NonZeroI64,
 }
 
 impl OutlineFont {
     pub fn parse(bytes: &'static [u8]) -> Result<OutlineFont, FontError> {
         let face = Face::parse(bytes, 0).map_err(|error| FontError(error.to_string()))?;
-        let units_per_em = i64::from(face.units_per_em());
-        if units_per_em <= 0 {
-            return Err(FontError("font has no units per em".to_string()));
-        }
+        let units_per_em = NonZeroI64::new(i64::from(face.units_per_em()))
+            .filter(|value| value.get() > 0)
+            .ok_or_else(|| FontError("font has no units per em".to_string()))?;
         Ok(OutlineFont { face, units_per_em })
     }
 
     pub fn units_per_em(&self) -> i64 {
-        self.units_per_em
+        self.units_per_em.get()
     }
 
     pub fn has(&self, character: char) -> bool {
@@ -135,13 +137,13 @@ impl OutlineFont {
     fn to_em(&self, font_units: i64, em: Units) -> Units {
         Units(narrow(round_div(
             i128::from(font_units) * i128::from(em.0),
-            i128::from(self.units_per_em),
+            NonZeroI128::from(self.units_per_em),
         )))
     }
 }
 
 struct Converter {
-    units_per_em: i64,
+    units_per_em: NonZeroI64,
     segments: Vec<PathSegment>,
 }
 
@@ -183,7 +185,7 @@ impl OutlineBuilder for Converter {
     }
 }
 
-pub fn reference_units(bits: u32, units_per_em: i64) -> i64 {
+pub fn reference_units(bits: u32, units_per_em: NonZeroI64) -> i64 {
     let negative = bits >> 31 == 1;
     let exponent = (bits >> FLOAT_MANTISSA_BITS) & FLOAT_EXPONENT_MASK;
     let fraction = i128::from(bits & ((1 << FLOAT_MANTISSA_BITS) - 1));
@@ -199,7 +201,7 @@ pub fn reference_units(bits: u32, units_per_em: i64) -> i64 {
         )
     };
     let numerator = mantissa * i128::from(REFERENCE_EM.0);
-    let denominator = i128::from(units_per_em);
+    let denominator = NonZeroI128::from(units_per_em);
     let shift = power.unsigned_abs();
     let magnitude = if power >= 0 {
         if shift >= MAX_SHIFT {
@@ -210,15 +212,27 @@ pub fn reference_units(bits: u32, units_per_em: i64) -> i64 {
     } else if shift >= MAX_SHIFT {
         0
     } else {
-        round_div(numerator, denominator << shift)
+        round_div(numerator, shifted(denominator, shift))
     };
     let value = narrow(magnitude);
     if negative { -value } else { value }
 }
 
+fn shifted(value: NonZeroI128, shift: u32) -> NonZeroI128 {
+    (0..shift).fold(value, |acc, _| acc.saturating_mul(TWO))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn upm(value: i64) -> NonZeroI64 {
+        NonZeroI64::new(value).unwrap()
+    }
+
+    fn by(value: i128) -> NonZeroI128 {
+        NonZeroI128::new(value).unwrap()
+    }
 
     fn bits_of(value: i64, scale_power: i32) -> u32 {
         let mut bits = 0_u32;
@@ -247,11 +261,15 @@ mod tests {
     fn integer_font_units_scale_exactly_for_every_value_in_range() {
         for value in -3000_i64..=3000 {
             let bits = bits_of(value, 0);
-            let expected = round_div(i128::from(value) * 4096, 1000);
-            assert_eq!(i128::from(reference_units(bits, 1000)), expected, "{value}");
-            let expected_2048 = round_div(i128::from(value) * 4096, 2048);
+            let expected = round_div(i128::from(value) * 4096, by(1000));
             assert_eq!(
-                i128::from(reference_units(bits, 2048)),
+                i128::from(reference_units(bits, upm(1000))),
+                expected,
+                "{value}"
+            );
+            let expected_2048 = round_div(i128::from(value) * 4096, by(2048));
+            assert_eq!(
+                i128::from(reference_units(bits, upm(2048))),
                 expected_2048,
                 "{value}"
             );
@@ -262,9 +280,9 @@ mod tests {
     fn fractional_font_units_scale_exactly() {
         for value in -400_i64..=400 {
             let bits = bits_of(value, -2);
-            let expected = round_div(i128::from(value) * 4096, 4000);
+            let expected = round_div(i128::from(value) * 4096, by(4000));
             assert_eq!(
-                i128::from(reference_units(bits, 1000)),
+                i128::from(reference_units(bits, upm(1000))),
                 expected,
                 "{value}/4"
             );
@@ -273,11 +291,11 @@ mod tests {
 
     #[test]
     fn special_and_extreme_bit_patterns_do_not_overflow() {
-        assert_eq!(reference_units(0x7f80_0000, 1000), 0);
-        assert_eq!(reference_units(0x7fc0_0000, 1000), 0);
-        assert_eq!(reference_units(0x0000_0001, 1000), 0);
-        assert_eq!(reference_units(0x8000_0000, 1000), 0);
-        assert_eq!(reference_units(0x7f7f_ffff, 1000), i64::MAX);
-        assert_eq!(reference_units(0xff7f_ffff, 1000), -i64::MAX);
+        assert_eq!(reference_units(0x7f80_0000, upm(1000)), 0);
+        assert_eq!(reference_units(0x7fc0_0000, upm(1000)), 0);
+        assert_eq!(reference_units(0x0000_0001, upm(1000)), 0);
+        assert_eq!(reference_units(0x8000_0000, upm(1000)), 0);
+        assert_eq!(reference_units(0x7f7f_ffff, upm(1000)), i64::MAX);
+        assert_eq!(reference_units(0xff7f_ffff, upm(1000)), -i64::MAX);
     }
 }

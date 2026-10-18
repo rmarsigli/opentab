@@ -1,3 +1,5 @@
+use std::num::{NonZeroI64, NonZeroI128};
+
 use crate::units::{Micrometres, Point, Rect, STAFF_SPACE, Units, narrow, round_div};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -11,17 +13,40 @@ pub const A4: PageSize = PageSize {
     height: Micrometres(297_000),
 };
 
-pub const DEFAULT_STAFF_SPACE: Micrometres = Micrometres(1_750);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StaffSpace(NonZeroI64);
+
+impl StaffSpace {
+    pub const fn new(length: Micrometres) -> Option<StaffSpace> {
+        match NonZeroI64::new(length.0) {
+            Some(value) if value.get() > 0 => Some(StaffSpace(value)),
+            _ => None,
+        }
+    }
+
+    pub fn micrometres(self) -> Micrometres {
+        Micrometres(self.0.get())
+    }
+
+    pub fn units(self, length: Micrometres) -> Units {
+        Units(narrow(round_div(
+            i128::from(length.0) * i128::from(STAFF_SPACE.0),
+            NonZeroI128::from(self.0),
+        )))
+    }
+}
+
+pub const DEFAULT_STAFF_SPACE: StaffSpace = StaffSpace::new(Micrometres(1_750)).unwrap();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Page {
     pub size: PageSize,
-    pub staff_space: Micrometres,
+    pub staff_space: StaffSpace,
     pub items: Vec<Primitive>,
 }
 
 impl Page {
-    pub fn new(size: PageSize, staff_space: Micrometres) -> Page {
+    pub fn new(size: PageSize, staff_space: StaffSpace) -> Page {
         Page {
             size,
             staff_space,
@@ -30,13 +55,7 @@ impl Page {
     }
 
     pub fn units(&self, length: Micrometres) -> Units {
-        if self.staff_space.0 <= 0 {
-            return Units::ZERO;
-        }
-        Units(narrow(round_div(
-            i128::from(length.0) * i128::from(STAFF_SPACE.0),
-            i128::from(self.staff_space.0),
-        )))
+        self.staff_space.units(length)
     }
 
     pub fn width(&self) -> Units {
@@ -161,8 +180,12 @@ mod tests {
     }
 
     #[test]
-    fn a_degenerate_staff_space_gives_zero_units() {
-        let page = Page::new(A4, Micrometres(0));
-        assert_eq!(page.width(), Units::ZERO);
+    fn a_non_positive_staff_space_is_unrepresentable() {
+        assert_eq!(StaffSpace::new(Micrometres(0)), None);
+        assert_eq!(StaffSpace::new(Micrometres(-1)), None);
+        let one = StaffSpace::new(Micrometres(1)).unwrap();
+        assert_eq!(one.micrometres(), Micrometres(1));
+        assert_eq!(one.units(Micrometres(3)), Units(3072));
+        assert_eq!(DEFAULT_STAFF_SPACE.micrometres(), Micrometres(1_750));
     }
 }
