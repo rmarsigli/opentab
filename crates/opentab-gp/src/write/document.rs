@@ -9,6 +9,7 @@ use crate::error::Refusal;
 use crate::guard;
 use crate::limits::MAX_XML_DEPTH;
 use crate::read::POOLS;
+use crate::write::anchor::BarAnchors;
 use crate::write::beat::{BarSite, Builder, patch_rhythms, write_bar};
 use crate::write::payload::{self, Env, Item, layout, renumber};
 use crate::write::state::{Layouts, Owners, Pools, StaffContext};
@@ -285,9 +286,11 @@ fn pool(name: &str, elements: Vec<Element>) -> Element {
 
 pub(crate) fn write_gpif(score: &Score) -> Result<String, Fail> {
     check_bars(score)?;
-    let mut owners = Owners::new(&score.extensions);
+    let anchors = BarAnchors::new(&score.master_bars);
+    let mut owners = Owners::new(&score.extensions, &anchors);
     let document = payload::parse_all(&score.document_extensions)
         .and_then(|items| payload::surviving(items, &Env::Plain))
+        .and_then(|items| anchors.resolve_all(items))
         .within(|| "document_extensions".to_string())?;
     if document.iter().any(|item| item.parent.starts_with('*')) {
         return Err(Fail::new(Refusal::MalformedPayload {

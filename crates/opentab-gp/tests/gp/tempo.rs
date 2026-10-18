@@ -85,7 +85,7 @@ fn several_tempos_in_one_bar_and_other_automations() {
             .any(|payload| payload.starts_with("<Keep parent=\"*Tempo#1\" index=\"4\""))
     );
     assert!(document_payloads(&score).contains(&format!(
-        "<Keep parent=\"MasterTrack/Automations\" index=\"2\">{sync}</Keep>"
+        "<Keep parent=\"MasterTrack/Automations\" index=\"2\" bars=\"-\">{sync}</Keep>"
     )));
 }
 

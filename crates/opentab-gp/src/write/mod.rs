@@ -1,3 +1,4 @@
+mod anchor;
 mod beat;
 mod document;
 mod note;

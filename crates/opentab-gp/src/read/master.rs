@@ -218,7 +218,7 @@ pub(crate) fn read_master_track(
                 });
             }
             "Automations" => read_automations(ctx, &scope.enter(visit), visit.element)?,
-            _ => return Ok(Handled::Unknown),
+            _ => return Ok(Handled::Anchored),
         }
         Ok(Handled::Mapped(&[]))
     })?;
@@ -231,7 +231,7 @@ fn read_automations(ctx: &mut Context, scope: &Scope, element: &Element) -> Resu
             Node::Element(child) if is_tempo(child) => {
                 read_tempo(ctx, child, &scope.location.child(index))?;
             }
-            _ => ctx.keep(scope, index, node, None)?,
+            _ => ctx.keep_anchored(scope, index, node)?,
         }
     }
     Ok(())

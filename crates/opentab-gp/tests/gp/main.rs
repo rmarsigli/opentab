@@ -1,3 +1,4 @@
+mod anchors;
 mod archive;
 mod beat;
 mod container;
@@ -11,6 +12,7 @@ mod note;
 mod rawzip;
 mod references;
 mod rhythm;
+mod rich;
 mod robustness;
 mod roundtrip;
 mod sharing;

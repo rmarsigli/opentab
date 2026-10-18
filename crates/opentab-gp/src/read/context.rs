@@ -1,5 +1,6 @@
 use opentab_model::{ElementId, ModelError, Score};
 
+use crate::anchor::{self, Anchor, Playback, SiteKind};
 use crate::dom::{Element, Node};
 use crate::error::GpifProblem;
 use crate::limits::{
@@ -92,6 +93,7 @@ impl Visit<'_> {
 
 pub(crate) enum Handled {
     Unknown,
+    Anchored,
     Mapped(&'static [&'static str]),
     Replayed(String),
     Custom,
@@ -102,6 +104,7 @@ pub(crate) struct Context {
     pub score: Score,
     retained_bytes: u64,
     retained_budget: u64,
+    playback: Option<Playback>,
 }
 
 impl Context {
@@ -113,6 +116,7 @@ impl Context {
             score: Score::new(),
             retained_bytes: 0,
             retained_budget: scaled.max(MIN_RETAINED_BUDGET),
+            playback: None,
         }
     }
 
@@ -141,9 +145,67 @@ impl Context {
             parent: &scope.parent,
             index,
             guard: guard.as_deref(),
+            anchors: None,
             content: OpaqueContent::Node(node),
         };
         self.push(scope, item)
+    }
+
+    pub fn keep_anchored(&mut self, scope: &Scope, index: usize, node: &Node) -> Result<(), Fault> {
+        let anchors = match node {
+            Node::Element(element) => self.anchors(element),
+            _ => None,
+        };
+        let item = OpaqueItem {
+            parent: &scope.parent,
+            index,
+            guard: None,
+            anchors: anchors.as_deref(),
+            content: OpaqueContent::Node(node),
+        };
+        self.push(scope, item)
+    }
+
+    fn anchors(&mut self, element: &Element) -> Option<String> {
+        let sites = anchor::sites(element);
+        if sites.is_empty() {
+            return None;
+        }
+        let mut anchors = Vec::with_capacity(sites.len());
+        for site in &sites {
+            let found = anchor::at(element, &site.path).and_then(|target| match site.kind {
+                SiteKind::Bar => self.bar_anchor(target, anchor::BAR),
+                SiteKind::Offset => self.bar_anchor(target, anchor::OFFSET),
+                SiteKind::Sync => self.sync_anchor(target),
+            });
+            anchors.push(found.unwrap_or(Anchor::Loose));
+        }
+        Some(anchor::render(&anchors))
+    }
+
+    fn master_id(&self, index: usize) -> Option<u64> {
+        self.score
+            .master_bars
+            .get(index)
+            .map(|master| master.id.0.0)
+    }
+
+    fn bar_anchor(&self, target: &Element, name: &str) -> Option<Anchor> {
+        let index = anchor::number(target, name)?;
+        self.master_id(index).map(Anchor::Bar)
+    }
+
+    fn sync_anchor(&mut self, target: &Element) -> Option<Anchor> {
+        let index = anchor::nested(target, anchor::VALUE, anchor::BAR_INDEX)?;
+        let occurrence = anchor::nested(target, anchor::VALUE, anchor::BAR_OCCURRENCE)?;
+        let bar = i64::try_from(anchor::number(target, anchor::BAR)?).ok()?;
+        let id = self.master_id(index)?;
+        let master_bars = &self.score.master_bars;
+        let playback = self
+            .playback
+            .get_or_insert_with(|| Playback::of(master_bars));
+        let position = i64::try_from(playback.position(index, occurrence)?).ok()?;
+        Some(Anchor::Sync(id, bar.checked_sub(position)?))
     }
 
     pub fn keep_attributes(
@@ -160,6 +222,7 @@ impl Context {
                 parent: &scope.parent,
                 index,
                 guard: None,
+                anchors: None,
                 content: OpaqueContent::Attribute(attribute),
             };
             self.push(scope, item)?;
@@ -214,7 +277,10 @@ impl Context {
                 location: scope.location.child(index),
             };
             let handled = handle(self, &visit)?;
-            if !matches!(handled, Handled::Unknown | Handled::Substitute(_)) {
+            if !matches!(
+                handled,
+                Handled::Unknown | Handled::Anchored | Handled::Substitute(_)
+            ) {
                 if seen.contains(&visit.key) {
                     return Err(visit.fault(GpifProblem::DuplicateElement {
                         name: visit.key.clone(),
@@ -224,6 +290,7 @@ impl Context {
             }
             match handled {
                 Handled::Unknown => self.keep(scope, index, node, None)?,
+                Handled::Anchored => self.keep_anchored(scope, index, node)?,
                 Handled::Mapped(known) => {
                     let inner = scope.enter(&visit);
                     self.keep_attributes(&inner, child, known)?;

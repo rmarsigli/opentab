@@ -1,5 +1,6 @@
 use opentab_model::OpaquePayload;
 
+use crate::anchor::ANCHORS;
 use crate::dom::{Attribute, Node, escape_attribute, write_node};
 
 pub(crate) const FORMAT: &str = "gpif";
@@ -52,6 +53,7 @@ pub(crate) struct OpaqueItem<'a> {
     pub parent: &'a ParentPath,
     pub index: usize,
     pub guard: Option<&'a str>,
+    pub anchors: Option<&'a str>,
     pub content: OpaqueContent<'a>,
 }
 
@@ -68,6 +70,9 @@ impl OpaqueItem<'_> {
         push_attribute(&mut data, "index", &self.index.to_string());
         if let Some(guard) = self.guard {
             push_attribute(&mut data, "guard", guard);
+        }
+        if let Some(anchors) = self.anchors {
+            push_attribute(&mut data, ANCHORS, anchors);
         }
         match self.content {
             OpaqueContent::Node(node) => {

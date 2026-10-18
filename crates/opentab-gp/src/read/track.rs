@@ -168,7 +168,7 @@ fn read_track(
                 }
             }
             "Staves" => fields.staves = Some((visit.element, visit.location.clone())),
-            _ => return Ok(Handled::Unknown),
+            _ => return Ok(Handled::Anchored),
         }
         Ok(Handled::Mapped(&[]))
     })?;
