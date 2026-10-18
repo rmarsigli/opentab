@@ -33,13 +33,14 @@ opentab convert song.gp song.opentab.json
 opentab convert song.opentab.json song.gp --json
 opentab render song.gp --format svg --out song.svg
 opentab render song.opentab.json --format png --scale 2 --out pages/
+opentab render song.gp --format png --track 2 --bars 5-12 --staff tab --out riff.png
 ```
 
 - `new` creates a one-bar score with a six-string guitar track. It writes only `.opentab.json` and never overwrites an existing file.
 - `info` prints the title, artist, tracks, time signatures and diagnostics. `--ids` also lists the id of every element; the JSON output always contains them in an `ids` section.
 - `apply` reads one JSON command per line from the commands file (blank lines and lines starting with `//` are ignored, and line numbers count them), applies all of them and writes the result to `--out`. Nothing is written unless every command succeeds. `--out` may be the input file, and a symbolic link at `--out` is kept while its target is replaced. The output format follows the suffix of `--out`, so editing a `.gp` and writing `--out edited.gp` gives a `.gp`.
 - `convert` reads the first path and writes the second, in the format of each suffix: `.gp` to `.opentab.json`, the reverse, or the same format on both sides. Writing is atomic and replaces an existing output. `convert --json` prints `{"converted": {"from": "song.gp", "to": "song.opentab.json"}}`.
-- `render` lays the score out on A4 portrait pages and writes one SVG or PNG file per page. When `--out` is an existing directory the pages are named after the input (`song.svg`, or `song-p1.svg`, `song-p2.svg`… for several pages); otherwise `--out` must end in `.svg` or `.png` to match `--format`, and several pages become `<stem>-p<N>.<ext>` next to it. `--scale` sets the PNG size, where 1 means 96 pixels per inch (an A4 page is 794×1123 pixels); it accepts `2`, `1.5` or `3/2`. `render --json` prints `{"pages": 2, "files": ["song-p1.svg", "song-p2.svg"]}`. The layout is still a placeholder: one empty system per track.
+- `render` lays the score out on A4 portrait pages and writes one SVG or PNG file per page. When `--out` is an existing directory the pages are named after the input (`song.svg`, or `song-p1.svg`, `song-p2.svg`… for several pages); otherwise `--out` must end in `.svg` or `.png` to match `--format`, and several pages become `<stem>-p<N>.<ext>` next to it. `--scale` sets the PNG size, where 1 means 96 pixels per inch (an A4 page is 794×1123 pixels); it accepts `2`, `1.5` or `3/2`. `--track N` (repeatable, counted from 1 as in `info`) draws only those tracks, `--bars A-B` (or a single `A`, counted from 1) only those master bars, and `--staff standard|tab|both` forces the staves of every fretted track; by default a track with 4 to 8 strings gets standard notation and tablature and any other track standard notation. The staff space is 1.75 mm; when a system is too tall for the page or a bar too wide for a line it shrinks, never below 0.9 mm, and the output says so. A bar still too wide at 0.9 mm is squeezed and reported as crowded. `render --json` prints `{"pages": 2, "systems": 9, "bars": 40, "staff_space": 1750, "crowded": [], "files": ["song-p1.svg", "song-p2.svg"]}`, where `staff_space` is the staff space used, in micrometres, and `crowded` lists the crowded bars, counted from 1. Staves, clefs, key and time signatures, barlines, repeats, endings and bar numbers are drawn; notes are not drawn yet.
 
 Supported formats are `.gp` (Guitar Pro 7 and 8) and `.opentab.json`. Any other suffix is an `unsupported_format` error that lists them.
 
@@ -49,18 +50,19 @@ Add `--json` to any subcommand to get a single JSON line on standard output, for
 - `io`: a file could not be read or written, or the result could not be printed.
 - `unsupported_format`: a path has a suffix that is neither `.gp` nor `.opentab.json`, or a `render --out` file does not end in the suffix of `--format`.
 - `invalid_score`: an `.opentab.json` file is not a valid score.
-- `invalid_input`: a `.gp` file or a commands file could not be read; the message names the place in the file that is wrong. `render` also uses it when `--scale` is given for SVG output or when a page would be larger than 16384 pixels on a side.
+- `invalid_input`: a `.gp` file or a commands file could not be read; the message names the place in the file that is wrong. `render` also uses it when `--scale` is given for SVG output, when a page would be larger than 16384 pixels on a side, or when `--track` or `--bars` names a track or bar the score does not have.
 - `invalid_command`: a line of the commands file is not a valid command.
 - `command_failed`: a command could not be applied.
 - `output_exists`: `new` refused to overwrite a file.
 - `unsupported`: the `.gp` writer refuses the score, for example because a text holds a character a `.gp` cannot store, or because the score has no master bar or no track; the message names the place in the score.
+- `layout_limit`: `render` cannot lay the score out, because a system is too tall for the page even at the smallest staff space (0.9 mm) or a bar's rhythm is too complex to place exactly.
 - `internal`: an unexpected failure inside OpenTab, for example when a score cannot be encoded.
 
 Exit codes: 0 on success, 1 for a usage error and 2 for an input or output error. Human output prints control characters as `\u{XX}`; JSON output stays standard JSON.
 
 ## Mutation testing
 
-`cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model`, `opentab-command` and `opentab-gp` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.
+`cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model`, `opentab-command`, `opentab-gp` and `opentab-layout` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.
 
 ```
 cargo install cargo-mutants --version 27.1.0 --locked
@@ -69,7 +71,7 @@ cargo xtask mutants
 
 A full run takes several hours: with `opentab-gp` in the list it took about five hours on an 8 GB WSL machine. It uses most of that machine's memory, so do not start other builds or test runs while it works. It exits with 0 when no mutant was missed and none timed out, with 1 when any was, and with 2 when cargo-mutants is not installed or could not start. The missed and timed-out mutants are printed at the end.
 
-To spread the work over several sittings, run one shard at a time. `--shard K/N` is passed to cargo-mutants, which splits the list of mutants of all three crates into N parts and tests only part K, counting from 0. The four runs below together cover every mutant:
+To spread the work over several sittings, run one shard at a time. `--shard K/N` is passed to cargo-mutants, which splits the list of mutants of all four crates into N parts and tests only part K, counting from 0. The four runs below together cover every mutant:
 
 ```
 cargo xtask mutants --shard 0/4
