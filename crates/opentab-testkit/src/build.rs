@@ -19,7 +19,11 @@ struct Builder {
 
 impl Builder {
     fn id<T: From<ElementId>>(&mut self) -> T {
-        let raw = self.score.ids.next();
+        let raw = self
+            .score
+            .ids
+            .next()
+            .expect("generated scores stay far below the id space");
         self.allocated.push(raw);
         T::from(raw)
     }

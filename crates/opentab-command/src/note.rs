@@ -3,7 +3,7 @@ use std::iter::once;
 use opentab_model::{BeatId, InstrumentKind, Note, NoteEffects, NoteId, NoteKind, Score};
 
 use crate::beat::find_beat;
-use crate::ids::{check_restorable, put_extensions, reserve, take_extensions};
+use crate::ids::{check_restorable, next_id, put_extensions, reserve, take_extensions};
 use crate::locate::{beat_in, beat_ref, not_found, note_in};
 use crate::{Command, CommandError, ExtensionEntry};
 
@@ -42,7 +42,7 @@ pub(crate) fn add(
     reserve(score, 1)?;
     let Score { tracks, ids, .. } = score;
     let target = beat_in(tracks, path).ok_or(not_found(BEAT, beat))?;
-    let id = NoteId(ids.next());
+    let id: NoteId = next_id(ids)?;
     target.notes.push(Note {
         id,
         kind: NoteKind::Fretted { string, fret },

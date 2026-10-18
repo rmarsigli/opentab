@@ -53,10 +53,11 @@ impl Manifest {
         self.entries.push(entry);
     }
 
-    pub fn to_json(&self) -> Vec<u8> {
-        let mut bytes = serde_json::to_vec_pretty(&self.sorted()).unwrap_or_default();
+    pub fn to_json(&self) -> Result<Vec<u8>, OracleError> {
+        let mut bytes = serde_json::to_vec_pretty(&self.sorted())
+            .map_err(|error| OracleError::new(format!("cannot serialise manifest: {error}")))?;
         bytes.push(b'\n');
-        bytes
+        Ok(bytes)
     }
 
     pub fn from_json(bytes: &[u8]) -> Result<Self, OracleError> {
@@ -82,7 +83,7 @@ impl Manifest {
     }
 
     pub fn save(&self, path: &Path) -> Result<(), OracleError> {
-        std::fs::write(path, self.to_json())
+        std::fs::write(path, self.to_json()?)
             .map_err(|error| OracleError::io(format!("cannot write {}", path.display()), &error))
     }
 }
@@ -148,7 +149,7 @@ mod tests {
             for (offset, item) in order.into_iter().enumerate() {
                 manifest.upsert(shuffled_outputs(item, index + offset));
             }
-            let bytes = manifest.to_json();
+            let bytes = manifest.to_json().expect("serialises");
             match &reference {
                 Some(expected) => assert_eq!(&bytes, expected),
                 None => reference = Some(bytes),
@@ -181,13 +182,14 @@ mod tests {
     fn json_has_spec_shape_and_no_timestamps() {
         let mut manifest = Manifest::new("8.1.5.31");
         manifest.upsert(entry("x.gp", 1));
-        let value: serde_json::Value = serde_json::from_slice(&manifest.to_json()).expect("json");
+        let value: serde_json::Value =
+            serde_json::from_slice(&manifest.to_json().expect("serialises")).expect("json");
         let top: Vec<&String> = value.as_object().expect("object").keys().collect();
         assert_eq!(top, ["entries", "gp_version"]);
         let first = &value["entries"][0];
         let keys: Vec<&String> = first.as_object().expect("object").keys().collect();
         assert_eq!(keys, ["fixture", "outputs", "sha256"]);
-        let text = String::from_utf8(manifest.to_json()).expect("utf8");
+        let text = String::from_utf8(manifest.to_json().expect("serialises")).expect("utf8");
         assert!(!text.contains("time"));
         assert!(!text.contains("date"));
     }
@@ -206,7 +208,7 @@ mod tests {
         let mut manifest = Manifest::new("8.1.5.31");
         manifest.entries.push(entry("x.gp", 1));
         manifest.entries.push(entry("x.gp", 2));
-        assert!(Manifest::from_json(&manifest.to_json()).is_err());
+        assert!(Manifest::from_json(&manifest.to_json().expect("serialises")).is_err());
         assert!(Manifest::from_json(b"\xff\x00garbage").is_err());
         assert!(Manifest::from_json(b"{\"gp_version\":\"8\"}").is_err());
     }

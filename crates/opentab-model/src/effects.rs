@@ -80,8 +80,8 @@ pub struct Harmonic {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "BendPointRepr")]
 pub struct BendPoint {
-    pub offset: u8,
-    pub value: i16,
+    offset: u8,
+    value: i16,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +97,14 @@ impl BendPoint {
             return Err(ModelError::InvalidBendPoint { offset, value });
         }
         Ok(BendPoint { offset, value })
+    }
+
+    pub fn offset(&self) -> u8 {
+        self.offset
+    }
+
+    pub fn value(&self) -> i16 {
+        self.value
     }
 }
 

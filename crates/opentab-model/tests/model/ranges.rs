@@ -3,10 +3,9 @@ use opentab_model::{BendPoint, KeySignature, ModelError};
 #[test]
 fn bend_point_accepts_inclusive_bounds() {
     for (offset, value) in [(0, 0), (100, 48), (100, -48), (0, -48), (50, 1)] {
-        assert_eq!(
-            BendPoint::new(offset, value),
-            Ok(BendPoint { offset, value })
-        );
+        let point = BendPoint::new(offset, value).unwrap();
+        assert_eq!(point.offset(), offset);
+        assert_eq!(point.value(), value);
     }
 }
 
@@ -30,13 +29,8 @@ fn bend_point_rejects_values_just_outside() {
 #[test]
 fn bend_point_json_applies_the_same_bounds() {
     let good: BendPoint = serde_json::from_str(r#"{"offset":100,"value":-48}"#).unwrap();
-    assert_eq!(
-        good,
-        BendPoint {
-            offset: 100,
-            value: -48
-        }
-    );
+    assert_eq!(good, BendPoint::new(100, -48).unwrap());
+    assert_eq!((good.offset(), good.value()), (100, -48));
     for text in [
         r#"{"offset":101,"value":0}"#,
         r#"{"offset":250,"value":0}"#,
@@ -52,10 +46,9 @@ fn bend_point_json_applies_the_same_bounds() {
 fn key_signature_accepts_inclusive_bounds() {
     for accidentals in [-7, -1, 0, 1, 7] {
         for minor in [false, true] {
-            assert_eq!(
-                KeySignature::new(accidentals, minor),
-                Ok(KeySignature { accidentals, minor })
-            );
+            let key = KeySignature::new(accidentals, minor).unwrap();
+            assert_eq!(key.accidentals(), accidentals);
+            assert_eq!(key.minor(), minor);
         }
     }
 }
@@ -73,13 +66,8 @@ fn key_signature_rejects_values_just_outside() {
 #[test]
 fn key_signature_json_applies_the_same_bounds() {
     let good: KeySignature = serde_json::from_str(r#"{"accidentals":-7,"minor":true}"#).unwrap();
-    assert_eq!(
-        good,
-        KeySignature {
-            accidentals: -7,
-            minor: true
-        }
-    );
+    assert_eq!(good, KeySignature::new(-7, true).unwrap());
+    assert_eq!((good.accidentals(), good.minor()), (-7, true));
     for text in [
         r#"{"accidentals":8,"minor":false}"#,
         r#"{"accidentals":-128,"minor":false}"#,
@@ -90,4 +78,11 @@ fn key_signature_json_applies_the_same_bounds() {
             "{text}: {error}"
         );
     }
+}
+
+#[test]
+fn default_key_signature_is_c_major() {
+    let key = KeySignature::default();
+    assert_eq!((key.accidentals(), key.minor()), (0, false));
+    assert_eq!(key, KeySignature::new(0, false).unwrap());
 }

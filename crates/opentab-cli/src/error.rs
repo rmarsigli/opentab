@@ -46,6 +46,12 @@ impl CliError {
         }
     }
 
+    pub fn exhausted() -> CliError {
+        CliError::Internal {
+            message: "the id space is exhausted".to_string(),
+        }
+    }
+
     pub fn body(&self) -> ErrorBody {
         match self {
             CliError::Io { path, message } => ErrorBody {

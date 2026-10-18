@@ -15,12 +15,9 @@ pub fn duration(value: NoteValue) -> Duration {
 
 pub fn master_bar(score: &mut Score, numerator: u8, denominator: u8) -> MasterBar {
     MasterBar {
-        id: score.alloc(),
+        id: score.alloc().unwrap(),
         time_signature: TimeSignature::new(numerator, denominator).unwrap(),
-        key_signature: KeySignature {
-            accidentals: 0,
-            minor: false,
-        },
+        key_signature: KeySignature::new(0, false).unwrap(),
         repeat_start: false,
         repeat_end: None,
         alternate_endings: 0,
@@ -31,7 +28,7 @@ pub fn master_bar(score: &mut Score, numerator: u8, denominator: u8) -> MasterBa
 
 pub fn note(score: &mut Score, string: u8, fret: u8) -> Note {
     Note {
-        id: score.alloc(),
+        id: score.alloc().unwrap(),
         kind: NoteKind::Fretted { string, fret },
         effects: NoteEffects::default(),
     }
@@ -39,7 +36,7 @@ pub fn note(score: &mut Score, string: u8, fret: u8) -> Note {
 
 pub fn beat(score: &mut Score, duration: Duration, notes: Vec<Note>) -> Beat {
     Beat {
-        id: score.alloc(),
+        id: score.alloc().unwrap(),
         duration,
         notes,
         effects: BeatEffects::default(),
@@ -47,7 +44,7 @@ pub fn beat(score: &mut Score, duration: Duration, notes: Vec<Note>) -> Beat {
 }
 
 pub fn voice(score: &mut Score, durations: &[Duration]) -> Voice {
-    let id = score.alloc();
+    let id = score.alloc().unwrap();
     let mut beats = Vec::new();
     for duration in durations {
         let notes = vec![note(score, 0, 0)];
@@ -57,14 +54,14 @@ pub fn voice(score: &mut Score, durations: &[Duration]) -> Voice {
 }
 
 pub fn bar(score: &mut Score, durations: &[Duration]) -> Bar {
-    let id = score.alloc();
+    let id = score.alloc().unwrap();
     let voices = vec![voice(score, durations)];
     Bar { id, voices }
 }
 
 pub fn guitar(score: &mut Score, bars: Vec<Vec<Duration>>) -> Track {
-    let id = score.alloc();
-    let staff_id = score.alloc();
+    let id = score.alloc().unwrap();
+    let staff_id = score.alloc().unwrap();
     let mut staff_bars = Vec::new();
     for durations in bars {
         staff_bars.push(bar(score, &durations));

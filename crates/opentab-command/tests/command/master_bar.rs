@@ -22,13 +22,7 @@ fn insert_master_bar_adds_an_empty_bar_to_every_staff() {
     let inserted = &fx.score.master_bars[1];
     assert_eq!(inserted.id.0, ElementId(first_id));
     assert_eq!(inserted.time_signature, three_four());
-    assert_eq!(
-        inserted.key_signature,
-        KeySignature {
-            accidentals: 2,
-            minor: false
-        }
-    );
+    assert_eq!(inserted.key_signature, KeySignature::new(2, false).unwrap());
     assert!(inserted.tempo_changes.is_empty());
     assert_eq!(fx.score.master_bars.len(), 3);
     let mut expected = first_id + 1;
@@ -56,10 +50,7 @@ fn insert_master_bar_at_the_start_uses_the_default_key() {
     apply(&mut fx.score, &command).unwrap();
     assert_eq!(
         fx.score.master_bars[0].key_signature,
-        KeySignature {
-            accidentals: 0,
-            minor: false
-        }
+        KeySignature::new(0, false).unwrap()
     );
 }
 

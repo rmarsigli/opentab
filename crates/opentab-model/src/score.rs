@@ -61,8 +61,8 @@ impl Score {
         Score::default()
     }
 
-    pub fn alloc<T: From<ElementId>>(&mut self) -> T {
-        T::from(self.ids.next())
+    pub fn alloc<T: From<ElementId>>(&mut self) -> Option<T> {
+        self.ids.next().map(T::from)
     }
 
     pub fn find_track(&self, id: TrackId) -> Option<&Track> {

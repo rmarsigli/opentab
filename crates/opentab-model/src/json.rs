@@ -33,7 +33,7 @@ struct VersionProbe {
     opentab_json: Option<Value>,
 }
 
-pub fn to_json(score: &Score) -> String {
+pub fn to_json(score: &Score) -> Result<String, ModelError> {
     let document = DocumentOut {
         opentab_json: VERSION,
         meta: &score.meta,
@@ -42,7 +42,7 @@ pub fn to_json(score: &Score) -> String {
         extensions: &score.extensions,
         ids: &score.ids,
     };
-    serde_json::to_string_pretty(&document).unwrap_or_default()
+    serde_json::to_string_pretty(&document).map_err(json_error)
 }
 
 pub fn from_json(input: &str) -> Result<Score, ModelError> {

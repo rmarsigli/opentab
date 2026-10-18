@@ -56,9 +56,9 @@ pub fn write_score(path: &Path, score: &Score, overwrite: Overwrite) -> Result<(
             path: path.to_path_buf(),
         });
     }
+    let text = to_json(score).map_err(CliError::internal)?;
     let temp = temp_path(path);
-    let written =
-        write_synced(&temp, to_json(score).as_bytes()).and_then(|()| fs::rename(&temp, path));
+    let written = write_synced(&temp, text.as_bytes()).and_then(|()| fs::rename(&temp, path));
     match written {
         Ok(()) => Ok(()),
         Err(error) => {

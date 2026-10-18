@@ -10,7 +10,9 @@ pub enum ModelError {
     InvalidDots { dots: u8 },
     #[error("tuplet {num}:{den} has a term outside 1..=64")]
     InvalidTuplet { num: u8, den: u8 },
-    #[error("time signature {numerator}/{denominator} has a zero term")]
+    #[error(
+        "time signature {numerator}/{denominator} needs a non-zero numerator and a power-of-two denominator within 1..=64"
+    )]
     InvalidTimeSignature { numerator: u8, denominator: u8 },
     #[error(
         "bend point offset {offset} value {value} is outside offset 0..=100 and value -48..=48"

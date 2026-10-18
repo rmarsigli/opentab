@@ -2,14 +2,10 @@ use std::iter::once;
 
 use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature, Voice};
 
-use crate::ids::{bar_ids, check_restorable, put_extensions, reserve, take_extensions};
+use crate::ids::{bar_ids, check_restorable, next_id, put_extensions, reserve, take_extensions};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const WHAT: &str = "master bar";
-const DEFAULT_KEY: KeySignature = KeySignature {
-    accidentals: 0,
-    minor: false,
-};
 
 pub(crate) struct Snapshot<'a> {
     pub(crate) master_bar: &'a MasterBar,
@@ -70,9 +66,9 @@ pub(crate) fn insert(
     let key_signature = index
         .checked_sub(1)
         .and_then(|previous| score.master_bars.get(previous))
-        .map_or(DEFAULT_KEY, |previous| previous.key_signature);
+        .map_or_else(KeySignature::default, |previous| previous.key_signature);
     let master_bar = MasterBar {
-        id: score.alloc(),
+        id: next_id(&mut score.ids)?,
         time_signature,
         key_signature,
         repeat_start: false,
@@ -85,9 +81,9 @@ pub(crate) fn insert(
     let ids = &mut score.ids;
     for staff in score.tracks.iter_mut().flat_map(|track| &mut track.staves) {
         let bar = Bar {
-            id: ids.next().into(),
+            id: next_id(ids)?,
             voices: vec![Voice {
-                id: ids.next().into(),
+                id: next_id(ids)?,
                 beats: Vec::new(),
             }],
         };
