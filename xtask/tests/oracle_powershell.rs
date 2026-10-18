@@ -77,3 +77,20 @@ fn wm_close_is_only_sent_by_the_guarded_helper() {
     assert!(body.contains("Test-CloseAllowed"));
     assert_eq!(module.matches("PostMessage(").count(), 3);
 }
+
+#[test]
+fn module_never_synthesises_keyboard_input_outside_the_guarded_sender() {
+    let module = oracle_source("GpOracle.psm1");
+    assert!(!module.contains("keybd_event"));
+    assert!(!module.contains("SendInput"));
+    assert_eq!(module.matches("SendKeys]::SendWait").count(), 1);
+    let start = module.find("function Send-KeysTo").expect("sender");
+    let end = module[start + 1..]
+        .find("\nfunction ")
+        .map_or(module.len(), |offset| start + 1 + offset);
+    let body = &module[start..end];
+    assert!(body.contains("GetForegroundWindow() -eq $Handle"));
+    assert!(body.find("GetForegroundWindow").unwrap() < body.find("SendWait").unwrap());
+    let entry = oracle_source("Invoke-GpExport.ps1");
+    assert!(!entry.contains("SendKeys"));
+}

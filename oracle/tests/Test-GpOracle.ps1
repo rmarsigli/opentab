@@ -52,6 +52,9 @@ Assert-True (-not (Test-CloseAllowed ([IntPtr]300) $zero $zero)) 'an unowned win
 Assert-True ((ConvertTo-LabelKey '&Save As...') -eq 'save as') 'label key strips accelerator and ellipsis'
 Assert-True ((ConvertTo-LabelKey ('Export' + [char]0x2026)) -eq 'export') 'label key strips unicode ellipsis'
 
+Assert-True (-not [GpOracle.W32]::Focus([IntPtr]::Zero)) 'Focus refuses a null handle'
+Assert-True (-not [GpOracle.W32]::Focus([IntPtr]0x7FFFFFF0)) 'Focus refuses a handle that is not a window'
+
 if ($script:Failures.Count -gt 0) {
   foreach ($f in $script:Failures) { Write-Output "FAIL: $f" }
   [Environment]::Exit(1)

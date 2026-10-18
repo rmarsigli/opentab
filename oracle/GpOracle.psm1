@@ -14,7 +14,8 @@ namespace GpOracle {
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
-    [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint attach, uint to, bool on);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
@@ -30,11 +31,18 @@ namespace GpOracle {
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
     [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
     public static bool Focus(IntPtr h) {
+      if (h == IntPtr.Zero || !IsWindow(h)) return false;
       if (IsIconic(h)) ShowWindow(h, 9);
       if (SetForegroundWindow(h) && GetForegroundWindow() == h) return true;
-      keybd_event(0x12, 0, 0, UIntPtr.Zero);
-      keybd_event(0x12, 0, 2, UIntPtr.Zero);
-      return SetForegroundWindow(h);
+      IntPtr front = GetForegroundWindow();
+      if (front == IntPtr.Zero) return false;
+      uint pid;
+      uint frontThread = GetWindowThreadProcessId(front, out pid);
+      uint self = GetCurrentThreadId();
+      if (frontThread == 0 || frontThread == self) return false;
+      if (!AttachThreadInput(self, frontThread, true)) return false;
+      try { SetForegroundWindow(h); } finally { AttachThreadInput(self, frontThread, false); }
+      return GetForegroundWindow() == h;
     }
   }
 }
