@@ -542,3 +542,71 @@ fn diagnostic_fractions_are_validated_on_deserialise() {
         }
     );
 }
+
+fn tempo_at(numer: i64, denom: i64) -> opentab_model::TempoChange {
+    opentab_model::TempoChange {
+        position: Fraction::new(numer, denom),
+        bpm: opentab_model::Tempo::new(100.0).unwrap(),
+    }
+}
+
+#[test]
+fn tempo_changes_inside_the_bar_are_clean() {
+    let mut score = four_four(&quarters(4));
+    score.master_bars[0].tempo_changes = vec![tempo_at(0, 1), tempo_at(63, 64)];
+    assert_eq!(diagnose(&score), Vec::new());
+}
+
+#[test]
+fn tempo_changes_at_or_past_the_bar_end_are_reported_in_order() {
+    let mut score = four_four(&quarters(3));
+    let second = master_bar(&mut score, 3, 8);
+    score.master_bars.push(second);
+    let first_id = score.master_bars[0].id;
+    let second_id = score.master_bars[1].id;
+    score.master_bars[0].tempo_changes = vec![tempo_at(5, 4), tempo_at(1, 2), tempo_at(1, 1)];
+    score.master_bars[1].tempo_changes = vec![tempo_at(3, 8)];
+    let diagnostics = diagnose(&score);
+    assert_eq!(
+        diagnostics[..3],
+        [
+            Diagnostic::TempoChangeOutsideBar {
+                master_bar: first_id,
+                position: Fraction::new(5, 4),
+            },
+            Diagnostic::TempoChangeOutsideBar {
+                master_bar: first_id,
+                position: Fraction::new(1, 1),
+            },
+            Diagnostic::TempoChangeOutsideBar {
+                master_bar: second_id,
+                position: Fraction::new(3, 8),
+            },
+        ]
+    );
+    assert!(matches!(
+        diagnostics[3],
+        Diagnostic::StaffBarCountMismatch { .. }
+    ));
+    assert!(matches!(diagnostics[4], Diagnostic::IncompleteBar { .. }));
+    assert_eq!(diagnostics.len(), 5);
+}
+
+#[test]
+fn tempo_change_outside_bar_round_trips_and_validates_its_position() {
+    let diagnostic = Diagnostic::TempoChangeOutsideBar {
+        master_bar: opentab_model::MasterBarId(ElementId(3)),
+        position: Fraction::new(5, 4),
+    };
+    let json = serde_json::to_string(&diagnostic).unwrap();
+    assert_eq!(
+        json,
+        r#"{"kind":"tempo_change_outside_bar","master_bar":3,"position":[5,4]}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<Diagnostic>(&json).unwrap(),
+        diagnostic
+    );
+    let negative = r#"{"kind":"tempo_change_outside_bar","master_bar":3,"position":[-1,4]}"#;
+    assert!(serde_json::from_str::<Diagnostic>(negative).is_err());
+}
