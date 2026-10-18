@@ -195,13 +195,10 @@ impl Walk<'_> {
     }
 }
 
-fn silent(bar: Option<&Bar>) -> bool {
-    bar.is_none_or(|bar| {
-        bar.voices
-            .iter()
-            .flat_map(|voice| &voice.beats)
-            .all(|beat| beat.notes.is_empty())
-    })
+fn beats(bar: Option<&Bar>) -> impl Iterator<Item = &Beat> {
+    bar.into_iter()
+        .flat_map(|bar| &bar.voices)
+        .flat_map(|voice| &voice.beats)
 }
 
 fn continues(before: &MasterBar, after: &MasterBar) -> bool {
@@ -218,16 +215,22 @@ fn continues(before: &MasterBar, after: &MasterBar) -> bool {
 
 fn multi_bar_rest(score: &Score, selection: &Selection) -> bool {
     let silent_at = |index: usize| {
-        (index > 0 || !score.anacrusis)
-            && selection.sources.iter().all(|(track, staff)| {
-                silent(
-                    score
-                        .tracks
-                        .get(*track)
-                        .and_then(|track| track.staves.get(*staff))
-                        .and_then(|staff| staff.bars.get(index)),
-                )
+        let bars: Vec<Option<&Bar>> = selection
+            .sources
+            .iter()
+            .map(|(track, staff)| {
+                score
+                    .tracks
+                    .get(*track)
+                    .and_then(|track| track.staves.get(*staff))
+                    .and_then(|staff| staff.bars.get(index))
             })
+            .collect();
+        (index > 0 || !score.anacrusis)
+            && bars
+                .iter()
+                .all(|bar| beats(*bar).all(|beat| beat.notes.is_empty()))
+            && bars.iter().any(|bar| beats(*bar).next().is_some())
     };
     (selection.first..selection.last).any(|index| {
         match (
