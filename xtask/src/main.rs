@@ -1,6 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Stdio};
+use std::process::{Command, ExitCode, ExitStatus, Stdio};
+use xtask::cap::{CommandLine, LINUX, UNAVAILABLE_WARNING, cap_applicable, probe, wrap};
 use xtask::fixtures::write_fixtures;
 use xtask::mutants::{INSTALL_HINT, MutantsReport, Shard, mutants_args, output_dir, verdict};
 use xtask::oracle::check::check;
@@ -26,6 +27,8 @@ enum TopCommand {
     Oracle(OracleArgs),
     #[command(about = "Run cargo-mutants on opentab-model, opentab-command and opentab-gp")]
     Mutants(MutantsArgs),
+    #[command(about = "Run a command inside the memory cap (5G memory, 1G swap)")]
+    Capped(CappedArgs),
     #[command(about = "Write the synthetic .gp fixtures, one per feature family")]
     Fixtures(FixturesArgs),
 }
@@ -38,6 +41,22 @@ struct MutantsArgs {
         help = "Run only shard K of N (K/N, from 0/N), passed to cargo mutants --shard"
     )]
     shard: Option<Shard>,
+    #[arg(
+        long,
+        help = "Retest only the mutants the previous run missed or left unknown, passed to cargo mutants --iterate"
+    )]
+    iterate: bool,
+}
+
+#[derive(Debug, Args)]
+struct CappedArgs {
+    #[arg(
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        required = true,
+        value_name = "COMMAND"
+    )]
+    command: Vec<String>,
 }
 
 #[derive(Debug, Args)]
@@ -213,6 +232,46 @@ fn cargo_mutants_installed(root: &Path) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+fn cap_available() -> bool {
+    if std::env::consts::OS != LINUX {
+        return false;
+    }
+    let probe = probe();
+    let works = Command::new(&probe.program)
+        .args(&probe.args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    cap_applicable(std::env::consts::OS, works)
+}
+
+fn launch(command: CommandLine, current_dir: Option<&Path>) -> std::io::Result<ExitStatus> {
+    let available = cap_available();
+    if !available {
+        eprintln!("{UNAVAILABLE_WARNING}");
+    }
+    let wrapped = wrap(command, available);
+    let mut process = Command::new(&wrapped.program);
+    process.args(&wrapped.args);
+    if let Some(dir) = current_dir {
+        process.current_dir(dir);
+    }
+    process.status()
+}
+
+fn run_capped(args: CappedArgs) -> ExitCode {
+    let Some((program, rest)) = args.command.split_first() else {
+        return failure("capped needs a command to run");
+    };
+    match launch(CommandLine::new(program, rest), None) {
+        Ok(status) => status.code().map_or(ExitCode::from(1), |code| {
+            ExitCode::from(u8::try_from(code).unwrap_or(1))
+        }),
+        Err(error) => failure(&format!("cannot run {program}: {error}")),
+    }
+}
+
 fn run_mutants(args: MutantsArgs) -> ExitCode {
     let root = workspace_root();
     if !cargo_mutants_installed(&root) {
@@ -222,11 +281,8 @@ fn run_mutants(args: MutantsArgs) -> ExitCode {
     if let Err(error) = std::fs::create_dir_all(&output) {
         return failure(&format!("cannot create {}: {error}", output.display()));
     }
-    let status = match Command::new("cargo")
-        .args(mutants_args(&output, args.shard))
-        .current_dir(&root)
-        .status()
-    {
+    let command = CommandLine::new("cargo", &mutants_args(&output, args.shard, args.iterate));
+    let status = match launch(command, Some(&root)) {
         Ok(status) => status,
         Err(error) => return failure(&format!("cannot run cargo mutants: {error}")),
     };
@@ -250,6 +306,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         TopCommand::Mutants(args) => run_mutants(args),
+        TopCommand::Capped(args) => run_capped(args),
         TopCommand::Fixtures(args) => run_fixtures(args),
         TopCommand::Oracle(oracle) => match oracle.command {
             OracleCommand::Harvest(args) => run_harvest(args),

@@ -7,7 +7,7 @@ use xtask::mutants::{
 #[test]
 fn arguments_select_the_three_crates_serially_with_a_timeout_and_target_output() {
     let output = output_dir(Path::new("/work"));
-    let args = mutants_args(&output, None);
+    let args = mutants_args(&output, None, false);
     assert_eq!(
         args,
         [
@@ -100,7 +100,7 @@ fn mutants_config_keeps_only_settings_the_arguments_do_not_override() {
     let table: toml::Table = text.parse().expect("mutants.toml parses");
     let keys: Vec<&str> = table.keys().map(String::as_str).collect();
     assert_eq!(keys, ["build_timeout_multiplier", "cap_lints"]);
-    let args = mutants_args(&output_dir(Path::new("/work")), None);
+    let args = mutants_args(&output_dir(Path::new("/work")), None, false);
     for overridden in ["timeout_multiplier", "minimum_test_timeout", "jobs"] {
         assert!(!table.contains_key(overridden), "{overridden}");
     }
@@ -112,10 +112,10 @@ fn mutants_config_keeps_only_settings_the_arguments_do_not_override() {
 fn a_shard_is_passed_through_to_cargo_mutants() {
     let shard = Shard::parse("1/4").expect("valid shard");
     assert_eq!(shard, Shard { index: 1, count: 4 });
-    let args = mutants_args(&output_dir(Path::new("/work")), Some(shard));
+    let args = mutants_args(&output_dir(Path::new("/work")), Some(shard), false);
     assert_eq!(args[args.len() - 2..], ["--shard", "1/4"]);
     assert_eq!(
-        mutants_args(&output_dir(Path::new("/work")), None).len() + 2,
+        mutants_args(&output_dir(Path::new("/work")), None, false).len() + 2,
         args.len()
     );
 }
@@ -127,4 +127,17 @@ fn malformed_shards_are_rejected() {
         assert!(error.contains("K/N"), "{text}: {error}");
     }
     assert_eq!(Shard::parse("0/1"), Ok(Shard { index: 0, count: 1 }));
+}
+
+#[test]
+fn iterate_is_passed_through_to_cargo_mutants() {
+    let output = output_dir(Path::new("/work"));
+    let plain = mutants_args(&output, None, false);
+    let iterating = mutants_args(&output, None, true);
+    assert!(!plain.iter().any(|arg| arg == "--iterate"));
+    assert_eq!(iterating.last().map(String::as_str), Some("--iterate"));
+    assert_eq!(iterating.len(), plain.len() + 1);
+    let shard = Shard::parse("2/4").expect("valid shard");
+    let both = mutants_args(&output, Some(shard), true);
+    assert_eq!(both[both.len() - 3..], ["--shard", "2/4", "--iterate"]);
 }
