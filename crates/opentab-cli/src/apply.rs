@@ -1,54 +1,57 @@
 use std::path::Path;
 
-use opentab_command::{apply, parse_jsonl};
+use opentab_command::{apply, parse_jsonl_lines};
 use serde::Serialize;
 
 use crate::error::CliError;
 use crate::files::{self, Overwrite};
-use crate::output::Report;
-
-const BOM: char = '\u{feff}';
+use crate::ids::IdTree;
+use crate::output::Rendered;
+use crate::text::escape_controls;
 
 #[derive(Serialize)]
 pub struct Applied {
     applied: usize,
-    #[serde(skip)]
-    out: String,
+    allocated: Vec<u64>,
 }
 
-impl Report for Applied {
-    fn human(&self) -> String {
-        let noun = if self.applied == 1 {
-            "command"
-        } else {
-            "commands"
-        };
-        format!("applied {} {noun}, wrote {}", self.applied, self.out)
-    }
-}
-
-pub fn run(path: &Path, commands: &Path, out: &Path) -> Result<Applied, CliError> {
+pub fn run(path: &Path, commands: &Path, out: &Path) -> Result<Rendered<Applied>, CliError> {
     files::require_format(path)?;
     files::require_format(out)?;
     let mut score = files::read_score(path)?;
     let text = files::read_text(commands)?;
-    let text = text.strip_prefix(BOM).unwrap_or(&text);
-    let mut applied = 0;
-    for (index, raw) in text.lines().enumerate() {
-        let line = index + 1;
-        let parsed = parse_jsonl(raw).map_err(|error| CliError::InvalidCommand {
-            line,
-            message: error.message,
+    let parsed = parse_jsonl_lines(&text).map_err(|error| CliError::InvalidCommand {
+        line: error.line,
+        message: error.message,
+    })?;
+    let before = IdTree::of(&score).all();
+    for numbered in &parsed {
+        apply(&mut score, &numbered.command).map_err(|source| CliError::CommandFailed {
+            line: numbered.line,
+            source,
         })?;
-        for command in parsed {
-            apply(&mut score, &command)
-                .map_err(|source| CliError::CommandFailed { line, source })?;
-            applied += 1;
-        }
     }
+    let allocated: Vec<u64> = IdTree::of(&score)
+        .all()
+        .difference(&before)
+        .copied()
+        .collect();
     files::write_score(out, &score, Overwrite::Allowed)?;
-    Ok(Applied {
-        applied,
-        out: out.display().to_string(),
+    let noun = if parsed.len() == 1 {
+        "command"
+    } else {
+        "commands"
+    };
+    let human = format!(
+        "applied {} {noun}, wrote {}",
+        parsed.len(),
+        escape_controls(&out.display().to_string())
+    );
+    Ok(Rendered {
+        wire: Applied {
+            applied: parsed.len(),
+            allocated,
+        },
+        human,
     })
 }

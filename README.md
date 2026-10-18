@@ -18,6 +18,25 @@ cargo run -p opentab-cli -- --version
 
 The repository ships a `.cargo/config.toml` that limits build parallelism to two jobs and reduces debug information, so the workspace builds on machines with 8 GB of RAM.
 
+## Command line
+
+The `opentab` binary works on `.opentab.json` scores. It has three subcommands; `opentab <command> --help` shows the full help.
+
+```
+opentab new --out song.opentab.json --title "My song"
+opentab info song.opentab.json
+opentab info song.opentab.json --ids
+opentab apply song.opentab.json edits.jsonl --out edited.opentab.json
+```
+
+- `new` creates a one-bar score with a six-string guitar track. It never overwrites an existing file.
+- `info` prints the title, artist, tracks, time signatures and diagnostics. `--ids` also lists the id of every element; the JSON output always contains them in an `ids` section.
+- `apply` reads one JSON command per line from the commands file (blank lines and lines starting with `//` are ignored, and line numbers count them), applies all of them and writes the result to `--out`. Nothing is written unless every command succeeds. `--out` may be the input file, and a symbolic link at `--out` is kept while its target is replaced.
+
+Add `--json` to any subcommand to get a single JSON line on standard output, for results and for errors. `apply --json` prints `{"applied": 2, "allocated": [12, 13]}`, where `allocated` lists the ids that did not exist before, in ascending order. Errors look like `{"error": {"kind": "command_failed", "sub_kind": "not_found", "message": "...", "line": 2}}`; `sub_kind` is present only for `command_failed` and is one of `not_found`, `index_out_of_range`, `invalid_value` and `wrong_instrument`. The other kinds are `usage`, `io`, `unsupported_format`, `invalid_score`, `output_exists`, `invalid_input` and `invalid_command`.
+
+Exit codes: 0 on success, 1 for a usage error and 2 for an input or output error. Human output prints control characters as `\u{XX}`; JSON output stays standard JSON.
+
 ## Mutation testing
 
 `cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model` and `opentab-command` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.

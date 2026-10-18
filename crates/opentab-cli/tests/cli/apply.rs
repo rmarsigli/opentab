@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde_json::{Value, json};
 
 use crate::support::{file_names, new_score, path_str, read_json, run, temp, whole_rest_beat_id};
@@ -9,6 +11,55 @@ fn happy_commands(beat: u64) -> String {
         json!({"op": "insert_master_bar", "index": 1, "time_signature": {"numerator": 6, "denominator": 8}}).to_string(),
     ]
     .join("\n")
+}
+
+fn ids_of(array: &Value) -> Vec<u64> {
+    array
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["id"].as_u64().unwrap())
+        .collect()
+}
+
+fn element_ids(score: &Value) -> BTreeSet<u64> {
+    let mut ids = BTreeSet::new();
+    collect_ids(&score["master_bars"], &mut ids);
+    collect_ids(&score["tracks"], &mut ids);
+    ids
+}
+
+fn collect_ids(value: &Value, ids: &mut BTreeSet<u64>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(id) = map.get("id").and_then(Value::as_u64) {
+                ids.insert(id);
+            }
+            map.values().for_each(|inner| collect_ids(inner, ids));
+        }
+        Value::Array(items) => items.iter().for_each(|inner| collect_ids(inner, ids)),
+        _ => {}
+    }
+}
+
+fn expected_bars(score: &Value) -> Value {
+    let bars = score["tracks"][0]["staves"][0]["bars"].as_array().unwrap();
+    Value::Array(
+        bars.iter()
+            .map(|bar| {
+                json!({
+                    "id": bar["id"],
+                    "voices": bar["voices"].as_array().unwrap().iter().map(|voice| json!({
+                        "id": voice["id"],
+                        "beats": voice["beats"].as_array().unwrap().iter().map(|beat| json!({
+                            "id": beat["id"],
+                            "notes": ids_of(&beat["notes"])
+                        })).collect::<Vec<Value>>()
+                    })).collect::<Vec<Value>>()
+                })
+            })
+            .collect(),
+    )
 }
 
 #[test]
@@ -28,7 +79,17 @@ fn new_apply_info_happy_path() {
         "--json",
     ]);
     assert_eq!(applied.code, 0, "{}", applied.stderr);
-    assert_eq!(applied.json(), json!({"applied": 3}));
+    let before = element_ids(&read_json(&score));
+    let after = element_ids(&read_json(&out));
+    let expected: Vec<u64> = after.difference(&before).copied().collect();
+    let body = applied.json();
+    assert_eq!(body["applied"], 3);
+    assert_eq!(body["allocated"], json!(expected));
+    assert!(expected.len() >= 3, "{expected:?}");
+    let allocator_before = read_json(&score)["ids"]["next"].as_u64().unwrap();
+    let range: Vec<u64> =
+        (allocator_before..read_json(&out)["ids"]["next"].as_u64().unwrap()).collect();
+    assert_eq!(body["allocated"], json!(range));
 
     let info = run(&["info", path_str(&out), "--json"]);
     assert_eq!(info.code, 0, "{}", info.stderr);
@@ -47,7 +108,21 @@ fn new_apply_info_happy_path() {
             }],
             "master_bars": 2,
             "time_signatures": [["4/4", 1], ["6/8", 1]],
-            "diagnostics": []
+            "diagnostics": [],
+            "ids": info.json()["ids"].clone()
+        })
+    );
+    assert_eq!(
+        info.json()["ids"],
+        json!({
+            "master_bars": ids_of(&read_json(&out)["master_bars"]),
+            "tracks": [{
+                "id": track_id,
+                "staves": [{
+                    "id": read_json(&out)["tracks"][0]["staves"][0]["id"],
+                    "bars": expected_bars(&read_json(&out))
+                }]
+            }]
         })
     );
     let note =
@@ -227,7 +302,7 @@ fn malformed_json_on_a_line_reports_that_line() {
 }
 
 #[test]
-fn an_error_before_a_later_syntax_error_is_the_one_reported() {
+fn a_syntax_error_on_a_later_line_is_reported_before_any_command_runs() {
     let dir = temp();
     let score = new_score(dir.path(), "a.opentab.json");
     let commands = dir.path().join("c.jsonl");
@@ -246,7 +321,8 @@ fn an_error_before_a_later_syntax_error_is_the_one_reported() {
         "--json",
     ]);
     assert_eq!(result.code, 2);
-    assert_eq!(result.json()["error"]["line"], 1);
+    assert_eq!(result.json()["error"]["line"], 2);
+    assert_eq!(result.json()["error"]["kind"], "invalid_command");
 }
 
 #[test]
@@ -265,7 +341,7 @@ fn an_empty_command_file_applies_zero_commands() {
         "--json",
     ]);
     assert_eq!(result.code, 0);
-    assert_eq!(result.json(), json!({"applied": 0}));
+    assert_eq!(result.json(), json!({"applied": 0, "allocated": []}));
     assert_eq!(read_json(&out), read_json(&score));
 }
 
@@ -295,4 +371,16 @@ fn a_missing_or_binary_command_file_exits_2() {
     result.assert_no_panic();
     assert_eq!(result.code, 2);
     assert!(!out.exists());
+    let machine = run(&[
+        "apply",
+        path_str(&score),
+        path_str(&binary),
+        "--out",
+        path_str(&out),
+        "--json",
+    ]);
+    let error = &machine.json()["error"];
+    assert_eq!(error["kind"], "invalid_input");
+    assert!(error.get("line").is_none());
+    assert!(error["message"].as_str().unwrap().contains("UTF-8"));
 }
