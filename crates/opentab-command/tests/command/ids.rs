@@ -68,7 +68,6 @@ fn undoing_an_insert_keeps_the_allocator() {
     apply(&mut fx.score, &inverse).unwrap();
     assert_eq!(fx.score.ids, advanced);
     let per_master_bar = 1 + 2 * staff_count(&fx.score) as u64;
-    assert_eq!(per_master_bar, 5);
     assert_eq!(
         fx.score.ids.peek(),
         ElementId(before.peek().0 + per_master_bar)

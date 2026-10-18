@@ -20,6 +20,7 @@ pub(crate) fn set(score: &mut Score, master_bar: usize, bpm: f64) -> Result<Comm
     let tempo = Tempo::new(bpm).map_err(CommandError::model)?;
     let error = out_of_range(score, master_bar);
     let target = score.master_bars.get_mut(master_bar).ok_or(error)?;
+    check_tempo_changes(target.time_signature, &target.tempo_changes)?;
     let old = target.tempo_changes.clone();
     let start = Fraction::from_integer(0);
     match target
@@ -51,12 +52,9 @@ pub(crate) fn restore(
         return Err(out_of_range(score, master_bar));
     }
     let error = out_of_range(score, master_bar);
-    let time_signature = score
-        .master_bars
-        .get(master_bar)
-        .ok_or(error)?
-        .time_signature;
-    check_tempo_changes(time_signature, tempo_changes)?;
+    let current = score.master_bars.get(master_bar).ok_or(error)?;
+    check_tempo_changes(current.time_signature, tempo_changes)?;
+    check_tempo_changes(current.time_signature, &current.tempo_changes)?;
     let error = out_of_range(score, master_bar);
     let target = score.master_bars.get_mut(master_bar).ok_or(error)?;
     let old = std::mem::replace(&mut target.tempo_changes, tempo_changes.to_vec());

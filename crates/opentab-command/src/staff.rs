@@ -1,6 +1,8 @@
 use opentab_model::{Bar, Score, Staff, StaffId, Track, TrackId};
 
-use crate::ids::{bar_ids, check_restorable, put_extensions, reserve, take_extensions};
+use crate::ids::{
+    bar_ids, check_removable, check_restorable, put_extensions, reserve, take_extensions,
+};
 use crate::locate::{StaffPath, find_staff, not_found};
 use crate::rules::{check_bar, check_empty_bar, empty_bar};
 use crate::{Command, CommandError, ExtensionEntry};
@@ -77,6 +79,14 @@ pub(crate) fn trim(
 ) -> Result<Command, CommandError> {
     let path = find_staff(score, track, staff)?;
     let current = staff_ref(score, path, staff)?;
+    let want = score.master_bars.len();
+    if current.bars.len() > want {
+        return Err(CommandError::invalid(format!(
+            "staff {} has {} bars for {want} master bars; trim only shortens a staff that is not overfull",
+            staff.0.0,
+            current.bars.len()
+        )));
+    }
     let Some(removed) = current.bars.get(len..).filter(|tail| !tail.is_empty()) else {
         return Err(CommandError::invalid(format!(
             "staff {} has {} bars; nothing to trim down to {len}",
@@ -84,9 +94,12 @@ pub(crate) fn trim(
             current.bars.len()
         )));
     };
+    let owner = track_ref(score, path, staff)?;
     for bar in removed {
+        check_bar(owner, bar)?;
         check_empty_bar(bar)?;
     }
+    check_removable(score, removed.iter().flat_map(bar_ids))?;
     let bars = staff_in(score, path, staff)?.bars.split_off(len);
     let extensions = take_extensions(&mut score.extensions, bars.iter().flat_map(bar_ids));
     Ok(Command::RestoreStaffBars {

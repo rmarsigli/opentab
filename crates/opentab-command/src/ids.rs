@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::iter::once;
 
 use opentab_model::{Bar, Beat, ElementId, Extensions, IdAllocator, Score, Track, Voice};
@@ -62,6 +62,68 @@ pub(crate) fn reserve(score: &Score, count: u64) -> Result<(), CommandError> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Subtree {
+    Restored,
+    Removed,
+}
+
+impl Subtree {
+    fn copies_in_score(self) -> usize {
+        match self {
+            Subtree::Restored => 0,
+            Subtree::Removed => 1,
+        }
+    }
+}
+
+fn check_subtree<I>(score: &Score, ids: I, subtree: Subtree) -> Result<Vec<ElementId>, CommandError>
+where
+    I: IntoIterator<Item = ElementId>,
+{
+    let next = score.ids.peek();
+    let mut counts: HashMap<ElementId, usize> = HashMap::new();
+    let mut order = Vec::new();
+    for id in ids {
+        if id >= next {
+            return Err(CommandError::invalid(format!(
+                "element id {} is not below the id allocator ({}); restored ids must have been allocated",
+                id.0, next.0
+            )));
+        }
+        if counts.insert(id, 0).is_some() {
+            return Err(CommandError::invalid(format!(
+                "element id {} appears twice in the subtree",
+                id.0
+            )));
+        }
+        order.push(id);
+    }
+    for id in score_ids(score) {
+        if let Some(count) = counts.get_mut(&id) {
+            *count = count.saturating_add(1);
+        }
+    }
+    let expected = subtree.copies_in_score();
+    if let Some(id) = order
+        .iter()
+        .find(|id| counts.get(id).is_some_and(|count| *count != expected))
+    {
+        return Err(CommandError::invalid(format!(
+            "element id {} already exists in the score; run diagnose",
+            id.0
+        )));
+    }
+    Ok(order)
+}
+
+pub(crate) fn check_removable<I>(score: &Score, removed: I) -> Result<(), CommandError>
+where
+    I: IntoIterator<Item = ElementId>,
+{
+    check_subtree(score, removed, Subtree::Removed).map(|_| ())
+}
+
 pub(crate) fn check_restorable<I>(
     score: &Score,
     restored: I,
@@ -70,36 +132,14 @@ pub(crate) fn check_restorable<I>(
 where
     I: IntoIterator<Item = ElementId>,
 {
-    let next = score.ids.peek();
-    let mut fresh = HashSet::new();
-    let mut order = Vec::new();
-    for id in restored {
-        if id >= next {
-            return Err(CommandError::invalid(format!(
-                "element id {} is not below the id allocator ({}); restored ids must have been allocated",
-                id.0, next.0
-            )));
-        }
-        if !fresh.insert(id) {
-            return Err(CommandError::invalid(format!(
-                "element id {} appears twice in the restored elements",
-                id.0
-            )));
-        }
-        order.push(id);
-    }
-    if let Some(id) = score_ids(score).find(|id| fresh.contains(id)) {
-        return Err(CommandError::invalid(format!(
-            "element id {} already exists in the score",
-            id.0
-        )));
-    }
+    let order = check_subtree(score, restored, Subtree::Restored)?;
     if let Some(id) = order.iter().find(|id| score.extensions.0.contains_key(id)) {
         return Err(CommandError::invalid(format!(
             "element id {} already has orphan extension payloads in the score",
             id.0
         )));
     }
+    let fresh: HashSet<ElementId> = order.into_iter().collect();
     let mut entries = HashSet::new();
     for entry in extensions {
         if !fresh.contains(&entry.id) {
