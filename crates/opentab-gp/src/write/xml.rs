@@ -2,7 +2,6 @@ use crate::dom::{self, Element, Node};
 use crate::error::{GpError, Refusal};
 
 const DECLARATION: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n";
-const CDATA_END: &str = "]]>";
 
 #[derive(Debug)]
 pub(crate) struct Fail {
@@ -65,6 +64,18 @@ fn is_text_char(character: char) -> bool {
         '\t' | '\n' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..)
 }
 
+pub(crate) fn check_escaped(text: &str) -> Result<(), Refusal> {
+    match text
+        .chars()
+        .find(|character| *character != '\r' && !is_text_char(*character))
+    {
+        Some(character) => Err(Refusal::Character {
+            code: u32::from(character),
+        }),
+        None => Ok(()),
+    }
+}
+
 pub(crate) fn check_text(text: &str) -> Result<(), Refusal> {
     match text.chars().find(|character| !is_text_char(*character)) {
         Some(character) => Err(Refusal::Character {
@@ -77,13 +88,7 @@ pub(crate) fn check_text(text: &str) -> Result<(), Refusal> {
 pub(crate) fn text(name: &str, value: &str) -> Result<Element, Refusal> {
     check_text(value)?;
     let mut element = Element::new(name);
-    let mut rest = value;
-    while let Some(at) = rest.find(CDATA_END) {
-        let (head, tail) = rest.split_at(at + 2);
-        element.children.push(Node::CData(head.to_string()));
-        rest = tail;
-    }
-    element.children.push(Node::CData(rest.to_string()));
+    element.children = dom::cdata_nodes(value);
     Ok(element)
 }
 

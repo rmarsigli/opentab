@@ -295,7 +295,7 @@ fn read_tempo(ctx: &mut Context, element: &Element, location: &Location) -> Resu
     let scope = Scope::new(owner, ParentPath::tempo(ordinal), location.clone());
     ctx.keep_attributes(&scope, element, &[])?;
     let position = tempo_position(element, location, numerator, denominator)?;
-    let position_guard = guard::tempo_position(position);
+    let position_guard = guard::tempo_position(position, time);
     let mut value = None;
     let canonical =
         canon::tempo_position(position, time).map(|text| Element::leaf("Position", &text));

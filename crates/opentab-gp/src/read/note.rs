@@ -1,6 +1,6 @@
 use opentab_model::{
-    Accent, Bend, BendPoint, Harmonic, InstrumentKind, KeySignature, Note, NoteEffects, NoteId,
-    NoteKind, Tap,
+    Accent, Beat, Bend, BendPoint, Harmonic, InstrumentKind, KeySignature, Note, NoteEffects,
+    NoteId, NoteKind, Tap,
 };
 
 use crate::canon;
@@ -60,6 +60,7 @@ impl<T: Copy> Group<T> {
 
 struct NoteFrame<'f> {
     kind: NoteKind,
+    previous: Option<&'f Beat>,
     key: KeySignature,
     pitch: PitchInputs<'f>,
     bend: Group<Bend>,
@@ -104,6 +105,7 @@ pub(crate) fn read_note(
     staff: &StaffFrame<'_>,
     token: &str,
     at: &Location,
+    previous: Option<&Beat>,
 ) -> Result<Note, Fault> {
     let (element, location) = pools.notes.fetch(token, at)?;
     let id: NoteId = ctx.alloc(&location)?;
@@ -113,6 +115,7 @@ pub(crate) fn read_note(
     let kind = note_kind(element, &location, &properties, staff)?;
     let frame = NoteFrame {
         kind,
+        previous,
         key: staff.key,
         pitch: PitchInputs {
             kind,
@@ -245,7 +248,7 @@ fn read_note_child(
         "Accent" => return read_accent(visit, effects),
         "InstrumentArticulation" => {
             if !matches!(frame.kind, NoteKind::Percussion { .. }) {
-                return Ok(Handled::Unknown);
+                return Ok(Handled::Replayed(guard::note_kind(frame.kind)));
             }
         }
         "Properties" => {
@@ -318,6 +321,9 @@ fn note_property(
     }
     if TAP_PROPERTIES.contains(&name) {
         return frame.tap.handled(guard::tap(None));
+    }
+    if name == "HopoDestination" {
+        return Handled::Replayed(guard::hopo(frame.previous, frame.kind));
     }
     let flag = match name {
         "HopoOrigin" => &mut effects.hammer_on_pull_off,

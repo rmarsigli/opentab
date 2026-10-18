@@ -148,7 +148,7 @@ fn hopo_destination_stays_opaque_beside_mapped_effects() {
     assert_eq!(
         note_payloads(&score),
         vec![
-            "<Keep parent=\"Properties\" index=\"3\"><Property name=\"HopoDestination\"><Enable/></Property></Keep>"
+            "<Keep parent=\"Properties\" index=\"3\" guard=\"hopo:none\"><Property name=\"HopoDestination\"><Enable/></Property></Keep>"
                 .to_string()
         ]
     );
@@ -312,6 +312,6 @@ fn pitched_notes_keep_their_instrument_articulation() {
     let score = with_note("<InstrumentArticulation>0</InstrumentArticulation>", "").read();
     assert_eq!(
         note_payloads(&score),
-        vec!["<Keep parent=\"\" index=\"0\"><InstrumentArticulation>0</InstrumentArticulation></Keep>".to_string()]
+        vec!["<Keep parent=\"\" index=\"0\" guard=\"note-kind:fretted\"><InstrumentArticulation>0</InstrumentArticulation></Keep>".to_string()]
     );
 }

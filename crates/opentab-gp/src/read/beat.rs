@@ -55,6 +55,7 @@ pub(crate) fn read_bar(
     staff: &StaffFrame<'_>,
     token: &str,
     at: &Location,
+    previous_bar: Option<&Bar>,
 ) -> Result<Bar, Fault> {
     let (element, location) = pools.bars.fetch(token, at)?;
     let id: BarId = ctx.alloc(&location)?;
@@ -93,6 +94,7 @@ pub(crate) fn read_bar(
         }
         let slot = u8::try_from(slot).unwrap_or(u8::MAX);
         let slot = VoiceSlot::new(slot).map_err(|error| Fault::model(&voices.location, error))?;
+        let carried = guard::carried(previous_bar, slot);
         bar.voices.push(read_voice(
             ctx,
             pools,
@@ -100,6 +102,7 @@ pub(crate) fn read_bar(
             token,
             &voices.location,
             slot,
+            carried,
         )?);
     }
     Ok(bar)
@@ -112,6 +115,7 @@ fn read_voice(
     token: &str,
     at: &Location,
     slot: VoiceSlot,
+    carried: Option<&Beat>,
 ) -> Result<Voice, Fault> {
     let (element, location) = pools.voices.fetch(token, at)?;
     let id: VoiceId = ctx.alloc(&location)?;
@@ -135,9 +139,9 @@ fn read_voice(
     };
     if let Some(beats) = beats {
         for token in beats.text.split_whitespace() {
-            voice
-                .beats
-                .push(read_beat(ctx, pools, staff, token, &beats.location)?);
+            let previous = voice.beats.last().or(carried);
+            let beat = read_beat(ctx, pools, staff, token, &beats.location, previous)?;
+            voice.beats.push(beat);
         }
     }
     Ok(voice)
@@ -155,6 +159,7 @@ fn read_beat(
     staff: &StaffFrame<'_>,
     token: &str,
     at: &Location,
+    previous: Option<&Beat>,
 ) -> Result<Beat, Fault> {
     let (element, location) = pools.beats.fetch(token, at)?;
     let id: BeatId = ctx.alloc(&location)?;
@@ -184,8 +189,14 @@ fn read_beat(
     };
     if let Some(notes) = fields.notes {
         for token in notes.text.split_whitespace() {
-            beat.notes
-                .push(read_note(ctx, pools, staff, token, &notes.location)?);
+            beat.notes.push(read_note(
+                ctx,
+                pools,
+                staff,
+                token,
+                &notes.location,
+                previous,
+            )?);
         }
     }
     Ok(beat)

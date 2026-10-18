@@ -47,12 +47,8 @@ fn arb_tremolo() -> impl Strategy<Value = TremoloPicking> {
     .prop_map(|value| TremoloPicking::new(value).expect("value is a tremolo value"))
 }
 
-fn arb_chord_name(gp_writable: bool) -> BoxedStrategy<Option<String>> {
-    if gp_writable {
-        Just(None).boxed()
-    } else {
-        option::of(arb_text_for(12, false)).boxed()
-    }
+fn arb_chord_name(gp_writable: bool) -> impl Strategy<Value = Option<String>> {
+    option::of(arb_text_for(12, gp_writable))
 }
 
 pub fn arb_beat_effects(gp_writable: bool) -> impl Strategy<Value = BeatEffects> {

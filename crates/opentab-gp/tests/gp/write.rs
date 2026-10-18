@@ -399,7 +399,7 @@ fn chord_document() -> Doc {
     Doc {
         staff: concat!(
             "<Property name=\"DiagramCollection\"><Items>",
-            "<Item id=\"0\" name=\"G\"/><Item id=\"1\" name=\"Am\"/>",
+            "<Item id=\"0\" name=\"G\"><Diagram/></Item><Item id=\"1\" name=\"Am\"><Diagram/></Item>",
             "</Items></Property>"
         )
         .to_string(),
@@ -429,13 +429,13 @@ fn every_documented_refusal_is_reachable() {
     text.meta.title = "carriage\rreturn".to_string();
     assert_eq!(
         refusal(&text),
-        ("meta.Title".to_string(), Refusal::Character { code: 13 })
+        ("meta.title".to_string(), Refusal::Character { code: 13 })
     );
     let mut control = one_note();
     control.tracks[0].name = "nul\u{0}".to_string();
     assert_eq!(
         refusal(&control),
-        ("tracks[0]".to_string(), Refusal::Character { code: 0 })
+        ("tracks[0].name".to_string(), Refusal::Character { code: 0 })
     );
 
     let file = |name: &str, data: &[u8]| ContainerEntry::File {
@@ -501,6 +501,18 @@ fn every_documented_refusal_is_reachable() {
         refusal(&malformed).1,
         Refusal::MalformedPayload { .. }
     ));
+    let mut control = one_note();
+    control.document_extensions.push(OpaquePayload {
+        format: "gpif".to_string(),
+        data: "<Keep parent=\"\" index=\"0\"><A>x\u{1}</A></Keep>".to_string(),
+    });
+    assert_eq!(
+        refusal(&control),
+        (
+            "document_extensions".to_string(),
+            Refusal::Character { code: 1 }
+        )
+    );
     let mut guarded = one_note();
     let note_id = guarded.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0]
         .id
@@ -570,7 +582,7 @@ fn every_documented_refusal_is_reachable() {
     assert_eq!(
         refusal(&tempo),
         (
-            "master_bars[0].tempo_changes[0]".to_string(),
+            "master_bars[0].tempo_changes[0].position".to_string(),
             Refusal::TempoPosition { numer: 1, denom: 7 }
         )
     );
@@ -601,15 +613,16 @@ fn every_documented_refusal_is_reachable() {
         .effects
         .right_hand_finger = Some(Finger::Open);
     assert_eq!(refusal(&open).1, Refusal::RightHandOpen);
-    let mut chord = chord_document().read();
+    let mut chord = one_note();
     chord.tracks[0].staves[0].bars[0].voices[0].beats[0]
         .effects
-        .chord_name = Some("C#m7".to_string());
+        .chord_name = Some("bad\u{1}".to_string());
     assert_eq!(
-        refusal(&chord).1,
-        Refusal::ChordWithoutDiagram {
-            name: "C#m7".to_string()
-        }
+        refusal(&chord),
+        (
+            "tracks[0].staves[0].bars[0].voices[0].beats[0].effects.chord_name".to_string(),
+            Refusal::Character { code: 1 }
+        )
     );
 }
 
@@ -676,5 +689,195 @@ fn a_gp_archive_keeps_its_entries_in_order() {
     assert_eq!(
         read_gp(&gp(&gpif_of(&bytes))).expect("read").tracks,
         score.tracks
+    );
+}
+
+#[test]
+fn chord_names_without_diagrams_get_name_only_items() {
+    let mut score = one_note();
+    let mut scratch = Scratch::new(1);
+    scratch.track(
+        InstrumentKind::Fretted,
+        vec![vec![
+            (NoteValue::Quarter, vec![fretted(0, 1)]),
+            (NoteValue::Quarter, vec![fretted(0, 2)]),
+            (NoteValue::Half, vec![fretted(0, 3)]),
+        ]],
+    );
+    score.clone_from(&scratch.score);
+    let names = ["Am", "G <&>\"x", "Am"];
+    for (beat, name) in score.tracks[0].staves[0].bars[0].voices[0]
+        .beats
+        .iter_mut()
+        .zip(names)
+    {
+        beat.effects.chord_name = Some(name.to_string());
+    }
+    let bytes = written(&score);
+    let gpif = gpif_of(&bytes);
+    assert!(gpif.contains(concat!(
+        "<Property name=\"DiagramCollection\">\n<Items>\n",
+        "<Item id=\"0\" name=\"Am\"/>\n<Item id=\"1\" name=\"G &lt;&amp;&gt;&quot;x\"/>\n",
+        "</Items>\n</Property>"
+    )));
+    assert!(gpif.contains("<Chord><![CDATA[1]]></Chord>"));
+    assert_eq!(read_gp(&bytes).expect("read"), score);
+}
+
+#[test]
+fn a_new_chord_name_joins_the_kept_diagram_collection() {
+    let mut score = chord_document().read();
+    let staff_payloads = crate::support::payloads(&score, score.tracks[0].staves[0].id.0);
+    score.tracks[0].staves[0].bars[0].voices[0].beats[0]
+        .effects
+        .chord_name = Some("C#m7".to_string());
+    let bytes = written(&score);
+    let gpif = gpif_of(&bytes);
+    assert!(gpif.contains(
+        "<Item id=\"1\" name=\"Am\">\n<Diagram/>\n</Item>\n<Item id=\"2\" name=\"C#m7\"/>"
+    ));
+    assert!(gpif.contains("<Chord><![CDATA[2]]></Chord>"));
+    let again = read_gp(&bytes).expect("read");
+    assert_eq!(again, score);
+    assert_eq!(
+        crate::support::payloads(&again, again.tracks[0].staves[0].id.0),
+        staff_payloads
+    );
+}
+
+fn hopo_document() -> String {
+    Doc {
+        note_properties: "<Property name=\"HopoOrigin\"><Enable/></Property>".to_string(),
+        ..Doc::default()
+    }
+    .render()
+    .replace("<Beats>0</Beats>", "<Beats>0 1</Beats>")
+    .replace(
+        "</Beat></Beats>",
+        "</Beat><Beat id=\"1\"><Rhythm ref=\"0\"/><Notes>1</Notes></Beat></Beats>",
+    )
+    .replace(
+        "</Note></Notes>",
+        concat!(
+            "</Note><Note id=\"1\"><InstrumentArticulation>0</InstrumentArticulation><Properties>",
+            "<Property name=\"String\"><String>0</String></Property>",
+            "<Property name=\"Fret\"><Fret>5</Fret></Property>",
+            "<Property name=\"HopoDestination\"><Enable/></Property>",
+            "</Properties></Note></Notes>"
+        ),
+    )
+}
+
+#[test]
+fn a_hopo_destination_is_dropped_when_its_origin_is_cleared() {
+    let mut score = read_gpif(&hopo_document());
+    let destination = &score.tracks[0].staves[0].bars[0].voices[0].beats[1].notes[0];
+    assert!(
+        crate::support::payloads(&score, destination.id.0)
+            .iter()
+            .any(|payload| payload.contains("guard=\"hopo:true\""))
+    );
+    let bytes = written(&score);
+    assert!(gpif_of(&bytes).contains("HopoDestination"));
+    assert_eq!(read_gp(&bytes).expect("read"), score);
+    let origin = &mut score.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0];
+    origin.effects.hammer_on_pull_off = false;
+    let bytes = written(&score);
+    let gpif = gpif_of(&bytes);
+    assert!(!gpif.contains("HopoDestination"));
+    assert!(!gpif.contains("HopoOrigin"));
+    let again = read_gp(&bytes).expect("read");
+    assert_eq!(again.tracks, score.tracks);
+}
+
+#[test]
+fn a_pitched_articulation_is_dropped_when_the_note_becomes_percussion() {
+    let mut score = read_gpif(&hopo_document());
+    let track = &mut score.tracks[0];
+    track.instrument.kind = InstrumentKind::Percussion;
+    for beat in &mut track.staves[0].bars[0].voices[0].beats {
+        for note in &mut beat.notes {
+            note.kind = NoteKind::Percussion { articulation: 7 };
+        }
+    }
+    let bytes = written(&score);
+    let gpif = gpif_of(&bytes);
+    assert_eq!(gpif.matches("<InstrumentArticulation>").count(), 2);
+    assert!(!gpif.contains("<InstrumentArticulation>0</InstrumentArticulation>"));
+    let again = read_gp(&bytes).expect("read");
+    assert_eq!(again.tracks, score.tracks);
+}
+
+#[test]
+fn a_hopo_origin_in_the_previous_bar_guards_the_destination() {
+    let mut scratch = Scratch::new(2);
+    scratch.track(
+        InstrumentKind::Fretted,
+        vec![
+            vec![(NoteValue::Whole, vec![fretted(5, 3)])],
+            vec![(NoteValue::Whole, vec![fretted(5, 5)])],
+        ],
+    );
+    let mut score = scratch.score;
+    let destination = score.tracks[0].staves[0].bars[1].voices[0].beats[0].notes[0]
+        .id
+        .0;
+    score.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0]
+        .effects
+        .hammer_on_pull_off = true;
+    score.extensions.0.insert(
+        destination,
+        vec![OpaquePayload {
+            format: "gpif".to_string(),
+            data: "<Keep parent=\"Properties\" index=\"5\" guard=\"hopo:true\"><Property name=\"HopoDestination\"><Enable/></Property></Keep>".to_string(),
+        }],
+    );
+    let bytes = written(&score);
+    assert!(gpif_of(&bytes).contains("HopoDestination"));
+    assert_eq!(read_gp(&bytes).expect("read"), score);
+}
+
+fn central_directory(bytes: &[u8]) -> Vec<(u8, u8, u32)> {
+    let mut records = Vec::new();
+    let mut at = 0;
+    while at + 46 <= bytes.len() {
+        if bytes[at..at + 4] == [0x50, 0x4b, 0x01, 0x02] {
+            let attributes = u32::from_le_bytes([
+                bytes[at + 38],
+                bytes[at + 39],
+                bytes[at + 40],
+                bytes[at + 41],
+            ]);
+            records.push((bytes[at + 5], bytes[at + 4], attributes));
+            at += 46;
+        } else {
+            at += 1;
+        }
+    }
+    records
+}
+
+#[test]
+fn central_directory_system_and_attributes_are_pinned() {
+    let gpif = Doc::default().render();
+    let source = crate::support::archive(&[
+        ("Content/", b""),
+        (SCORE_ENTRY, gpif.as_bytes()),
+        ("VERSION", b"7.0"),
+    ]);
+    let bytes = written(&read_gp(&source).expect("read"));
+    let file = (0o100_644u32) << 16;
+    let directory = (0o040_755u32) << 16;
+    let records = central_directory(&bytes);
+    let systems: Vec<(u8, u32)> = records
+        .iter()
+        .map(|(system, _, attributes)| (*system, *attributes))
+        .collect();
+    assert_eq!(systems, vec![(3, directory), (3, file), (3, file)]);
+    let scratch = central_directory(&written(&one_note()));
+    assert!(
+        scratch
+            .iter()
+            .all(|(system, _, attributes)| *system == 3 && *attributes == file)
     );
 }

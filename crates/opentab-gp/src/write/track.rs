@@ -5,7 +5,7 @@ use crate::dom::{Element, Node};
 use crate::error::Refusal;
 use crate::number;
 use crate::read::{ChordItem, chord_items};
-use crate::write::payload::{self, Env, Item};
+use crate::write::payload::{self, Content, Env, Item};
 use crate::write::state::{Layouts, Owners, StaffContext};
 use crate::write::xml::{self, Fail, Within};
 
@@ -78,7 +78,54 @@ fn staff_context(
         capo,
         transpose: track.transpose,
         chords,
+        generated_chords: Vec::new(),
     })
+}
+
+fn next_chord_id(chords: &[ChordItem], after: &mut u64) -> String {
+    loop {
+        let id = after.to_string();
+        *after = after.saturating_add(1);
+        if !chords.iter().any(|item| item.id == id) {
+            return id;
+        }
+    }
+}
+
+fn generate_chords(context: &mut StaffContext, staff: &Staff) -> Result<(), Fail> {
+    let mut after = context
+        .chords
+        .iter()
+        .filter_map(|item| number::integer::<u64>(&item.id))
+        .max()
+        .map_or(0, |highest| highest.saturating_add(1));
+    for (bar_index, bar) in staff.bars.iter().enumerate() {
+        for (voice_index, voice) in bar.voices.iter().enumerate() {
+            for (beat_index, beat) in voice.beats.iter().enumerate() {
+                let Some(name) = &beat.effects.chord_name else {
+                    continue;
+                };
+                if context.chords.iter().any(|item| item.name == *name) {
+                    continue;
+                }
+                xml::check_escaped(name).within(|| {
+                    format!(
+                        "bars[{bar_index}].voices[{voice_index}].beats[{beat_index}].effects.chord_name"
+                    )
+                })?;
+                let item = ChordItem {
+                    id: next_chord_id(&context.chords, &mut after),
+                    name: name.clone(),
+                };
+                context.chords.push(ChordItem {
+                    id: item.id.clone(),
+                    name: item.name.clone(),
+                });
+                context.generated_chords.push(item);
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn staff_contexts(
@@ -91,7 +138,9 @@ pub(crate) fn staff_contexts(
             let items = owners
                 .items(staff.id.0)
                 .within(|| format!("tracks[{track_index}].staves[{staff_index}]"))?;
-            let context = staff_context(track, track_index, staff_index, &items)
+            let mut context = staff_context(track, track_index, staff_index, &items)
+                .within(|| format!("tracks[{track_index}].staves[{staff_index}]"))?;
+            generate_chords(&mut context, staff)
                 .within(|| format!("tracks[{track_index}].staves[{staff_index}]"))?;
             contexts.push(context);
         }
@@ -99,9 +148,49 @@ pub(crate) fn staff_contexts(
     Ok(contexts)
 }
 
+fn add_chords(properties: &mut Element, items: &mut [Item], generated: &[ChordItem]) {
+    if generated.is_empty() {
+        return;
+    }
+    let elements: Vec<Element> = generated
+        .iter()
+        .map(|item| canon::chord_item(&item.id, &item.name))
+        .collect();
+    let kept = items.iter_mut().find(|item| {
+        item.guard.is_none()
+            && item.parent == PROPERTIES
+            && item
+                .element()
+                .is_some_and(|element| element.key() == "Property@DiagramCollection")
+    });
+    let Some(Item {
+        content: Content::Node(Node::Element(collection)),
+        ..
+    }) = kept
+    else {
+        properties.push(canon::diagram_collection(elements));
+        return;
+    };
+    let list = collection.children.iter_mut().find_map(|node| match node {
+        Node::Element(child) if child.name == "Items" => Some(child),
+        _ => None,
+    });
+    match list {
+        Some(list) => list
+            .children
+            .extend(elements.into_iter().map(Node::Element)),
+        None => {
+            let mut list = Element::new("Items");
+            list.children = elements.into_iter().map(Node::Element).collect();
+            collection.push(list);
+        }
+    }
+}
+
 fn staff_element(
     track: &Track,
     staff: &Staff,
+    context: Option<&StaffContext>,
     index: usize,
     owners: &mut Owners<'_>,
 ) -> Result<Element, Refusal> {
@@ -125,8 +214,10 @@ fn staff_element(
             ));
         }
     }
+    let mut items = payload::surviving(owners.items(staff.id.0)?, &Env::Plain)?;
+    let generated = context.map_or(&[][..], |context| &context.generated_chords[..]);
+    add_chords(&mut properties, &mut items, generated);
     let mut element = Element::new("Staff").with_child(properties);
-    let items = payload::surviving(owners.items(staff.id.0)?, &Env::Plain)?;
     apply_own(&mut element, items)?;
     Ok(element)
 }
@@ -148,13 +239,14 @@ fn track_element(
     track: &Track,
     index: usize,
     layouts: &Layouts,
+    contexts: &[StaffContext],
     owners: &mut Owners<'_>,
 ) -> Result<Element, Fail> {
     let items = payload::surviving(owners.items(track.id.0)?, &Env::Track(track))?;
     let id = Layouts::id(&layouts.tracks, index);
     let mut element = Element::new("Track").with_attribute("id", &id.to_string());
-    element.push(xml::text("Name", &track.name)?);
-    element.push(xml::text("ShortName", &track.short_name)?);
+    element.push(xml::text("Name", &track.name).within(|| "name".to_string())?);
+    element.push(xml::text("ShortName", &track.short_name).within(|| "short_name".to_string())?);
     element.push(
         Element::new("InstrumentSet").with_child(canon::instrument_type(track.instrument.kind)),
     );
@@ -177,7 +269,10 @@ fn track_element(
     }
     let mut staves = Element::new("Staves");
     for (staff_index, staff) in track.staves.iter().enumerate() {
-        let staff = staff_element(track, staff, staff_index, owners)
+        let context = contexts
+            .iter()
+            .find(|context| context.track == index && context.staff == staff_index);
+        let staff = staff_element(track, staff, context, staff_index, owners)
             .within(|| format!("staves[{staff_index}]"))?;
         staves.children.push(Node::Element(staff));
     }
@@ -189,12 +284,13 @@ fn track_element(
 pub(crate) fn tracks_pool(
     score: &Score,
     layouts: &Layouts,
+    staves: &[StaffContext],
     owners: &mut Owners<'_>,
 ) -> Result<Element, Fail> {
     let mut pool = Element::new("Tracks");
     for (index, track) in score.tracks.iter().enumerate() {
-        let element =
-            track_element(track, index, layouts, owners).within(|| format!("tracks[{index}]"))?;
+        let element = track_element(track, index, layouts, staves, owners)
+            .within(|| format!("tracks[{index}]"))?;
         pool.push(element);
     }
     Ok(pool)

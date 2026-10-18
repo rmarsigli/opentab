@@ -1,12 +1,15 @@
 use std::collections::BTreeMap;
 
-use opentab_model::{Bar, BeatEffects, MasterBar, NoteEffects, OpaquePayload, TempoChange, Track};
+use opentab_model::{
+    Bar, Beat, BeatEffects, MasterBar, Note, OpaquePayload, TempoChange, TimeSignature, Track,
+};
 
 use crate::dom::{self, Attribute, Element, Node};
 use crate::error::Refusal;
 use crate::guard::{self, PitchInputs};
 use crate::number;
 use crate::opaque::{FORMAT, KEEP, KEEP_ATTRIBUTE, RHYTHM_ROOT, TEMPO_ROOT};
+use crate::write::xml::{check_escaped, check_text};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Content {
@@ -38,14 +41,20 @@ pub(crate) struct Split {
     pub tempo: BTreeMap<usize, Vec<Item>>,
 }
 
+pub(crate) struct NoteEnv<'a> {
+    pub note: &'a Note,
+    pub inputs: PitchInputs<'a>,
+    pub previous: Option<&'a Beat>,
+}
+
 pub(crate) enum Env<'a> {
     Plain,
     MasterBar(&'a MasterBar),
-    Tempo(&'a TempoChange),
+    Tempo(&'a TempoChange, TimeSignature),
     Track(&'a Track),
     Bar(&'a Bar),
     Beat(&'a BeatEffects),
-    Note(&'a NoteEffects, &'a PitchInputs<'a>),
+    Note(&'a NoteEnv<'a>),
 }
 
 fn malformed(problem: &str) -> Refusal {
@@ -105,12 +114,38 @@ pub(crate) fn parse(payload: &OpaquePayload) -> Result<Item, Refusal> {
         }
         _ => return Err(malformed("unknown payload element")),
     };
+    match &content {
+        Content::Node(node) => check_node(node)?,
+        Content::Attribute(attribute) => check_attribute(attribute)?,
+    }
     Ok(Item {
         parent,
         index,
         guard,
         content,
     })
+}
+
+fn check_attribute(attribute: &Attribute) -> Result<(), Refusal> {
+    check_text(&attribute.name)?;
+    check_escaped(&attribute.value)
+}
+
+fn check_node(node: &Node) -> Result<(), Refusal> {
+    match node {
+        Node::Element(element) => {
+            check_text(&element.name)?;
+            for attribute in &element.attributes {
+                check_attribute(attribute)?;
+            }
+            for child in &element.children {
+                check_node(child)?;
+            }
+            Ok(())
+        }
+        Node::Text(text) => check_escaped(text),
+        Node::CData(text) | Node::Comment(text) | Node::Instruction(text) => check_text(text),
+    }
 }
 
 pub(crate) fn parse_all(payloads: &[OpaquePayload]) -> Result<Vec<Item>, Refusal> {
@@ -159,7 +194,7 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
     let value = match (kind, env) {
         ("repeat", Env::MasterBar(bar)) => guard::repeat(bar.repeat_start, bar.repeat_end),
         ("minor", Env::MasterBar(bar)) => guard::minor(bar.key_signature.minor()),
-        ("tempo-position", Env::Tempo(tempo)) => guard::tempo_position(tempo.position),
+        ("tempo-position", Env::Tempo(tempo, time)) => guard::tempo_position(tempo.position, *time),
         ("instrument", Env::Track(track)) => guard::instrument(track.instrument.kind),
         ("clef", Env::Bar(bar)) => guard::clef(bar.clef),
         ("stroke", Env::Beat(effects)) => guard::stroke(effects.stroke),
@@ -177,17 +212,28 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
             };
             guard::flag(name, value)
         }
-        ("pitch", Env::Note(_, inputs)) => guard::pitch(inputs),
-        ("accent", Env::Note(effects, _)) => guard::accent(effects.accent, effects.staccato),
-        ("slide", Env::Note(effects, _)) => guard::slide(effects.slide),
-        ("bend", Env::Note(effects, _)) => guard::bend(effects.bend),
-        ("harmonic", Env::Note(effects, _)) => guard::harmonic(effects.harmonic),
-        ("tap", Env::Note(effects, _)) => guard::tap(effects.tap),
-        ("vibrato", Env::Note(effects, _)) => guard::vibrato(effects.vibrato),
-        ("ghost", Env::Note(effects, _)) => guard::ghost(effects.ghost),
-        ("left-finger", Env::Note(effects, _)) => guard::left_finger(effects.left_hand_finger),
-        ("right-finger", Env::Note(effects, _)) => guard::right_finger(effects.right_hand_finger),
-        ("flag", Env::Note(effects, _)) => {
+        (_, Env::Note(note)) => return note_expected(kind, guard, note),
+        _ => return None,
+    };
+    Some(value)
+}
+
+fn note_expected(kind: &str, guard: &str, env: &NoteEnv<'_>) -> Option<String> {
+    let effects = &env.note.effects;
+    let value = match kind {
+        "pitch" => guard::pitch(&env.inputs),
+        "hopo" => guard::hopo(env.previous, env.note.kind),
+        "note-kind" => guard::note_kind(env.note.kind),
+        "accent" => guard::accent(effects.accent, effects.staccato),
+        "slide" => guard::slide(effects.slide),
+        "bend" => guard::bend(effects.bend),
+        "harmonic" => guard::harmonic(effects.harmonic),
+        "tap" => guard::tap(effects.tap),
+        "vibrato" => guard::vibrato(effects.vibrato),
+        "ghost" => guard::ghost(effects.ghost),
+        "left-finger" => guard::left_finger(effects.left_hand_finger),
+        "right-finger" => guard::right_finger(effects.right_hand_finger),
+        "flag" => {
             let name = flag_name(guard)?;
             let value = match name {
                 "HopoOrigin" => effects.hammer_on_pull_off,

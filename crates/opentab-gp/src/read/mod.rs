@@ -7,6 +7,7 @@ mod pools;
 mod property;
 mod track;
 
+pub(crate) use context::Handled;
 pub(crate) use pools::POOLS;
 pub(crate) use track::ChordItem;
 pub(crate) use track::chord_items;

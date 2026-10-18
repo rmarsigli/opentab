@@ -1,5 +1,6 @@
 use opentab_model::{
-    Bend, BendPoint, Finger, Fraction, Harmonic, KeySignature, Note, NoteEffects, NoteKind, Tap,
+    Beat, Bend, BendPoint, Finger, Fraction, Harmonic, KeySignature, Note, NoteEffects, NoteKind,
+    Tap,
 };
 
 use crate::canon::{self, CONCERT_PITCH, MIDI, TRANSPOSED_PITCH};
@@ -7,9 +8,10 @@ use crate::codes::{FINGERS, GHOST, HARMONICS, SLIDES, VIBRATOS, accent_bits, nam
 use crate::dom::Element;
 use crate::error::Refusal;
 use crate::guard::PitchInputs;
-use crate::write::payload::{self, Env, Item};
+use crate::write::payload::{self, Env, Item, NoteEnv};
 use crate::write::state::{Owners, StaffContext};
 use crate::write::track::{apply_own, check_kind};
+use crate::write::xml::{Fail, Within};
 
 const FLOAT_DECIMALS: u32 = 6;
 const MAX_DECIMALS: u32 = 30;
@@ -133,7 +135,7 @@ fn properties(
     key: KeySignature,
     items: &[Item],
     strings: usize,
-) -> Result<Vec<Element>, Refusal> {
+) -> Result<Vec<Element>, Fail> {
     let effects = &note.effects;
     let mut out = Vec::new();
     if let Some(bend) = effects.bend {
@@ -142,21 +144,21 @@ fn properties(
     let fretted = match note.kind {
         NoteKind::Fretted { string, fret } => {
             if usize::from(string) >= strings {
-                return Err(Refusal::String { string, strings });
+                return Err(Fail::new(Refusal::String { string, strings })).within(field("kind"));
             }
             Some((string, fret))
         }
         NoteKind::Percussion { .. } => None,
     };
     if let Some((_, fret)) = fretted {
-        pitch_property(CONCERT_PITCH, inputs, key, items, &mut out)?;
+        pitch_property(CONCERT_PITCH, inputs, key, items, &mut out).within(field("kind"))?;
         out.push(Element::property(
             "Fret",
             Element::leaf("Fret", &fret.to_string()),
         ));
     }
     if let Some(harmonic) = effects.harmonic {
-        harmonic_properties(harmonic, &mut out)?;
+        harmonic_properties(harmonic, &mut out).within(field("effects.harmonic"))?;
     }
     if effects.hammer_on_pull_off {
         out.push(flag("HopoOrigin"));
@@ -165,7 +167,7 @@ fn properties(
         out.push(flag("LeftHandTapped"));
     }
     if fretted.is_some() {
-        pitch_property(MIDI, inputs, key, items, &mut out)?;
+        pitch_property(MIDI, inputs, key, items, &mut out).within(field("kind"))?;
     }
     if effects.dead {
         out.push(flag("Muted"));
@@ -190,7 +192,7 @@ fn properties(
         out.push(flag("Tapped"));
     }
     if fretted.is_some() {
-        pitch_property(TRANSPOSED_PITCH, inputs, key, items, &mut out)?;
+        pitch_property(TRANSPOSED_PITCH, inputs, key, items, &mut out).within(field("kind"))?;
     }
     Ok(out)
 }
@@ -199,26 +201,42 @@ fn finger(name: &str, finger: Option<Finger>) -> Option<Element> {
     finger.map(|finger| Element::leaf(name, name_of(FINGERS, finger)))
 }
 
+fn field(name: &'static str) -> impl FnOnce() -> String {
+    move || name.to_string()
+}
+
+pub(crate) struct NoteSite<'s> {
+    pub staff: &'s StaffContext,
+    pub key: KeySignature,
+    pub previous: Option<&'s Beat>,
+}
+
 pub(crate) fn write_note(
     owners: &mut Owners<'_>,
-    staff: &StaffContext,
+    site: &NoteSite<'_>,
     note: &Note,
     id: usize,
-    key: KeySignature,
-) -> Result<Element, Refusal> {
+) -> Result<Element, Fail> {
+    let staff = site.staff;
+    let key = site.key;
     let percussion = matches!(note.kind, NoteKind::Percussion { .. });
-    check_kind(staff.kind, percussion)?;
+    check_kind(staff.kind, percussion).within(field("kind"))?;
     let effects = &note.effects;
     if effects.right_hand_finger == Some(Finger::Open) {
-        return Err(Refusal::RightHandOpen);
+        return Err(Fail::new(Refusal::RightHandOpen)).within(field("effects.right_hand_finger"));
     }
-    let inputs = PitchInputs {
-        kind: note.kind,
-        tuning: &staff.tuning,
-        capo: staff.capo,
-        transpose: staff.transpose,
+    let env = NoteEnv {
+        note,
+        inputs: PitchInputs {
+            kind: note.kind,
+            tuning: &staff.tuning,
+            capo: staff.capo,
+            transpose: staff.transpose,
+        },
+        previous: site.previous,
     };
-    let items = payload::surviving(owners.items(note.id.0)?, &Env::Note(effects, &inputs))?;
+    let inputs = &env.inputs;
+    let items = payload::surviving(owners.items(note.id.0)?, &Env::Note(&env))?;
     let mut element = Element::new("Note").with_attribute("id", &id.to_string());
     if let Some(vibrato) = effects.vibrato {
         element.push(Element::leaf("Vibrato", name_of(VIBRATOS, vibrato)));
@@ -252,7 +270,7 @@ pub(crate) fn write_note(
             &articulation.to_string(),
         ));
     }
-    let generated = properties(note, &inputs, key, &items, staff.tuning.len())?;
+    let generated = properties(note, inputs, key, &items, staff.tuning.len())?;
     if !generated.is_empty() {
         let mut container = Element::new(PROPERTIES);
         for property in generated {

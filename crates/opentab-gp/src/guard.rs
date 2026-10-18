@@ -1,6 +1,7 @@
 use opentab_model::{
-    Accent, Bend, Clef, Dynamic, Finger, Fraction, Grace, Harmonic, InstrumentKind, NoteKind,
-    Pitch, Slide, Stroke, Tap, Transpose, TremoloPicking, Vibrato,
+    Accent, Bar, Beat, Bend, Clef, Dynamic, Finger, Fraction, Grace, Harmonic, InstrumentKind,
+    NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature, Transpose, TremoloPicking, Vibrato,
+    VoiceSlot,
 };
 
 use crate::codes::{
@@ -37,8 +38,46 @@ pub(crate) fn pitch(inputs: &PitchInputs<'_>) -> String {
     }
 }
 
-pub(crate) fn tempo_position(position: Fraction) -> String {
-    format!("tempo-position:{}/{}", position.numer(), position.denom())
+pub(crate) fn carried(bar: Option<&Bar>, slot: VoiceSlot) -> Option<&Beat> {
+    bar?.voices
+        .iter()
+        .find(|voice| voice.slot == slot)
+        .and_then(|voice| voice.beats.last())
+}
+
+pub(crate) fn hopo(previous: Option<&Beat>, kind: NoteKind) -> String {
+    let origin = match kind {
+        NoteKind::Fretted { string, .. } => previous.and_then(|beat| {
+            beat.notes
+                .iter()
+                .find(|note| {
+                    matches!(note.kind, NoteKind::Fretted { string: other, .. } if other == string)
+                })
+                .map(|note| note.effects.hammer_on_pull_off)
+        }),
+        NoteKind::Percussion { .. } => None,
+    };
+    match origin {
+        Some(origin) => format!("hopo:{origin}"),
+        None => format!("hopo:{NONE}"),
+    }
+}
+
+pub(crate) fn note_kind(kind: NoteKind) -> String {
+    match kind {
+        NoteKind::Fretted { .. } => "note-kind:fretted".to_string(),
+        NoteKind::Percussion { .. } => "note-kind:percussion".to_string(),
+    }
+}
+
+pub(crate) fn tempo_position(position: Fraction, time: TimeSignature) -> String {
+    format!(
+        "tempo-position:{}/{};time {}/{}",
+        position.numer(),
+        position.denom(),
+        time.numerator(),
+        time.denominator()
+    )
 }
 
 pub(crate) fn stroke(stroke: Option<Stroke>) -> String {

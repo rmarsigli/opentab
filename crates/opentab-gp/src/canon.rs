@@ -1,8 +1,9 @@
 use opentab_model::{Fraction, InstrumentKind, KeySignature, NoteKind, TimeSignature};
 
 use crate::codes::{DRUM_KIT, TEMPO_POSITION_GRID};
-use crate::dom::{Element, Node};
+use crate::dom::{self, Element, Node};
 use crate::guard::PitchInputs;
+use crate::read::Handled;
 
 pub(crate) const GP_REVISION: &str = "GPRevision";
 const REVISION: &str = "13008";
@@ -63,7 +64,7 @@ pub(crate) fn instrument_type(kind: InstrumentKind) -> Element {
 
 pub(crate) fn chord(id: &str) -> Element {
     let mut element = Element::new("Chord");
-    element.children.push(Node::CData(id.to_string()));
+    element.children = dom::cdata_nodes(id);
     element
 }
 
@@ -171,4 +172,48 @@ pub(crate) fn pitch_property(
         _ => return None,
     };
     Some(Element::property(name, value))
+}
+
+pub(crate) fn chord_item(id: &str, name: &str) -> Element {
+    Element::new("Item")
+        .with_attribute("id", id)
+        .with_attribute("name", name)
+}
+
+fn is_name_only(node: &Node) -> bool {
+    let Node::Element(item) = node else {
+        return false;
+    };
+    item.name == "Item"
+        && item.children.is_empty()
+        && item.attributes.len() == 2
+        && item.attribute("id").is_some()
+        && item.attribute("name").is_some()
+}
+
+pub(crate) fn diagram_collection(items: Vec<Element>) -> Element {
+    let mut list = Element::new("Items");
+    list.children = items.into_iter().map(Node::Element).collect();
+    Element::property("DiagramCollection", list)
+}
+
+pub(crate) fn strip_name_only(collection: &Element) -> Handled {
+    let Some((index, items)) = collection.child("Items") else {
+        return Handled::Unknown;
+    };
+    if !items.children.iter().any(is_name_only) {
+        return Handled::Unknown;
+    }
+    let generated = collection.attributes.len() == 1
+        && collection.children.len() == 1
+        && items.attributes.is_empty()
+        && items.children.iter().all(is_name_only);
+    if generated {
+        return Handled::Mapped(&["name"]);
+    }
+    let mut filtered = collection.clone();
+    if let Some(Node::Element(list)) = filtered.children.get_mut(index) {
+        list.children.retain(|node| !is_name_only(node));
+    }
+    Handled::Substitute(Node::Element(filtered))
 }

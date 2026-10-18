@@ -121,8 +121,6 @@ pub enum Refusal {
     HarmonicFret { numer: i64, denom: i64 },
     #[error("the right hand has no open-string fingering in GPIF")]
     RightHandOpen,
-    #[error("chord \"{name}\" has no diagram in its staff")]
-    ChordWithoutDiagram { name: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Error)]
