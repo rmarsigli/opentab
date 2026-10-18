@@ -8,7 +8,6 @@ pub const PIXELS_PER_INCH: u128 = 96;
 pub const MICROMETRES_PER_INCH: u128 = 25_400;
 pub const MAX_PIXELS: u32 = 16_384;
 pub const MAX_TOTAL_PIXELS: u64 = 60_000_000;
-pub const BYTES_PER_PIXEL: u64 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RenderError {

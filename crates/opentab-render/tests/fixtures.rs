@@ -4,7 +4,7 @@ use opentab_gp::read_gp;
 use opentab_layout::{LayoutOptions, StaffMode, layout};
 use opentab_render::to_svg;
 
-const SNAPSHOT_LIMIT: usize = 300_000;
+const SNAPSHOT_LIMIT: usize = 600_000;
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 const SUMMARY_TAGS: [&str; 5] = ["<path ", "<line ", "<rect ", "<g ", "</g>"];
