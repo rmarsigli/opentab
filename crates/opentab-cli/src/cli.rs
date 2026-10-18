@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use opentab_render::Ratio;
+
+use crate::render::{ImageFormat, parse_scale};
 
 const ABOUT: &str = "OpenTab command line";
 
@@ -55,6 +58,21 @@ represent is refused with the error kind unsupported.";
 const CONVERT_AFTER_HELP: &str = "Examples:\n  opentab convert song.gp song.opentab.json\n  opentab convert song.opentab.json song.gp --json\n\n\
 JSON result: {\"converted\": {\"from\": \"<path>\", \"to\": \"<path>\"}}";
 
+const RENDER_ABOUT: &str = "Render a score to SVG or PNG pages";
+
+const RENDER_LONG_ABOUT: &str = "Read PATH, lay it out on A4 portrait pages and write one SVG or \
+PNG file per page. PATH may be a .gp or a .opentab.json.\n\n\
+When --out is an existing directory the pages are written into it, named after PATH: \
+<stem>.<ext> for one page and <stem>-p<N>.<ext> for several. Otherwise --out must end in the \
+suffix of --format; one page is written to --out itself and several pages to \
+<out-stem>-p<N>.<ext> next to it. Existing files are replaced atomically.\n\n\
+--scale applies to PNG only: 1 means 96 pixels per inch, so an A4 page is 794x1123 pixels. \
+It may be written as 2, 1.5 or 3/2. The current layout is a placeholder: one empty system \
+per track, with a five-line staff and a tablature staff with one line per string.";
+
+const RENDER_AFTER_HELP: &str = "Examples:\n  opentab render song.gp --format svg --out song.svg\n  opentab render song.opentab.json --format png --scale 2 --out pages/\n\n\
+JSON result: {\"pages\": <count>, \"files\": [<written paths in page order>]}";
+
 #[derive(Parser)]
 #[command(name = "opentab", version, about = ABOUT, long_about = LONG_ABOUT)]
 pub struct Cli {
@@ -102,6 +120,23 @@ pub enum Subcommand {
         #[arg(long, help = "Print the result as JSON")]
         json: bool,
     },
+    #[command(about = RENDER_ABOUT, long_about = RENDER_LONG_ABOUT, after_help = RENDER_AFTER_HELP)]
+    Render {
+        #[arg(value_name = "PATH", help = "Score to read")]
+        path: PathBuf,
+        #[arg(long, value_enum, help = "Image format of the pages")]
+        format: ImageFormat,
+        #[arg(
+            long,
+            value_name = "FILE_OR_DIR",
+            help = "Page file, or directory for the pages"
+        )]
+        out: PathBuf,
+        #[arg(long, value_name = "F", value_parser = parse_scale, help = "PNG scale, 1 is 96 pixels per inch")]
+        scale: Option<Ratio<u32>>,
+        #[arg(long, help = "Print the result as JSON")]
+        json: bool,
+    },
 }
 
 impl Subcommand {
@@ -110,7 +145,8 @@ impl Subcommand {
             Subcommand::New { json, .. }
             | Subcommand::Info { json, .. }
             | Subcommand::Apply { json, .. }
-            | Subcommand::Convert { json, .. } => *json,
+            | Subcommand::Convert { json, .. }
+            | Subcommand::Render { json, .. } => *json,
         }
     }
 }
