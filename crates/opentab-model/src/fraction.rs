@@ -26,12 +26,12 @@ impl Exact {
     fn checked_add(self, other: Fraction) -> Option<Exact> {
         let numer = i128::from(*other.numer());
         let denom = i128::from(*other.denom());
-        let common = gcd(self.denom, denom);
+        let common = gcd(self.denom, denom)?;
         let left = self.numer.checked_mul(denom.checked_div(common)?)?;
         let right = numer.checked_mul(self.denom.checked_div(common)?)?;
         let sum = left.checked_add(right)?;
         let scaled = self.denom.checked_div(common)?.checked_mul(denom)?;
-        let divisor = gcd(sum.checked_abs()?, scaled);
+        let divisor = gcd(sum.checked_abs()?, scaled)?;
         Some(Exact {
             numer: sum.checked_div(divisor)?,
             denom: scaled.checked_div(divisor)?,
@@ -48,13 +48,18 @@ impl Exact {
     }
 }
 
-fn gcd(mut a: i128, mut b: i128) -> i128 {
-    while b != 0 {
-        let rest = a % b;
+const GCD_STEP_LIMIT: u32 = 256;
+
+fn gcd(mut a: i128, mut b: i128) -> Option<i128> {
+    for _ in 0..GCD_STEP_LIMIT {
+        if b == 0 {
+            return a.checked_abs();
+        }
+        let rest = a.checked_rem(b)?;
         a = b;
         b = rest;
     }
-    a.abs()
+    None
 }
 
 pub(crate) fn checked_sum<I>(items: I) -> Option<Fraction>

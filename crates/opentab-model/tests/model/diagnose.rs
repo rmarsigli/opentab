@@ -247,6 +247,20 @@ fn fill_beyond_i64_is_skipped_without_panic() {
 }
 
 #[test]
+fn long_voice_of_fine_durations_is_still_checked() {
+    let triple_dotted = Duration::new(NoteValue::OneTwentyEighth, 3, None).unwrap();
+    let score = four_four(&[triple_dotted; 16]);
+    assert_eq!(
+        diagnose(&score),
+        vec![Diagnostic::IncompleteBar {
+            voice: first_voice(&score),
+            filled: Fraction::new(15, 64),
+            expected: Fraction::new(1, 1),
+        }]
+    );
+}
+
+#[test]
 fn diagnostic_serialises_with_kind_tag() {
     let diagnostic = Diagnostic::IncompleteBar {
         voice: opentab_model::VoiceId(ElementId(3)),
