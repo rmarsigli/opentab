@@ -10,6 +10,7 @@ mod grid;
 mod options;
 mod outline;
 mod plan;
+pub mod rhythm;
 mod select;
 mod spacing;
 mod structure;

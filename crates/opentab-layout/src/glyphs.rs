@@ -113,6 +113,114 @@ pub const AUGMENTATION_DOT: Glyph = Glyph {
     name: "augmentationDot",
     codepoint: '\u{E1E7}',
 };
+pub const NOTEHEAD_X_WHOLE: Glyph = Glyph {
+    name: "noteheadXWhole",
+    codepoint: '\u{E0A7}',
+};
+pub const NOTEHEAD_X_HALF: Glyph = Glyph {
+    name: "noteheadXHalf",
+    codepoint: '\u{E0A8}',
+};
+pub const NOTEHEAD_DIAMOND_WHOLE: Glyph = Glyph {
+    name: "noteheadDiamondWhole",
+    codepoint: '\u{E0D8}',
+};
+pub const NOTEHEAD_DIAMOND_HALF: Glyph = Glyph {
+    name: "noteheadDiamondHalf",
+    codepoint: '\u{E0D9}',
+};
+pub const NOTEHEAD_DIAMOND_BLACK: Glyph = Glyph {
+    name: "noteheadDiamondBlack",
+    codepoint: '\u{E0DB}',
+};
+pub const NOTEHEAD_PARENTHESIS_LEFT: Glyph = Glyph {
+    name: "noteheadParenthesisLeft",
+    codepoint: '\u{E0F5}',
+};
+pub const NOTEHEAD_PARENTHESIS_RIGHT: Glyph = Glyph {
+    name: "noteheadParenthesisRight",
+    codepoint: '\u{E0F6}',
+};
+pub const ACCIDENTAL_DOUBLE_SHARP: Glyph = Glyph {
+    name: "accidentalDoubleSharp",
+    codepoint: '\u{E263}',
+};
+pub const ACCIDENTAL_DOUBLE_FLAT: Glyph = Glyph {
+    name: "accidentalDoubleFlat",
+    codepoint: '\u{E264}',
+};
+pub const REST_16TH: Glyph = Glyph {
+    name: "rest16th",
+    codepoint: '\u{E4E7}',
+};
+pub const REST_32ND: Glyph = Glyph {
+    name: "rest32nd",
+    codepoint: '\u{E4E8}',
+};
+pub const REST_64TH: Glyph = Glyph {
+    name: "rest64th",
+    codepoint: '\u{E4E9}',
+};
+pub const REST_128TH: Glyph = Glyph {
+    name: "rest128th",
+    codepoint: '\u{E4EA}',
+};
+pub const FLAG_16TH_UP: Glyph = Glyph {
+    name: "flag16thUp",
+    codepoint: '\u{E242}',
+};
+pub const FLAG_16TH_DOWN: Glyph = Glyph {
+    name: "flag16thDown",
+    codepoint: '\u{E243}',
+};
+pub const FLAG_32ND_UP: Glyph = Glyph {
+    name: "flag32ndUp",
+    codepoint: '\u{E244}',
+};
+pub const FLAG_32ND_DOWN: Glyph = Glyph {
+    name: "flag32ndDown",
+    codepoint: '\u{E245}',
+};
+pub const FLAG_64TH_UP: Glyph = Glyph {
+    name: "flag64thUp",
+    codepoint: '\u{E246}',
+};
+pub const FLAG_64TH_DOWN: Glyph = Glyph {
+    name: "flag64thDown",
+    codepoint: '\u{E247}',
+};
+pub const FLAG_128TH_UP: Glyph = Glyph {
+    name: "flag128thUp",
+    codepoint: '\u{E248}',
+};
+pub const FLAG_128TH_DOWN: Glyph = Glyph {
+    name: "flag128thDown",
+    codepoint: '\u{E249}',
+};
+pub const ARTIC_ACCENT_ABOVE: Glyph = Glyph {
+    name: "articAccentAbove",
+    codepoint: '\u{E4A0}',
+};
+pub const ARTIC_ACCENT_BELOW: Glyph = Glyph {
+    name: "articAccentBelow",
+    codepoint: '\u{E4A1}',
+};
+pub const ARTIC_STACCATO_ABOVE: Glyph = Glyph {
+    name: "articStaccatoAbove",
+    codepoint: '\u{E4A2}',
+};
+pub const ARTIC_STACCATO_BELOW: Glyph = Glyph {
+    name: "articStaccatoBelow",
+    codepoint: '\u{E4A3}',
+};
+pub const ARTIC_MARCATO_ABOVE: Glyph = Glyph {
+    name: "articMarcatoAbove",
+    codepoint: '\u{E4AC}',
+};
+pub const ARTIC_MARCATO_BELOW: Glyph = Glyph {
+    name: "articMarcatoBelow",
+    codepoint: '\u{E4AD}',
+};
 pub const TIME_SIG_0: Glyph = Glyph {
     name: "timeSig0",
     codepoint: '\u{E080}',
@@ -154,6 +262,103 @@ pub const TIME_SIG_DIGITS: [Glyph; 10] = [
     Glyph {
         name: "timeSig9",
         codepoint: '\u{E089}',
+    },
+];
+
+pub const NAMED: [Glyph; 51] = [
+    G_CLEF,
+    G_CLEF_8VB,
+    F_CLEF,
+    UNPITCHED_PERCUSSION_CLEF_1,
+    TAB_CLEF,
+    TAB_CLEF_4,
+    REPEAT_DOT,
+    BRACKET_TOP,
+    BRACKET_BOTTOM,
+    NOTEHEAD_DOUBLE_WHOLE,
+    NOTEHEAD_WHOLE,
+    NOTEHEAD_HALF,
+    NOTEHEAD_BLACK,
+    NOTEHEAD_X_BLACK,
+    ACCIDENTAL_FLAT,
+    ACCIDENTAL_NATURAL,
+    ACCIDENTAL_SHARP,
+    REST_WHOLE,
+    REST_HALF,
+    REST_QUARTER,
+    REST_8TH,
+    FLAG_8TH_UP,
+    FLAG_8TH_DOWN,
+    AUGMENTATION_DOT,
+    NOTEHEAD_X_WHOLE,
+    NOTEHEAD_X_HALF,
+    NOTEHEAD_DIAMOND_WHOLE,
+    NOTEHEAD_DIAMOND_HALF,
+    NOTEHEAD_DIAMOND_BLACK,
+    NOTEHEAD_PARENTHESIS_LEFT,
+    NOTEHEAD_PARENTHESIS_RIGHT,
+    ACCIDENTAL_DOUBLE_SHARP,
+    ACCIDENTAL_DOUBLE_FLAT,
+    REST_16TH,
+    REST_32ND,
+    REST_64TH,
+    REST_128TH,
+    FLAG_16TH_UP,
+    FLAG_16TH_DOWN,
+    FLAG_32ND_UP,
+    FLAG_32ND_DOWN,
+    FLAG_64TH_UP,
+    FLAG_64TH_DOWN,
+    FLAG_128TH_UP,
+    FLAG_128TH_DOWN,
+    ARTIC_ACCENT_ABOVE,
+    ARTIC_ACCENT_BELOW,
+    ARTIC_STACCATO_ABOVE,
+    ARTIC_STACCATO_BELOW,
+    ARTIC_MARCATO_ABOVE,
+    ARTIC_MARCATO_BELOW,
+];
+
+pub const TUPLET_DIGITS: [Glyph; 10] = [
+    Glyph {
+        name: "tuplet0",
+        codepoint: '\u{E880}',
+    },
+    Glyph {
+        name: "tuplet1",
+        codepoint: '\u{E881}',
+    },
+    Glyph {
+        name: "tuplet2",
+        codepoint: '\u{E882}',
+    },
+    Glyph {
+        name: "tuplet3",
+        codepoint: '\u{E883}',
+    },
+    Glyph {
+        name: "tuplet4",
+        codepoint: '\u{E884}',
+    },
+    Glyph {
+        name: "tuplet5",
+        codepoint: '\u{E885}',
+    },
+    Glyph {
+        name: "tuplet6",
+        codepoint: '\u{E886}',
+    },
+    Glyph {
+        name: "tuplet7",
+        codepoint: '\u{E887}',
+    },
+    Glyph {
+        name: "tuplet8",
+        codepoint: '\u{E888}',
+    },
+    Glyph {
+        name: "tuplet9",
+        codepoint: '\u{E889}',
     },
 ];
 
