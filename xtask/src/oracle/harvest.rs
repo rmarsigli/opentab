@@ -159,7 +159,7 @@ fn write_golden(
             format!("cannot write {}", target.display())
         })?;
         outputs.push(OutputEntry {
-            sha256: sha256_hex(&normalised),
+            sha256: is_byte_identical(&relative).then(|| sha256_hex(&normalised)),
             byte_identical: is_byte_identical(&relative),
             path: relative,
         });

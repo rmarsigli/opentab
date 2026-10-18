@@ -20,7 +20,7 @@ $Menus = @{
   SaveAs   = @('File', 'Save As...|Save as')
   Close    = @('File', 'Close')
 }
-$RendererKey = 'HKCU:\Software\Arobas Music\guitarpro8\widgets\rendererexport'
+$GpSuffix = ' - Guitar Pro 8'
 
 $Diag = Join-Path $OutDir 'diagnostics'
 New-Item -ItemType Directory -Force -Path $Diag | Out-Null
@@ -28,6 +28,8 @@ Write-Utf8File (Join-Path $OutDir 'pid.txt') ([string]$PID)
 
 $Steps = New-Object System.Collections.ArrayList
 $ModalsAtStart = New-Object System.Collections.ArrayList
+$Notes = New-Object System.Collections.ArrayList
+$script:LastMenuError = $null
 $Result = [ordered]@{
   ok              = $false
   gp_running      = $false
@@ -36,6 +38,7 @@ $Result = [ordered]@{
   source          = $Source
   error           = $null
   modals_at_start = $ModalsAtStart
+  notes           = $Notes
   steps           = $Steps
 }
 $script:Attempts = 1
@@ -55,12 +58,12 @@ function Invoke-Step([string]$Name, [scriptblock]$Body) {
     $rec.error = $_.Exception.Message
     $rec.screenshot = Save-Screenshot (Join-Path $Diag "fail-$Name.png")
     try { Write-Utf8File (Join-Path $Diag "fail-$Name.txt") ((Get-ModalDump) -join "`r`n") } catch { }
-    [void](Clear-GpModals $MaxAttempts)
+    try { [void](Clear-GpModals $MaxAttempts) } catch { $rec.error = "$($rec.error); cleanup failed: $($_.Exception.Message)" }
   }
   $rec.ms = [int64]$sw.ElapsedMilliseconds
   $rec.attempts = $script:Attempts
   [void]$Steps.Add([pscustomobject]$rec)
-  Close-MenuRunspaces
+  [void](Close-MenuRunspaces)
   $rec.status -eq 'ok'
 }
 
@@ -74,7 +77,13 @@ function Open-GpDialog([string[]]$Menu, [string]$Kind) {
     $c = Clear-GpModals $MaxAttempts
     if (-not $c.Cleared) { throw "cannot clear dialogs before $($Menu -join ' > '): $($c.Seen -join ', ')" }
     $before = @(Get-ProcWindows (Get-GpProcess).Id)
-    [void](Invoke-MenuAsync $Menu)
+    try {
+      [void](Invoke-MenuAsync $Menu)
+    } catch {
+      $script:LastMenuError = $_.Exception.Message
+      [void](Close-GpMenus)
+      continue
+    }
     $w = Wait-NewWindow $before $DialogTimeoutMs
     if ($w) {
       if ($Kind -eq 'native' -and $w.Class -ne '#32770') { throw "expected a file dialog for $($Menu -join ' > '), got '$($w.Title)' [$($w.Class)]" }
@@ -83,7 +92,7 @@ function Open-GpDialog([string[]]$Menu, [string]$Kind) {
     }
     [void](Close-GpMenus)
   }
-  throw "dialog for $($Menu -join ' > ') never appeared after $MaxAttempts attempts"
+  throw "dialog for $($Menu -join ' > ') never appeared after $MaxAttempts attempts; last menu error: $script:LastMenuError"
 }
 
 function Test-FileReady([string]$Path) {
@@ -114,7 +123,23 @@ function Export-ViaFileDialog([string[]]$Menu, [string]$Target) {
   Complete-FileDialog $w.Handle $Target
   $gone = Wait-For { if (-not [GpOracle.W32]::IsWindow($w.Handle)) { $true } } 10000
   if (-not $gone) { throw "'$($w.Title)' did not close" }
-  if (-not (Wait-StableFile $Target)) { throw "no stable output at $Target; open dialogs: $(Get-ModalTitles)" }
+  $script:lastLen = -1
+  $done = Wait-For {
+    $report = @(Get-GpModals | Where-Object { $_.Title -eq "Export result$GpSuffix" }) | Select-Object -First 1
+    if ($report) {
+      [void]$Notes.Add("$(Split-Path -Leaf $Target): dismissed '$($report.Title)'")
+      [void][GpOracle.W32]::PostMessage($report.Handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+      [void](Wait-For { if (-not [GpOracle.W32]::IsWindow($report.Handle)) { $true } } 5000)
+      return $null
+    }
+    if (Test-Path -LiteralPath $Target) {
+      $l = (Get-Item -LiteralPath $Target).Length
+      if ($l -gt 0 -and $l -eq $script:lastLen -and (Test-FileReady $Target)) { return $true }
+      $script:lastLen = $l
+    }
+    $null
+  } $StepTimeoutMs 300
+  if (-not $done) { throw "no stable output at $Target; open dialogs: $(Get-ModalTitles)" }
 }
 
 function Get-FolderFiles([string]$Folder, [string]$Filter) {
@@ -142,7 +167,8 @@ function Export-ViaQuickDialog([string[]]$Menu, [string]$Folder, [string]$Filter
   $gone = Wait-For { if (-not [GpOracle.W32]::IsWindow($w.Handle)) { $true } } 10000
   if (-not $gone) { throw "'$($w.Title)' did not close after ENTER" }
   $files = Wait-NewFiles $Folder $Filter $before
-  [void](Close-ExplorerWindows (Split-Path -Leaf $Folder))
+  $closed = Close-ExplorerFolder $Folder 4000
+  if ($closed -gt 0) { [void]$Notes.Add("closed $closed Explorer window(s) opened on the job folder") }
   if (-not $files) { throw "no new $Filter in $Folder; open dialogs: $(Get-ModalTitles)" }
   $files
 }
@@ -159,19 +185,19 @@ $Result.gp_version = Get-GpVersion $proc
 
 $name = [System.IO.Path]::GetFileNameWithoutExtension($Source)
 $docFolder = Split-Path -Parent $Source
-$docTitle = "$name$($script:GpSuffix)"
+$docTitle = "$name$GpSuffix"
 $opened = $false
 $currentTitle = $docTitle
-$prevOpenDirectory = Get-RegistryString $RendererKey 'openDirectory'
 
 try {
   $ready = Invoke-Step 'precheck' {
     if (-not (Test-Path -LiteralPath $Source)) { throw "source not found: $Source" }
-    if (-not (Get-GpMain)) { throw 'Guitar Pro main window not found through UI Automation' }
+    if ((Get-GpMainHandle) -eq [IntPtr]::Zero) { throw 'Guitar Pro main window not found' }
     $c = Clear-GpModals $MaxAttempts
     foreach ($s in $c.Seen) { [void]$ModalsAtStart.Add($s) }
     if (-not $c.Cleared) { throw "dialogs still open after $MaxAttempts attempts: $($c.Seen -join ', ')" }
-    if ($prevOpenDirectory -eq 'true') { Set-RegistryString $RendererKey 'openDirectory' 'false' }
+    if (-not (Get-GpMain)) { throw 'Guitar Pro main window not reachable through UI Automation' }
+    if ((Get-GpTitle) -eq $docTitle) { throw "a document named '$name' is already active in Guitar Pro; close it first" }
   }
 
   if ($ready) {
@@ -215,7 +241,7 @@ try {
     [void](Invoke-Step 'saveas' {
         $target = Join-Path $OutDir 'resave.gp'
         Export-ViaFileDialog $Menus.SaveAs $target
-        $t = "resave$($script:GpSuffix)"
+        $t = "resave$GpSuffix"
         if (-not (Wait-For { if ((Get-GpTitle) -eq $t) { $true } } 5000)) { throw "title did not switch to '$t'" }
         $script:currentTitle = $t
       })
@@ -236,12 +262,12 @@ try {
   } else {
     Skip-Step 'close' 'document not open'
   }
-  if ($prevOpenDirectory -eq 'true') { Set-RegistryString $RendererKey 'openDirectory' 'true' }
-  [void](Close-ExplorerWindows (Split-Path -Leaf $docFolder))
-  Close-MenuRunspaces
+  try { [void](Close-ExplorerFolder $docFolder 1500) } catch { }
+  try { [void](Close-GpMenus) } catch { }
+  $Result.pending_menu_invokes = Close-MenuRunspaces
   $Result.ok = (@($Steps | Where-Object { $_.status -ne 'ok' }).Count -eq 0)
   Write-Result
 }
 
-if ($Result.ok) { exit 0 }
-exit 1
+if ($Result.ok) { [Environment]::Exit(0) }
+[Environment]::Exit(1)

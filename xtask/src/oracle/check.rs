@@ -64,7 +64,7 @@ pub fn check_fixtures(
                     "{}: {}",
                     fixture.key, output.path
                 )));
-            } else if output.byte_identical && sha256_hex(&read(&path)?) != output.sha256 {
+            } else if output.byte_identical && Some(sha256_hex(&read(&path)?)) != output.sha256 {
                 findings.push(Finding::Stale(format!(
                     "{}: {} differs from the manifest",
                     fixture.key, output.path
@@ -122,7 +122,7 @@ mod tests {
             std::fs::write(dir.join(path), content).expect("write");
             outputs.push(OutputEntry {
                 path: path.to_owned(),
-                sha256: sha256_hex(content),
+                sha256: Some(sha256_hex(content)),
                 byte_identical: true,
             });
         }

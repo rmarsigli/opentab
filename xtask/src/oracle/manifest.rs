@@ -7,7 +7,7 @@ use std::path::Path;
 #[serde(deny_unknown_fields)]
 pub struct OutputEntry {
     pub path: String,
-    pub sha256: String,
+    pub sha256: Option<String>,
     pub byte_identical: bool,
 }
 
@@ -101,7 +101,7 @@ mod tests {
         .iter()
         .map(|path| OutputEntry {
             path: (*path).to_owned(),
-            sha256: format!("{seed:02x}{path}"),
+            sha256: Some(format!("{seed:02x}{path}")),
             byte_identical: true,
         })
         .collect();

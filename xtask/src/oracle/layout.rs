@@ -12,12 +12,10 @@ pub const REQUIRED_OUTPUTS: [&str; 6] = [
     "export.gp5",
     "export.gpx",
 ];
-pub const NON_BYTE_IDENTICAL_PREFIXES: [&str; 0] = [];
+pub const NON_BYTE_IDENTICAL_OUTPUTS: [&str; 1] = ["export.gp5"];
 
 pub fn is_byte_identical(path: &str) -> bool {
-    !NON_BYTE_IDENTICAL_PREFIXES
-        .iter()
-        .any(|prefix| path.starts_with(prefix))
+    !NON_BYTE_IDENTICAL_OUTPUTS.contains(&path)
 }
 
 pub fn is_output_path(path: &str) -> bool {

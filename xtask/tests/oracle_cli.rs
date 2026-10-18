@@ -33,7 +33,7 @@ cp "$src" "$out/resave.gp"
 printf 'MThd%s' "$(cat "$src")" > "$out/export.mid"
 printf '<score><encoding-date>%s</encoding-date><title>%s</title></score>' "$FAKE_GP_STAMP" "$(cat "$src")" > "$out/export.musicxml"
 printf '%%PDF-1.4\n<< /CreationDate (D:%s) /ModDate (D:%s) >>\n%s\n%%%%EOF\n' "$FAKE_GP_STAMP" "$FAKE_GP_STAMP" "$(cat "$src")" > "$out/export.pdf"
-printf 'GP5 %s' "$(cat "$src")" > "$out/export.gp5"
+printf 'GP5 %s %s' "$(cat "$src")" "$FAKE_GP_STAMP" > "$out/export.gp5"
 printf 'GPX %s' "$(cat "$src")" > "$out/export.gpx"
 mkdir -p "$out/png" "$out/diagnostics"
 printf 'page one' > "$out/png/song 1.png"
@@ -223,10 +223,36 @@ fn harvest_writes_the_golden_layout_and_reharvest_is_byte_identical() {
             "sub dir/Canção/resave.gp",
         ]
     );
-    assert_eq!(one, tree(&second));
+    let two = tree(&second);
+    let volatile = |name: &String| name.ends_with("/export.gp5");
+    let stable_one: BTreeMap<&String, &Vec<u8>> =
+        one.iter().filter(|(k, _)| !volatile(k)).collect();
+    let stable_two: BTreeMap<&String, &Vec<u8>> =
+        two.iter().filter(|(k, _)| !volatile(k)).collect();
+    assert_eq!(stable_one, stable_two);
+    assert_ne!(
+        one["amazing grace/export.gp5"],
+        two["amazing grace/export.gp5"]
+    );
+    let fresh = check(&sandbox, &second);
+    assert_eq!(fresh.status.code(), Some(0), "{}", text(&fresh));
     let manifest = String::from_utf8(one["manifest.json"].clone()).expect("utf8");
     assert!(manifest.contains("\"gp_version\": \"8.1.5.31\""));
     assert!(!manifest.contains("2026") && !manifest.contains("2031"));
+    let parsed: serde_json::Value = serde_json::from_str(&manifest).expect("json");
+    let outputs = parsed["entries"][0]["outputs"].as_array().expect("outputs");
+    let gp5 = outputs
+        .iter()
+        .find(|output| output["path"] == "export.gp5")
+        .expect("gp5 listed");
+    assert_eq!(gp5["byte_identical"], false);
+    assert!(gp5["sha256"].is_null());
+    let mid = outputs
+        .iter()
+        .find(|output| output["path"] == "export.mid")
+        .expect("mid listed");
+    assert_eq!(mid["byte_identical"], true);
+    assert_eq!(mid["sha256"].as_str().map(str::len), Some(64));
     let xml = String::from_utf8(one["amazing grace/export.musicxml"].clone()).expect("utf8");
     assert!(xml.contains("<encoding-date>1970-01-01</encoding-date>"));
     assert_eq!(std::fs::read_dir(&sandbox.jobs).expect("jobs").count(), 0);

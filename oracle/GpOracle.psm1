@@ -28,6 +28,7 @@ namespace GpOracle {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, IntPtr w, string l, uint flags, uint timeout, out IntPtr result);
     [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h, int id);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
+    [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
@@ -48,7 +49,6 @@ namespace GpOracle {
 "@
 }
 
-$script:GpSuffix = ' - Guitar Pro 8'
 $script:MenuRunspaces = New-Object System.Collections.ArrayList
 
 function Get-GpProcess {
@@ -108,10 +108,21 @@ function Get-GpMain {
   $null
 }
 
+$script:MainHandle = [IntPtr]::Zero
+
 function Get-GpMainHandle {
+  if ($script:MainHandle -ne [IntPtr]::Zero -and [GpOracle.W32]::IsWindow($script:MainHandle)) { return $script:MainHandle }
+  $p = Get-GpProcess
+  if (-not $p) { return [IntPtr]::Zero }
+  $candidates = @(Get-ProcWindows $p.Id | Where-Object { $_.Class -like 'Qt*QWindowIcon' -and $_.Title.EndsWith(' - Guitar Pro 8') -and [GpOracle.W32]::GetWindow($_.Handle, 4) -eq [IntPtr]::Zero })
+  if ($candidates.Count -eq 1) {
+    $script:MainHandle = $candidates[0].Handle
+    return $script:MainHandle
+  }
   $m = Get-GpMain
   if (-not $m) { return [IntPtr]::Zero }
-  [IntPtr]$m.Current.NativeWindowHandle
+  $script:MainHandle = [IntPtr]$m.Current.NativeWindowHandle
+  $script:MainHandle
 }
 
 function Get-GpTitle { Get-WindowText (Get-GpMainHandle) }
@@ -186,13 +197,17 @@ function Invoke-MenuAsync([string[]]$Path) {
   $ps = [PowerShell]::Create()
   [void]$ps.AddScript({ param($el) $p = $null; if ($el.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$p)) { $p.Invoke() } }).AddArgument($leaf)
   $h = $ps.BeginInvoke()
-  [void]$script:MenuRunspaces.Add($ps)
+  [void]$script:MenuRunspaces.Add([pscustomobject]@{ PS = $ps; Handle = $h })
   $h
 }
 
 function Close-MenuRunspaces {
-  foreach ($ps in $script:MenuRunspaces) { try { $ps.Stop() } catch { }; try { $ps.Dispose() } catch { } }
-  $script:MenuRunspaces.Clear()
+  $pending = New-Object System.Collections.ArrayList
+  foreach ($r in $script:MenuRunspaces) {
+    if ($r.Handle.IsCompleted) { try { $r.PS.Dispose() } catch { } } else { [void]$pending.Add($r) }
+  }
+  $script:MenuRunspaces = $pending
+  $pending.Count
 }
 
 function Send-KeysTo([IntPtr]$Handle, [string]$Keys) {
@@ -320,22 +335,21 @@ function Close-GpErrorToast {
   ($texts -join ' / ')
 }
 
-function Get-RegistryString([string]$Key, [string]$Name) {
-  try { [string](Get-ItemProperty -LiteralPath $Key -Name $Name -ErrorAction Stop).$Name } catch { $null }
-}
-
-function Set-RegistryString([string]$Key, [string]$Name, [string]$Value) {
-  if (Test-Path -LiteralPath $Key) { Set-ItemProperty -LiteralPath $Key -Name $Name -Value $Value -Type String }
-}
-
-function Close-ExplorerWindows([string]$Title) {
-  $n = 0
-  foreach ($ex in @(Get-Process -Name explorer -ErrorAction SilentlyContinue)) {
-    foreach ($w in @(Get-ProcWindows $ex.Id)) {
-      if ($w.Class -eq 'CabinetWClass' -and $w.Title -eq $Title) { [void][GpOracle.W32]::PostMessage($w.Handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero); $n++ }
+function Close-ExplorerFolder([string]$Folder, [int]$WaitMs = 0) {
+  $target = [System.IO.Path]::GetFullPath($Folder).TrimEnd('\')
+  $shell = New-Object -ComObject Shell.Application
+  $script:closedExplorer = 0
+  $probe = {
+    foreach ($w in @($shell.Windows())) {
+      try {
+        $url = [string]$w.LocationURL
+        if ($url -and ([Uri]$url).LocalPath.TrimEnd('\') -ieq $target) { $w.Quit(); $script:closedExplorer++ }
+      } catch { }
     }
+    if ($script:closedExplorer -gt 0) { $true }
   }
-  $n
+  if ($WaitMs -gt 0) { [void](Wait-For $probe $WaitMs 250) } else { [void](& $probe) }
+  $script:closedExplorer
 }
 
 function Write-Utf8File([string]$Path, [string]$Text) {
