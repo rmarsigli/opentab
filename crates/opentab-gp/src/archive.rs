@@ -316,4 +316,35 @@ mod tests {
         assert!(central_records(&bytes[..CENTRAL_HEADER_SIZE], 0).is_empty());
         assert!(central_records(&bytes, bytes.len() + 5).is_empty());
     }
+
+    fn record(name: &str, extra: usize, comment: usize) -> Vec<u8> {
+        let mut bytes = CENTRAL_SIGNATURE.to_vec();
+        bytes.resize(CENTRAL_HEADER_SIZE, 0);
+        bytes[NAME_LENGTH_AT] = u8::try_from(name.len()).expect("length");
+        bytes[EXTRA_LENGTH_AT] = u8::try_from(extra).expect("length");
+        bytes[COMMENT_LENGTH_AT] = u8::try_from(comment).expect("length");
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.resize(bytes.len() + extra + comment, 0xEE);
+        bytes
+    }
+
+    #[test]
+    fn central_records_skip_extra_fields_and_comments() {
+        let mut bytes = Vec::new();
+        for (name, extra, comment) in [("abc", 5, 7), ("de", 0, 3), ("fghi", 4, 0), ("j", 2, 9)] {
+            bytes.extend_from_slice(&record(name, extra, comment));
+        }
+        assert_eq!(
+            central_records(&bytes, 0),
+            vec![b"abc".as_slice(), b"de", b"fghi", b"j"]
+        );
+    }
+
+    #[test]
+    fn little_endian_words_read_both_bytes_at_the_offset() {
+        let bytes = [0x01, 0x02, 0x03, 0x04];
+        assert_eq!(u16_at(&bytes, 0), 0x0201);
+        assert_eq!(u16_at(&bytes, 1), 0x0302);
+        assert_eq!(u16_at(&bytes, 2), 0x0403);
+    }
 }
