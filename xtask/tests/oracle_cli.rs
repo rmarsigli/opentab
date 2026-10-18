@@ -1,0 +1,261 @@
+#![cfg(unix)]
+
+use std::collections::BTreeMap;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+
+const FAKE_POWERSHELL: &str = r#"#!/bin/sh
+src=""
+out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -Source) src="$2"; shift ;;
+    -OutDir) out="$2"; shift ;;
+  esac
+  shift
+done
+[ -n "$out" ] || exit 0
+echo 4242 > "$out/pid.txt"
+case "$FAKE_GP_MODE" in
+  not_running)
+    printf '{"ok":false,"gp_running":false,"error":"Guitar Pro is not running; start it and leave it on Empty"}' > "$out/result.json"
+    exit 2 ;;
+  fail)
+    mkdir -p "$out/diagnostics"
+    printf '{"ok":false,"gp_running":true,"gp_version":"8.1.5.31","steps":[{"name":"pdf","status":"failed","ms":5,"attempts":3,"error":"dialog never appeared","screenshot":"x.png"}]}' > "$out/result.json"
+    exit 1 ;;
+  silent)
+    rm -f "$out/pid.txt"
+    exit 3 ;;
+esac
+cp "$src" "$out/resave.gp"
+printf 'MThd%s' "$(cat "$src")" > "$out/export.mid"
+printf '<score><encoding-date>%s</encoding-date><title>%s</title></score>' "$FAKE_GP_STAMP" "$(cat "$src")" > "$out/export.musicxml"
+printf '%%PDF-1.4\n<< /CreationDate (D:%s) /ModDate (D:%s) >>\n%s\n%%%%EOF\n' "$FAKE_GP_STAMP" "$FAKE_GP_STAMP" "$(cat "$src")" > "$out/export.pdf"
+printf 'GP5 %s' "$(cat "$src")" > "$out/export.gp5"
+printf 'GPX %s' "$(cat "$src")" > "$out/export.gpx"
+mkdir -p "$out/png" "$out/diagnostics"
+printf 'page one' > "$out/png/song 1.png"
+printf 'page two' > "$out/png/song 2.png"
+printf 'noise %s' "$FAKE_GP_STAMP" > "$out/diagnostics/log.txt"
+printf '\357\273\277{"ok":true,"gp_running":true,"gp_version":"8.1.5.31","steps":[],"modals_at_start":%s}' "${FAKE_GP_MODALS:-[]}" > "$out/result.json"
+exit 0
+"#;
+
+const FAKE_WSLPATH: &str = "#!/bin/sh\nprintf '%s\\n' \"$2\"\n";
+
+struct Sandbox {
+    _dir: tempfile::TempDir,
+    root: PathBuf,
+    powershell: PathBuf,
+    wslpath: PathBuf,
+    jobs: PathBuf,
+    input: PathBuf,
+}
+
+fn script(path: &Path, body: &str) {
+    std::fs::write(path, body).expect("write script");
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+}
+
+fn sandbox() -> Sandbox {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().to_path_buf();
+    let powershell = root.join("fake powershell.sh");
+    let wslpath = root.join("fake-wslpath.sh");
+    script(&powershell, FAKE_POWERSHELL);
+    script(&wslpath, FAKE_WSLPATH);
+    let input = root.join("entrada com espaço ç");
+    std::fs::create_dir_all(input.join("sub dir")).expect("mkdir");
+    std::fs::write(input.join("amazing grace.gp"), b"fixture-one").expect("write");
+    std::fs::write(input.join("sub dir/Canção.gp"), b"fixture-two").expect("write");
+    Sandbox {
+        jobs: root.join("jobs"),
+        _dir: dir,
+        root,
+        powershell,
+        wslpath,
+        input,
+    }
+}
+
+fn xtask(sandbox: &Sandbox, args: &[&str], envs: &[(&str, &str)]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_xtask"));
+    command
+        .args(args)
+        .env("OPENTAB_ORACLE_POWERSHELL", &sandbox.powershell)
+        .env("OPENTAB_ORACLE_WSLPATH", &sandbox.wslpath)
+        .env("OPENTAB_ORACLE_JOBS", &sandbox.jobs)
+        .env("FAKE_GP_STAMP", "2026-10-17");
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command.output().expect("run xtask")
+}
+
+fn harvest(sandbox: &Sandbox, out: &Path, envs: &[(&str, &str)]) -> Output {
+    let input = sandbox.input.to_str().expect("utf8");
+    let out = out.to_str().expect("utf8");
+    xtask(
+        sandbox,
+        &["oracle", "harvest", "--input", input, "--out", out],
+        envs,
+    )
+}
+
+fn check(sandbox: &Sandbox, goldens: &Path) -> Output {
+    let input = sandbox.input.to_str().expect("utf8");
+    let goldens = goldens.to_str().expect("utf8");
+    xtask(
+        sandbox,
+        &["oracle", "check", "--input", input, "--goldens", goldens],
+        &[],
+    )
+}
+
+fn tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    fn walk(dir: &Path, prefix: &str, files: &mut BTreeMap<String, Vec<u8>>) {
+        for item in std::fs::read_dir(dir).expect("list") {
+            let item = item.expect("entry");
+            let name = format!("{prefix}{}", item.file_name().to_string_lossy());
+            if item.file_type().expect("type").is_dir() {
+                walk(&item.path(), &format!("{name}/"), files);
+            } else {
+                files.insert(name, std::fs::read(item.path()).expect("read"));
+            }
+        }
+    }
+    let mut files = BTreeMap::new();
+    walk(root, "", &mut files);
+    files
+}
+
+fn text(output: &Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+#[test]
+fn missing_powershell_exits_2_with_a_message() {
+    let sandbox = sandbox();
+    let out = sandbox.root.join("out");
+    let output = harvest(
+        &sandbox,
+        &out,
+        &[("OPENTAB_ORACLE_POWERSHELL", "/nonexistent")],
+    );
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    assert!(text(&output).contains("/nonexistent was not found"));
+    assert!(text(&output).contains("Windows host or WSL"));
+    assert!(!out.exists());
+}
+
+#[test]
+fn gp_not_running_exits_2_and_leaves_no_job() {
+    let sandbox = sandbox();
+    let out = sandbox.root.join("out");
+    let output = harvest(&sandbox, &out, &[("FAKE_GP_MODE", "not_running")]);
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    assert!(text(&output).contains("Guitar Pro is not running"));
+    assert_eq!(std::fs::read_dir(&sandbox.jobs).expect("jobs").count(), 0);
+    assert!(!out.join("manifest.json").exists());
+}
+
+#[test]
+fn step_failure_exits_2_and_keeps_the_job() {
+    let sandbox = sandbox();
+    let out = sandbox.root.join("out");
+    let output = harvest(&sandbox, &out, &[("FAKE_GP_MODE", "fail")]);
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    assert!(text(&output).contains("step pdf failed: dialog never appeared"));
+    assert_eq!(std::fs::read_dir(&sandbox.jobs).expect("jobs").count(), 2);
+    assert!(!out.join("manifest.json").exists());
+}
+
+#[test]
+fn script_without_result_is_a_failure() {
+    let sandbox = sandbox();
+    let out = sandbox.root.join("out");
+    let output = harvest(&sandbox, &out, &[("FAKE_GP_MODE", "silent")]);
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    assert!(text(&output).contains("without writing result.json"));
+}
+
+#[test]
+fn harvest_writes_the_golden_layout_and_reharvest_is_byte_identical() {
+    let sandbox = sandbox();
+    let first = sandbox.root.join("goldens one");
+    let second = sandbox.root.join("goldens two");
+    let a = harvest(
+        &sandbox,
+        &first,
+        &[("FAKE_GP_MODALS", "[\"About Guitar Pro 8\"]")],
+    );
+    assert_eq!(a.status.code(), Some(0), "{}", text(&a));
+    assert!(text(&a).contains("dialog 'About Guitar Pro 8' was open at start"));
+    let b = harvest(&sandbox, &second, &[("FAKE_GP_STAMP", "2031-02-03")]);
+    assert_eq!(b.status.code(), Some(0), "{}", text(&b));
+    let one = tree(&first);
+    let names: Vec<&str> = one.keys().map(String::as_str).collect();
+    assert_eq!(
+        names,
+        [
+            "amazing grace/export.gp5",
+            "amazing grace/export.gpx",
+            "amazing grace/export.mid",
+            "amazing grace/export.musicxml",
+            "amazing grace/export.pdf",
+            "amazing grace/png/song 1.png",
+            "amazing grace/png/song 2.png",
+            "amazing grace/resave.gp",
+            "manifest.json",
+            "sub dir/Canção/export.gp5",
+            "sub dir/Canção/export.gpx",
+            "sub dir/Canção/export.mid",
+            "sub dir/Canção/export.musicxml",
+            "sub dir/Canção/export.pdf",
+            "sub dir/Canção/png/song 1.png",
+            "sub dir/Canção/png/song 2.png",
+            "sub dir/Canção/resave.gp",
+        ]
+    );
+    assert_eq!(one, tree(&second));
+    let manifest = String::from_utf8(one["manifest.json"].clone()).expect("utf8");
+    assert!(manifest.contains("\"gp_version\": \"8.1.5.31\""));
+    assert!(!manifest.contains("2026") && !manifest.contains("2031"));
+    let xml = String::from_utf8(one["amazing grace/export.musicxml"].clone()).expect("utf8");
+    assert!(xml.contains("<encoding-date>1970-01-01</encoding-date>"));
+    assert_eq!(std::fs::read_dir(&sandbox.jobs).expect("jobs").count(), 0);
+}
+
+#[test]
+fn check_is_fresh_then_stale_after_one_byte_changes() {
+    let sandbox = sandbox();
+    let goldens = sandbox.root.join("goldens");
+    let a = harvest(&sandbox, &goldens, &[]);
+    assert_eq!(a.status.code(), Some(0), "{}", text(&a));
+    let fresh = check(&sandbox, &goldens);
+    assert_eq!(fresh.status.code(), Some(0), "{}", text(&fresh));
+    let fixture = sandbox.input.join("sub dir/Canção.gp");
+    let mut bytes = std::fs::read(&fixture).expect("read");
+    bytes[3] ^= 0x20;
+    std::fs::write(&fixture, &bytes).expect("write");
+    let stale = check(&sandbox, &goldens);
+    assert_eq!(stale.status.code(), Some(2), "{}", text(&stale));
+    assert_eq!(
+        String::from_utf8_lossy(&stale.stdout),
+        "stale: sub dir/Canção.gp\n"
+    );
+    std::fs::remove_file(sandbox.input.join("amazing grace.gp")).expect("remove");
+    std::fs::write(sandbox.input.join("new.gp"), b"n").expect("write");
+    let mixed = check(&sandbox, &goldens);
+    assert_eq!(mixed.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&mixed.stdout),
+        "stale: sub dir/Canção.gp\nmissing: new.gp\norphan: amazing grace.gp\n"
+    );
+}

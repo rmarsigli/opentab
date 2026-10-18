@@ -1,21 +1,117 @@
+use clap::{Args, Parser, Subcommand};
+use std::path::PathBuf;
 use std::process::ExitCode;
+use xtask::oracle::check::check;
+use xtask::oracle::harvest::{HarvestOptions, harvest};
+use xtask::oracle::host::Host;
 
-const USAGE: &str = "usage: cargo xtask <command>\n\ncommands:\n  (none yet)";
+#[derive(Debug, Parser)]
+#[command(
+    name = "cargo xtask",
+    about = "OpenTab project tasks",
+    arg_required_else_help = true
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: TopCommand,
+}
 
-fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.first().map(String::as_str) {
-        None | Some("help" | "--help" | "-h") => {
-            println!("{USAGE}");
+#[derive(Debug, Subcommand)]
+enum TopCommand {
+    #[command(about = "Guitar Pro 8 oracle: harvest goldens and check their freshness")]
+    Oracle(OracleArgs),
+}
+
+#[derive(Debug, Args)]
+struct OracleArgs {
+    #[command(subcommand)]
+    command: OracleCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum OracleCommand {
+    #[command(about = "Run fixtures through Guitar Pro 8 and write goldens")]
+    Harvest(HarvestArgs),
+    #[command(about = "Report goldens that are stale, missing or orphaned")]
+    Check(CheckArgs),
+}
+
+#[derive(Debug, Args)]
+struct HarvestArgs {
+    #[arg(long, help = "A Guitar Pro file or a directory of them")]
+    input: PathBuf,
+    #[arg(long, help = "Golden output directory")]
+    out: PathBuf,
+    #[arg(
+        long,
+        help = "Keep C:\\gf-oracle\\jobs\\<id> after a successful export"
+    )]
+    keep_jobs: bool,
+}
+
+#[derive(Debug, Args)]
+struct CheckArgs {
+    #[arg(long, help = "Fixture directory")]
+    input: PathBuf,
+    #[arg(long, help = "Golden directory holding manifest.json")]
+    goldens: PathBuf,
+}
+
+fn failure(message: &str) -> ExitCode {
+    eprintln!("error: {message}");
+    ExitCode::from(2)
+}
+
+fn run_harvest(args: HarvestArgs) -> ExitCode {
+    let host = match Host::from_env() {
+        Ok(host) => host,
+        Err(error) => return failure(error.message()),
+    };
+    let options = HarvestOptions {
+        input: args.input,
+        out: args.out,
+        keep_jobs: args.keep_jobs,
+    };
+    match harvest(&host, &options) {
+        Ok(report) if report.failures.is_empty() => {
+            println!("harvested {} fixture(s)", report.harvested.len());
             ExitCode::SUCCESS
         }
-        Some(other) => {
-            eprintln!("unknown command: {other}\n\n{USAGE}");
-            ExitCode::from(1)
-        }
+        Ok(report) => failure(&format!(
+            "{} of {} fixture(s) failed: {}",
+            report.failures.len(),
+            report.failures.len() + report.harvested.len(),
+            report.failures.join(", ")
+        )),
+        Err(error) => failure(error.message()),
     }
 }
 
+fn run_check(args: CheckArgs) -> ExitCode {
+    match check(&args.input, &args.goldens) {
+        Ok(findings) if findings.is_empty() => {
+            println!("all goldens are fresh");
+            ExitCode::SUCCESS
+        }
+        Ok(findings) => {
+            for finding in &findings {
+                println!("{finding}");
+            }
+            ExitCode::from(2)
+        }
+        Err(error) => failure(error.message()),
+    }
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    match cli.command {
+        TopCommand::Oracle(oracle) => match oracle.command {
+            OracleCommand::Harvest(args) => run_harvest(args),
+            OracleCommand::Check(args) => run_check(args),
+        },
+    }
+}
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
