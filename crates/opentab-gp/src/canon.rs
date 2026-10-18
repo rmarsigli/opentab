@@ -109,14 +109,17 @@ pub(crate) fn tempo_position(position: Fraction, time: TimeSignature) -> Option<
     ))
 }
 
+fn decimal_shift(numer: u128, denom: u128) -> u32 {
+    (0u32..)
+        .find(|shift| numer * 10u128.pow(*shift) >= denom)
+        .unwrap_or_default()
+}
+
 fn general_format(numer: u128, denom: u128) -> String {
     if numer == 0 || denom == 0 {
         return "0".to_string();
     }
-    let mut shift = 0u32;
-    while numer * 10u128.pow(shift) < denom {
-        shift += 1;
-    }
+    let mut shift = decimal_shift(numer, denom);
     let scale = 10u128.pow(shift + SIGNIFICANT_DIGITS - 1);
     let mut mantissa = (2 * numer * scale + denom) / (2 * denom);
     if mantissa >= 10u128.pow(SIGNIFICANT_DIGITS) {
@@ -246,4 +249,80 @@ pub(crate) fn strip_generated_items(collection: &Element, strings: usize) -> Han
         list.children.retain(|node| !generated_item(node));
     }
     Handled::Substitute(Node::Element(filtered))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn keys(accidentals: i8) -> Vec<i32> {
+        let key = KeySignature::new(accidentals, false).unwrap();
+        (0..12).map(|up| written_key(key, -up)).collect()
+    }
+
+    #[test]
+    fn grid_ticks_accept_only_whole_non_negative_ticks() {
+        let ticks = |numer, denom| grid_ticks(Fraction::new(numer, denom));
+        assert_eq!(ticks(0, 1), Some(0));
+        assert_eq!(ticks(1, 2), Some(1920));
+        assert_eq!(ticks(1, 3), Some(1280));
+        assert_eq!(ticks(3, 4), Some(2880));
+        assert_eq!(ticks(1, 7), None);
+        assert_eq!(ticks(-1, 2), None);
+        assert_eq!(ticks(-1, 4), None);
+    }
+
+    #[test]
+    fn the_decimal_shift_is_the_digits_before_the_first_significant_one() {
+        assert_eq!(decimal_shift(1, 1), 0);
+        assert_eq!(decimal_shift(2, 1), 0);
+        assert_eq!(decimal_shift(9, 10), 1);
+        assert_eq!(decimal_shift(1, 10), 1);
+        assert_eq!(decimal_shift(1, 11), 2);
+        assert_eq!(decimal_shift(1, 100), 2);
+        assert_eq!(decimal_shift(1, 101), 3);
+        assert_eq!(decimal_shift(3, 1000), 3);
+        assert_eq!(decimal_shift(1, 100_000), 5);
+    }
+
+    #[test]
+    fn general_format_writes_six_significant_digits() {
+        let formatted = |numer, denom| general_format(numer, denom);
+        assert_eq!(formatted(0, 5), "0");
+        assert_eq!(formatted(5, 0), "0");
+        assert_eq!(formatted(1, 2), "0.5");
+        assert_eq!(formatted(1, 3), "0.333333");
+        assert_eq!(formatted(2, 3), "0.666667");
+        assert_eq!(formatted(1, 10), "0.1");
+        assert_eq!(formatted(1, 100), "0.01");
+        assert_eq!(formatted(1, 10_000), "0.0001");
+        assert_eq!(formatted(1, 100_000), "1e-05");
+        assert_eq!(formatted(3, 200_000), "1.5e-05");
+        assert_eq!(formatted(1, 3_000_000), "3.33333e-07");
+    }
+
+    #[test]
+    fn rounding_up_to_a_power_of_ten_drops_one_decimal_place() {
+        assert_eq!(general_format(9_999_996, 10_000_000), "1");
+        assert_eq!(general_format(9_999_996, 100_000_000), "0.1");
+        assert_eq!(general_format(99_999_996, 100_000_000_000_000), "1e-06");
+    }
+
+    #[test]
+    fn the_written_key_follows_the_circle_of_fifths() {
+        assert_eq!(keys(0), [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5]);
+        assert_eq!(keys(3), [3, -2, 5, 0, -5, 2, -3, 4, -1, 6, 1, -4]);
+        assert_eq!(keys(-2), [-2, 5, 0, -5, 2, -3, 4, -1, 6, 1, -4, 3]);
+    }
+
+    #[test]
+    fn the_written_key_ignores_whole_octaves_of_transposition() {
+        let key = KeySignature::new(1, false).unwrap();
+        for chromatic in -11i8..=11 {
+            assert_eq!(
+                written_key(key, chromatic),
+                written_key(key, chromatic - 12)
+            );
+        }
+    }
 }

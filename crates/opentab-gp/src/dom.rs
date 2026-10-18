@@ -427,3 +427,55 @@ pub(crate) fn escape_attribute(text: &str, out: &mut String) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn element(children: Vec<Node>) -> Element {
+        Element {
+            name: "E".to_string(),
+            attributes: Vec::new(),
+            children,
+        }
+    }
+
+    fn text(value: &str) -> Node {
+        Node::Text(value.to_string())
+    }
+
+    fn cdata(value: &str) -> Node {
+        Node::CData(value.to_string())
+    }
+
+    #[test]
+    fn text_joins_plain_text_and_ignores_other_nodes() {
+        let comment = Node::Comment("c".to_string());
+        assert_eq!(element(vec![text("a"), comment, text("b")]).text(), "ab");
+        assert_eq!(element(Vec::new()).text(), "");
+    }
+
+    #[test]
+    fn whitespace_only_text_without_cdata_is_kept() {
+        assert_eq!(element(vec![text("  \n ")]).text(), "  \n ");
+    }
+
+    #[test]
+    fn cdata_replaces_the_whitespace_around_it() {
+        assert_eq!(
+            element(vec![text("\n  "), cdata("x"), text("\n")]).text(),
+            "x"
+        );
+    }
+
+    #[test]
+    fn cdata_next_to_real_text_keeps_both() {
+        assert_eq!(element(vec![cdata("x"), text("y")]).text(), "xy");
+        assert_eq!(element(vec![text(" y "), cdata("x")]).text(), " y x");
+    }
+
+    #[test]
+    fn cdata_sections_are_joined_in_order() {
+        assert_eq!(element(vec![cdata("a"), cdata("b")]).text(), "ab");
+    }
+}
