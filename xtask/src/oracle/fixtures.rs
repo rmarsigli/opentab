@@ -130,6 +130,7 @@ mod tests {
         assert!(discover(&root.join("absent.gp")).is_err());
     }
 
+    #[cfg(unix)]
     #[test]
     fn names_with_backslash_or_colon_are_rejected_at_discovery() {
         for name in ["a\\b.gp", "a:b.gp", "C:x.gp"] {
