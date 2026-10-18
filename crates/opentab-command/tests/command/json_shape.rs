@@ -39,7 +39,7 @@ fn forward_commands_have_the_documented_json_shape() {
             duration: opentab_model::Duration::new(
                 NoteValue::Eighth,
                 1,
-                Some(Tuplet { num: 3, den: 2 }),
+                Some(Tuplet::new(3, 2).unwrap()),
             )
             .unwrap(),
         },

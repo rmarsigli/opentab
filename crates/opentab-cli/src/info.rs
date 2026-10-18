@@ -60,7 +60,8 @@ fn time_signatures(score: &Score) -> Vec<(String, usize)> {
     for master_bar in &score.master_bars {
         let label = format!(
             "{}/{}",
-            master_bar.time_signature.numerator, master_bar.time_signature.denominator
+            master_bar.time_signature.numerator(),
+            master_bar.time_signature.denominator()
         );
         match counts.iter_mut().find(|(seen, _)| *seen == label) {
             Some((_, count)) => *count += 1,

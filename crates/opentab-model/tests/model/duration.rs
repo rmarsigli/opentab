@@ -31,7 +31,7 @@ fn length_with_tuplets() {
     for (value, denominator) in VALUES {
         for (dots, dot_numer, dot_denom) in DOT_FACTORS {
             for (num, den, ratio_numer, ratio_denom) in TUPLETS {
-                let tuplet = Tuplet { num, den };
+                let tuplet = Tuplet::new(num, den).unwrap();
                 let duration = Duration::new(value, dots, Some(tuplet)).unwrap();
                 let expected = Fraction::new(
                     dot_numer * ratio_numer,
@@ -47,9 +47,9 @@ fn length_with_tuplets() {
 fn length_spot_checks() {
     let dotted_quarter = Duration::new(NoteValue::Quarter, 1, None).unwrap();
     assert_eq!(dotted_quarter.length(), Fraction::new(3, 8));
-    let triplet_eighth = Duration::new(NoteValue::Eighth, 0, Some(Tuplet { num: 3, den: 2 }));
+    let triplet_eighth = Duration::new(NoteValue::Eighth, 0, Some(Tuplet::new(3, 2).unwrap()));
     assert_eq!(triplet_eighth.unwrap().length(), Fraction::new(1, 12));
-    let septuplet = Duration::new(NoteValue::ThirtySecond, 0, Some(Tuplet { num: 7, den: 8 }));
+    let septuplet = Duration::new(NoteValue::ThirtySecond, 0, Some(Tuplet::new(7, 8).unwrap()));
     assert_eq!(septuplet.unwrap().length(), Fraction::new(1, 28));
     let whole = Duration::new(NoteValue::Whole, 3, None).unwrap();
     assert_eq!(whole.length(), Fraction::new(15, 8));
@@ -69,19 +69,25 @@ fn new_rejects_more_than_three_dots() {
 fn new_rejects_tuplet_terms_outside_range() {
     for (num, den) in [(0, 2), (2, 0), (0, 0), (65, 64), (64, 65), (255, 1)] {
         assert_eq!(
-            Duration::new(NoteValue::Quarter, 0, Some(Tuplet { num, den })),
+            Tuplet::new(num, den),
             Err(ModelError::InvalidTuplet { num, den })
         );
+        let text = format!(r#"{{"num":{num},"den":{den}}}"#);
+        assert!(serde_json::from_str::<Tuplet>(&text).is_err(), "{text}");
     }
 }
 
 #[test]
 fn new_accepts_boundaries() {
     for (num, den) in [(1, 1), (64, 64), (1, 64), (64, 1)] {
-        let duration = Duration::new(NoteValue::OneTwentyEighth, 3, Some(Tuplet { num, den }));
+        let duration = Duration::new(
+            NoteValue::OneTwentyEighth,
+            3,
+            Some(Tuplet::new(num, den).unwrap()),
+        );
         let duration = duration.unwrap();
         assert_eq!(duration.value(), NoteValue::OneTwentyEighth);
         assert_eq!(duration.dots(), 3);
-        assert_eq!(duration.tuplet(), Some(Tuplet { num, den }));
+        assert_eq!(duration.tuplet(), Some(Tuplet::new(num, den).unwrap()));
     }
 }

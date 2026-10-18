@@ -67,7 +67,10 @@ fn group_candidates() -> Vec<Candidate> {
     let mut groups = Vec::new();
     for (num, den) in TUPLETS {
         for value in TUPLET_VALUES {
-            let Ok(duration) = Duration::new(value, 0, Some(Tuplet { num, den })) else {
+            let Ok(tuplet) = Tuplet::new(num, den) else {
+                continue;
+            };
+            let Ok(duration) = Duration::new(value, 0, Some(tuplet)) else {
                 continue;
             };
             let durations = vec![duration; usize::from(num)];

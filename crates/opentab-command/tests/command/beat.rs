@@ -8,7 +8,7 @@ use crate::support::{duration, fixture, guitar_voice, payload};
 fn insert_beat_adds_a_rest_with_a_fresh_id() {
     let mut fx = fixture();
     let fresh = BeatId(fx.score.ids.peek());
-    let triplet = Duration::new(NoteValue::Eighth, 1, Some(Tuplet { num: 3, den: 2 })).unwrap();
+    let triplet = Duration::new(NoteValue::Eighth, 1, Some(Tuplet::new(3, 2).unwrap())).unwrap();
     let command = Command::InsertBeat {
         voice: fx.voice,
         index: 2,

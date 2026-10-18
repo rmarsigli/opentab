@@ -189,10 +189,8 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
             denominator,
         } => Command::InsertMasterBar {
             index: insert_index(*index, master_bars),
-            time_signature: TimeSignature {
-                numerator: *numerator,
-                denominator: *denominator,
-            },
+            time_signature: TimeSignature::new(*numerator, *denominator)
+                .expect("generated time signature is valid"),
         },
         Step::RemoveMasterBar { index } => Command::RemoveMasterBar {
             index: existing_index(*index, master_bars),
@@ -260,7 +258,8 @@ fn arb_duration() -> impl Strategy<Value = Duration> {
         option::weighted(0.2, (1u8..=12, 1u8..=12)),
     )
         .prop_map(|(value, dots, tuplet)| {
-            let tuplet = tuplet.map(|(num, den)| Tuplet { num, den });
+            let tuplet =
+                tuplet.map(|(num, den)| Tuplet::new(num, den).expect("generated tuplet is valid"));
             Duration::new(value, dots, tuplet).expect("generated duration is valid")
         })
 }
@@ -275,7 +274,7 @@ fn arb_bpm() -> impl Strategy<Value = f64> {
 fn arb_step() -> impl Strategy<Value = Step> {
     prop_oneof![
         (0usize..10, ".{0,12}").prop_map(|(field, value)| Step::SetMeta { field, value }),
-        (arb_pick(), 0u8..=12, select(vec![0u8, 1, 2, 4, 8, 16])).prop_map(
+        (arb_pick(), 1u8..=12, select(vec![1u8, 2, 4, 8, 16, 32, 64])).prop_map(
             |(index, numerator, denominator)| Step::InsertMasterBar {
                 index,
                 numerator,

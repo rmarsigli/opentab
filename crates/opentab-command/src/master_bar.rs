@@ -43,19 +43,12 @@ fn check_staves(score: &Score) -> Result<usize, CommandError> {
     Ok(count)
 }
 
-fn check_time_signature(time_signature: TimeSignature) -> Result<(), CommandError> {
-    TimeSignature::new(time_signature.numerator, time_signature.denominator)
-        .map(|_| ())
-        .map_err(CommandError::model)
-}
-
 pub(crate) fn insert(
     score: &mut Score,
     index: usize,
     time_signature: TimeSignature,
 ) -> Result<Command, CommandError> {
     check_index(score, index, true)?;
-    check_time_signature(time_signature)?;
     let staves = check_staves(score)?;
     let needed = u64::try_from(staves)
         .ok()
@@ -118,7 +111,6 @@ pub(crate) fn restore(
     snapshot: Snapshot<'_>,
 ) -> Result<Command, CommandError> {
     check_index(score, index, true)?;
-    check_time_signature(snapshot.master_bar.time_signature)?;
     let staves = check_staves(score)?;
     if snapshot.bars.len() != staves {
         return Err(CommandError::invalid(format!(
