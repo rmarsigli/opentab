@@ -25,6 +25,7 @@ pub struct Frame {
     pub left: Units,
     pub right: Units,
     pub top: Units,
+    pub bottom: Units,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,7 @@ struct Writer {
     frame: Frame,
     cursor: Units,
     items: Vec<Primitive>,
+    full: bool,
 }
 
 impl Writer {
@@ -52,7 +54,11 @@ impl Writer {
     }
 
     fn row(&mut self, em: Units, cells: &[(Option<Fitted>, Align)]) {
-        if cells.iter().all(|(line, _)| line.is_none()) {
+        if self.full || cells.iter().all(|(line, _)| line.is_none()) {
+            return;
+        }
+        if self.cursor + line_height(em) > self.frame.bottom {
+            self.full = true;
             return;
         }
         let baseline = self.cursor + ascent(em);
@@ -72,25 +78,46 @@ impl Writer {
     }
 }
 
+pub const WORDS_AND_MUSIC: &str = "Words & Music by ";
+pub const WORDS: &str = "Words by ";
+pub const MUSIC: &str = "Music by ";
+pub const TAB: &str = "Tab by ";
+
+pub fn starts_with_ignoring_case(text: &str, prefix: &str) -> bool {
+    let mut letters = text.chars().flat_map(char::to_lowercase);
+    prefix
+        .chars()
+        .flat_map(char::to_lowercase)
+        .all(|wanted| letters.next() == Some(wanted))
+}
+
+pub fn credited(prefix: &str, name: &str) -> String {
+    if starts_with_ignoring_case(name, prefix.trim_end()) {
+        name.to_string()
+    } else {
+        format!("{prefix}{name}")
+    }
+}
+
 pub fn credits(meta: &ScoreMeta) -> Vec<String> {
     let words = clean(&meta.words);
     let music = clean(&meta.music);
     if !words.is_empty() && words == music {
-        return vec![format!("Words & Music by {words}")];
+        return vec![credited(WORDS_AND_MUSIC, &words)];
     }
     let mut lines = Vec::new();
     if !words.is_empty() {
-        lines.push(format!("Words by {words}"));
+        lines.push(credited(WORDS, &words));
     }
     if !music.is_empty() {
-        lines.push(format!("Music by {music}"));
+        lines.push(credited(MUSIC, &music));
     }
     lines
 }
 
 pub fn tab_credit(meta: &ScoreMeta) -> Option<String> {
     let author = clean(&meta.tab_author);
-    (!author.is_empty()).then(|| format!("Tab by {author}"))
+    (!author.is_empty()).then(|| credited(TAB, &author))
 }
 
 pub fn title_block(meta: &ScoreMeta, frame: Frame) -> TitleBlock {
@@ -99,6 +126,7 @@ pub fn title_block(meta: &ScoreMeta, frame: Frame) -> TitleBlock {
         frame,
         cursor: frame.top,
         items: Vec::new(),
+        full: false,
     };
     writer.lines(wrap(&meta.title, TITLE_EM, width, TITLE_LINES), TITLE_EM);
     writer.lines(

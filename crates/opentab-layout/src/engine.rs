@@ -1,20 +1,19 @@
-use opentab_model::Score;
+use opentab_model::{Score, ScoreMeta};
 
 use crate::barline::Strokes;
 use crate::barline::strokes;
 use crate::display::{DisplayList, Page, PageSize, StaffSpace};
 use crate::draw::{Context, draw_system, labels};
 use crate::geometry::{
-    BRACKET_GAP, FIT_ATTEMPTS, FOOTROOM, GROUP_GAP, HEADROOM, MARGIN, MIN_STAFF_SPACE, NAME_EM,
-    NAME_GAP, NOTATION_CLEARANCE, STAFF_GAP,
+    BRACKET_GAP, FIT_ATTEMPTS, FOOTROOM, GROUP_GAP, HEADROOM, MARGIN, MIN_STAFF_SPACE, NAME_GAP,
+    NOTATION_CLEARANCE, STAFF_GAP,
 };
 use crate::glyphs::Metrics;
 use crate::lanes::{Band, BandLayout};
-use crate::marks::{Frame as BlockFrame, title_block};
+use crate::marks::{Frame as BlockFrame, TitleBlock, title_block};
 use crate::options::{LayoutError, LayoutOptions};
 use crate::plan::{BarPlan, SystemPlan, VerticalNeeds, above_share, break_systems, plan_bars};
 use crate::select::{StaffSpec, select};
-use crate::text::text_font;
 use crate::units::{Micrometres, STAFF_SPACE, Units};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,7 +53,7 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
     let labels = labels(score, &selection);
     let name_indent = labels
         .iter()
-        .map(|label| text_font().measure(&label.text, NAME_EM))
+        .map(|label| label.name.width())
         .max()
         .filter(|width| *width > Units::ZERO)
         .map_or(Units::ZERO, |width| width + NAME_GAP);
@@ -86,6 +85,7 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         bracket_space,
         name_indent,
         page: options.page,
+        meta: &score.meta,
     };
     let staff_space = fit.largest(requested, widest_fit)?;
     let template = Page::new(options.page, staff_space);
@@ -99,16 +99,10 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         labels: &labels,
         bracket,
     };
-    let block = title_block(
-        &score.meta,
-        BlockFrame {
-            left: frame.left,
-            right: frame.right,
-            top: frame.top,
-        },
-    );
+    let block = fit.block(staff_space);
     let mut pages: Vec<Page> = Vec::new();
     let mut crowded = Vec::new();
+    let mut dropped = Vec::new();
     let mut cursor = frame.bottom;
     if !block.items.is_empty() {
         let mut first = template.clone();
@@ -138,16 +132,20 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
                     .map(|plan| plan.index),
             );
         }
+        dropped.extend(drawn.dropped);
         if let Some(page) = pages.last_mut() {
             page.items.extend(drawn.items);
             page.systems.push(drawn.structure);
         }
         cursor += own.height;
     }
+    let title_page = pages.first().is_some_and(|page| page.systems.is_empty());
     Ok(DisplayList {
         pages,
         staff_space,
         crowded,
+        dropped,
+        title_page,
     })
 }
 
@@ -158,6 +156,13 @@ pub struct Fit<'a> {
     pub bracket_space: Units,
     pub name_indent: Units,
     pub page: PageSize,
+    pub meta: &'a ScoreMeta,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Heights {
+    pub tallest: Units,
+    pub first: Units,
 }
 
 impl Fit<'_> {
@@ -181,9 +186,23 @@ impl Fit<'_> {
         )
     }
 
-    pub fn tallest(&self, space: StaffSpace) -> Units {
+    pub fn block(&self, space: StaffSpace) -> TitleBlock {
         let frame = self.frame(space);
-        self.systems(&frame)
+        title_block(
+            self.meta,
+            BlockFrame {
+                left: frame.left,
+                right: frame.right,
+                top: frame.top,
+                bottom: frame.bottom,
+            },
+        )
+    }
+
+    pub fn heights(&self, space: StaffSpace) -> Heights {
+        let frame = self.frame(space);
+        let heights: Vec<Units> = self
+            .systems(&frame)
             .iter()
             .map(|system| {
                 stack(
@@ -194,13 +213,35 @@ impl Fit<'_> {
                 )
                 .height
             })
-            .max()
-            .unwrap_or_default()
+            .collect();
+        Heights {
+            tallest: heights.iter().copied().max().unwrap_or_default(),
+            first: heights.first().copied().unwrap_or_default(),
+        }
+    }
+
+    pub fn systems_fit(&self, space: StaffSpace) -> bool {
+        let frame = self.frame(space);
+        self.heights(space).tallest <= frame.bottom - frame.top
     }
 
     pub fn fits(&self, space: StaffSpace) -> bool {
         let frame = self.frame(space);
-        self.tallest(space) <= frame.bottom - frame.top
+        let room = frame.bottom - frame.top;
+        let heights = self.heights(space);
+        heights.tallest <= room && self.block(space).height + heights.first <= room
+    }
+
+    fn search(&self, low: i64, high: i64, test: &dyn Fn(StaffSpace) -> bool) -> i64 {
+        let (mut low, mut high) = (low, high);
+        while high - low > 1 {
+            let middle = low + (high - low) / 2;
+            match StaffSpace::new(Micrometres(middle)) {
+                Some(space) if test(space) => low = middle,
+                _ => high = middle,
+            }
+        }
+        low
     }
 
     pub fn largest(
@@ -216,19 +257,15 @@ impl Fit<'_> {
             .min(MIN_STAFF_SPACE)
             .min(upper.micrometres());
         let lowest = StaffSpace::new(floor).ok_or(LayoutError::PageTooSmall)?;
-        if !self.fits(lowest) {
+        let high = upper.micrometres().0;
+        let found = if self.fits(lowest) {
+            self.search(floor.0, high, &|space| self.fits(space))
+        } else if self.systems_fit(lowest) {
+            self.search(floor.0, high, &|space| self.systems_fit(space))
+        } else {
             return Err(LayoutError::PageTooSmall);
-        }
-        let mut low = floor.0;
-        let mut high = upper.micrometres().0;
-        while high - low > 1 {
-            let middle = low + (high - low) / 2;
-            match StaffSpace::new(Micrometres(middle)) {
-                Some(space) if self.fits(space) => low = middle,
-                _ => high = middle,
-            }
-        }
-        StaffSpace::new(Micrometres(low)).ok_or(LayoutError::PageTooSmall)
+        };
+        StaffSpace::new(Micrometres(found)).ok_or(LayoutError::PageTooSmall)
     }
 }
 

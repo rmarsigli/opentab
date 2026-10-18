@@ -39,8 +39,8 @@ pub use engine::layout;
 pub use furniture::StaffShape;
 pub use geometry::{
     BAR_LEAD, COLUMN_GAP, EMPTY_BAR, EMPTY_BAR_MINIMUM, END_PAD, ENDING_RISE, FOOTROOM, GROUP_GAP,
-    HEADROOM, MARGIN, MIN_COLUMN_GAP, MIN_STAFF_SPACE, NAME_MAX, STAFF_GAP, STANDARD_LINES,
-    TAB_LINE_SPACING,
+    HEADROOM, MARGIN, MIN_COLUMN_GAP, MIN_STAFF_SPACE, NAME_EM, NAME_MAX, STAFF_GAP,
+    STANDARD_LINES, TAB_LINE_SPACING,
 };
 pub use grid::{Grid, GridColumn};
 pub use lanes::{Band, BandLayout, LANE_GAP, LANE_HEIGHT, LANES, Lane, LanePlacement, LaneSet};

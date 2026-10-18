@@ -85,7 +85,7 @@ fn json_reports_the_pages_and_the_written_files() {
     assert_eq!(result.code, 0, "{}", result.stderr);
     assert_eq!(
         result.json(),
-        json!({"pages": 1, "systems": 1, "bars": 2, "staff_space": 1750, "crowded": [], "files": [path_str(&out)]})
+        json!({"pages": 1, "systems": 1, "bars": 2, "staff_space": 1750, "crowded": [], "dropped": [], "title_page": false, "files": [path_str(&out)]})
     );
     assert_eq!(file_names(dir.path()), vec!["song.svg"]);
 }
@@ -164,7 +164,7 @@ fn a_directory_out_names_pages_after_the_input() {
     let expected = dir.path().join("My.Song.svg");
     assert_eq!(
         single.json(),
-        json!({"pages": 1, "systems": 1, "bars": 1, "staff_space": 1750, "crowded": [], "files": [path_str(&expected)]})
+        json!({"pages": 1, "systems": 1, "bars": 1, "staff_space": 1750, "crowded": [], "dropped": [], "title_page": false, "files": [path_str(&expected)]})
     );
 }
 
@@ -342,6 +342,8 @@ fn render_help_documents_the_options_and_the_json_shape() {
         "\"systems\"",
         "\"staff_space\"",
         "\"crowded\"",
+        "\"dropped\"",
+        "\"title_page\"",
         "0.9 mm",
         "layout_limit",
         "Examples:",
@@ -511,6 +513,57 @@ fn a_bar_too_dense_for_any_line_is_reported_as_crowded() {
     ]);
     assert!(
         human.stdout.contains("crowded bars (notes may touch): 1"),
+        "{}",
+        human.stdout
+    );
+}
+
+#[test]
+fn tempo_marks_without_room_are_reported_as_dropped() {
+    let dir = temp();
+    let path = new_score(dir.path(), "tempi.opentab.json");
+    let mut score = read_json(&path);
+    let beat = score["tracks"][0]["staves"][0]["bars"][0]["voices"][0]["beats"][0].clone();
+    let mut next = score["ids"]["next"].as_u64().unwrap();
+    let beats: Vec<serde_json::Value> = (0..32)
+        .map(|_| {
+            let mut copy = beat.clone();
+            copy["id"] = json!(next);
+            copy["duration"]["value"] = json!("thirty_second");
+            next += 1;
+            copy
+        })
+        .collect();
+    let tempi: Vec<serde_json::Value> = (0..32)
+        .map(|at| json!({"position": [at, 32], "bpm": 100.0 + f64::from(at), "unit": "quarter"}))
+        .collect();
+    score["master_bars"][0]["tempo_changes"] = json!(tempi);
+    score["tracks"][0]["staves"][0]["bars"][0]["voices"][0]["beats"] = json!(beats);
+    score["ids"]["next"] = json!(next);
+    let input = dir.path().join("tempi-bar.opentab.json");
+    std::fs::write(&input, serde_json::to_string(&score).unwrap()).unwrap();
+    let (result, _out) = render_json(&input, &[]);
+    assert_eq!(result.code, 0, "{}", result.stdout);
+    let dropped = result.json()["dropped"].as_array().unwrap().clone();
+    assert!(!dropped.is_empty());
+    assert!(dropped.len() < 32);
+    for mark in &dropped {
+        assert_eq!(mark, &json!({"bar": 1, "kind": "tempo"}));
+    }
+    assert_eq!(result.json()["title_page"], json!(false));
+    let out = temp();
+    let human = run(&[
+        "render",
+        path_str(&input),
+        "--format",
+        "svg",
+        "--out",
+        path_str(&out.path().join("t.svg")),
+    ]);
+    assert!(
+        human
+            .stdout
+            .contains("marks left out for lack of room: tempo in bar 1"),
         "{}",
         human.stdout
     );

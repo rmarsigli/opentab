@@ -14,7 +14,7 @@ use crate::geometry::{
     ENDING_RISE, NAME_EM, NAME_GAP, NAME_MAX, NUMBER_EM, NUMBER_RISE,
 };
 use crate::glyphs::{BRACKET_BOTTOM, BRACKET_TOP, Metrics};
-use crate::marks::{SystemMarks, draw_marks};
+use crate::marks::{DroppedMark, Fitted, MarkOutput, SystemMarks, draw_marks, fit_line};
 use crate::notes::{TieRow, draw_bar};
 use crate::options::LayoutError;
 use crate::plan::{BarPlan, SystemPlan};
@@ -22,7 +22,6 @@ use crate::select::Selection;
 use crate::spacing::{Piece, place};
 use crate::structure::{BarLayout, ClefSign, Column, StaffKind, StaffLayout, SystemLayout};
 use crate::tab::{LinkAnchor, RowEnds, RowParts, TabNotation, TabRow, finish_row};
-use crate::text::text_font;
 use crate::ties::{TIE_END_GAP, TieAnchor, TieSpan, draw_ties};
 use crate::units::{Point, Rect, STAFF_SPACE, Units};
 
@@ -37,22 +36,14 @@ pub struct Context<'a> {
 
 pub struct Label {
     pub track: usize,
-    pub text: String,
-}
-
-pub fn fit_label(text: &str, max: Units) -> String {
-    let mut label: Vec<char> = text.chars().collect();
-    while !label.is_empty() && text_font().measure(&label.iter().collect::<String>(), NAME_EM) > max
-    {
-        label.pop();
-    }
-    label.into_iter().collect()
+    pub name: Fitted,
 }
 
 pub struct DrawnSystem {
     pub structure: SystemLayout,
     pub items: Vec<Primitive>,
     pub crowded: bool,
+    pub dropped: Vec<DroppedMark>,
 }
 
 pub fn labels(score: &Score, selection: &Selection) -> Vec<Label> {
@@ -72,7 +63,7 @@ pub fn labels(score: &Score, selection: &Selection) -> Vec<Label> {
             };
             Some(Label {
                 track: *index,
-                text: fit_label(name.trim(), max),
+                name: fit_line(name, NAME_EM, max)?,
             })
         })
         .collect()
@@ -327,6 +318,7 @@ pub fn draw_system(
         .first()
         .filter(|plan| index > 0 || plan.index > 0)
         .map(|plan| plan.number.to_string());
+    let mut marks = MarkOutput::default();
     draw_marks(
         &SystemMarks {
             plans,
@@ -336,8 +328,9 @@ pub fn draw_system(
             right: system.left + system.available,
             number,
         },
-        &mut items,
+        &mut marks,
     );
+    items.extend(marks.items);
     let structure = SystemLayout {
         index,
         rect: Rect::new(
@@ -358,6 +351,7 @@ pub fn draw_system(
         structure,
         items,
         crowded: placement.crowded,
+        dropped: marks.dropped,
     })
 }
 
@@ -555,15 +549,11 @@ pub fn names(
         let top = first.span().0;
         let bottom = last.span().1;
         let middle = top + (bottom - top).half();
-        items.push(text(
-            label.text.clone(),
-            Point {
-                x: edge,
-                y: middle + Units(NAME_EM.0 / 3),
-            },
-            NAME_EM,
-            TextAnchor::End,
-        ));
+        items.push(
+            label
+                .name
+                .run(edge - label.name.width(), middle + Units(NAME_EM.0 / 3)),
+        );
     }
 }
 

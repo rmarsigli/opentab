@@ -1,5 +1,6 @@
 use std::num::{NonZeroI64, NonZeroI128};
 
+use crate::marks::DroppedMark;
 use crate::structure::SystemLayout;
 use crate::units::{Micrometres, Point, Rect, STAFF_SPACE, Units, narrow, round_div};
 
@@ -75,6 +76,8 @@ pub struct DisplayList {
     pub pages: Vec<Page>,
     pub staff_space: StaffSpace,
     pub crowded: Vec<usize>,
+    pub dropped: Vec<DroppedMark>,
+    pub title_page: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

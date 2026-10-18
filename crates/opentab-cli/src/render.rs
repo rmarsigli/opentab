@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use opentab_layout::marks::{DroppedMark, MarkKind};
 use opentab_layout::{BarRange, DisplayList, LayoutError, LayoutOptions, StaffMode, layout};
 use opentab_model::Score;
 use opentab_render::{Ratio, RenderError, to_png, to_svg};
@@ -65,7 +66,35 @@ pub struct RenderedPages {
     bars: usize,
     staff_space: i64,
     crowded: Vec<usize>,
+    dropped: Vec<DroppedEntry>,
+    title_page: bool,
     files: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct DroppedEntry {
+    bar: usize,
+    kind: &'static str,
+}
+
+fn kind_name(kind: MarkKind) -> &'static str {
+    match kind {
+        MarkKind::Tempo => "tempo",
+        MarkKind::Section => "section",
+        MarkKind::Chord => "chord",
+        MarkKind::Text => "text",
+        MarkKind::Dynamic => "dynamic",
+    }
+}
+
+fn dropped_entries(dropped: &[DroppedMark]) -> Vec<DroppedEntry> {
+    dropped
+        .iter()
+        .map(|mark| DroppedEntry {
+            bar: mark.bar + 1,
+            kind: kind_name(mark.kind),
+        })
+        .collect()
 }
 
 pub struct RenderRequest<'a> {
@@ -146,6 +175,8 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
     let list = layout(&score, &options).map_err(layout_failure)?;
     let staff_space = list.staff_space.micrometres().0;
     let crowded: Vec<usize> = list.crowded.iter().map(|index| index + 1).collect();
+    let dropped = dropped_entries(&list.dropped);
+    let title_page = list.title_page;
     let count = list.pages.len();
     let systems = list.pages.iter().map(|page| page.systems.len()).sum();
     let bars = bar_count(&list);
@@ -197,6 +228,19 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
             numbers.join(", ")
         ));
     }
+    if !dropped.is_empty() {
+        let marks: Vec<String> = dropped
+            .iter()
+            .map(|mark| format!("{} in bar {}", mark.kind, mark.bar))
+            .collect();
+        lines.push(format!(
+            "marks left out for lack of room: {}",
+            marks.join(", ")
+        ));
+    }
+    if title_page {
+        lines.push("the title block fills page 1; the music starts on page 2".to_string());
+    }
     lines.extend(
         written
             .iter()
@@ -209,6 +253,8 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
             bars,
             staff_space,
             crowded,
+            dropped,
+            title_page,
             files: written,
         },
         human: lines.join("\n"),

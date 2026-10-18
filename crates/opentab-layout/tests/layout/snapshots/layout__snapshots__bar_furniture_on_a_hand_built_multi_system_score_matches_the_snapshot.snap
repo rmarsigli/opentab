@@ -1,39 +1,40 @@
 ---
 source: crates/opentab-layout/tests/layout/snapshots.rs
+assertion_line: 88
 expression: text
 ---
 page 0 staff space 1750 um
-system 0 13146,8777 114103,69483 natural 89515 available 100957
+system 0 12958,8777 114103,69483 natural 89515 available 101145
   staff track 0 staff 0 Standard top 12873 lines 5 spacing 1024
-    bar 0 number 0 group 33 13146,12873 26373,16969 content 20433 widths 12571 12571 Treble8vb ticks 1/4 [0@21457]
-    bar 1 number 1 group 43 26373,12873 48229,16969 content 28033 widths 23570 19232 Treble8vb ticks 4/4 [0@29057 1@33809 2@38561 3@43313]
-    bar 2 number 2 group 76 48229,12873 92277,16969 content 48229 widths 42972 38634 Treble8vb ticks 12/12 [0@51187 1@54566 2@57834 3@61101 4@64368 5@67635 6@70902 7@74281 8@77548 9@80815 10@84083 11@87350]
-    bar 3 number 3 group 77 92277,12873 97767,16969 content 92277 widths 9172 4834 Treble8vb ticks 1/1 []
-    bar 4 number 4 group 85 97767,12873 114103,16969 content 97767 widths 18582 14244 Treble8vb ticks 8/8 [0@98791 3@104137 4@107998]
+    bar 0 number 0 group 33 12958,12873 26195,16969 content 20245 widths 12571 12571 Treble8vb ticks 1/4 [0@21269]
+    bar 1 number 1 group 43 26195,12873 48095,16969 content 27855 widths 23570 19232 Treble8vb ticks 4/4 [0@28879 1@33642 2@38405 3@43168]
+    bar 2 number 2 group 76 48095,12873 92232,16969 content 48095 widths 42972 38634 Treble8vb ticks 12/12 [0@51053 1@54440 2@57714 3@60989 4@64263 5@67538 6@70812 7@74199 8@77474 9@80748 10@84023 11@87297]
+    bar 3 number 3 group 77 92232,12873 97733,16969 content 92232 widths 9172 4834 Treble8vb ticks 1/1 []
+    bar 4 number 4 group 85 97733,12873 114103,16969 content 97733 widths 18582 14244 Treble8vb ticks 8/8 [0@98757 3@104115 4@107985]
   staff track 0 staff 0 Tab top 25451 lines 6 spacing 1536
-    bar 0 number 0 group 33 13146,25451 26373,33131 content 20433 widths 12571 12571 Tab ticks 1/4 [0@21457]
-    bar 1 number 1 group 43 26373,25451 48229,33131 content 28033 widths 23570 19232 Tab ticks 4/4 [0@29057 1@33809 2@38561 3@43313]
-    bar 2 number 2 group 76 48229,25451 92277,33131 content 48229 widths 42972 38634 Tab ticks 12/12 [0@51187 1@54566 2@57834 3@61101 4@64368 5@67635 6@70902 7@74281 8@77548 9@80815 10@84083 11@87350]
-    bar 3 number 3 group 77 92277,25451 97767,33131 content 92277 widths 9172 4834 Tab ticks 1/1 []
-    bar 4 number 4 group 85 97767,25451 114103,33131 content 97767 widths 18582 14244 Tab ticks 8/8 [0@98791 3@104137 4@107998]
+    bar 0 number 0 group 33 12958,25451 26195,33131 content 20245 widths 12571 12571 Tab ticks 1/4 [0@21269]
+    bar 1 number 1 group 43 26195,25451 48095,33131 content 27855 widths 23570 19232 Tab ticks 4/4 [0@28879 1@33642 2@38405 3@43168]
+    bar 2 number 2 group 76 48095,25451 92232,33131 content 48095 widths 42972 38634 Tab ticks 12/12 [0@51053 1@54440 2@57714 3@60989 4@64263 5@67538 6@70812 7@74199 8@77474 9@80748 10@84023 11@87297]
+    bar 3 number 3 group 77 92232,25451 97733,33131 content 92232 widths 9172 4834 Tab ticks 1/1 []
+    bar 4 number 4 group 85 97733,25451 114103,33131 content 97733 widths 18582 14244 Tab ticks 8/8 [0@98757 3@104115 4@107985]
   staff track 1 staff 0 Standard top 40299 lines 5 spacing 1024
-    bar 0 number 0 group 311 13146,40299 26373,44395 content 20433 widths 12571 12571 Bass ticks 1/4 [0@21457]
-    bar 1 number 1 group 312 26373,40299 48229,44395 content 28033 widths 23570 19232 Bass ticks 4/4 [0@29057 1@33809 2@38561 3@43313]
-    bar 2 number 2 group 313 48229,40299 92277,44395 content 48229 widths 42972 38634 Bass ticks 12/12 [0@51187 1@54566 2@57834 3@61101 4@64368 5@67635 6@70902 7@74281 8@77548 9@80815 10@84083 11@87350]
-    bar 3 number 3 group 314 92277,40299 97767,44395 content 92277 widths 9172 4834 Bass ticks 1/1 []
-    bar 4 number 4 group 315 97767,40299 114103,44395 content 97767 widths 18582 14244 Bass ticks 8/8 [0@98791 3@104137 4@107998]
+    bar 0 number 0 group 311 12958,40299 26195,44395 content 20245 widths 12571 12571 Bass ticks 1/4 [0@21269]
+    bar 1 number 1 group 312 26195,40299 48095,44395 content 27855 widths 23570 19232 Bass ticks 4/4 [0@28879 1@33642 2@38405 3@43168]
+    bar 2 number 2 group 313 48095,40299 92232,44395 content 48095 widths 42972 38634 Bass ticks 12/12 [0@51053 1@54440 2@57714 3@60989 4@64263 5@67538 6@70812 7@74199 8@77474 9@80748 10@84023 11@87297]
+    bar 3 number 3 group 314 92232,40299 97733,44395 content 92232 widths 9172 4834 Bass ticks 1/1 []
+    bar 4 number 4 group 315 97733,40299 114103,44395 content 97733 widths 18582 14244 Bass ticks 8/8 [0@98757 3@104115 4@107985]
   staff track 1 staff 0 Tab top 50539 lines 4 spacing 1536
-    bar 0 number 0 group 311 13146,50539 26373,55147 content 20433 widths 12571 12571 Tab ticks 1/4 [0@21457]
-    bar 1 number 1 group 312 26373,50539 48229,55147 content 28033 widths 23570 19232 Tab ticks 4/4 [0@29057 1@33809 2@38561 3@43313]
-    bar 2 number 2 group 313 48229,50539 92277,55147 content 48229 widths 42972 38634 Tab ticks 12/12 [0@51187 1@54566 2@57834 3@61101 4@64368 5@67635 6@70902 7@74281 8@77548 9@80815 10@84083 11@87350]
-    bar 3 number 3 group 314 92277,50539 97767,55147 content 92277 widths 9172 4834 Tab ticks 1/1 []
-    bar 4 number 4 group 315 97767,50539 114103,55147 content 97767 widths 18582 14244 Tab ticks 8/8 [0@98791 3@104137 4@107998]
+    bar 0 number 0 group 311 12958,50539 26195,55147 content 20245 widths 12571 12571 Tab ticks 1/4 [0@21269]
+    bar 1 number 1 group 312 26195,50539 48095,55147 content 27855 widths 23570 19232 Tab ticks 4/4 [0@28879 1@33642 2@38405 3@43168]
+    bar 2 number 2 group 313 48095,50539 92232,55147 content 48095 widths 42972 38634 Tab ticks 12/12 [0@51053 1@54440 2@57714 3@60989 4@64263 5@67538 6@70812 7@74199 8@77474 9@80748 10@84023 11@87297]
+    bar 3 number 3 group 314 92232,50539 97733,55147 content 92232 widths 9172 4834 Tab ticks 1/1 []
+    bar 4 number 4 group 315 97733,50539 114103,55147 content 97733 widths 18582 14244 Tab ticks 8/8 [0@98757 3@104115 4@107985]
   staff track 2 staff 0 Standard top 62315 lines 5 spacing 1024
-    bar 0 number 0 group 336 13146,62315 26373,66411 content 20433 widths 12571 12571 Neutral ticks 1/4 [0@21457]
-    bar 1 number 1 group 337 26373,62315 48229,66411 content 28033 widths 23570 19232 Neutral ticks 4/4 [0@29057 1@33809 2@38561 3@43313]
-    bar 2 number 2 group 338 48229,62315 92277,66411 content 48229 widths 42972 38634 Neutral ticks 12/12 [0@51187 1@54566 2@57834 3@61101 4@64368 5@67635 6@70902 7@74281 8@77548 9@80815 10@84083 11@87350]
-    bar 3 number 3 group 339 92277,62315 97767,66411 content 92277 widths 9172 4834 Neutral ticks 1/1 []
-    bar 4 number 4 group 340 97767,62315 114103,66411 content 97767 widths 18582 14244 Neutral ticks 8/8 [0@98791 3@104137 4@107998]
+    bar 0 number 0 group 336 12958,62315 26195,66411 content 20245 widths 12571 12571 Neutral ticks 1/4 [0@21269]
+    bar 1 number 1 group 337 26195,62315 48095,66411 content 27855 widths 23570 19232 Neutral ticks 4/4 [0@28879 1@33642 2@38405 3@43168]
+    bar 2 number 2 group 338 48095,62315 92232,66411 content 48095 widths 42972 38634 Neutral ticks 12/12 [0@51053 1@54440 2@57714 3@60989 4@64263 5@67538 6@70812 7@74199 8@77474 9@80748 10@84023 11@87297]
+    bar 3 number 3 group 339 92232,62315 97733,66411 content 92232 widths 9172 4834 Neutral ticks 1/1 []
+    bar 4 number 4 group 340 97733,62315 114103,66411 content 97733 widths 18582 14244 Neutral ticks 8/8 [0@98757 3@104115 4@107985]
 system 1 9801,69483 114103,130393 natural 92340 available 104302
   staff track 0 staff 0 Standard top 73783 lines 5 spacing 1024
     bar 5 number 5 group 95 9801,73783 39861,77879 content 19379 widths 27150 23324 Treble8vb ticks 4/4 [0@20403 1@25226 2@30050 3@34874]
@@ -61,359 +62,359 @@ system 1 9801,69483 114103,130393 natural 92340 available 104302
     bar 7 number 7 group 343 83003,123225 92791,127321 content 87803 widths 12886 9060 Neutral ticks 1/1 []
     bar 8 number 8 group 344 92791,123225 114103,127321 content 97129 widths 18992 18992 Neutral ticks 8/8 [0@98563 3@103990 4@107909]
 group 5
-  line 13146,12873 114103,12873 thick 133
-  line 13146,13897 114103,13897 thick 133
-  line 13146,14921 114103,14921 thick 133
-  line 13146,15945 114103,15945 thick 133
-  line 13146,16969 114103,16969 thick 133
+  line 12958,12873 114103,12873 thick 133
+  line 12958,13897 114103,13897 thick 133
+  line 12958,14921 114103,14921 thick 133
+  line 12958,15945 114103,15945 thick 133
+  line 12958,16969 114103,16969 thick 133
   group 33
-    glyph U+E052 13658,15945 size 1024
-    glyph U+E084 17484,13897 size 1024
-    glyph U+E084 17484,15945 size 1024
+    glyph U+E052 13470,15945 size 1024
+    glyph U+E084 17296,13897 size 1024
+    glyph U+E084 17296,15945 size 1024
     group 32
       group 31
-        glyph U+E0A4 21457,15945 size 1024
-      line 22603,15773 22603,12361 thick 123
+        glyph U+E0A4 21269,15945 size 1024
+      line 22415,15773 22415,12361 thick 123
   group 43
-    line 26629,12873 26629,16969 thick 512
-    line 27377,12873 27377,16969 thick 164
-    glyph U+E044 27623,14409 size 1024
-    glyph U+E044 27623,15433 size 1024
-    line 48147,12873 48147,16969 thick 164
+    line 26451,12873 26451,16969 thick 512
+    line 27199,12873 27199,16969 thick 164
+    glyph U+E044 27445,14409 size 1024
+    glyph U+E044 27445,15433 size 1024
+    line 48013,12873 48013,16969 thick 164
     group 36
       group 35
-        glyph U+E0A4 29057,15945 size 1024
-      line 30203,15773 30203,12361 thick 123
+        glyph U+E0A4 28879,15945 size 1024
+      line 30025,15773 30025,12361 thick 123
     group 38
       group 37
-        glyph U+E0A4 33809,15945 size 1024
-      line 34955,15773 34955,12361 thick 123
+        glyph U+E0A4 33642,15945 size 1024
+      line 34788,15773 34788,12361 thick 123
     group 40
       group 39
-        glyph U+E0A4 38561,15945 size 1024
-      line 39707,15773 39707,12361 thick 123
+        glyph U+E0A4 38405,15945 size 1024
+      line 39551,15773 39551,12361 thick 123
     group 42
       group 41
-        glyph U+E0A4 43313,15945 size 1024
-      line 44459,15773 44459,12361 thick 123
+        glyph U+E0A4 43168,15945 size 1024
+      line 44314,15773 44314,12361 thick 123
   group 76
-    line 92021,12873 92021,16969 thick 512
-    line 91273,12873 91273,16969 thick 164
-    glyph U+E044 90617,14409 size 1024
-    glyph U+E044 90617,15433 size 1024
+    line 91976,12873 91976,16969 thick 512
+    line 91228,12873 91228,16969 thick 164
+    glyph U+E044 90572,14409 size 1024
+    glyph U+E044 90572,15433 size 1024
     group 46
       group 45
-        glyph U+E0A4 49253,15945 size 716
-      line 50055,15825 50055,13439 thick 86
-      glyph U+E242 50012,13376 size 716
-      line 49551,15135 50931,13946 thick 86
+        glyph U+E0A4 49119,15945 size 716
+      line 49921,15825 49921,13439 thick 86
+      glyph U+E242 49878,13376 size 716
+      line 49417,15135 50797,13946 thick 86
     group 48
       group 47
-        glyph U+E0A3 52395,15945 size 1024
-      line 53541,15773 53541,12361 thick 123
+        glyph U+E0A3 52261,15945 size 1024
+      line 53407,15773 53407,12361 thick 123
     group 50
       group 49
-        glyph U+E0A3 72110,15945 size 1024
-      line 73256,15773 73256,12361 thick 123
+        glyph U+E0A3 72020,15945 size 1024
+      line 73166,15773 73166,12361 thick 123
     group 53
       group 52
-        glyph U+E0A4 51187,15945 size 1024
-      line 51249,16117 51249,19529 thick 123
+        glyph U+E0A4 51053,15945 size 1024
+      line 51115,16117 51115,19529 thick 123
     group 55
       group 54
-        glyph U+E0A4 54566,15945 size 1024
-      line 54628,16117 54628,19529 thick 123
+        glyph U+E0A4 54440,15945 size 1024
+      line 54502,16117 54502,19529 thick 123
     group 57
       group 56
-        glyph U+E0A4 57834,15945 size 1024
-      line 57896,16117 57896,19529 thick 123
+        glyph U+E0A4 57714,15945 size 1024
+      line 57776,16117 57776,19529 thick 123
     group 59
       group 58
-        glyph U+E0A4 61101,15945 size 1024
-      line 61163,16117 61163,19529 thick 123
+        glyph U+E0A4 60989,15945 size 1024
+      line 61051,16117 61051,19529 thick 123
     group 61
       group 60
-        glyph U+E0A4 64368,15945 size 1024
-      line 64430,16117 64430,19529 thick 123
+        glyph U+E0A4 64263,15945 size 1024
+      line 64325,16117 64325,19529 thick 123
     group 63
       group 62
-        glyph U+E0A4 67635,15945 size 1024
-      line 67697,16117 67697,19529 thick 123
+        glyph U+E0A4 67538,15945 size 1024
+      line 67600,16117 67600,19529 thick 123
     group 65
       group 64
-        glyph U+E0A4 70902,15945 size 1024
-      line 70964,16117 70964,19529 thick 123
+        glyph U+E0A4 70812,15945 size 1024
+      line 70874,16117 70874,19529 thick 123
     group 67
       group 66
-        glyph U+E0A4 74281,15945 size 1024
-      line 74343,16117 74343,19529 thick 123
+        glyph U+E0A4 74199,15945 size 1024
+      line 74261,16117 74261,19529 thick 123
     group 69
       group 68
-        glyph U+E0A4 77548,15945 size 1024
-      line 77610,16117 77610,19529 thick 123
+        glyph U+E0A4 77474,15945 size 1024
+      line 77536,16117 77536,19529 thick 123
     group 71
       group 70
-        glyph U+E0A4 80815,15945 size 1024
-      line 80877,16117 80877,19529 thick 123
+        glyph U+E0A4 80748,15945 size 1024
+      line 80810,16117 80810,19529 thick 123
     group 73
       group 72
-        glyph U+E0A4 84083,15945 size 1024
-      line 84145,16117 84145,19529 thick 123
+        glyph U+E0A4 84023,15945 size 1024
+      line 84085,16117 84085,19529 thick 123
     group 75
       group 74
-        glyph U+E0A4 87350,15945 size 1024
-      line 87412,16117 87412,19529 thick 123
-    shape Fill [MoveTo(Point { x: Units(51187), y: Units(19529) }), LineTo(Point { x: Units(57958), y: Units(19529) }), LineTo(Point { x: Units(57958), y: Units(19017) }), LineTo(Point { x: Units(51187), y: Units(19017) }), Close]
-    shape Fill [MoveTo(Point { x: Units(61101), y: Units(19529) }), LineTo(Point { x: Units(67759), y: Units(19529) }), LineTo(Point { x: Units(67759), y: Units(19017) }), LineTo(Point { x: Units(61101), y: Units(19017) }), Close]
-    shape Fill [MoveTo(Point { x: Units(70902), y: Units(19529) }), LineTo(Point { x: Units(77672), y: Units(19529) }), LineTo(Point { x: Units(77672), y: Units(19017) }), LineTo(Point { x: Units(70902), y: Units(19017) }), Close]
-    shape Fill [MoveTo(Point { x: Units(80815), y: Units(19529) }), LineTo(Point { x: Units(87474), y: Units(19529) }), LineTo(Point { x: Units(87474), y: Units(19017) }), LineTo(Point { x: Units(80815), y: Units(19017) }), Close]
-    glyph U+E883 54488,21867 size 1024
-    line 51187,20570 51187,21082 thick 164
-    line 51187,21082 54232,21082 thick 164
-    line 55998,21082 59042,21082 thick 164
-    line 59042,21082 59042,20570 thick 164
-    glyph U+E883 64345,21867 size 1024
-    line 61101,20570 61101,21082 thick 164
-    line 61101,21082 64089,21082 thick 164
-    line 65855,21082 68843,21082 thick 164
-    line 68843,21082 68843,20570 thick 164
-    glyph U+E883 74202,21867 size 1024
-    line 70902,20570 70902,21082 thick 164
-    line 70902,21082 73946,21082 thick 164
-    line 75712,21082 78756,21082 thick 164
-    line 78756,21082 78756,20570 thick 164
-    glyph U+E883 84060,21867 size 1024
-    line 80815,20570 80815,21082 thick 164
-    line 80815,21082 83804,21082 thick 164
-    line 85570,21082 88558,21082 thick 164
-    line 88558,21082 88558,20570 thick 164
+        glyph U+E0A4 87297,15945 size 1024
+      line 87359,16117 87359,19529 thick 123
+    shape Fill [MoveTo(Point { x: Units(51053), y: Units(19529) }), LineTo(Point { x: Units(57838), y: Units(19529) }), LineTo(Point { x: Units(57838), y: Units(19017) }), LineTo(Point { x: Units(51053), y: Units(19017) }), Close]
+    shape Fill [MoveTo(Point { x: Units(60989), y: Units(19529) }), LineTo(Point { x: Units(67662), y: Units(19529) }), LineTo(Point { x: Units(67662), y: Units(19017) }), LineTo(Point { x: Units(60989), y: Units(19017) }), Close]
+    shape Fill [MoveTo(Point { x: Units(70812), y: Units(19529) }), LineTo(Point { x: Units(77598), y: Units(19529) }), LineTo(Point { x: Units(77598), y: Units(19017) }), LineTo(Point { x: Units(70812), y: Units(19017) }), Close]
+    shape Fill [MoveTo(Point { x: Units(80748), y: Units(19529) }), LineTo(Point { x: Units(87421), y: Units(19529) }), LineTo(Point { x: Units(87421), y: Units(19017) }), LineTo(Point { x: Units(80748), y: Units(19017) }), Close]
+    glyph U+E883 54361,21867 size 1024
+    line 51053,20570 51053,21082 thick 164
+    line 51053,21082 54105,21082 thick 164
+    line 55871,21082 58922,21082 thick 164
+    line 58922,21082 58922,20570 thick 164
+    glyph U+E883 64241,21867 size 1024
+    line 60989,20570 60989,21082 thick 164
+    line 60989,21082 63985,21082 thick 164
+    line 65751,21082 68746,21082 thick 164
+    line 68746,21082 68746,20570 thick 164
+    glyph U+E883 74120,21867 size 1024
+    line 70812,20570 70812,21082 thick 164
+    line 70812,21082 73864,21082 thick 164
+    line 75630,21082 78682,21082 thick 164
+    line 78682,21082 78682,20570 thick 164
+    glyph U+E883 84000,21867 size 1024
+    line 80748,20570 80748,21082 thick 164
+    line 80748,21082 83744,21082 thick 164
+    line 85510,21082 88505,21082 thick 164
+    line 88505,21082 88505,20570 thick 164
   group 77
-    line 97685,12873 97685,16969 thick 164
-    line 97111,12873 97111,16969 thick 164
+    line 97651,12873 97651,16969 thick 164
+    line 97077,12873 97077,16969 thick 164
   group 85
     line 114021,12873 114021,16969 thick 164
     group 80
       group 79
-        glyph U+E0A4 98791,15945 size 1024
-      glyph U+E1E7 100408,15433 size 1024
-      line 99937,15773 99937,12361 thick 123
+        glyph U+E0A4 98757,15945 size 1024
+      glyph U+E1E7 100374,15433 size 1024
+      line 99903,15773 99903,12361 thick 123
     group 82
       group 81
-        glyph U+E0A4 104137,15945 size 1024
-      line 105283,15773 105283,12361 thick 123
-      glyph U+E240 105221,12320 size 1024
+        glyph U+E0A4 104115,15945 size 1024
+      line 105261,15773 105261,12361 thick 123
+      glyph U+E240 105199,12320 size 1024
     group 84
       group 83
-        glyph U+E0A3 107998,15945 size 1024
-      line 109144,15773 109144,12361 thick 123
-  line 13146,25451 114103,25451 thick 133
-  line 13146,26987 114103,26987 thick 133
-  line 13146,28523 114103,28523 thick 133
-  line 13146,30059 114103,30059 thick 133
-  line 13146,31595 114103,31595 thick 133
-  line 13146,33131 114103,33131 thick 133
+        glyph U+E0A3 107985,15945 size 1024
+      line 109131,15773 109131,12361 thick 123
+  line 12958,25451 114103,25451 thick 133
+  line 12958,26987 114103,26987 thick 133
+  line 12958,28523 114103,28523 thick 133
+  line 12958,30059 114103,30059 thick 133
+  line 12958,31595 114103,31595 thick 133
+  line 12958,33131 114103,33131 thick 133
   group 33
-    glyph U+E06D 13658,29291 size 1016
-    glyph U+E084 17484,28267 size 1024
-    glyph U+E084 17484,30315 size 1024
+    glyph U+E06D 13470,29291 size 1016
+    glyph U+E084 17296,28267 size 1024
+    glyph U+E084 17296,30315 size 1024
     group 32
       group 31
-        rect 21526,27862 22596,29184 White
-        text "0" 22061,29013 em 1536 Middle Text
+        rect 21338,27862 22408,29184 White
+        text "0" 21873,29013 em 1536 Middle Text
   group 43
-    line 26629,25451 26629,33131 thick 512
-    line 27377,25451 27377,33131 thick 164
-    glyph U+E044 27623,27755 size 1024
-    glyph U+E044 27623,30827 size 1024
-    line 48147,25451 48147,33131 thick 164
+    line 26451,25451 26451,33131 thick 512
+    line 27199,25451 27199,33131 thick 164
+    glyph U+E044 27445,27755 size 1024
+    glyph U+E044 27445,30827 size 1024
+    line 48013,25451 48013,33131 thick 164
     group 36
       group 35
-        rect 29126,27862 30196,29184 White
-        text "0" 29661,29013 em 1536 Middle Text
+        rect 28948,27862 30018,29184 White
+        text "0" 29483,29013 em 1536 Middle Text
     group 38
       group 37
-        rect 33878,27862 34948,29184 White
-        text "0" 34413,29013 em 1536 Middle Text
+        rect 33711,27862 34781,29184 White
+        text "0" 34246,29013 em 1536 Middle Text
     group 40
       group 39
-        rect 38630,27862 39700,29184 White
-        text "0" 39165,29013 em 1536 Middle Text
+        rect 38474,27862 39544,29184 White
+        text "0" 39009,29013 em 1536 Middle Text
     group 42
       group 41
-        rect 43382,27862 44452,29184 White
-        text "0" 43917,29013 em 1536 Middle Text
+        rect 43237,27862 44307,29184 White
+        text "0" 43772,29013 em 1536 Middle Text
   group 76
-    line 92021,25451 92021,33131 thick 512
-    line 91273,25451 91273,33131 thick 164
-    glyph U+E044 90617,27755 size 1024
-    glyph U+E044 90617,30827 size 1024
+    line 91976,25451 91976,33131 thick 512
+    line 91228,25451 91228,33131 thick 164
+    glyph U+E044 90572,27755 size 1024
+    glyph U+E044 90572,30827 size 1024
     group 46
       group 45
-        rect 49256,28014 50096,29032 White
-        text "0" 49676,28865 em 1074 Middle Text
+        rect 49122,28014 49962,29032 White
+        text "0" 49542,28865 em 1074 Middle Text
     group 48
       group 47
-        rect 51256,27862 52326,29184 White
-        text "0" 51791,29013 em 1536 Middle Text
+        rect 51122,27862 52192,29184 White
+        text "0" 51657,29013 em 1536 Middle Text
     group 50
       group 49
-        rect 70971,27862 72041,29184 White
-        text "0" 71506,29013 em 1536 Middle Text
+        rect 70881,27862 71951,29184 White
+        text "0" 71416,29013 em 1536 Middle Text
     group 53
       group 52
-        rect 52530,27862 53600,29184 White
-        text "0" 53065,29013 em 1536 Middle Text
+        rect 52396,27862 53466,29184 White
+        text "0" 52931,29013 em 1536 Middle Text
     group 55
       group 54
-        rect 54635,27862 55705,29184 White
-        text "0" 55170,29013 em 1536 Middle Text
+        rect 54509,27862 55579,29184 White
+        text "0" 55044,29013 em 1536 Middle Text
     group 57
       group 56
-        rect 57903,27862 58973,29184 White
-        text "0" 58438,29013 em 1536 Middle Text
+        rect 57783,27862 58853,29184 White
+        text "0" 58318,29013 em 1536 Middle Text
     group 59
       group 58
-        rect 61170,27862 62240,29184 White
-        text "0" 61705,29013 em 1536 Middle Text
+        rect 61058,27862 62128,29184 White
+        text "0" 61593,29013 em 1536 Middle Text
     group 61
       group 60
-        rect 64437,27862 65507,29184 White
-        text "0" 64972,29013 em 1536 Middle Text
+        rect 64332,27862 65402,29184 White
+        text "0" 64867,29013 em 1536 Middle Text
     group 63
       group 62
-        rect 67704,27862 68774,29184 White
-        text "0" 68239,29013 em 1536 Middle Text
+        rect 67607,27862 68677,29184 White
+        text "0" 68142,29013 em 1536 Middle Text
     group 65
       group 64
-        rect 72245,27862 73315,29184 White
-        text "0" 72780,29013 em 1536 Middle Text
+        rect 72155,27862 73225,29184 White
+        text "0" 72690,29013 em 1536 Middle Text
     group 67
       group 66
-        rect 74350,27862 75420,29184 White
-        text "0" 74885,29013 em 1536 Middle Text
+        rect 74268,27862 75338,29184 White
+        text "0" 74803,29013 em 1536 Middle Text
     group 69
       group 68
-        rect 77617,27862 78687,29184 White
-        text "0" 78152,29013 em 1536 Middle Text
+        rect 77543,27862 78613,29184 White
+        text "0" 78078,29013 em 1536 Middle Text
     group 71
       group 70
-        rect 80884,27862 81954,29184 White
-        text "0" 81419,29013 em 1536 Middle Text
+        rect 80817,27862 81887,29184 White
+        text "0" 81352,29013 em 1536 Middle Text
     group 73
       group 72
-        rect 84152,27862 85222,29184 White
-        text "0" 84687,29013 em 1536 Middle Text
+        rect 84092,27862 85162,29184 White
+        text "0" 84627,29013 em 1536 Middle Text
     group 75
       group 74
-        rect 87419,27862 88489,29184 White
-        text "0" 87954,29013 em 1536 Middle Text
+        rect 87366,27862 88436,29184 White
+        text "0" 87901,29013 em 1536 Middle Text
   group 77
-    line 97685,25451 97685,33131 thick 164
-    line 97111,25451 97111,33131 thick 164
+    line 97651,25451 97651,33131 thick 164
+    line 97077,25451 97077,33131 thick 164
   group 85
     line 114021,25451 114021,33131 thick 164
     group 80
       group 79
-        rect 98860,27862 99930,29184 White
-        text "0" 99395,29013 em 1536 Middle Text
+        rect 98826,27862 99896,29184 White
+        text "0" 99361,29013 em 1536 Middle Text
     group 82
       group 81
-        rect 104206,27862 105276,29184 White
-        text "0" 104741,29013 em 1536 Middle Text
+        rect 104184,27862 105254,29184 White
+        text "0" 104719,29013 em 1536 Middle Text
     group 84
       group 83
-        rect 108067,27862 109137,29184 White
-        text "0" 108602,29013 em 1536 Middle Text
+        rect 108054,27862 109124,29184 White
+        text "0" 108589,29013 em 1536 Middle Text
 group 310
-  line 13146,40299 114103,40299 thick 133
-  line 13146,41323 114103,41323 thick 133
-  line 13146,42347 114103,42347 thick 133
-  line 13146,43371 114103,43371 thick 133
-  line 13146,44395 114103,44395 thick 133
+  line 12958,40299 114103,40299 thick 133
+  line 12958,41323 114103,41323 thick 133
+  line 12958,42347 114103,42347 thick 133
+  line 12958,43371 114103,43371 thick 133
+  line 12958,44395 114103,44395 thick 133
   group 311
-    glyph U+E062 13658,41323 size 1024
-    glyph U+E084 17484,41323 size 1024
-    glyph U+E084 17484,43371 size 1024
+    glyph U+E062 13470,41323 size 1024
+    glyph U+E084 17296,41323 size 1024
+    glyph U+E084 17296,43371 size 1024
   group 312
-    line 26629,40299 26629,44395 thick 512
-    line 27377,40299 27377,44395 thick 164
-    glyph U+E044 27623,41835 size 1024
-    glyph U+E044 27623,42859 size 1024
-    line 48147,40299 48147,44395 thick 164
+    line 26451,40299 26451,44395 thick 512
+    line 27199,40299 27199,44395 thick 164
+    glyph U+E044 27445,41835 size 1024
+    glyph U+E044 27445,42859 size 1024
+    line 48013,40299 48013,44395 thick 164
   group 313
-    line 92021,40299 92021,44395 thick 512
-    line 91273,40299 91273,44395 thick 164
-    glyph U+E044 90617,41835 size 1024
-    glyph U+E044 90617,42859 size 1024
+    line 91976,40299 91976,44395 thick 512
+    line 91228,40299 91228,44395 thick 164
+    glyph U+E044 90572,41835 size 1024
+    glyph U+E044 90572,42859 size 1024
   group 314
-    line 97685,40299 97685,44395 thick 164
-    line 97111,40299 97111,44395 thick 164
+    line 97651,40299 97651,44395 thick 164
+    line 97077,40299 97077,44395 thick 164
   group 315
     line 114021,40299 114021,44395 thick 164
-  line 13146,50539 114103,50539 thick 133
-  line 13146,52075 114103,52075 thick 133
-  line 13146,53611 114103,53611 thick 133
-  line 13146,55147 114103,55147 thick 133
+  line 12958,50539 114103,50539 thick 133
+  line 12958,52075 114103,52075 thick 133
+  line 12958,53611 114103,53611 thick 133
+  line 12958,55147 114103,55147 thick 133
   group 311
-    glyph U+E06E 13658,52843 size 911
-    glyph U+E084 17484,51819 size 1024
-    glyph U+E084 17484,53867 size 1024
+    glyph U+E06E 13470,52843 size 911
+    glyph U+E084 17296,51819 size 1024
+    glyph U+E084 17296,53867 size 1024
   group 312
-    line 26629,50539 26629,55147 thick 512
-    line 27377,50539 27377,55147 thick 164
-    glyph U+E044 27623,51307 size 1024
-    glyph U+E044 27623,54379 size 1024
-    line 48147,50539 48147,55147 thick 164
+    line 26451,50539 26451,55147 thick 512
+    line 27199,50539 27199,55147 thick 164
+    glyph U+E044 27445,51307 size 1024
+    glyph U+E044 27445,54379 size 1024
+    line 48013,50539 48013,55147 thick 164
   group 313
-    line 92021,50539 92021,55147 thick 512
-    line 91273,50539 91273,55147 thick 164
-    glyph U+E044 90617,51307 size 1024
-    glyph U+E044 90617,54379 size 1024
+    line 91976,50539 91976,55147 thick 512
+    line 91228,50539 91228,55147 thick 164
+    glyph U+E044 90572,51307 size 1024
+    glyph U+E044 90572,54379 size 1024
   group 314
-    line 97685,50539 97685,55147 thick 164
-    line 97111,50539 97111,55147 thick 164
+    line 97651,50539 97651,55147 thick 164
+    line 97077,50539 97077,55147 thick 164
   group 315
     line 114021,50539 114021,55147 thick 164
 group 335
-  line 13146,62315 114103,62315 thick 133
-  line 13146,63339 114103,63339 thick 133
-  line 13146,64363 114103,64363 thick 133
-  line 13146,65387 114103,65387 thick 133
-  line 13146,66411 114103,66411 thick 133
+  line 12958,62315 114103,62315 thick 133
+  line 12958,63339 114103,63339 thick 133
+  line 12958,64363 114103,64363 thick 133
+  line 12958,65387 114103,65387 thick 133
+  line 12958,66411 114103,66411 thick 133
   group 336
-    glyph U+E069 13658,64363 size 1024
-    glyph U+E084 17484,63339 size 1024
-    glyph U+E084 17484,65387 size 1024
+    glyph U+E069 13470,64363 size 1024
+    glyph U+E084 17296,63339 size 1024
+    glyph U+E084 17296,65387 size 1024
   group 337
-    line 26629,62315 26629,66411 thick 512
-    line 27377,62315 27377,66411 thick 164
-    glyph U+E044 27623,63851 size 1024
-    glyph U+E044 27623,64875 size 1024
-    line 48147,62315 48147,66411 thick 164
+    line 26451,62315 26451,66411 thick 512
+    line 27199,62315 27199,66411 thick 164
+    glyph U+E044 27445,63851 size 1024
+    glyph U+E044 27445,64875 size 1024
+    line 48013,62315 48013,66411 thick 164
   group 338
-    line 92021,62315 92021,66411 thick 512
-    line 91273,62315 91273,66411 thick 164
-    glyph U+E044 90617,63851 size 1024
-    glyph U+E044 90617,64875 size 1024
+    line 91976,62315 91976,66411 thick 512
+    line 91228,62315 91228,66411 thick 164
+    glyph U+E044 90572,63851 size 1024
+    glyph U+E044 90572,64875 size 1024
   group 339
-    line 97685,62315 97685,66411 thick 164
-    line 97111,62315 97111,66411 thick 164
+    line 97651,62315 97651,66411 thick 164
+    line 97077,62315 97077,66411 thick 164
   group 340
     line 114021,62315 114021,66411 thick 164
-line 13228,12873 13228,66411 thick 164
-rect 12122,12873 12634,66411 Black
-glyph U+E003 12122,12873 size 1024
-glyph U+E004 12122,66411 size 1024
-text "Gtr" 11098,23514 em 1536 End Text
-text "Bas" 11098,48235 em 1536 End Text
-text "Dru" 11098,64875 em 1536 End Text
-line 48229,9801 92021,9801 thick 164
-line 48229,9801 48229,11337 thick 164
-line 92021,9801 92021,11337 thick 164
-text "1, 2." 48485,11081 em 1280 Start Text
-line 92277,9801 97511,9801 thick 164
-line 92277,9801 92277,11337 thick 164
-text "3." 92533,11081 em 1280 Start Text
+line 13040,12873 13040,66411 thick 164
+rect 11934,12873 12446,66411 Black
+glyph U+E003 11934,12873 size 1024
+glyph U+E004 11934,66411 size 1024
+text "Gtr" 8905,23514 em 1536 Start Text
+text "Bas" 8639,48235 em 1536 Start Text
+text "Dru" 8722,64875 em 1536 Start Text
+line 48095,9801 91976,9801 thick 164
+line 48095,9801 48095,11337 thick 164
+line 91976,9801 91976,11337 thick 164
+text "1, 2." 48351,11081 em 1280 Start Text
+line 92232,9801 97477,9801 thick 164
+line 92232,9801 92232,11337 thick 164
+text "3." 92488,11081 em 1280 Start Text
 group 5
   line 9801,73783 114103,73783 thick 133
   line 9801,74807 114103,74807 thick 133

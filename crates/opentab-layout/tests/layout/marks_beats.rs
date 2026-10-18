@@ -6,7 +6,7 @@ use opentab_model::{Dynamic, Fraction, Marker, NoteValue, Score, Tempo, TempoCha
 
 use crate::marks::{assert_ink_inside_content, shape_box, text_ink};
 use crate::music::{build, measure, note_at, options, play, render, rows};
-use crate::support::{content, dump, flatten, ink, systems};
+use crate::support::{content, dump, flatten, ink, notehead, systems};
 use crate::tab_effects::quarters;
 
 const MET_NOTE_8TH_UP: char = '\u{ECA7}';
@@ -388,7 +388,9 @@ fn dynamics_are_drawn_below_the_staff_only_where_they_change() {
     let tab = &system.staves[1];
     for (glyph, x) in found.iter().zip(at) {
         let rect = ink(glyph);
-        assert_eq!(rect.min.x, x);
+        let centre = rect.min.x + rect.width().half();
+        let head = x + notehead().half();
+        assert!((centre - head).0.abs() <= 1, "centred under the notehead");
         assert!(rect.min.y > standard.bottom(), "below the standard staff");
         assert!(rect.max.y < tab.top, "above the tab");
     }
@@ -472,4 +474,84 @@ fn stacked_marks_open_their_system_and_push_the_next_one_down() {
     assert_eq!(new[1].rect.height(), old[1].rect.height());
     let chord = text_ink(&texts_named(&after, "G")[0]).unwrap();
     assert!(chord.min.y >= new[0].rect.min.y);
+}
+
+fn lowest_ink(group: &Group) -> Units {
+    flatten(&group.items)
+        .into_iter()
+        .filter_map(|item| match item {
+            Primitive::Glyph(glyph) => Some(ink(glyph).max.y),
+            Primitive::Line(line) => Some(line.from.y.max(line.to.y) + line.thickness.half()),
+            Primitive::Shape(shape) => shape_box(&shape.segments).map(|rect| rect.max.y),
+            Primitive::Text(run) => text_ink(run).map(|rect| rect.max.y),
+            Primitive::FilledRect(rect) => Some(rect.rect.max.y),
+            Primitive::Group(_) => None,
+        })
+        .max()
+        .unwrap()
+}
+
+fn low_two_voice_score() -> Score {
+    let mut score = build(&[measure(
+        (4, 4),
+        0,
+        vec![
+            (0, quarters(&[(5, 0), (5, 1), (4, 0), (5, 3)])),
+            (1, quarters(&[(5, 0), (5, 0), (5, 1), (5, 0)])),
+        ],
+    )]);
+    let levels = [Dynamic::P, Dynamic::F, Dynamic::Pp, Dynamic::Ff];
+    for voice in &mut score.tracks[0].staves[0].bars[0].voices {
+        for (beat, dynamic) in voice.beats.iter_mut().zip(levels) {
+            beat.effects.dynamic = dynamic;
+        }
+    }
+    score
+}
+
+#[test]
+fn dynamics_clear_low_notes_ledger_lines_and_down_stems() {
+    let score = low_two_voice_score();
+    let list = render(&score, &options(StaffMode::Both));
+    let group = standard_bar_group(&list);
+    let (system, _) = bar_at(&list, 0, 0);
+    let ledgers = flatten(&group.items)
+        .into_iter()
+        .filter(|item| {
+            matches!(item, Primitive::Line(line) if line.from.y == line.to.y && line.from.y > system.staves[0].bottom())
+        })
+        .count();
+    assert!(ledgers >= 4, "{ledgers} ledger lines below the staff");
+    let notation = lowest_ink(group);
+    assert!(
+        notation > system.staves[0].bottom() + Units(4096),
+        "stems reach down"
+    );
+    let found = dynamic_glyphs(&list);
+    assert_eq!(found.len(), 4);
+    for glyph in &found {
+        let rect = ink(glyph);
+        assert!(
+            rect.min.y > notation,
+            "{rect:?} inside notation reaching {notation:?}"
+        );
+        assert!(rect.max.y < system.staves[1].top, "above the tab");
+    }
+}
+
+#[test]
+fn dynamics_under_a_lone_tab_clear_its_rhythm() {
+    let score = low_two_voice_score();
+    let list = render(&score, &options(StaffMode::Tab));
+    let (_, rows) = rows(&list.pages[0]).into_iter().next().unwrap();
+    let rhythm = lowest_ink(rows[0].bars[0]);
+    assert!(
+        rhythm > rows[0].staff.bottom() + Units(2048),
+        "rhythm hangs under the tab"
+    );
+    let found = dynamic_glyphs(&list);
+    assert_eq!(found.len(), 4);
+    for glyph in &found {
+        assert!(ink(glyph).min.y > rhythm, "dynamics clear the rhythm");
+    }
 }
