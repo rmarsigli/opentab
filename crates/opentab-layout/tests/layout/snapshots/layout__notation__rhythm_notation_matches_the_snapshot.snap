@@ -1,0 +1,110 @@
+---
+source: crates/opentab-layout/tests/layout/notation.rs
+expression: focused(&rhythm_score())
+---
+page 0 staff space 1750 um
+system 0 8777,8777 114103,21355 natural 75883 available 105326
+  staff track 0 staff 0 Standard top 14187 lines 5 spacing 1024
+    bar 0 number 1 group 14 8777,14187 26214,18283 content 16010 widths 14565 14565 Treble8vb ticks 1/1 [0@17034]
+    bar 1 number 2 group 22 26214,14187 46562,18283 content 26214 widths 18528 14244 Treble8vb ticks 8/8 [0@27238 4@34752 7@41514]
+    bar 2 number 3 group 41 46562,14187 86821,18283 content 46562 widths 32096 27812 Treble8vb ticks 32/32 [0@47586 4@52470 6@56227 8@59984 9@62989 10@65995 12@69752 16@74635 24@80646]
+    bar 3 number 4 group 52 86821,14187 114103,18283 content 86821 widths 23546 19262 Treble8vb ticks 192/192 [0@87845 16@91978 32@96111 48@100243 72@105127]
+group 5
+  line 8777,14187 114103,14187 thick 133
+  line 8777,15211 114103,15211 thick 133
+  line 8777,16235 114103,16235 thick 133
+  line 8777,17259 114103,17259 thick 133
+  line 8777,18283 114103,18283 thick 133
+  group 14
+    glyph U+E052 9289,17259 size 1024
+    glyph U+E084 13061,15211 size 1024
+    glyph U+E084 13061,17259 size 1024
+    line 26132,14187 26132,18283 thick 164
+    group 13
+      group 12
+        glyph U+E0A2 17034,17259 size 1024
+  group 22
+    line 46480,14187 46480,18283 thick 164
+    group 17
+      group 16
+        glyph U+E0A3 27238,17259 size 1024
+      line 28384,17087 28384,13675 thick 123
+    group 19
+      group 18
+        glyph U+E0A4 34752,16747 size 1024
+      line 35898,16575 35898,13163 thick 123
+      glyph U+E1E7 36369,16747 size 1024
+    group 21
+      group 20
+        glyph U+E0A4 41514,16235 size 1024
+      line 41576,16407 41576,19819 thick 123
+      glyph U+E241 41514,19954 size 1024
+  group 41
+    line 86739,14187 86739,18283 thick 164
+    group 25
+      group 24
+        glyph U+E0A4 47586,18283 size 1024
+      line 48732,18111 48732,11115 thick 123
+    group 27
+      group 26
+        glyph U+E0A4 52470,17259 size 1024
+      line 53616,17087 53616,10536 thick 123
+    group 29
+      group 28
+        glyph U+E0A4 56227,14699 size 1024
+      line 57373,14527 57373,10091 thick 123
+    group 31
+      group 30
+        glyph U+E0A4 59984,16235 size 1024
+      line 61130,16063 61130,10859 thick 123
+    group 33
+      group 32
+        glyph U+E0A4 62989,16747 size 1024
+      line 64135,16575 64135,11174 thick 123
+    group 35
+      group 34
+        glyph U+E0A4 65995,17259 size 1024
+      line 67141,17087 67141,11489 thick 123
+    group 37
+      group 36
+        glyph U+E0A4 69752,18283 size 1024
+      line 70898,18111 70898,11883 thick 123
+    group 38
+      glyph U+E4E5 74635,16235 size 1024
+    group 40
+      group 39
+        glyph U+E0A4 80646,14699 size 1024
+      line 80708,14871 80708,18283 thick 123
+    shape Fill [MoveTo(Point { x: Units(48670), y: Units(11122) }), LineTo(Point { x: Units(57435), y: Units(10084) }), LineTo(Point { x: Units(57435), y: Units(10596) }), LineTo(Point { x: Units(48670), y: Units(11634) }), Close]
+    shape Fill [MoveTo(Point { x: Units(53554), y: Units(11312) }), LineTo(Point { x: Units(57435), y: Units(10852) }), LineTo(Point { x: Units(57435), y: Units(11364) }), LineTo(Point { x: Units(53554), y: Units(11824) }), Close]
+    shape Fill [MoveTo(Point { x: Units(61068), y: Units(10853) }), LineTo(Point { x: Units(70960), y: Units(11889) }), LineTo(Point { x: Units(70960), y: Units(12401) }), LineTo(Point { x: Units(61068), y: Units(11365) }), Close]
+    shape Fill [MoveTo(Point { x: Units(61068), y: Units(11621) }), LineTo(Point { x: Units(67203), y: Units(12264) }), LineTo(Point { x: Units(67203), y: Units(12776) }), LineTo(Point { x: Units(61068), y: Units(12133) }), Close]
+    shape Fill [MoveTo(Point { x: Units(61068), y: Units(12389) }), LineTo(Point { x: Units(64197), y: Units(12717) }), LineTo(Point { x: Units(64197), y: Units(13229) }), LineTo(Point { x: Units(61068), y: Units(12901) }), Close]
+  group 52
+    line 113847,14187 113847,18283 thick 512
+    line 113099,14187 113099,18283 thick 164
+    group 44
+      group 43
+        glyph U+E0A4 87845,17259 size 1024
+      line 88991,17087 88991,12651 thick 123
+    group 46
+      group 45
+        glyph U+E0A4 91978,16747 size 1024
+      line 93124,16575 93124,12139 thick 123
+    group 48
+      group 47
+        glyph U+E0A4 96111,16235 size 1024
+      line 97257,16063 97257,11627 thick 123
+    group 49
+      glyph U+E4E6 100243,16235 size 1024
+    group 51
+      group 50
+        glyph U+E0A4 105127,17259 size 1024
+      line 106273,17087 106273,12139 thick 123
+      glyph U+E246 106211,13339 size 1024
+    shape Fill [MoveTo(Point { x: Units(88929), y: Units(12659) }), LineTo(Point { x: Units(97319), y: Units(11619) }), LineTo(Point { x: Units(97319), y: Units(12131) }), LineTo(Point { x: Units(88929), y: Units(13171) }), Close]
+    glyph U+E883 91955,10859 size 1024
+    line 87845,10586 87845,10074 thick 164
+    line 87845,10074 91699,10074 thick 164
+    line 93465,10074 97319,10074 thick 164
+    line 97319,10074 97319,10586 thick 164
