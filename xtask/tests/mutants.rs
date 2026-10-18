@@ -5,7 +5,7 @@ use xtask::mutants::{
 };
 
 #[test]
-fn arguments_select_both_crates_serially_with_a_timeout_and_target_output() {
+fn arguments_select_the_three_crates_serially_with_a_timeout_and_target_output() {
     let output = output_dir(Path::new("/work"));
     let args = mutants_args(&output);
     assert_eq!(
@@ -16,6 +16,8 @@ fn arguments_select_both_crates_serially_with_a_timeout_and_target_output() {
             "opentab-model",
             "--package",
             "opentab-command",
+            "--package",
+            "opentab-gp",
             "--jobs",
             "1",
             "--timeout",
@@ -24,7 +26,7 @@ fn arguments_select_both_crates_serially_with_a_timeout_and_target_output() {
             "/work/target/mutants",
         ]
     );
-    assert_eq!(CRATES, ["opentab-model", "opentab-command"]);
+    assert_eq!(CRATES, ["opentab-model", "opentab-command", "opentab-gp"]);
 }
 
 #[test]

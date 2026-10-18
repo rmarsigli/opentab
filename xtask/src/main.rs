@@ -24,7 +24,7 @@ struct Cli {
 enum TopCommand {
     #[command(about = "Guitar Pro 8 oracle: harvest goldens and check their freshness")]
     Oracle(OracleArgs),
-    #[command(about = "Run cargo-mutants on opentab-model and opentab-command")]
+    #[command(about = "Run cargo-mutants on opentab-model, opentab-command and opentab-gp")]
     Mutants,
     #[command(about = "Write the synthetic .gp fixtures, one per feature family")]
     Fixtures(FixturesArgs),
