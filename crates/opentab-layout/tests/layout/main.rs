@@ -1,4 +1,5 @@
 mod behaviour;
+mod capo;
 mod dropped;
 mod marks;
 mod marks_beats;

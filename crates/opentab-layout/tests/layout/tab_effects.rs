@@ -170,7 +170,7 @@ fn fret_labels_sit_on_their_strings_and_show_the_note_effects() {
         ((2, 1), "x", 3),
         ((3, 0), "<12>", 0),
         ((3, 1), "<3.2>", 2),
-        ((3, 2), "[5]", 4),
+        ((3, 2), "5 <22>", 4),
     ];
     for ((beat, note), text, line) in expected {
         let id = note_id(&score, 0, 0, beat, note);
