@@ -34,12 +34,6 @@ fn beat_id(score: &Score, bar: usize, beat: usize) -> ElementId {
         .0
 }
 
-fn note_id(score: &Score, bar: usize, beat: usize) -> ElementId {
-    score.tracks[0].staves[0].bars[bar].voices[0].beats[beat].notes[0]
-        .id
-        .0
-}
-
 fn fermata(score: &mut Score) {
     let id = score.master_bars[1].id.0;
     keep(
@@ -59,7 +53,7 @@ fn hairpin(score: &mut Score) {
 }
 
 fn legato(score: &mut Score) {
-    let id = note_id(score, 1, 0);
+    let id = beat_id(score, 1, 0);
     keep(
         score,
         id,
@@ -207,10 +201,10 @@ fn look_alikes_of_each_feature_are_not_reported() {
         track,
         "<Keep parent=\"\" index=\"18\"><Lyrics dispatched=\"true\"><Line><Text><![CDATA[ ]]></Text><Offset>12</Offset></Line></Lyrics></Keep>",
     );
-    let note = note_id(&quiet, 1, 0);
+    let legato = beat_id(&quiet, 1, 0);
     keep(
         &mut quiet,
-        note,
+        legato,
         "<Keep parent=\"\" index=\"4\"><Legato origin=\"false\" destination=\"false\"/></Keep>",
     );
     let staff = quiet.tracks[0].staves[0].id.0;
