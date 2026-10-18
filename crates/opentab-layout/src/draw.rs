@@ -14,11 +14,11 @@ use crate::geometry::{
     ENDING_RISE, NAME_EM, NAME_GAP, NAME_MAX, NUMBER_EM, NUMBER_RISE,
 };
 use crate::glyphs::{BRACKET_BOTTOM, BRACKET_TOP, Metrics};
-use crate::notes::draw_bar;
+use crate::notes::{TieRow, draw_bar};
 use crate::options::LayoutError;
 use crate::plan::{BarPlan, SystemPlan};
 use crate::select::Selection;
-use crate::spacing::place;
+use crate::spacing::{Piece, place};
 use crate::structure::{BarLayout, ClefSign, Column, StaffKind, StaffLayout, SystemLayout};
 use crate::text::text_font;
 use crate::ties::{TIE_END_GAP, TieAnchor, TieSpan, draw_ties};
@@ -91,7 +91,19 @@ pub fn draw_system(
         bases.push(pieces.len());
         pieces.extend(plan.pieces(offset == 0, strokes));
     }
-    let placement = place(&pieces, system.target).ok_or(LayoutError::PageTooSmall)?;
+    let first = place(&pieces, system.target).ok_or(LayoutError::PageTooSmall)?;
+    let placement = if first.crowded {
+        let contained: Vec<Piece> = plans
+            .iter()
+            .enumerate()
+            .flat_map(|(offset, plan)| plan.contained_pieces(offset == 0, strokes))
+            .collect();
+        let mut again = place(&contained, system.target).ok_or(LayoutError::PageTooSmall)?;
+        again.crowded = true;
+        again
+    } else {
+        first
+    };
     let positions = &placement.positions;
     let x = |piece: usize| system.left + positions.get(piece).copied().unwrap_or_default();
     let right = system.left + system.target;
@@ -210,10 +222,12 @@ pub fn draw_system(
                     notation,
                     layout,
                     &staff,
-                    offset,
                     &mut bar_items,
-                    &mut anchors,
-                    &mut sequences,
+                    &mut TieRow {
+                        position: offset,
+                        anchors: &mut anchors,
+                        sequences: &mut sequences,
+                    },
                 );
             }
             bar_groups.push((group, bar_items));

@@ -195,8 +195,8 @@ group 5
     group 80
       group 79
         glyph U+E0A4 98791,15945 size 1024
-      line 99937,15773 99937,12361 thick 123
       glyph U+E1E7 100408,15433 size 1024
+      line 99937,15773 99937,12361 thick 123
     group 82
       group 81
         glyph U+E0A4 104137,15945 size 1024
@@ -454,8 +454,8 @@ group 5
       line 98153,70711 100181,70711 thick 164
       group 131
         glyph U+E0A4 98563,70711 size 1024
-      line 98625,70883 98625,75831 thick 123
       glyph U+E1E7 100180,70199 size 1024
+      line 98625,70883 98625,75831 thick 123
     group 134
       line 103580,72759 105608,72759 thick 164
       line 103580,71735 105608,71735 thick 164
@@ -627,23 +627,23 @@ group 5
     group 146
       group 145
         glyph U+E0A4 35054,15945 size 1024
-      line 36200,15773 36200,12361 thick 123
       glyph U+E1E7 36671,15433 size 1024
+      line 36200,15773 36200,12361 thick 123
     group 148
       group 147
         glyph U+E0A4 40566,15945 size 1024
-      line 41712,15773 41712,12361 thick 123
       glyph U+E1E7 42183,15433 size 1024
+      line 41712,15773 41712,12361 thick 123
     group 150
       group 149
         glyph U+E0A4 46078,15945 size 1024
-      line 47224,15773 47224,12361 thick 123
       glyph U+E1E7 47695,15433 size 1024
+      line 47224,15773 47224,12361 thick 123
     group 152
       group 151
         glyph U+E0A4 51590,15945 size 1024
-      line 52736,15773 52736,12361 thick 123
       glyph U+E1E7 53207,15433 size 1024
+      line 52736,15773 52736,12361 thick 123
   group 154
     glyph U+E084 57778,13897 size 1024
     glyph U+E084 57778,15945 size 1024
@@ -658,8 +658,8 @@ group 5
       group 156
         glyph U+E261 74091,15945 size 1024
         glyph U+E0A4 74983,15945 size 1024
-      line 76129,15773 76129,12361 thick 123
       glyph U+E1E7 76600,15433 size 1024
+      line 76129,15773 76129,12361 thick 123
     group 159
       group 158
         glyph U+E0A4 80495,15945 size 1024
@@ -923,8 +923,8 @@ group 5
       group 208
         glyph U+E261 74996,74313 size 1024
         glyph U+E0A4 75888,74313 size 1024
-      line 77034,74141 77034,70729 thick 123
       glyph U+E1E7 77505,73801 size 1024
+      line 77034,74141 77034,70729 thick 123
     group 211
       group 210
         glyph U+E0A4 81519,74313 size 1024
@@ -1192,8 +1192,8 @@ group 5
       group 260
         glyph U+E261 73840,15945 size 1024
         glyph U+E0A4 74732,15945 size 1024
-      line 75878,15773 75878,12361 thick 123
       glyph U+E1E7 76349,15433 size 1024
+      line 75878,15773 75878,12361 thick 123
     group 263
       group 262
         glyph U+E0A4 80543,15945 size 1024
