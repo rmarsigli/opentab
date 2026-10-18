@@ -68,7 +68,10 @@ pub fn tenths_of(bits: u64) -> i128 {
         if shift >= MAX_SHIFT {
             i128::MAX
         } else {
-            scaled.checked_shl(shift).unwrap_or(i128::MAX)
+            1_i128
+                .checked_shl(shift)
+                .and_then(|factor| scaled.checked_mul(factor))
+                .unwrap_or(i128::MAX)
         }
     } else if shift >= MAX_SHIFT {
         0
@@ -209,6 +212,31 @@ mod tests {
         assert_eq!(tenths_of(0x7ff0_0000_0000_0000), 0);
         assert_eq!(tenths_of(1), 0);
         assert_eq!(tenths_of(0x7fef_ffff_ffff_ffff), i128::MAX);
+    }
+
+    #[test]
+    fn every_tenth_of_a_bpm_displays_exactly() {
+        for tenths in 10_u16..=10_000 {
+            let tempo = Tempo::new(f64::from(tenths) / 10.0).unwrap();
+            let whole = tenths / 10;
+            let rest = tenths % 10;
+            let expected = if rest == 0 {
+                whole.to_string()
+            } else {
+                format!("{whole}.{rest}")
+            };
+            assert_eq!(bpm_text(tempo), expected, "{tenths}");
+        }
+    }
+
+    #[test]
+    fn a_shift_that_would_overflow_saturates_instead_of_wrapping() {
+        let largest_finite = 0x7fef_ffff_ffff_ffff;
+        assert_eq!(tenths_of(largest_finite), i128::MAX);
+        let two_to_the_132 = (1075_u64 + 80) << 52;
+        assert_eq!(tenths_of(two_to_the_132), i128::MAX);
+        let two_to_the_60 = (1075_u64 + 8) << 52;
+        assert_eq!(tenths_of(two_to_the_60), (1_i128 << 60) * 10);
     }
 
     #[test]

@@ -78,7 +78,7 @@ is squeezed until its notes may touch and is listed as crowded. A system still t
 0.9 mm is the error layout_limit.";
 
 const RENDER_AFTER_HELP: &str = "Examples:\n  opentab render song.gp --format svg --out song.svg\n  opentab render song.opentab.json --format png --scale 2 --out pages/\n  opentab render song.gp --format png --track 2 --bars 5-12 --staff tab --out riff.png\n\n\
-JSON result: {\"pages\": <count>, \"systems\": <count>, \"bars\": <count>, \"staff_space\": <micrometres>, \"crowded\": [<bar numbers from 1>], \"files\": [<written paths in page order>]}";
+JSON result: {\"pages\": <count>, \"systems\": <count>, \"bars\": <count>, \"staff_space\": <micrometres>, \"crowded\": [<bar numbers from 1>], \"dropped\": [{\"bar\": <number from 1>, \"kind\": \"tempo|section|chord|text|dynamic\"}], \"title_page\": <true when page 1 holds only the title block>, \"files\": [<written paths in page order>]}";
 
 #[derive(Parser)]
 #[command(name = "opentab", version, about = ABOUT, long_about = LONG_ABOUT)]

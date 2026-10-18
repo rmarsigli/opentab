@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use opentab_model::{Bar, Beat, Dynamic, Marker, MasterBar};
 
-pub use draw::{SystemMarks, draw_marks};
+pub use draw::{MarkOutput, Request, Slot, SystemMarks, draw_marks, place};
 pub use fit::{ELLIPSIS, Fitted, ascent, clean, descent, fit_line, ink, line_height, wrap};
 pub use tempo::{
     MarkAnchor, Moment, PendingTempo, TempoMark, bpm_text, nearest_column, plan_tempos, resolve,
@@ -111,15 +111,31 @@ pub fn section_box_height() -> Units {
     line_height(SECTION_EM) + SECTION_PAD + SECTION_PAD + SECTION_LINE
 }
 
-pub fn lane_height(lane: Lane) -> Units {
-    match lane {
-        Lane::Chord => line_height(CHORD_EM),
-        Lane::Section => section_box_height(),
-        Lane::Tempo => ascent(TEMPO_EM).max(tempo_glyph_height()) + descent(TEMPO_EM),
-        Lane::Text | Lane::Marks | Lane::Vibrato | Lane::LetRing | Lane::PalmMute => {
-            line_height(TEXT_EM)
-        }
-    }
+pub fn text_lane_height() -> Units {
+    line_height(TEXT_EM)
+}
+
+pub fn chord_lane_height() -> Units {
+    line_height(CHORD_EM)
+}
+
+pub fn tempo_lane_height() -> Units {
+    ascent(TEMPO_EM).max(tempo_glyph_height()) + descent(TEMPO_EM)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MarkKind {
+    Tempo,
+    Section,
+    Chord,
+    Text,
+    Dynamic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DroppedMark {
+    pub bar: usize,
+    pub kind: MarkKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

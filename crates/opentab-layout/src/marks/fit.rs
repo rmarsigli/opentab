@@ -1,11 +1,9 @@
-use std::num::NonZeroI64;
-
 use crate::display::{Font, Primitive, TextAnchor, TextRun};
+use crate::outline::Outline;
 use crate::text::text_font;
-use crate::units::{Point, REFERENCE_EM, Rect, Units};
+use crate::units::{Point, Rect, Units};
 
 pub const ELLIPSIS: char = '\u{2026}';
-const EM_DIVISOR: NonZeroI64 = NonZeroI64::new(REFERENCE_EM.0).unwrap();
 const INK_GUARD: i64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,23 +67,31 @@ pub fn ink(text: &str, em: Units) -> Option<Rect> {
     let positions = font.pen_positions(text, em);
     let mut bounds: Option<Rect> = None;
     for (character, pen) in text.chars().zip(positions) {
-        let Some(glyph) = font.outline(character).bounds() else {
+        let placed = Outline {
+            segments: font.outline(character).placed(
+                Point {
+                    x: pen,
+                    y: Units::ZERO,
+                },
+                em,
+            ),
+        };
+        let Some(glyph) = placed.bounds() else {
             continue;
         };
-        let min = Point {
-            x: pen + glyph.min.x.scaled(em.0, EM_DIVISOR),
-            y: glyph.min.y.scaled(em.0, EM_DIVISOR),
-        };
-        let max = Point {
-            x: pen + glyph.max.x.scaled(em.0, EM_DIVISOR),
-            y: glyph.max.y.scaled(em.0, EM_DIVISOR),
-        };
         bounds = Some(match bounds {
-            Some(known) => known.including(min).including(max),
-            None => Rect::new(min, max),
+            Some(known) => known.including(glyph.min).including(glyph.max),
+            None => glyph,
         });
     }
     bounds
+}
+
+pub fn fits(text: &str, em: Units, max: Units) -> bool {
+    if text_font().measure(text, em) > Units(max.0.saturating_mul(INK_GUARD)) {
+        return false;
+    }
+    ink(text, em).is_none_or(|rect| rect.width() <= max)
 }
 
 fn fitted(text: String, em: Units, max: Units) -> Option<Fitted> {
@@ -135,19 +141,24 @@ pub fn fit_line(text: &str, em: Units, max: Units) -> Option<Fitted> {
 
 fn split_word(word: &str, em: Units, max: Units) -> usize {
     let positions = text_font().pen_positions(word, em);
-    let count = positions
+    let mut count = positions
         .iter()
         .rposition(|pen| *pen <= max)
         .unwrap_or(0)
         .max(1);
-    word.char_indices()
-        .nth(count)
-        .map_or(word.len(), |(at, _)| at)
+    let at = |count: usize| {
+        word.char_indices()
+            .nth(count)
+            .map_or(word.len(), |(at, _)| at)
+    };
+    while count > 1 && !fits(&word[..at(count)], em, max) {
+        count -= 1;
+    }
+    at(count)
 }
 
 pub fn wrap(text: &str, em: Units, max: Units, limit: usize) -> Vec<Fitted> {
     let cleaned = clean(text);
-    let font = text_font();
     let mut words: Vec<&str> = cleaned.split_whitespace().collect();
     let mut lines: Vec<String> = Vec::new();
     let mut current = String::new();
@@ -168,7 +179,7 @@ pub fn wrap(text: &str, em: Units, max: Units, limit: usize) -> Vec<Fitted> {
         } else {
             format!("{current} {word}")
         };
-        if font.measure(&candidate, em) <= max {
+        if fits(&candidate, em, max) {
             current = candidate;
             index += 1;
         } else if current.is_empty() {
@@ -195,7 +206,7 @@ pub fn wrap(text: &str, em: Units, max: Units, limit: usize) -> Vec<Fitted> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::units::STAFF_SPACE;
+    use crate::units::{REFERENCE_EM, STAFF_SPACE};
 
     const EM: Units = Units(STAFF_SPACE.0 * 3 / 2);
 

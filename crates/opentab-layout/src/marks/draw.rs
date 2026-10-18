@@ -9,7 +9,8 @@ use crate::marks::{
     SECTION_LINE, SECTION_PAD, SectionMark, TEMPO_DOT_GAP, TEMPO_EM, TEMPO_SIZE, TEMPO_TEXT_GAP,
     TEXT_BACK, TEXT_EM, dynamic_ascent, dynamic_glyph,
 };
-use crate::plan::BarPlan;
+use crate::marks::{DroppedMark, MarkKind};
+use crate::plan::{BarPlan, notehead_width};
 use crate::rhythm::{glyph, glyph_box};
 use crate::structure::{BarLayout, StaffLayout};
 use crate::text::text_font;
@@ -22,6 +23,18 @@ pub struct SystemMarks<'a> {
     pub left: Units,
     pub right: Units,
     pub number: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MarkOutput {
+    pub items: Vec<Primitive>,
+    pub dropped: Vec<DroppedMark>,
+}
+
+impl MarkOutput {
+    fn drop_mark(&mut self, bar: usize, kind: MarkKind) {
+        self.dropped.push(DroppedMark { bar, kind });
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +84,7 @@ fn column_x(bar: &BarLayout, column: usize) -> Units {
 }
 
 struct TextItem {
+    bar: usize,
     desired: Units,
     line: Fitted,
     back: Units,
@@ -80,7 +94,8 @@ fn draw_texts(
     texts: Vec<TextItem>,
     marks: &SystemMarks<'_>,
     baseline: Units,
-    out: &mut Vec<Primitive>,
+    kind: MarkKind,
+    out: &mut MarkOutput,
 ) {
     let requests: Vec<Request> = texts
         .iter()
@@ -92,16 +107,17 @@ fn draw_texts(
         })
         .collect();
     for (item, slot) in texts.iter().zip(place(&requests, marks.left, marks.right)) {
-        let Some(slot) = slot else {
-            continue;
-        };
-        let line = if slot.width < item.line.width() {
-            fit_line(&item.line.text, item.line.em, slot.width)
-        } else {
-            Some(item.line.clone())
-        };
-        if let Some(line) = line {
-            out.push(line.run(slot.left, baseline));
+        let line = slot.and_then(|slot| {
+            if slot.width < item.line.width() {
+                fit_line(&item.line.text, item.line.em, slot.width)
+            } else {
+                Some(item.line.clone())
+            }
+            .map(|line| (slot, line))
+        });
+        match line {
+            Some((slot, line)) => out.items.push(line.run(slot.left, baseline)),
+            None => out.drop_mark(item.bar, kind),
         }
     }
 }
@@ -118,7 +134,7 @@ fn lane_rows(marks: &SystemMarks<'_>, lane: Lane) -> Vec<(usize, Units)> {
         .collect()
 }
 
-fn draw_chords(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
+fn draw_chords(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
     for (row, bottom) in lane_rows(marks, Lane::Chord) {
         let Some(staff) = marks.staves.get(row) else {
             continue;
@@ -130,17 +146,24 @@ fn draw_chords(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
             };
             for chord in &row_marks.chords {
                 items.push(TextItem {
+                    bar: plan.index,
                     desired: column_x(bar, chord.column),
                     line: chord.name.clone(),
                     back: CHORD_MAX,
                 });
             }
         }
-        draw_texts(items, marks, bottom - descent(CHORD_EM), out);
+        draw_texts(
+            items,
+            marks,
+            bottom - descent(CHORD_EM),
+            MarkKind::Chord,
+            out,
+        );
     }
 }
 
-fn draw_free_texts(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
+fn draw_free_texts(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
     let room = marks.right - marks.left;
     for (row, bottom) in lane_rows(marks, Lane::Text) {
         let Some(staff) = marks.staves.get(row) else {
@@ -154,6 +177,7 @@ fn draw_free_texts(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
             for text in &row_marks.texts {
                 if let Some(line) = fit_line(&text.text, TEXT_EM, room) {
                     items.push(TextItem {
+                        bar: plan.index,
                         desired: column_x(bar, text.column),
                         line,
                         back: TEXT_BACK,
@@ -161,11 +185,12 @@ fn draw_free_texts(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
                 }
             }
         }
-        draw_texts(items, marks, bottom - descent(TEXT_EM), out);
+        draw_texts(items, marks, bottom - descent(TEXT_EM), MarkKind::Text, out);
     }
 }
 
 struct TempoItem {
+    bar: usize,
     desired: Units,
     mark: TempoMark,
     text: Fitted,
@@ -213,7 +238,7 @@ fn anchor_x(bar: &BarLayout, anchor: MarkAnchor) -> Units {
     }
 }
 
-fn draw_tempos(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
+fn draw_tempos(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
     let (Some(staff), Some(lane)) = (
         marks.staves.first(),
         marks.bands.first().and_then(|band| band.lane(Lane::Tempo)),
@@ -231,6 +256,7 @@ fn draw_tempos(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
                 continue;
             };
             items.push(TempoItem {
+                bar: plan.index,
                 desired: anchor_x(bar, mark.anchor),
                 mark: mark.clone(),
                 text,
@@ -251,8 +277,9 @@ fn draw_tempos(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
         .collect();
     let baseline = staff.top + lane.bottom - descent(TEMPO_EM);
     for (item, slot) in items.iter().zip(place(&requests, marks.left, marks.right)) {
-        if let Some(slot) = slot {
-            draw_tempo(item, slot.left, baseline, out);
+        match slot {
+            Some(slot) => draw_tempo(item, slot.left, baseline, &mut out.items),
+            None => out.drop_mark(item.bar, MarkKind::Tempo),
         }
     }
 }
@@ -305,7 +332,7 @@ fn draw_section(
     }
 }
 
-fn draw_sections(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
+fn draw_sections(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
     let (Some(staff), Some(lane)) = (
         marks.staves.first(),
         marks
@@ -341,6 +368,7 @@ fn draw_sections(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
             least_text(SECTION_EM, width)
         };
         found.push((
+            plan.index,
             section,
             text,
             Request {
@@ -351,17 +379,20 @@ fn draw_sections(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
             },
         ));
     }
-    let requests: Vec<Request> = found.iter().map(|(_, _, request)| *request).collect();
+    let requests: Vec<Request> = found.iter().map(|(_, _, _, request)| *request).collect();
     let bottom = staff.top + lane.bottom - SECTION_LINE.half() - SECTION_PAD;
     let baseline = bottom - descent(SECTION_EM);
-    for ((section, text, _), slot) in found.iter().zip(place(&requests, marks.left, marks.right)) {
-        if let Some(slot) = slot {
-            draw_section(section, text.as_ref(), slot, baseline, out);
+    for ((bar, section, text, _), slot) in
+        found.iter().zip(place(&requests, marks.left, marks.right))
+    {
+        match slot {
+            Some(slot) => draw_section(section, text.as_ref(), slot, baseline, &mut out.items),
+            None => out.drop_mark(*bar, MarkKind::Section),
         }
     }
 }
 
-fn draw_dynamics(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
+fn draw_dynamics(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
     for (row, staff) in marks.staves.iter().enumerate() {
         let floor = marks
             .plans
@@ -383,9 +414,11 @@ fn draw_dynamics(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
                 let sign = dynamic_glyph(mark.dynamic);
                 let width = glyph_box(sign, DYNAMIC_SIZE).width();
                 found.push((
+                    plan.index,
                     sign,
                     Request {
-                        desired: column_x(bar, mark.column),
+                        desired: column_x(bar, mark.column) + notehead_width().half()
+                            - width.half(),
                         width,
                         least: width,
                         back: width,
@@ -393,11 +426,15 @@ fn draw_dynamics(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
                 ));
             }
         }
-        let requests: Vec<Request> = found.iter().map(|(_, request)| *request).collect();
-        for ((sign, _), slot) in found.iter().zip(place(&requests, marks.left, marks.right)) {
-            if let Some(slot) = slot {
+        let requests: Vec<Request> = found.iter().map(|(_, _, request)| *request).collect();
+        for ((bar, sign, _), slot) in found.iter().zip(place(&requests, marks.left, marks.right)) {
+            let Some(slot) = slot else {
+                out.drop_mark(*bar, MarkKind::Dynamic);
+                continue;
+            };
+            {
                 let ink = glyph_box(*sign, DYNAMIC_SIZE);
-                out.push(glyph(
+                out.items.push(glyph(
                     *sign,
                     Point {
                         x: slot.left - ink.min.x,
@@ -410,7 +447,7 @@ fn draw_dynamics(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
     }
 }
 
-pub fn draw_marks(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
+pub fn draw_marks(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
     draw_tempos(marks, out);
     draw_sections(marks, out);
     draw_chords(marks, out);

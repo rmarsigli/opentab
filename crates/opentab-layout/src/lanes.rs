@@ -1,4 +1,4 @@
-use crate::marks::lane_height;
+use crate::marks::{chord_lane_height, section_box_height, tempo_lane_height, text_lane_height};
 use crate::units::{STAFF_SPACE, Units};
 
 pub const LANE_GAP: Units = Units(STAFF_SPACE.0 / 4);
@@ -44,7 +44,10 @@ impl Lane {
     pub fn height(self) -> Units {
         match self {
             Lane::Marks | Lane::Vibrato | Lane::LetRing | Lane::PalmMute => LANE_HEIGHT,
-            Lane::Text | Lane::Chord | Lane::Section | Lane::Tempo => lane_height(self),
+            Lane::Text => text_lane_height(),
+            Lane::Chord => chord_lane_height(),
+            Lane::Section => section_box_height(),
+            Lane::Tempo => tempo_lane_height(),
         }
     }
 }

@@ -238,8 +238,20 @@ pub fn check(score: &Score, options: &LayoutOptions, list: &DisplayList) {
     let all = systems(list);
     let count = all.len();
     let first_page = &list.pages[0];
+    assert_eq!(list.title_page, list.pages[0].systems.is_empty());
+    if list.title_page {
+        let floor = LayoutOptions {
+            staff_space: options.staff_space.min(MIN_STAFF_SPACE),
+            ..options.clone()
+        };
+        let again = layout(score, &floor).unwrap();
+        assert!(
+            again.title_page,
+            "a title page although the floor fits the first system"
+        );
+    }
     for (number, page) in list.pages.iter().enumerate() {
-        let title_only = number == 0 && !page.items.is_empty() && list.pages.len() > 1;
+        let title_only = number == 0 && list.title_page;
         assert!(
             !page.systems.is_empty() || title_only,
             "a page without systems"
