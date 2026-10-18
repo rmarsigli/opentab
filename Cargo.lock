@@ -425,6 +425,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "opentab-command",
+ "opentab-gp",
  "opentab-model",
  "serde",
  "serde_json",

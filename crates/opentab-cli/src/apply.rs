@@ -16,8 +16,8 @@ pub struct Applied {
 }
 
 pub fn run(path: &Path, commands: &Path, out: &Path) -> Result<Rendered<Applied>, CliError> {
-    files::require_format(path)?;
-    files::require_format(out)?;
+    files::format_of(path)?;
+    files::format_of(out)?;
     let mut score = files::read_score(path)?;
     let text = files::read_text(commands)?;
     let parsed = parse_jsonl_lines(&text).map_err(|error| CliError::InvalidCommand {

@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 opentab-model = { path = "../opentab-model" }
 opentab-command = { path = "../opentab-command" }
+opentab-gp = { path = "../opentab-gp" }
 clap = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true

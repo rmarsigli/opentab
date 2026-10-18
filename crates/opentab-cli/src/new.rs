@@ -14,7 +14,7 @@ pub struct Created {
 }
 
 pub fn run(out: &Path, title: Option<String>) -> Result<Rendered<Created>, CliError> {
-    files::require_format(out)?;
+    files::require_json(out)?;
     let mut score = blank_score().map_err(CliError::internal)?;
     score.meta.title = title.unwrap_or_default();
     files::write_score(out, &score, Overwrite::Refused)?;

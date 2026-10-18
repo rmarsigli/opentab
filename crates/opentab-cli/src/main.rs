@@ -1,5 +1,6 @@
 mod apply;
 mod cli;
+mod convert;
 mod error;
 mod files;
 mod ids;
@@ -40,5 +41,6 @@ fn run(command: Subcommand) -> Result<(), CliError> {
             out,
             json,
         } => output::emit(&apply::run(&path, &commands, &out)?, json),
+        Subcommand::Convert { path, out, json } => output::emit(&convert::run(&path, &out)?, json),
     }
 }
