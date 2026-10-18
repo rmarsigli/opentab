@@ -351,7 +351,10 @@ fn trim_staff_bars_refuses_bars_with_shared_or_unallocated_ids() {
     let shared = fx.score.tracks[0].staves[0].bars[0].voices[0].id;
     fx.score.tracks[1].staves[0].bars[1].voices[0].id = shared;
     let message = message_of(rejected(&mut fx.score, &trim));
-    assert!(message.contains("already exists in the score"), "{message}");
+    assert!(
+        message.contains("appears more than once in the score"),
+        "{message}"
+    );
     let above = opentab_model::VoiceId(ElementId(fx.score.ids.peek().0 + 2));
     fx.score.tracks[1].staves[0].bars[1].voices[0].id = above;
     let message = message_of(rejected(&mut fx.score, &trim));

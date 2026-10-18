@@ -45,6 +45,12 @@ pub(crate) fn check_note_in(
     }
 }
 
+pub(crate) fn already_broken(error: CommandError) -> CommandError {
+    CommandError::invalid(format!(
+        "{error}; the score already breaks this rule, so the edit could not be undone; run diagnose"
+    ))
+}
+
 pub(crate) fn check_beat(track: &Track, beat: &Beat) -> Result<(), CommandError> {
     for (index, note) in beat.notes.iter().enumerate() {
         let before = beat.notes.get(..index).unwrap_or_default();

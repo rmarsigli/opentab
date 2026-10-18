@@ -610,3 +610,60 @@ fn tempo_change_outside_bar_round_trips_and_validates_its_position() {
     let negative = r#"{"kind":"tempo_change_outside_bar","master_bar":3,"position":[-1,4]}"#;
     assert!(serde_json::from_str::<Diagnostic>(negative).is_err());
 }
+
+#[test]
+fn duplicate_strings_in_a_beat_are_reported_once_per_string_in_order() {
+    let mut score = four_four(&quarters(4));
+    let extra = [(0, 1), (2, 3), (0, 5), (2, 7), (0, 9)];
+    let notes: Vec<opentab_model::Note> = extra
+        .iter()
+        .map(|(string, fret)| crate::support::note(&mut score, *string, *fret))
+        .collect();
+    let first = score.tracks[0].staves[0].bars[0].voices[0].beats[0].id;
+    let second = score.tracks[0].staves[0].bars[0].voices[0].beats[1].id;
+    score.tracks[0].staves[0].bars[0].voices[0].beats[0].notes = notes[..4].to_vec();
+    score.tracks[0].staves[0].bars[0].voices[0].beats[1].notes = notes[4..].to_vec();
+    assert_eq!(
+        diagnose(&score),
+        vec![
+            Diagnostic::DuplicateString {
+                beat: first,
+                string: 0
+            },
+            Diagnostic::DuplicateString {
+                beat: first,
+                string: 2
+            },
+        ]
+    );
+    let repeat = crate::support::note(&mut score, 0, 2);
+    score.tracks[0].staves[0].bars[0].voices[0].beats[1]
+        .notes
+        .push(repeat);
+    assert_eq!(
+        diagnose(&score)[2],
+        Diagnostic::DuplicateString {
+            beat: second,
+            string: 0
+        }
+    );
+    let json = serde_json::to_string(&diagnose(&score)[2]).unwrap();
+    assert_eq!(
+        json,
+        format!(
+            r#"{{"kind":"duplicate_string","beat":{},"string":0}}"#,
+            second.0.0
+        )
+    );
+}
+
+#[test]
+fn distinct_strings_are_not_duplicates() {
+    let mut score = four_four(&quarters(4));
+    let notes = vec![
+        crate::support::note(&mut score, 0, 1),
+        crate::support::note(&mut score, 1, 1),
+    ];
+    score.tracks[0].staves[0].bars[0].voices[0].beats[0].notes = notes;
+    assert_eq!(diagnose(&score), Vec::new());
+}

@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::fraction::{checked_sum, deserialize_non_negative};
 use crate::{
-    Bar, BarId, ElementId, Fraction, InstrumentKind, MasterBar, MasterBarId, NoteId, NoteKind,
-    Score, Staff, StaffId, Track, TrackId, Voice, VoiceId,
+    Bar, BarId, Beat, BeatId, ElementId, Fraction, InstrumentKind, MasterBar, MasterBarId, NoteId,
+    NoteKind, Score, Staff, StaffId, Track, TrackId, Voice, VoiceId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -53,6 +53,10 @@ pub enum Diagnostic {
     },
     BarWithoutVoices {
         bar: BarId,
+    },
+    DuplicateString {
+        beat: BeatId,
+        string: u8,
     },
     TempoChangeOutsideBar {
         master_bar: MasterBarId,
@@ -168,6 +172,22 @@ impl Report {
         }
     }
 
+    fn strings(&mut self, beat: &Beat) {
+        let mut used = HashSet::new();
+        let mut reported = HashSet::new();
+        for note in &beat.notes {
+            if let NoteKind::Fretted { string, .. } = note.kind
+                && !used.insert(string)
+                && reported.insert(string)
+            {
+                self.diagnostics.push(Diagnostic::DuplicateString {
+                    beat: beat.id,
+                    string,
+                });
+            }
+        }
+    }
+
     fn voice(&mut self, track: &Track, voice: &Voice, expected: Option<Fraction>) {
         self.id(voice.id.0);
         for beat in &voice.beats {
@@ -176,6 +196,7 @@ impl Report {
                 self.id(note.id.0);
                 self.note(track, note.id, note.kind);
             }
+            self.strings(beat);
         }
         if voice.beats.is_empty() {
             return;

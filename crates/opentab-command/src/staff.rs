@@ -4,7 +4,7 @@ use crate::ids::{
     bar_ids, check_removable, check_restorable, put_extensions, reserve, take_extensions,
 };
 use crate::locate::{StaffPath, find_staff, not_found};
-use crate::rules::{check_bar, check_empty_bar, empty_bar};
+use crate::rules::{already_broken, check_bar, check_empty_bar, empty_bar};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const STAFF: &str = "staff";
@@ -82,7 +82,7 @@ pub(crate) fn trim(
     let want = score.master_bars.len();
     if current.bars.len() > want {
         return Err(CommandError::invalid(format!(
-            "staff {} has {} bars for {want} master bars; trim only shortens a staff that is not overfull",
+            "staff {} has {} bars for {want} master bars; trim only shortens a staff that is not overfull; run diagnose",
             staff.0.0,
             current.bars.len()
         )));
@@ -96,7 +96,7 @@ pub(crate) fn trim(
     };
     let owner = track_ref(score, path, staff)?;
     for bar in removed {
-        check_bar(owner, bar)?;
+        check_bar(owner, bar).map_err(already_broken)?;
         check_empty_bar(bar)?;
     }
     check_removable(score, removed.iter().flat_map(bar_ids))?;
