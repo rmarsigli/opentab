@@ -1,8 +1,10 @@
 use opentab_model::{
-    Accent, Bend, BendPoint, Diagnostic, Duration, ElementId, Extensions, Fraction, Harmonic,
-    HarmonicKind, Instrument, InstrumentKind, Marker, ModelError, Note, NoteEffects, NoteKind,
-    NoteValue, OpaquePayload, Pitch, Score, Slide, Staff, Stroke, StrokeDirection, Tempo,
-    TempoChange, Track, Tuning, Tuplet, Vibrato, diagnose, from_json, to_json,
+    Accent, Base64Bytes, Bend, BendPoint, Clef, ContainerEntry, Diagnostic, Duration, Dynamic,
+    ElementId, Extensions, Finger, Fraction, Grace, Harmonic, HarmonicKind, Instrument,
+    InstrumentKind, Marker, ModelError, Note, NoteEffects, NoteKind, NoteValue, OpaquePayload,
+    Pitch, Score, Slide, Staff, Stroke, StrokeDirection, StrokeTicks, Tap, Tempo, TempoChange,
+    TempoUnit, Track, Transpose, TremoloPicking, Tuning, Tuplet, Vibrato, VoiceSlot, diagnose,
+    from_json, to_json,
 };
 use serde_json::{Value, json};
 
@@ -19,28 +21,35 @@ fn rich_score() -> Score {
     master.alternate_endings = 0b101;
     master.marker = Some(Marker {
         text: "Refrão ♪".to_string(),
+        letter: "A".to_string(),
     });
+    master.double_bar = true;
+    score.anacrusis = true;
     master.tempo_changes = vec![
         TempoChange {
             position: Fraction::new(0, 1),
             bpm: Tempo::new(120.0).unwrap(),
+            unit: TempoUnit::DottedQuarter,
         },
         TempoChange {
             position: Fraction::new(3, 8),
             bpm: Tempo::new(97.123_456_789_012_34).unwrap(),
+            unit: TempoUnit::Quarter,
         },
     ];
     let first_voice = &mut score.tracks[0].staves[0].bars[0].voices[0];
     let first_beat = &mut first_voice.beats[0];
-    first_beat.effects.tremolo_picking = Some(NoteValue::ThirtySecond);
+    first_beat.effects.tremolo_picking =
+        Some(TremoloPicking::new(NoteValue::ThirtySecond).unwrap());
     first_beat.effects.stroke = Some(Stroke {
         direction: StrokeDirection::Down,
-        duration: NoteValue::SixtyFourth,
+        duration: StrokeTicks::new(147).unwrap(),
     });
     first_beat.effects.chord_name = Some("Am7♭5".to_string());
     first_beat.effects.text = Some("ritardando".to_string());
     first_beat.effects.fade_in = true;
-    first_beat.effects.tap = true;
+    first_beat.effects.grace = Some(Grace::OnBeat);
+    first_beat.effects.dynamic = Dynamic::Ff;
     first_beat.effects.slap = true;
     first_beat.effects.pop = true;
     first_beat.notes[0].effects = NoteEffects {
@@ -59,14 +68,18 @@ fn rich_score() -> Score {
             kind: HarmonicKind::Artificial,
             fret: Fraction::new(12, 5),
         }),
-        bend: Some(Bend {
-            points: vec![
+        bend: Some(
+            Bend::new(
                 BendPoint::new(0, 0).unwrap(),
-                BendPoint::new(100, -48).unwrap(),
-            ],
-        }),
-        left_hand_finger: Some(2),
-        right_hand_finger: Some(4),
+                BendPoint::new(25, 150).unwrap(),
+                BendPoint::new(75, 150).unwrap(),
+                BendPoint::new(100, -1200).unwrap(),
+            )
+            .unwrap(),
+        ),
+        tap: Some(Tap::Left),
+        left_hand_finger: Some(Finger::Open),
+        right_hand_finger: Some(Finger::Little),
     };
     first_voice.beats[1].duration =
         Duration::new(NoteValue::Eighth, 2, Some(Tuplet::new(7, 8).unwrap())).unwrap();
@@ -96,12 +109,15 @@ fn rich_score() -> Score {
             strings: Vec::new(),
         },
         capo: 0,
+        transpose: Transpose::new(-2, -1).unwrap(),
         staves: vec![Staff {
             id: staff_id,
             bars: vec![opentab_model::Bar {
                 id: bar_id,
+                clef: Clef::Neutral,
                 voices: vec![opentab_model::Voice {
                     id: voice_id,
+                    slot: VoiceSlot::new(2).unwrap(),
                     beats: vec![drum_beat],
                 }],
             }],
@@ -118,6 +134,20 @@ fn rich_score() -> Score {
     );
     extensions.0.insert(ElementId(u64::MAX), Vec::new());
     score.extensions = extensions;
+    score.document_extensions = vec![OpaquePayload {
+        format: "gp8:root".to_string(),
+        data: "<GPRevision/>".to_string(),
+    }];
+    score.container = vec![
+        ContainerEntry {
+            name: "Content/PartConfiguration".to_string(),
+            data: Base64Bytes(Vec::new()),
+        },
+        ContainerEntry {
+            name: "Content/Assets/\u{e9}.bin".to_string(),
+            data: Base64Bytes((0..=255).collect()),
+        },
+    ];
     score
 }
 
@@ -172,6 +202,9 @@ fn document_carries_version_and_score_fields_at_top_level() {
     assert_eq!(
         sorted,
         [
+            "anacrusis",
+            "container",
+            "document_extensions",
             "extensions",
             "ids",
             "master_bars",
@@ -396,4 +429,114 @@ fn extension_keys_survive_round_trip() {
     extra.master_bars.push(master);
     extra.extensions.0.insert(id, Vec::new());
     assert_eq!(from_json(&to_json(&extra).unwrap()), Ok(extra));
+}
+
+#[test]
+fn container_serialises_as_base64_text() {
+    let value = document();
+    assert_eq!(value["container"][0]["data"], json!(""));
+    assert_eq!(value["container"][1]["data"].as_str().unwrap().len(), 344);
+    assert!(
+        value["container"][1]["data"]
+            .as_str()
+            .unwrap()
+            .starts_with("AAECAwQF")
+    );
+}
+
+#[test]
+fn invalid_base64_is_rejected() {
+    for data in ["!!!!", "AAE", "AAF=", "AA==AA==", " AAAA"] {
+        let mut value = document();
+        value["container"][1]["data"] = json!(data);
+        rejects(&value, "base64");
+    }
+    let mut value = document();
+    value["container"][1]["data"] = json!(7);
+    assert!(from_json(&value.to_string()).is_err());
+}
+
+#[test]
+fn new_fields_are_required_and_closed() {
+    for pointer in [
+        "/container",
+        "/document_extensions",
+        "/anacrusis",
+        "/master_bars/0/double_bar",
+        "/master_bars/0/marker/letter",
+        "/master_bars/0/tempo_changes/0/unit",
+        "/tracks/0/transpose",
+        "/tracks/0/staves/0/bars/0/clef",
+        "/tracks/0/staves/0/bars/0/voices/0/slot",
+        "/tracks/0/staves/0/bars/0/voices/0/beats/0/effects/dynamic",
+    ] {
+        let mut value = document();
+        let (parent, key) = pointer.rsplit_once('/').unwrap();
+        let target = value.pointer_mut(parent).unwrap().as_object_mut().unwrap();
+        assert!(target.remove(key).is_some(), "{pointer}");
+        assert!(from_json(&value.to_string()).is_err(), "{pointer}");
+    }
+    let mut value = document();
+    value["container"][0]["extra"] = json!(1);
+    rejects(&value, "extra");
+}
+
+#[test]
+fn new_values_are_validated_on_load() {
+    let beat = "/tracks/0/staves/0/bars/0/voices/0/beats/0";
+    let cases = [
+        (
+            "/tracks/0/staves/0/bars/0/voices/0/slot",
+            json!(4),
+            "voice slot",
+        ),
+        (
+            "/tracks/0/transpose",
+            json!({"chromatic": 13, "octave": 0}),
+            "transpose",
+        ),
+        (
+            "/tracks/0/transpose",
+            json!({"chromatic": 0, "octave": -4}),
+            "transpose",
+        ),
+        ("/tracks/0/staves/0/bars/0/clef", json!("alto"), "alto"),
+        (
+            "/master_bars/0/tempo_changes/0/unit",
+            json!("whole"),
+            "whole",
+        ),
+    ];
+    for (pointer, replacement, needle) in cases {
+        let mut value = document();
+        *value.pointer_mut(pointer).unwrap() = replacement;
+        rejects(&value, needle);
+    }
+    for (suffix, replacement, needle) in [
+        ("/effects/stroke/duration", json!(29), "stroke duration"),
+        ("/effects/stroke/duration", json!(481), "stroke duration"),
+        ("/effects/tremolo_picking", json!("sixty_fourth"), "tremolo"),
+        ("/effects/tremolo_picking", json!("quarter"), "tremolo"),
+        ("/effects/dynamic", json!("sfz"), "sfz"),
+        ("/effects/grace", json!("after_beat"), "after_beat"),
+    ] {
+        let mut value = document();
+        *value.pointer_mut(&format!("{beat}{suffix}")).unwrap() = replacement;
+        rejects(&value, needle);
+    }
+    let note = format!("{beat}/notes/0/effects");
+    for (suffix, replacement, needle) in [
+        ("/left_hand_finger", json!(2), "expected"),
+        ("/right_hand_finger", json!("pinky"), "pinky"),
+        ("/tap", json!("both"), "both"),
+        ("/bend/origin/value", json!(1201), "bend point"),
+        ("/bend/middle_end/value", json!(0), "bend middle"),
+    ] {
+        let mut value = document();
+        *value.pointer_mut(&format!("{note}{suffix}")).unwrap() = replacement;
+        rejects(&value, needle);
+    }
+    let mut value = document();
+    value.pointer_mut(&format!("{note}/bend")).unwrap()["points"] = json!([]);
+    rejects(&value, "points");
 }

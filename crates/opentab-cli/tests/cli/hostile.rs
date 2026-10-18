@@ -187,7 +187,8 @@ fn restoring_an_out_of_range_bend_is_an_invalid_command() {
             "duration": {"value": "quarter", "dots": 0, "tuplet": null},
             "effects": {
                 "tremolo_picking": null, "stroke": null, "chord_name": null, "text": null,
-                "fade_in": false, "tap": false, "slap": false, "pop": false
+                "fade_in": false, "slap": false, "pop": false,
+                "grace": null, "dynamic": "mf"
             },
             "notes": [{
                 "id": 91,
@@ -196,8 +197,13 @@ fn restoring_an_out_of_range_bend_is_an_invalid_command() {
                     "tie_origin": false, "tie_destination": false, "ghost": false, "dead": false,
                     "accent": null, "palm_mute": false, "let_ring": false, "staccato": false,
                     "vibrato": null, "hammer_on_pull_off": false, "slide": null, "harmonic": null,
-                    "bend": {"points": [{"offset": 250, "value": 0}]},
-                    "left_hand_finger": null, "right_hand_finger": null
+                    "bend": {
+                        "origin": {"offset": 250, "value": 0},
+                        "middle_start": {"offset": 25, "value": 0},
+                        "middle_end": {"offset": 75, "value": 0},
+                        "destination": {"offset": 100, "value": 0}
+                    },
+                    "tap": null, "left_hand_finger": null, "right_hand_finger": null
                 }
             }]
         },

@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use opentab_command::{Command, CommandError, apply};
 use opentab_model::{
-    ElementId, Fraction, Note, NoteEffects, NoteId, NoteKind, Score, Tempo, TempoChange, diagnose,
+    ElementId, Fraction, Note, NoteEffects, NoteId, NoteKind, Score, Tempo, TempoChange, TempoUnit,
+    diagnose,
 };
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
@@ -25,6 +26,7 @@ fn tempo_outside(fx: &mut Fixture, master_bar: usize) {
         .push(TempoChange {
             position: Fraction::new(1, 1),
             bpm: Tempo::new(90.0).unwrap(),
+            unit: TempoUnit::Quarter,
         });
     assert!(!diagnose(&fx.score).is_empty());
 }

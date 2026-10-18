@@ -294,8 +294,10 @@ fn trim_staff_bars_refuses_an_overfull_staff() {
     let mut fx = fixture();
     let bar = opentab_model::Bar {
         id: fx.score.alloc().unwrap(),
+        clef: opentab_model::Clef::Treble,
         voices: vec![opentab_model::Voice {
             id: fx.score.alloc().unwrap(),
+            slot: opentab_model::VoiceSlot::default(),
             beats: Vec::new(),
         }],
     };
@@ -332,6 +334,7 @@ fn trim_staff_bars_refuses_a_bar_without_voices() {
     };
     let voice = opentab_model::Voice {
         id: fx.score.alloc().unwrap(),
+        slot: opentab_model::VoiceSlot::new(1).unwrap(),
         beats: Vec::new(),
     };
     fx.score.tracks[1].staves[0].bars[1].voices.push(voice);

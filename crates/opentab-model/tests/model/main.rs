@@ -3,6 +3,7 @@ mod duration;
 mod ids;
 mod json;
 mod lookup;
+mod notation;
 mod pitch;
 mod ranges;
 mod support;

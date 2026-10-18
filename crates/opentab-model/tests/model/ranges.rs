@@ -2,7 +2,7 @@ use opentab_model::{BendPoint, KeySignature, ModelError};
 
 #[test]
 fn bend_point_accepts_inclusive_bounds() {
-    for (offset, value) in [(0, 0), (100, 48), (100, -48), (0, -48), (50, 1)] {
+    for (offset, value) in [(0, 0), (100, 1200), (100, -1200), (0, -1200), (50, 1)] {
         let point = BendPoint::new(offset, value).unwrap();
         assert_eq!(point.offset(), offset);
         assert_eq!(point.value(), value);
@@ -14,8 +14,8 @@ fn bend_point_rejects_values_just_outside() {
     for (offset, value) in [
         (101, 0),
         (255, 0),
-        (0, 49),
-        (0, -49),
+        (0, 1201),
+        (0, -1201),
         (0, i16::MIN),
         (0, i16::MAX),
     ] {
@@ -28,13 +28,13 @@ fn bend_point_rejects_values_just_outside() {
 
 #[test]
 fn bend_point_json_applies_the_same_bounds() {
-    let good: BendPoint = serde_json::from_str(r#"{"offset":100,"value":-48}"#).unwrap();
-    assert_eq!(good, BendPoint::new(100, -48).unwrap());
-    assert_eq!((good.offset(), good.value()), (100, -48));
+    let good: BendPoint = serde_json::from_str(r#"{"offset":100,"value":-1200}"#).unwrap();
+    assert_eq!(good, BendPoint::new(100, -1200).unwrap());
+    assert_eq!((good.offset(), good.value()), (100, -1200));
     for text in [
         r#"{"offset":101,"value":0}"#,
         r#"{"offset":250,"value":0}"#,
-        r#"{"offset":0,"value":49}"#,
+        r#"{"offset":0,"value":1201}"#,
         r#"{"offset":0,"value":-32000}"#,
     ] {
         let error = serde_json::from_str::<BendPoint>(text).unwrap_err();

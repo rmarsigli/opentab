@@ -1,7 +1,7 @@
 use opentab_command::{Command, MetaField, apply};
 use opentab_model::{
-    Bar, BarId, BeatId, ElementId, NoteId, NoteValue, StaffId, TimeSignature, TrackId, Tuplet,
-    Voice, VoiceId,
+    Bar, BarId, BeatId, Clef, ElementId, NoteId, NoteValue, StaffId, TimeSignature, TrackId,
+    Tuplet, Voice, VoiceId, VoiceSlot,
 };
 use serde_json::{Value, json};
 
@@ -108,8 +108,10 @@ fn forward_commands_have_the_documented_json_shape() {
 fn restore_staff_bars_has_the_documented_json_shape() {
     let bar = Bar {
         id: BarId(ElementId(8)),
+        clef: Clef::Treble,
         voices: vec![Voice {
             id: VoiceId(ElementId(9)),
+            slot: VoiceSlot::default(),
             beats: Vec::new(),
         }],
     };
@@ -121,7 +123,7 @@ fn restore_staff_bars_has_the_documented_json_shape() {
             extensions: Vec::new(),
         },
         json!({"op": "restore_staff_bars", "track": 3, "staff": 7,
-               "bars": [{"id": 8, "voices": [{"id": 9, "beats": []}]}],
+               "bars": [{"id": 8, "clef": "treble", "voices": [{"id": 9, "slot": 0, "beats": []}]}],
                "extensions": []}),
     );
 }
@@ -171,7 +173,7 @@ fn restore_commands_have_the_documented_json_shape() {
     shape(
         &tempo,
         json!({"op": "restore_tempo_changes", "master_bar": 1,
-               "tempo_changes": [{"position": [0, 1], "bpm": 120.0}]}),
+               "tempo_changes": [{"position": [0, 1], "bpm": 120.0, "unit": "quarter"}]}),
     );
     let note = fx.notes[1];
     let note_raw = ElementId::from(note).0;

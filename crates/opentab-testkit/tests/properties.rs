@@ -1,4 +1,7 @@
-use opentab_model::{Diagnostic, NoteKind, Score, diagnose, from_json, to_json};
+use opentab_model::{
+    Clef, Diagnostic, Dynamic, Finger, Fraction, Grace, NoteKind, NoteValue, Score, Tap, TempoUnit,
+    Transpose, Voice, diagnose, from_json, to_json,
+};
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with, min_beats_for_bar};
 use proptest::prelude::*;
 use proptest::strategy::{Strategy, ValueTree};
@@ -9,6 +12,24 @@ const COVERAGE_SAMPLES: usize = 256;
 const SHRINK_SEED: [u8; 32] = [7; 32];
 const SHRINK_ITERS: u32 = 100_000;
 const LONG_TEXT_CHARS: usize = 10_000;
+
+fn fill_of(voice: &Voice) -> Fraction {
+    voice
+        .beats
+        .iter()
+        .filter(|beat| beat.effects.grace.is_none())
+        .fold(Fraction::from_integer(0), |sum, beat| {
+            sum + beat.duration.length()
+        })
+}
+
+fn timed_beats(voice: &Voice) -> usize {
+    voice
+        .beats
+        .iter()
+        .filter(|beat| beat.effects.grace.is_none())
+        .count()
+}
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(CASES))]
@@ -73,22 +94,21 @@ proptest! {
     #[test]
     fn dropping_a_beat_is_always_diagnosed(score in arb_score(), pick in any::<usize>()) {
         let mut broken = score.clone();
-        let voices: Vec<(usize, usize, usize, usize)> = broken
-            .tracks
-            .iter()
-            .enumerate()
-            .flat_map(|(t, track)| {
-                track.staves.iter().enumerate().flat_map(move |(s, staff)| {
-                    staff.bars.iter().enumerate().flat_map(move |(b, bar)| {
-                        bar.voices
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, voice)| voice.beats.len() >= 2)
-                            .map(move |(v, _)| (t, s, b, v))
-                    })
-                })
-            })
-            .collect();
+        let mut voices: Vec<(usize, usize, usize, usize)> = Vec::new();
+        for (t, track) in broken.tracks.iter().enumerate() {
+            for (s, staff) in track.staves.iter().enumerate() {
+                for (b, bar) in staff.bars.iter().enumerate() {
+                    if b == 0 && score.anacrusis {
+                        continue;
+                    }
+                    for (v, voice) in bar.voices.iter().enumerate() {
+                        if timed_beats(voice) >= 2 {
+                            voices.push((t, s, b, v));
+                        }
+                    }
+                }
+            }
+        }
         prop_assume!(!voices.is_empty());
         let (t, s, b, v) = voices[pick % voices.len()];
         let voice = &mut broken.tracks[t].staves[s].bars[b].voices[v];
@@ -120,7 +140,7 @@ proptest! {
                 for (bar, master_bar) in staff.bars.iter().zip(&score.master_bars) {
                     let limit = cap.max(min_beats_for_bar(master_bar.time_signature));
                     for voice in &bar.voices {
-                        prop_assert!(voice.beats.len() <= limit);
+                        prop_assert!(timed_beats(voice) <= limit);
                     }
                 }
             }
@@ -211,7 +231,6 @@ struct Coverage {
     beat_chord_name: bool,
     beat_text: bool,
     beat_fade_in: bool,
-    beat_tap: bool,
     beat_slap: bool,
     beat_pop: bool,
     note_tie_origin: bool,
@@ -232,6 +251,30 @@ struct Coverage {
     marker: bool,
     repeats: bool,
     tempo_changes: bool,
+    anacrusis: bool,
+    pickup_underfull: bool,
+    container: bool,
+    container_empty_entry: bool,
+    document_extensions: bool,
+    marker_letter: bool,
+    double_bar: bool,
+    tempo_unit_non_quarter: bool,
+    clef_treble: bool,
+    clef_bass: bool,
+    clef_neutral: bool,
+    transpose: bool,
+    voice_slot_nonzero: bool,
+    voice_slot_gap: bool,
+    beat_grace_before: bool,
+    beat_grace_on: bool,
+    beat_dynamic_non_default: bool,
+    beat_stroke_ticks_off_grid: bool,
+    beat_tremolo_all: bool,
+    note_tap_right: bool,
+    note_tap_left: bool,
+    note_finger_open: bool,
+    note_finger_little: bool,
+    note_bend_negative: bool,
 }
 
 fn observe(coverage: &mut Coverage, score: &Score) {
@@ -258,16 +301,50 @@ fn observe(coverage: &mut Coverage, score: &Score) {
     coverage.non_empty_extensions |= !score.extensions.0.is_empty();
     coverage.zero_tracks |= score.tracks.is_empty();
     coverage.zero_bars |= score.master_bars.is_empty();
+    coverage.anacrusis |= score.anacrusis;
+    coverage.container |= !score.container.is_empty();
+    coverage.container_empty_entry |= score.container.iter().any(|entry| entry.data.0.is_empty());
+    coverage.document_extensions |= !score.document_extensions.is_empty();
     for master_bar in &score.master_bars {
+        coverage.marker_letter |= master_bar
+            .marker
+            .as_ref()
+            .is_some_and(|marker| !marker.letter.is_empty());
+        coverage.double_bar |= master_bar.double_bar;
+        coverage.tempo_unit_non_quarter |= master_bar
+            .tempo_changes
+            .iter()
+            .any(|change| change.unit != TempoUnit::Quarter);
         coverage.marker |= master_bar.marker.is_some();
         coverage.repeats |= master_bar.repeat_start || master_bar.repeat_end.is_some();
         coverage.tempo_changes |= !master_bar.tempo_changes.is_empty();
     }
     for track in &score.tracks {
         coverage.multi_staff |= track.staves.len() > 1;
+        coverage.transpose |= track.transpose != Transpose::default();
         for staff in &track.staves {
-            for bar in &staff.bars {
+            for (index, bar) in staff.bars.iter().enumerate() {
+                coverage.clef_treble |= bar.clef == Clef::Treble;
+                coverage.clef_bass |= bar.clef == Clef::Bass;
+                coverage.clef_neutral |= bar.clef == Clef::Neutral;
                 coverage.multi_voice |= bar.voices.len() > 1;
+                let mut previous: Option<u8> = None;
+                for voice in &bar.voices {
+                    let slot = voice.slot.get();
+                    coverage.voice_slot_nonzero |= slot != 0;
+                    coverage.voice_slot_gap |= match previous {
+                        Some(before) => slot > before + 1,
+                        None => slot > 0,
+                    };
+                    previous = Some(slot);
+                }
+                if index == 0 && score.anacrusis {
+                    coverage.pickup_underfull |= score.master_bars.first().is_some_and(|master| {
+                        bar.voices
+                            .iter()
+                            .any(|voice| fill_of(voice) < master.time_signature.bar_length())
+                    });
+                }
                 for voice in &bar.voices {
                     for beat in &voice.beats {
                         observe_beat(coverage, beat);
@@ -289,9 +366,17 @@ fn observe_beat(coverage: &mut Coverage, beat: &opentab_model::Beat) {
     coverage.beat_chord_name |= effects.chord_name.is_some();
     coverage.beat_text |= effects.text.is_some();
     coverage.beat_fade_in |= effects.fade_in;
-    coverage.beat_tap |= effects.tap;
     coverage.beat_slap |= effects.slap;
     coverage.beat_pop |= effects.pop;
+    coverage.beat_grace_before |= effects.grace == Some(Grace::BeforeBeat);
+    coverage.beat_grace_on |= effects.grace == Some(Grace::OnBeat);
+    coverage.beat_dynamic_non_default |= effects.dynamic != Dynamic::Mf;
+    coverage.beat_stroke_ticks_off_grid |= effects
+        .stroke
+        .is_some_and(|stroke| ![30, 60, 120, 240, 480].contains(&stroke.duration.ticks()));
+    coverage.beat_tremolo_all |= effects
+        .tremolo_picking
+        .is_some_and(|tremolo| tremolo.value() == NoteValue::ThirtySecond);
     for note in &beat.notes {
         match note.kind {
             NoteKind::Fretted { .. } => coverage.fretted = true,
@@ -313,6 +398,13 @@ fn observe_beat(coverage: &mut Coverage, beat: &opentab_model::Beat) {
         coverage.note_bend |= effects.bend.is_some();
         coverage.note_left_hand_finger |= effects.left_hand_finger.is_some();
         coverage.note_right_hand_finger |= effects.right_hand_finger.is_some();
+        coverage.note_tap_right |= effects.tap == Some(Tap::Right);
+        coverage.note_tap_left |= effects.tap == Some(Tap::Left);
+        coverage.note_finger_open |= effects.left_hand_finger == Some(Finger::Open);
+        coverage.note_finger_little |= effects.right_hand_finger == Some(Finger::Little);
+        coverage.note_bend_negative |= effects
+            .bend
+            .is_some_and(|bend| bend.middle_value() < 0 && bend.destination().value() < 0);
     }
 }
 
@@ -345,7 +437,6 @@ fn generator_covers_every_feature() {
         ("beat_chord_name", coverage.beat_chord_name),
         ("beat_text", coverage.beat_text),
         ("beat_fade_in", coverage.beat_fade_in),
-        ("beat_tap", coverage.beat_tap),
         ("beat_slap", coverage.beat_slap),
         ("beat_pop", coverage.beat_pop),
         ("note_tie_origin", coverage.note_tie_origin),
@@ -366,6 +457,36 @@ fn generator_covers_every_feature() {
         ("marker", coverage.marker),
         ("repeats", coverage.repeats),
         ("tempo_changes", coverage.tempo_changes),
+        ("anacrusis", coverage.anacrusis),
+        ("pickup_underfull", coverage.pickup_underfull),
+        ("container", coverage.container),
+        ("container_empty_entry", coverage.container_empty_entry),
+        ("document_extensions", coverage.document_extensions),
+        ("marker_letter", coverage.marker_letter),
+        ("double_bar", coverage.double_bar),
+        ("tempo_unit_non_quarter", coverage.tempo_unit_non_quarter),
+        ("clef_treble", coverage.clef_treble),
+        ("clef_bass", coverage.clef_bass),
+        ("clef_neutral", coverage.clef_neutral),
+        ("transpose", coverage.transpose),
+        ("voice_slot_nonzero", coverage.voice_slot_nonzero),
+        ("voice_slot_gap", coverage.voice_slot_gap),
+        ("beat_grace_before", coverage.beat_grace_before),
+        ("beat_grace_on", coverage.beat_grace_on),
+        (
+            "beat_dynamic_non_default",
+            coverage.beat_dynamic_non_default,
+        ),
+        (
+            "beat_stroke_ticks_off_grid",
+            coverage.beat_stroke_ticks_off_grid,
+        ),
+        ("beat_tremolo_all", coverage.beat_tremolo_all),
+        ("note_tap_right", coverage.note_tap_right),
+        ("note_tap_left", coverage.note_tap_left),
+        ("note_finger_open", coverage.note_finger_open),
+        ("note_finger_little", coverage.note_finger_little),
+        ("note_bend_negative", coverage.note_bend_negative),
     ];
     let missing: Vec<&str> = checks
         .iter()

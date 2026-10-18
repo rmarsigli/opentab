@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Beat, BeatId, ElementId, Extensions, IdAllocator, MasterBar, MasterBarId, NoteId, Track,
-    TrackId, Voice, VoiceId,
+    Beat, BeatId, ContainerEntry, ElementId, Extensions, IdAllocator, MasterBar, MasterBarId,
+    NoteId, OpaquePayload, Track, TrackId, Voice, VoiceId,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -24,9 +24,12 @@ pub struct ScoreMeta {
 #[serde(deny_unknown_fields)]
 pub struct Score {
     pub meta: ScoreMeta,
+    pub anacrusis: bool,
     pub master_bars: Vec<MasterBar>,
     pub tracks: Vec<Track>,
     pub extensions: Extensions,
+    pub document_extensions: Vec<OpaquePayload>,
+    pub container: Vec<ContainerEntry>,
     pub ids: IdAllocator,
 }
 

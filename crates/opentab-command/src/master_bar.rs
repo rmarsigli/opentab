@@ -5,7 +5,7 @@ use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature};
 use crate::ids::{
     bar_ids, check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
 };
-use crate::rules::{already_broken, check_bar, check_tempo_changes, empty_bar};
+use crate::rules::{already_broken, check_bar, check_tempo_changes, clef_for_new_bar, empty_bar};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const WHAT: &str = "master bar";
@@ -85,13 +85,18 @@ pub(crate) fn insert(
         repeat_start: false,
         repeat_end: None,
         alternate_endings: 0,
+        double_bar: false,
         marker: None,
         tempo_changes: Vec::new(),
     };
     score.master_bars.insert(index, master_bar);
     let ids = &mut score.ids;
-    for staff in score.tracks.iter_mut().flat_map(|track| &mut track.staves) {
-        staff.bars.insert(index, empty_bar(ids)?);
+    for track in &mut score.tracks {
+        let kind = track.instrument.kind;
+        for staff in &mut track.staves {
+            let clef = clef_for_new_bar(kind, &staff.bars, index);
+            staff.bars.insert(index, empty_bar(ids, clef)?);
+        }
     }
     Ok(Command::RemoveMasterBar { index })
 }

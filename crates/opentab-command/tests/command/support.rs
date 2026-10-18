@@ -1,7 +1,8 @@
 use opentab_model::{
-    Bar, Beat, BeatEffects, BeatId, Duration, ElementId, Instrument, InstrumentKind, KeySignature,
-    MasterBar, Note, NoteEffects, NoteId, NoteKind, NoteValue, OpaquePayload, Pitch, Score, Staff,
-    Tempo, TempoChange, TimeSignature, Track, TrackId, Tuning, Voice, VoiceId,
+    Bar, Beat, BeatEffects, BeatId, Clef, Duration, ElementId, Instrument, InstrumentKind,
+    KeySignature, MasterBar, Note, NoteEffects, NoteId, NoteKind, NoteValue, OpaquePayload, Pitch,
+    Score, Staff, Tempo, TempoChange, TempoUnit, TimeSignature, Track, TrackId, Transpose, Tuning,
+    Voice, VoiceId, VoiceSlot,
 };
 
 pub struct Fixture {
@@ -43,11 +44,13 @@ pub fn master_bar(score: &mut Score, bpm: Option<f64>) -> MasterBar {
         repeat_start: false,
         repeat_end: None,
         alternate_endings: 0,
+        double_bar: false,
         marker: None,
         tempo_changes: bpm
             .map(|bpm| TempoChange {
                 position: opentab_model::Fraction::from_integer(0),
                 bpm: Tempo::new(bpm).unwrap(),
+                unit: TempoUnit::Quarter,
             })
             .into_iter()
             .collect(),
@@ -84,10 +87,12 @@ pub fn bar(score: &mut Score, beats: Vec<Beat>) -> Bar {
     let id = score.alloc().unwrap();
     let voice = Voice {
         id: score.alloc().unwrap(),
+        slot: VoiceSlot::default(),
         beats,
     };
     Bar {
         id,
+        clef: Clef::Treble,
         voices: vec![voice],
     }
 }
@@ -107,6 +112,7 @@ pub fn track(score: &mut Score, kind: InstrumentKind, bars: Vec<Bar>) -> Track {
         },
         tuning: Tuning { strings },
         capo: 0,
+        transpose: Transpose::default(),
         staves: vec![Staff {
             id: score.alloc().unwrap(),
             bars,
