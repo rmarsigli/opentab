@@ -46,6 +46,7 @@ pub struct ExampleEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExamplesIndex {
     pub gp_version: String,
+    pub complete: bool,
     pub examples: Vec<ExampleEntry>,
 }
 
@@ -354,12 +355,19 @@ pub fn harvest_examples(
     if listing.examples.is_empty() {
         return Err(OracleError::new("Guitar Pro listed no examples"));
     }
+    let gp_version = listing.gp_version.clone().unwrap_or_default();
+    if gp_version.trim().is_empty() {
+        return Err(OracleError::new(
+            "Guitar Pro reported no version; refusing to write an examples index without one",
+        ));
+    }
     let planned = plan_examples(&listing.examples)?;
     io(std::fs::create_dir_all(&options.out), || {
         format!("cannot create {}", options.out.display())
     })?;
     let mut index = ExamplesIndex {
-        gp_version: listing.gp_version.clone().unwrap_or_default(),
+        gp_version,
+        complete: false,
         examples: Vec::new(),
     };
     let mut report = ExamplesReport::default();
@@ -376,6 +384,7 @@ pub fn harvest_examples(
             }
         }
     }
+    index.complete = report.failures.is_empty() && index.examples.len() == planned.len();
     let path = options.out.join(EXAMPLES_INDEX);
     let text = serde_json::to_string_pretty(&index)
         .map_err(|error| OracleError::new(format!("cannot encode {EXAMPLES_INDEX}: {error}")))?;
@@ -402,14 +411,14 @@ mod tests {
     #[test]
     fn example_names_become_kebab_case_file_names() {
         let cases = [
-            ("Amazing Grace", "amazing-grace.gp"),
-            ("Adelita (Tarrega)", "adelita-tarrega.gp"),
+            ("Example One", "example-one.gp"),
+            ("Sample (Composer)", "sample-composer.gp"),
             (
-                "Moon Over Shanghai (Francois Sciortino)",
-                "moon-over-shanghai-francois-sciortino.gp",
+                "Long Sample Name (First Composer)",
+                "long-sample-name-first-composer.gp",
             ),
-            ("All of them Witches", "all-of-them-witches.gp"),
-            ("  Twelve  ", "twelve.gp"),
+            ("All of the Samples", "all-of-the-samples.gp"),
+            ("  Single  ", "single.gp"),
             ("A--B", "a-b.gp"),
             ("Café 7", "caf-7.gp"),
         ];
@@ -423,14 +432,14 @@ mod tests {
 
     #[test]
     fn planning_rejects_collisions_and_unnamed_examples() {
-        let names = vec![String::from("Blues"), String::from("Slow Blues")];
+        let names = vec![String::from("Sample"), String::from("Slow Sample")];
         let planned = plan_examples(&names).expect("plan");
         assert_eq!(planned.len(), 2);
-        assert_eq!(planned[1].name, "Slow Blues");
-        assert_eq!(planned[1].file, "slow-blues.gp");
-        let clash = vec![String::from("Hard Rock"), String::from("Hard  Rock!")];
+        assert_eq!(planned[1].name, "Slow Sample");
+        assert_eq!(planned[1].file, "slow-sample.gp");
+        let clash = vec![String::from("Example Two"), String::from("Example  Two!")];
         let error = plan_examples(&clash).expect_err("collision");
-        assert!(error.message().contains("hard-rock.gp"));
+        assert!(error.message().contains("example-two.gp"));
         assert!(plan_examples(&[String::from("??")]).is_err());
     }
 
@@ -455,8 +464,8 @@ mod tests {
         let budget = StepBudget::default().script_args();
         let args = save_args(
             "C:\\j\\out",
-            "Adelita (Tarrega)",
-            "C:\\j\\out\\adelita-tarrega.gp",
+            "Sample (Composer)",
+            "C:\\j\\out\\sample-composer.gp",
             &budget,
         );
         assert_eq!(
@@ -464,8 +473,8 @@ mod tests {
             [
                 ("OutDir", "C:\\j\\out"),
                 ("Mode", MODE_SAVE),
-                ("Example", "Adelita (Tarrega)"),
-                ("Target", "C:\\j\\out\\adelita-tarrega.gp"),
+                ("Example", "Sample (Composer)"),
+                ("Target", "C:\\j\\out\\sample-composer.gp"),
             ]
         );
         assert_eq!(args.len(), 7);
@@ -489,10 +498,10 @@ mod tests {
 
     #[test]
     fn example_result_parses_with_bom_and_lists_names() {
-        let raw = "\u{feff}{\"ok\":true,\"gp_running\":true,\"gp_version\":\"8.1.5.31\",\"examples\":[\"Blues\",\"Twelve\"],\"steps\":[],\"extra\":1}";
+        let raw = "\u{feff}{\"ok\":true,\"gp_running\":true,\"gp_version\":\"8.1.5.31\",\"examples\":[\"Sample\",\"Single\"],\"steps\":[],\"extra\":1}";
         let result = parse_example_result(raw.as_bytes()).expect("parse");
         assert!(result.ok);
-        assert_eq!(result.examples, vec!["Blues", "Twelve"]);
+        assert_eq!(result.examples, vec!["Sample", "Single"]);
         assert_eq!(result.gp_version.as_deref(), Some("8.1.5.31"));
         let bare = parse_example_result(b"{\"ok\":false}").expect("parse");
         assert!(bare.examples.is_empty());

@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn output_paths_follow_the_golden_layout() {
         assert!(is_output_path("export.pdf"));
-        assert!(is_output_path("png/amazing-grace 1.PNG"));
+        assert!(is_output_path("png/example-one 1.PNG"));
         assert!(!is_output_path("png/sub/x.png"));
         assert!(!is_output_path("result.json"));
         assert!(!is_output_path("diagnostics/fail-open.png"));

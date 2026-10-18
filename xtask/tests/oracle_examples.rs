@@ -26,7 +26,7 @@ if [ "$FAKE_GP_MODE" = "not_running" ]; then
   exit 2
 fi
 if [ "$mode" = "list" ]; then
-  printf '\357\273\277{"ok":true,"gp_running":true,"gp_version":"8.1.5.31","examples":%s,"steps":[]}' "$FAKE_GP_EXAMPLES" > "$out/result.json"
+  printf '\357\273\277{"ok":true,"gp_running":true,"gp_version":"%s","examples":%s,"steps":[]}' "${FAKE_GP_VERSION-8.1.5.31}" "$FAKE_GP_EXAMPLES" > "$out/result.json"
   exit 0
 fi
 if [ "$example" = "$FAKE_GP_FAIL" ]; then
@@ -80,7 +80,7 @@ fn examples(sandbox: &Sandbox, out: &Path, envs: &[(&str, &str)]) -> Output {
         .env("OPENTAB_ORACLE_WSLPATH", &sandbox.wslpath)
         .env("OPENTAB_ORACLE_JOBS", &sandbox.jobs)
         .env("FAKE_GP_CALLS", &sandbox.calls)
-        .env("FAKE_GP_EXAMPLES", "[\"Blues\",\"Adelita (Tarrega)\"]");
+        .env("FAKE_GP_EXAMPLES", "[\"Sample\",\"Sample (Composer)\"]");
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -109,19 +109,20 @@ fn every_listed_example_is_saved_under_its_kebab_name_with_an_index() {
     assert_eq!(output.status.code(), Some(0), "{}", text(&output));
     assert!(text(&output).contains("saved 2 example(s)"));
     assert_eq!(
-        std::fs::read(out.join("blues.gp")).expect("blues"),
-        b"gp:Blues"
+        std::fs::read(out.join("sample.gp")).expect("first"),
+        b"gp:Sample"
     );
     assert_eq!(
-        std::fs::read(out.join("adelita-tarrega.gp")).expect("adelita"),
-        b"gp:Adelita (Tarrega)"
+        std::fs::read(out.join("sample-composer.gp")).expect("second"),
+        b"gp:Sample (Composer)"
     );
     let index: serde_json::Value =
         serde_json::from_slice(&std::fs::read(out.join("examples.json")).expect("index"))
             .expect("json");
     assert_eq!(index["gp_version"], "8.1.5.31");
-    assert_eq!(index["examples"][1]["name"], "Adelita (Tarrega)");
-    assert_eq!(index["examples"][1]["file"], "adelita-tarrega.gp");
+    assert_eq!(index["complete"], true);
+    assert_eq!(index["examples"][1]["name"], "Sample (Composer)");
+    assert_eq!(index["examples"][1]["file"], "sample-composer.gp");
     assert_eq!(
         index["examples"][0]["sha256"].as_str().map(str::len),
         Some(64)
@@ -129,9 +130,9 @@ fn every_listed_example_is_saved_under_its_kebab_name_with_an_index() {
     let log = calls(&sandbox);
     assert_eq!(log.len(), 3);
     assert_eq!(log[0], "list||");
-    assert!(log[1].starts_with("save|Blues|"), "{}", log[1]);
-    assert!(log[1].ends_with("/out/blues.gp"), "{}", log[1]);
-    assert!(log[2].starts_with("save|Adelita (Tarrega)|"), "{}", log[2]);
+    assert!(log[1].starts_with("save|Sample|"), "{}", log[1]);
+    assert!(log[1].ends_with("/out/sample.gp"), "{}", log[1]);
+    assert!(log[2].starts_with("save|Sample (Composer)|"), "{}", log[2]);
     assert_eq!(std::fs::read_dir(&sandbox.jobs).expect("jobs").count(), 0);
 }
 
@@ -139,7 +140,7 @@ fn every_listed_example_is_saved_under_its_kebab_name_with_an_index() {
 fn a_failed_example_is_reported_and_the_rest_are_saved() {
     let sandbox = sandbox();
     let out = sandbox.root.join("corpus");
-    let output = examples(&sandbox, &out, &[("FAKE_GP_FAIL", "Blues")]);
+    let output = examples(&sandbox, &out, &[("FAKE_GP_FAIL", "Sample")]);
     assert_eq!(output.status.code(), Some(2), "{}", text(&output));
     let report = text(&output);
     assert!(
@@ -147,12 +148,28 @@ fn a_failed_example_is_reported_and_the_rest_are_saved() {
         "{report}"
     );
     assert!(
-        report.contains("1 of 2 example(s) failed: Blues"),
+        report.contains("1 of 2 example(s) failed: Sample"),
         "{report}"
     );
-    assert!(!out.join("blues.gp").exists());
-    assert!(out.join("adelita-tarrega.gp").exists());
+    assert!(!out.join("sample.gp").exists());
+    assert!(out.join("sample-composer.gp").exists());
     assert_eq!(std::fs::read_dir(&sandbox.jobs).expect("jobs").count(), 1);
+    let index: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("examples.json")).expect("index"))
+            .expect("json");
+    assert_eq!(index["complete"], false);
+    assert_eq!(index["examples"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
+fn an_empty_guitar_pro_version_stops_before_any_save() {
+    let sandbox = sandbox();
+    let out = sandbox.root.join("corpus");
+    let output = examples(&sandbox, &out, &[("FAKE_GP_VERSION", " ")]);
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    assert!(text(&output).contains("reported no version"));
+    assert_eq!(calls(&sandbox), vec![String::from("list||")]);
+    assert!(!out.exists());
 }
 
 #[test]
@@ -173,10 +190,10 @@ fn colliding_example_names_stop_before_any_save() {
     let output = examples(
         &sandbox,
         &out,
-        &[("FAKE_GP_EXAMPLES", "[\"Hard Rock\",\"Hard  Rock!\"]")],
+        &[("FAKE_GP_EXAMPLES", "[\"Example Two\",\"Example  Two!\"]")],
     );
     assert_eq!(output.status.code(), Some(2), "{}", text(&output));
-    assert!(text(&output).contains("same file hard-rock.gp"));
+    assert!(text(&output).contains("same file example-two.gp"));
     assert_eq!(calls(&sandbox), vec![String::from("list||")]);
 }
 
