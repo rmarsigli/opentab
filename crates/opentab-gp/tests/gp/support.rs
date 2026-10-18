@@ -1,6 +1,6 @@
 use std::io::{Cursor, Write};
 
-use opentab_gp::{GpError, read_gp};
+use opentab_gp::{GpError, Refusal, read_gp};
 use opentab_model::{Beat, ElementId, MasterBar, Note, OpaquePayload, Score, Track};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -177,4 +177,27 @@ pub fn gpif_path(error: &GpError) -> String {
         GpError::Gpif { path, .. } => path.clone(),
         other => panic!("not a GPIF error: {other}"),
     }
+}
+
+pub fn documented(reason: &Refusal) -> bool {
+    matches!(
+        reason,
+        Refusal::Character { .. }
+            | Refusal::ScoreEntries { .. }
+            | Refusal::ScoreEntryName { .. }
+            | Refusal::DuplicateEntry { .. }
+            | Refusal::EntryName { .. }
+            | Refusal::DirectoryData { .. }
+            | Refusal::PayloadFormat { .. }
+            | Refusal::MalformedPayload { .. }
+            | Refusal::DanglingExtension { .. }
+            | Refusal::BarCount { .. }
+            | Refusal::VoiceSlots
+            | Refusal::NoteKind
+            | Refusal::String { .. }
+            | Refusal::Pitch
+            | Refusal::TempoPosition { .. }
+            | Refusal::HarmonicFret { .. }
+            | Refusal::RightHandOpen
+    )
 }
