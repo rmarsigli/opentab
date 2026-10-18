@@ -86,7 +86,7 @@ pub struct TrackSeed {
 
 #[derive(Debug, Clone)]
 pub struct TempoChangeSeed {
-    pub position: Fraction,
+    pub share: Fraction,
     pub bpm: Tempo,
 }
 
@@ -180,7 +180,7 @@ fn arb_time_signature() -> impl Strategy<Value = TimeSignature> {
 
 fn arb_tempo_change() -> impl Strategy<Value = TempoChangeSeed> {
     (0i64..=64, 1i64..=16, MIN_BPM..=MAX_BPM).prop_map(|(numer, denom, bpm)| TempoChangeSeed {
-        position: Fraction::new(numer, denom),
+        share: Fraction::new(numer % denom, denom),
         bpm: Tempo::new(bpm).expect("bpm within range"),
     })
 }

@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::fraction::{checked_sum, deserialize_non_negative};
 use crate::{
-    Bar, BarId, ElementId, Fraction, InstrumentKind, NoteId, NoteKind, Score, Staff, StaffId,
-    Track, TrackId, Voice, VoiceId,
+    Bar, BarId, ElementId, Fraction, InstrumentKind, MasterBar, MasterBarId, NoteId, NoteKind,
+    Score, Staff, StaffId, Track, TrackId, Voice, VoiceId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -54,6 +54,11 @@ pub enum Diagnostic {
     BarWithoutVoices {
         bar: BarId,
     },
+    TempoChangeOutsideBar {
+        master_bar: MasterBarId,
+        #[serde(deserialize_with = "deserialize_non_negative")]
+        position: Fraction,
+    },
 }
 
 pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
@@ -65,6 +70,7 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
     };
     for master_bar in &score.master_bars {
         report.id(master_bar.id.0);
+        report.tempo_changes(master_bar);
     }
     for track in &score.tracks {
         report.id(track.id.0);
@@ -118,6 +124,19 @@ impl Report {
                 .map(|master_bar| master_bar.time_signature.bar_length());
             for voice in &bar.voices {
                 self.voice(track, voice, expected);
+            }
+        }
+    }
+
+    fn tempo_changes(&mut self, master_bar: &MasterBar) {
+        let start = Fraction::from_integer(0);
+        let end = master_bar.time_signature.bar_length();
+        for change in &master_bar.tempo_changes {
+            if change.position < start || change.position >= end {
+                self.diagnostics.push(Diagnostic::TempoChangeOutsideBar {
+                    master_bar: master_bar.id,
+                    position: change.position,
+                });
             }
         }
     }

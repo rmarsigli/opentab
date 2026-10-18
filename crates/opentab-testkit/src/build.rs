@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use opentab_model::{
     Bar, Beat, ElementId, Extensions, Instrument, InstrumentKind, MasterBar, Note, NoteKind, Score,
-    Staff, TempoChange, Track, Tuning, Voice,
+    Staff, TempoChange, TimeSignature, Track, Tuning, Voice,
 };
 
 use crate::fill::FillTable;
@@ -37,7 +37,11 @@ impl Builder {
             repeat_end: seed.repeat_end,
             alternate_endings: seed.alternate_endings,
             marker: seed.marker.map(|text| opentab_model::Marker { text }),
-            tempo_changes: seed.tempo_changes.into_iter().map(tempo_change).collect(),
+            tempo_changes: seed
+                .tempo_changes
+                .into_iter()
+                .map(|change| tempo_change(change, seed.time_signature))
+                .collect(),
         }
     }
 
@@ -177,9 +181,9 @@ impl Builder {
     }
 }
 
-fn tempo_change(seed: TempoChangeSeed) -> TempoChange {
+fn tempo_change(seed: TempoChangeSeed, time_signature: TimeSignature) -> TempoChange {
     TempoChange {
-        position: seed.position,
+        position: seed.share * time_signature.bar_length(),
         bpm: seed.bpm,
     }
 }
