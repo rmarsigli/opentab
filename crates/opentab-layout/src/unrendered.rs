@@ -152,9 +152,6 @@ struct Walk<'a> {
 
 impl Walk<'_> {
     fn note(&mut self, note: &Note, kit: Option<&DrumKit>) {
-        if payloads(self.score, note.id.0).any(holds_legato) {
-            self.found.insert(Unrendered::LegatoSlurs);
-        }
         if let (NoteKind::Percussion { articulation }, Some(kit)) = (note.kind, kit)
             && !kit.entry(articulation).fully_drawn()
         {
@@ -166,6 +163,9 @@ impl Walk<'_> {
         for data in payloads(self.score, beat.id.0) {
             if data.contains(HAIRPIN) {
                 self.found.insert(Unrendered::Hairpins);
+            }
+            if holds_legato(data) {
+                self.found.insert(Unrendered::LegatoSlurs);
             }
             if holds_lyrics(data) {
                 self.found.insert(Unrendered::Lyrics);
