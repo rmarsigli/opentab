@@ -7,6 +7,7 @@ mod text;
 use opentab_model::Score;
 use proptest::prelude::Strategy;
 
+pub use fill::min_beats_for_bar;
 pub use seed::ScoreGenConfig;
 
 pub fn arb_score() -> impl Strategy<Value = Score> {
