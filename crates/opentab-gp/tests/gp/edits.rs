@@ -853,3 +853,40 @@ fn a_voiceless_bar_from_a_gp_file_can_be_removed_trimmed_and_filled() {
     assert_eq!(voices.len(), 1);
     assert_eq!(voices[0].beats.len(), 1);
 }
+
+#[test]
+fn a_string_edit_on_a_hopo_destination_drops_it_and_a_fret_edit_keeps_it() {
+    let original = &*RICH;
+    let destination = original.destinations[0];
+    let count = |score: &Score| {
+        gpif_text(&write_gp(score).expect("write"))
+            .matches(HOPO_DESTINATION)
+            .count()
+    };
+    assert_eq!(count(&original.score), 3);
+    let mut fretted = original.score.clone();
+    opentab_command::apply(
+        &mut fretted,
+        &Command::SetFret {
+            note: destination,
+            fret: 7,
+        },
+    )
+    .expect("set_fret");
+    assert_eq!(count(&fretted), 3);
+    let mut restrung = original.score.clone();
+    let beat = &mut restrung.tracks[0].staves[0].bars[0].voices[0].beats[1];
+    let note = beat
+        .notes
+        .iter_mut()
+        .find(|note| note.id == destination)
+        .expect("destination");
+    let NoteKind::Fretted { string, fret } = note.kind else {
+        panic!("fretted destination");
+    };
+    note.kind = NoteKind::Fretted {
+        string: (string + 1) % STRINGS,
+        fret,
+    };
+    assert_eq!(count(&restrung), 2);
+}
