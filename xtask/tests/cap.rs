@@ -1,6 +1,6 @@
 use xtask::cap::{
-    CommandLine, MEMORY_MAX, MEMORY_SWAP_MAX, SYSTEMD_RUN, cap_applicable, cap_arguments, capped,
-    probe, wrap,
+    CommandLine, MEMORY_MAX, MEMORY_SWAP_MAX, OOM_POLICY, SYSTEMD_RUN, cap_applicable,
+    cap_arguments, capped, probe, wrap,
 };
 
 fn words(items: &[&str]) -> Vec<String> {
@@ -20,9 +20,17 @@ fn the_limits_are_five_gigabytes_of_memory_and_one_of_swap() {
             "-p",
             "MemoryMax=5G",
             "-p",
-            "MemorySwapMax=1G"
+            "MemorySwapMax=1G",
+            "-p",
+            "OOMPolicy=continue"
         ])
     );
+}
+
+#[test]
+fn an_out_of_memory_kill_stops_only_the_offending_process() {
+    assert_eq!(OOM_POLICY, "continue");
+    assert!(cap_arguments().contains(&format!("OOMPolicy={OOM_POLICY}")));
 }
 
 #[test]

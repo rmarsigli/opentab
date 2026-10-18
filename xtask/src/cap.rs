@@ -1,5 +1,6 @@
 pub const MEMORY_MAX: &str = "5G";
 pub const MEMORY_SWAP_MAX: &str = "1G";
+pub const OOM_POLICY: &str = "continue";
 pub const SYSTEMD_RUN: &str = "systemd-run";
 pub const LINUX: &str = "linux";
 pub const UNAVAILABLE_WARNING: &str = "warning: memory cap unavailable (needs Linux and a working `systemd-run --user`); running uncapped";
@@ -28,6 +29,8 @@ pub fn cap_arguments() -> Vec<String> {
         format!("MemoryMax={MEMORY_MAX}"),
         "-p".to_owned(),
         format!("MemorySwapMax={MEMORY_SWAP_MAX}"),
+        "-p".to_owned(),
+        format!("OOMPolicy={OOM_POLICY}"),
     ]
 }
 
