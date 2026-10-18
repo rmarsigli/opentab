@@ -204,23 +204,23 @@ fn harvest_writes_the_golden_layout_and_reharvest_is_byte_identical() {
     assert_eq!(
         names,
         [
-            "amazing grace/export.gp5",
-            "amazing grace/export.gpx",
-            "amazing grace/export.mid",
-            "amazing grace/export.musicxml",
-            "amazing grace/export.pdf",
-            "amazing grace/png/song 1.png",
-            "amazing grace/png/song 2.png",
-            "amazing grace/resave.gp",
+            "amazing grace.gp/export.gp5",
+            "amazing grace.gp/export.gpx",
+            "amazing grace.gp/export.mid",
+            "amazing grace.gp/export.musicxml",
+            "amazing grace.gp/export.pdf",
+            "amazing grace.gp/png/song 1.png",
+            "amazing grace.gp/png/song 2.png",
+            "amazing grace.gp/resave.gp",
             "manifest.json",
-            "sub dir/Canção/export.gp5",
-            "sub dir/Canção/export.gpx",
-            "sub dir/Canção/export.mid",
-            "sub dir/Canção/export.musicxml",
-            "sub dir/Canção/export.pdf",
-            "sub dir/Canção/png/song 1.png",
-            "sub dir/Canção/png/song 2.png",
-            "sub dir/Canção/resave.gp",
+            "sub dir/Canção.gp/export.gp5",
+            "sub dir/Canção.gp/export.gpx",
+            "sub dir/Canção.gp/export.mid",
+            "sub dir/Canção.gp/export.musicxml",
+            "sub dir/Canção.gp/export.pdf",
+            "sub dir/Canção.gp/png/song 1.png",
+            "sub dir/Canção.gp/png/song 2.png",
+            "sub dir/Canção.gp/resave.gp",
         ]
     );
     let two = tree(&second);
@@ -231,8 +231,8 @@ fn harvest_writes_the_golden_layout_and_reharvest_is_byte_identical() {
         two.iter().filter(|(k, _)| !volatile(k)).collect();
     assert_eq!(stable_one, stable_two);
     assert_ne!(
-        one["amazing grace/export.gp5"],
-        two["amazing grace/export.gp5"]
+        one["amazing grace.gp/export.gp5"],
+        two["amazing grace.gp/export.gp5"]
     );
     let fresh = check(&sandbox, &second);
     assert_eq!(fresh.status.code(), Some(0), "{}", text(&fresh));
@@ -253,7 +253,7 @@ fn harvest_writes_the_golden_layout_and_reharvest_is_byte_identical() {
         .expect("mid listed");
     assert_eq!(mid["byte_identical"], true);
     assert_eq!(mid["sha256"].as_str().map(str::len), Some(64));
-    let xml = String::from_utf8(one["amazing grace/export.musicxml"].clone()).expect("utf8");
+    let xml = String::from_utf8(one["amazing grace.gp/export.musicxml"].clone()).expect("utf8");
     assert!(xml.contains("<encoding-date>1970-01-01</encoding-date>"));
     assert_eq!(std::fs::read_dir(&sandbox.jobs).expect("jobs").count(), 0);
 }
@@ -284,4 +284,19 @@ fn check_is_fresh_then_stale_after_one_byte_changes() {
         String::from_utf8_lossy(&mixed.stdout),
         "stale: sub dir/Canção.gp\nmissing: new.gp\norphan: amazing grace.gp\n"
     );
+}
+
+#[test]
+fn same_stem_pair_is_harvested_into_separate_golden_dirs() {
+    let sandbox = sandbox();
+    std::fs::write(sandbox.input.join("song.gp"), b"native").expect("write");
+    std::fs::write(sandbox.input.join("song.gp5"), b"exported").expect("write");
+    let goldens = sandbox.root.join("goldens");
+    let output = harvest(&sandbox, &goldens, &[]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output));
+    let files = tree(&goldens);
+    assert_eq!(files["song.gp/resave.gp"], b"native");
+    assert_eq!(files["song.gp5/resave.gp"], b"exported");
+    let fresh = check(&sandbox, &goldens);
+    assert_eq!(fresh.status.code(), Some(0), "{}", text(&fresh));
 }

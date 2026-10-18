@@ -15,13 +15,8 @@ impl Fixture {
         self.key.rsplit('/').next().unwrap_or(&self.key)
     }
 
-    pub fn golden_dir(&self) -> String {
-        match self.key.rfind('.') {
-            Some(dot) if dot > self.key.rfind('/').map_or(0, |slash| slash + 1) => {
-                self.key[..dot].to_owned()
-            }
-            _ => self.key.clone(),
-        }
+    pub fn golden_dir(&self) -> &str {
+        &self.key
     }
 }
 
@@ -86,16 +81,6 @@ pub fn discover(input: &Path) -> Result<Vec<Fixture>, OracleError> {
     } else {
         walk(input, "", &mut found)?;
     }
-    let mut dirs: BTreeMap<String, String> = BTreeMap::new();
-    for fixture in &found {
-        if let Some(previous) = dirs.insert(fixture.golden_dir(), fixture.key.clone()) {
-            return Err(OracleError::new(format!(
-                "fixtures {previous} and {} would share the golden directory {}",
-                fixture.key,
-                fixture.golden_dir()
-            )));
-        }
-    }
     Ok(found)
 }
 
@@ -105,13 +90,13 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn golden_dir_strips_only_the_extension() {
+    fn golden_dir_is_the_file_name_with_extension() {
         let make = |key: &str| Fixture {
             key: key.to_owned(),
             path: PathBuf::from(key),
         };
-        assert_eq!(make("a b/Canção.gp").golden_dir(), "a b/Canção");
-        assert_eq!(make("x.y/song.gp5").golden_dir(), "x.y/song");
+        assert_eq!(make("a b/Canção.gp").golden_dir(), "a b/Canção.gp");
+        assert_eq!(make("x.y/song.gp5").golden_dir(), "x.y/song.gp5");
         assert_eq!(make("dir.v2/noext").golden_dir(), "dir.v2/noext");
         assert_eq!(make("a b/Canção.gp").file_name(), "Canção.gp");
     }
@@ -137,11 +122,12 @@ mod tests {
     }
 
     #[test]
-    fn colliding_golden_dirs_are_rejected() {
+    fn same_stem_pairs_get_distinct_golden_dirs() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("song.gp"), b"1").expect("write");
         std::fs::write(dir.path().join("song.gp5"), b"2").expect("write");
-        let error = discover(dir.path()).expect_err("collision");
-        assert!(error.message().contains("share the golden directory song"));
+        let fixtures = discover(dir.path()).expect("pair coexists");
+        let dirs: Vec<&str> = fixtures.iter().map(Fixture::golden_dir).collect();
+        assert_eq!(dirs, ["song.gp", "song.gp5"]);
     }
 }
