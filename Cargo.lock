@@ -872,6 +872,8 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "opentab-gp",
+ "opentab-model",
  "serde",
  "serde_json",
  "sha2",
