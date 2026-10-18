@@ -2,13 +2,14 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use opentab_layout::{
-    ClefSign, DisplayList, GroupId, LayoutOptions, StaffKind, Units, layout, spell, written_key,
-    written_midi,
+    ClefSign, DisplayList, GroupId, LayoutOptions, StaffKind, StaffMode, Units,
+    baseline_below_centre, layout, spell, written_key, written_midi,
 };
 use opentab_model::{NoteKind, Score};
 
 use crate::music::{glyphs, group_in, half_spaces, is_notehead, top_step};
 use crate::support::systems;
+use crate::tab::{note_groups, tab_rows};
 
 const LETTERS: &str = "CDEFGAB";
 const MIN_COMPARED: usize = 318;
@@ -258,4 +259,70 @@ fn drawn_pitches_match_the_guitar_pro_export_of_every_fixture_and_staff() {
     }
     assert!(compared >= MIN_COMPARED, "{compared}");
     assert!(second_staff > 0);
+}
+
+fn drawn_tab(score: &Score, list: &DisplayList) -> BTreeMap<NoteKey, usize> {
+    let mut frets: BTreeMap<u64, u8> = BTreeMap::new();
+    for track in &score.tracks {
+        for staff in &track.staves {
+            for bar in &staff.bars {
+                for note in bar
+                    .voices
+                    .iter()
+                    .flat_map(|voice| &voice.beats)
+                    .flat_map(|beat| &beat.notes)
+                {
+                    if let NoteKind::Fretted { fret, .. } = note.kind {
+                        frets.insert(note.id.0.0, fret);
+                    }
+                }
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    for (_, _, row) in tab_rows(list) {
+        let staff = row.staff;
+        for (layout, group) in staff.bars.iter().zip(&row.bars) {
+            for (id, labels) in note_groups(group) {
+                for label in labels {
+                    let centre = label.text.origin.y - baseline_below_centre(label.text.em);
+                    let offset = centre - staff.top;
+                    assert_eq!(offset.0 % staff.line_spacing.0, 0);
+                    let line = u8::try_from(offset.0 / staff.line_spacing.0).unwrap();
+                    *out.entry(NoteKey {
+                        track: staff.track,
+                        staff: staff.staff,
+                        bar: layout.index,
+                        string: line + 1,
+                        fret: frets[&id],
+                    })
+                    .or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn tab_labels_sit_on_the_guitar_pro_string_of_every_fixture_note() {
+    let mut compared = 0;
+    for name in fixtures() {
+        let fixture = name.as_str();
+        let bytes = std::fs::read(root().join(format!("fixtures/gp/{fixture}.gp"))).unwrap();
+        let score = opentab_gp::read_gp(&bytes).unwrap();
+        let options = LayoutOptions {
+            staff_mode: Some(StaffMode::Tab),
+            ..LayoutOptions::default()
+        };
+        let list = layout(&score, &options).unwrap();
+        let expected: BTreeMap<NoteKey, usize> = gp_notes(fixture, &score)
+            .into_iter()
+            .map(|(key, notes)| (key, notes.len()))
+            .collect();
+        let drawn = drawn_tab(&score, &list);
+        assert_eq!(drawn, expected, "{fixture}: tab strings and frets");
+        compared += drawn.values().sum::<usize>();
+    }
+    assert!(compared >= MIN_COMPARED, "{compared}");
 }
