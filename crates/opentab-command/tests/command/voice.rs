@@ -167,6 +167,15 @@ fn restore_voice_keeps_slots_strictly_increasing() {
     bar.voices.push(other);
     fx.score.ids = serde_json::from_value(serde_json::json!({"next": 100_000})).unwrap();
     assert!(message_of(rejected(&mut fx.score, &restore)).contains("strictly increasing"));
+    let Command::RestoreVoice { index, .. } = &mut restore else {
+        panic!("restore_voice expected");
+    };
+    *index = 1;
+    assert!(message_of(rejected(&mut fx.score, &restore)).contains("strictly increasing"));
+    let Command::RestoreVoice { index, .. } = &mut restore else {
+        panic!("restore_voice expected");
+    };
+    *index = 0;
     fx.score.tracks[0].staves[0].bars[0].voices[0].slot = VoiceSlot::new(1).unwrap();
     apply(&mut fx.score, &restore).expect("slot 0 fits before slot 1");
 }
