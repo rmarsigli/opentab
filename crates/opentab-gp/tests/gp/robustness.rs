@@ -155,7 +155,50 @@ fn opaque_copies_of_shared_elements_are_bounded() {
     assert!(matches!(
         read_gpif_error(&gpif),
         GpError::Gpif {
-            problem: GpifProblem::OpaqueLimit { limit: 67_108_864 },
+            problem: GpifProblem::RetainedLimit { limit: 67_108_864 },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn mapped_text_copied_per_reference_is_bounded() {
+    let large = "y".repeat(1024 * 1024);
+    let references = vec!["0"; 10_000].join(" ");
+    let doc = Doc {
+        beat: format!("<FreeText><![CDATA[{large}]]></FreeText>"),
+        ..Doc::default()
+    };
+    let gpif = doc
+        .render()
+        .replace("<Beats>0</Beats>", &format!("<Beats>{references}</Beats>"));
+    assert!(matches!(
+        read_gpif_error(&gpif),
+        GpError::Gpif {
+            problem: GpifProblem::RetainedLimit { limit: 67_108_864 },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn chord_names_copied_per_reference_are_bounded() {
+    let large = "z".repeat(1024 * 1024);
+    let references = vec!["0"; 10_000].join(" ");
+    let doc = Doc {
+        beat: "<Chord>0</Chord>".to_string(),
+        staff: format!(
+            "<Property name=\"DiagramCollection\"><Items><Item id=\"0\" name=\"{large}\"/></Items></Property>"
+        ),
+        ..Doc::default()
+    };
+    let gpif = doc
+        .render()
+        .replace("<Beats>0</Beats>", &format!("<Beats>{references}</Beats>"));
+    assert!(matches!(
+        read_gpif_error(&gpif),
+        GpError::Gpif {
+            problem: GpifProblem::RetainedLimit { .. },
             ..
         }
     ));

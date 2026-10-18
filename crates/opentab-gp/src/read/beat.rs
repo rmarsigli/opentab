@@ -230,7 +230,11 @@ fn read_beat_child(
             }
             effects.fade_in = true;
         }
-        "FreeText" => effects.text = Some(visit.text()),
+        "FreeText" => {
+            let text = visit.text();
+            ctx.charge(text.len(), &visit.location)?;
+            effects.text = Some(text);
+        }
         "Chord" => {
             let id = visit.text();
             let name = staff
@@ -239,6 +243,9 @@ fn read_beat_child(
                 .find(|item| item.id == id.trim())
                 .map(|item| item.name.clone());
             let handled = Handled::Replayed(guard::chord(name.as_deref()));
+            if let Some(name) = &name {
+                ctx.charge(name.len(), &visit.location)?;
+            }
             effects.chord_name = name;
             return Ok(handled);
         }

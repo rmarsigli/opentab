@@ -3,7 +3,7 @@ use opentab_model::{ElementId, ModelError, Score};
 use crate::dom::{Element, Node};
 use crate::error::GpifProblem;
 use crate::limits::{
-    MAX_MODEL_ELEMENTS, MIN_OPAQUE_BUDGET, OPAQUE_BUDGET_FACTOR, PAYLOAD_OVERHEAD,
+    MAX_MODEL_ELEMENTS, MIN_RETAINED_BUDGET, PAYLOAD_OVERHEAD, RETAINED_BUDGET_FACTOR,
 };
 use crate::location::Location;
 use crate::number;
@@ -99,19 +99,19 @@ pub(crate) enum Handled {
 
 pub(crate) struct Context {
     pub score: Score,
-    opaque_bytes: u64,
-    opaque_budget: u64,
+    retained_bytes: u64,
+    retained_budget: u64,
 }
 
 impl Context {
     pub fn new(source_size: usize) -> Context {
         let scaled = u64::try_from(source_size)
             .unwrap_or(u64::MAX)
-            .saturating_mul(OPAQUE_BUDGET_FACTOR);
+            .saturating_mul(RETAINED_BUDGET_FACTOR);
         Context {
             score: Score::new(),
-            opaque_bytes: 0,
-            opaque_budget: scaled.max(MIN_OPAQUE_BUDGET),
+            retained_bytes: 0,
+            retained_budget: scaled.max(MIN_RETAINED_BUDGET),
         }
     }
 
@@ -166,20 +166,25 @@ impl Context {
         Ok(())
     }
 
-    fn push(&mut self, scope: &Scope, item: OpaqueItem<'_>) -> Result<(), Fault> {
-        let payload = item.encode();
-        let size = u64::try_from(payload.data.len())
+    pub fn charge(&mut self, bytes: usize, location: &Location) -> Result<(), Fault> {
+        let size = u64::try_from(bytes)
             .unwrap_or(u64::MAX)
             .saturating_add(PAYLOAD_OVERHEAD);
-        self.opaque_bytes = self.opaque_bytes.saturating_add(size);
-        if self.opaque_bytes > self.opaque_budget {
+        self.retained_bytes = self.retained_bytes.saturating_add(size);
+        if self.retained_bytes > self.retained_budget {
             return Err(Fault::at(
-                &scope.location,
-                GpifProblem::OpaqueLimit {
-                    limit: self.opaque_budget,
+                location,
+                GpifProblem::RetainedLimit {
+                    limit: self.retained_budget,
                 },
             ));
         }
+        Ok(())
+    }
+
+    fn push(&mut self, scope: &Scope, item: OpaqueItem<'_>) -> Result<(), Fault> {
+        let payload = item.encode();
+        self.charge(payload.data.len(), &scope.location)?;
         match scope.owner {
             Owner::Document => self.score.document_extensions.push(payload),
             Owner::Element(id) => self.score.extensions.0.entry(id).or_default().push(payload),
