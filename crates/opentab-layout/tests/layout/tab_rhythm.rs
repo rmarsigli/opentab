@@ -172,3 +172,61 @@ fn seven_and_eight_string_tabs_grow_their_lines_and_keep_every_label() {
     let list = render(&nine, &crate::music::tall(None));
     assert!(tab_rows(&list).is_empty());
 }
+
+#[test]
+fn rhythm_under_the_tab_follows_the_first_voice_that_plays() {
+    let rest = || Event::Rest(crate::music::plain(NoteValue::Quarter));
+    let score = build(&[measure(
+        (4, 4),
+        0,
+        vec![
+            (0, vec![rest(), rest(), rest(), rest()]),
+            (
+                1,
+                vec![
+                    play(NoteValue::Quarter, &[(2, 2)]),
+                    play(NoteValue::Quarter, &[(2, 3)]),
+                    play(NoteValue::Half, &[(2, 4)]),
+                ],
+            ),
+        ],
+    )]);
+    let list = render(&score, &options(StaffMode::Tab));
+    let (staff, bar) = tab_bar(&list, 0);
+    assert_eq!(stems_below(bar, staff), 3);
+    assert!(
+        glyph_names(&bar.items)
+            .iter()
+            .all(|name| !name.starts_with("rest")),
+        "the silent first voice carries no rhythm"
+    );
+}
+
+#[test]
+fn beams_under_the_tab_are_horizontal() {
+    let score = build(&[measure(
+        (2, 4),
+        0,
+        vec![(
+            0,
+            vec![
+                play(NoteValue::Eighth, &[(2, 2)]),
+                play(NoteValue::Sixteenth, &[(2, 3)]),
+                play(NoteValue::ThirtySecond, &[(2, 4)]),
+                play(NoteValue::ThirtySecond, &[(2, 5)]),
+                play(NoteValue::Quarter, &[(2, 5)]),
+            ],
+        )],
+    )]);
+    let list = render(&score, &options(StaffMode::Tab));
+    let (staff, bar) = tab_bar(&list, 0);
+    let thickness = Metrics::bravura().engraving_defaults().stem_thickness;
+    let ends: Vec<Units> = lines(&bar.items)
+        .iter()
+        .filter(|line| line.from.x == line.to.x && line.thickness == thickness)
+        .filter(|line| line.from.y > staff.bottom())
+        .map(|line| line.to.y)
+        .collect();
+    assert_eq!(ends.len(), 5);
+    assert!(ends[..4].iter().all(|end| *end == ends[0]), "{ends:?}");
+}

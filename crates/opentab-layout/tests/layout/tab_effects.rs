@@ -1,6 +1,6 @@
 use opentab_layout::{
-    DisplayList, Group, GroupId, Line, PathStyle, PlacedGlyph, Primitive, Shape, StaffLayout,
-    StaffMode, TextRun, Units, baseline_below_centre,
+    DisplayList, Group, GroupId, Line, PathSegment, PathStyle, PlacedGlyph, Primitive, Shape,
+    StaffLayout, StaffMode, TextRun, Units, baseline_below_centre,
 };
 use opentab_model::{
     BeatEffects, Bend, BendPoint, Finger, Fraction, Harmonic, HarmonicKind, NoteKind, NoteValue,
@@ -24,7 +24,7 @@ fn bar_of_quarters(notes: &[(u8, u8)]) -> Score {
     build(&[measure((4, 4), 0, vec![(0, quarters(notes))])])
 }
 
-fn bars_of_quarters(bars: &[&[(u8, u8)]]) -> Score {
+pub fn bars_of_quarters(bars: &[&[(u8, u8)]]) -> Score {
     let measures: Vec<_> = bars
         .iter()
         .map(|notes| measure((4, 4), 0, vec![(0, quarters(notes))]))
@@ -99,7 +99,7 @@ pub fn beat_group<'a>(bar: &'a Group, score: &Score, bar_index: usize, beat: usi
     find_group(&bar.items, GroupId(id.0.0)).expect("a beat group")
 }
 
-fn bend(values: [(u8, i16); 4]) -> Bend {
+pub fn bend(values: [(u8, i16); 4]) -> Bend {
     let point = |(offset, value): (u8, i16)| BendPoint::new(offset, value).unwrap();
     Bend::new(
         point(values[0]),
@@ -363,6 +363,26 @@ fn hammer_ons_and_pull_offs_arc_over_both_frets_with_their_letter() {
         .filter(|word| word == "H" || word == "P")
         .collect();
     assert_eq!(letters, vec!["H", "P"]);
+    let labels = note_groups(bar);
+    let centre = |beat: usize| labels[&note_id(&score, 0, 0, beat, 0).0.0][0].text.origin.x;
+    for (arc, (from, to)) in arcs.iter().zip([(0, 1), (2, 3)]) {
+        let PathSegment::MoveTo(start) = arc.segments[0] else {
+            panic!("an arc starts with a move");
+        };
+        let PathSegment::CubicTo(_, _, end) = arc.segments[1] else {
+            panic!("an arc is a cubic");
+        };
+        assert_eq!(
+            start.x,
+            centre(from),
+            "the arc leaves the origin label centre"
+        );
+        assert_eq!(
+            end.x,
+            centre(to),
+            "the arc ends at the destination label centre"
+        );
+    }
     let (_, third) = tab_bar(&list, 2);
     assert!(
         words(&third.items).contains(&"H".to_string()),
@@ -383,6 +403,18 @@ fn slides_join_frets_with_a_line_and_slides_in_or_out_are_short_strokes() {
     assert_eq!(joined.len(), 2);
     assert!(rising(&joined[0]), "5 to 7 rises");
     assert!(falling(&joined[1]), "7 to 5 falls");
+    let boxes = note_groups(second);
+    let white = |beat: usize| boxes[&note_id(&score, 1, 0, beat, 0).0.0][0].white;
+    for (line, (from, to)) in joined.iter().zip([(0, 1), (2, 3)]) {
+        assert!(
+            line.from.x > white(from).max.x,
+            "the slide leaves after the origin label"
+        );
+        assert!(
+            line.to.x < white(to).min.x,
+            "the slide stops before the target label"
+        );
+    }
     let (_, third) = tab_bar(&list, 2);
     let label_x = |beat: usize| {
         let id = note_id(&score, 2, 0, beat, 0);
@@ -479,6 +511,19 @@ fn let_ring_palm_mute_vibrato_and_taps_sit_in_lanes_above_the_tab() {
         assert!(marks.contains(&mark.to_string()), "{marks:?}");
     }
     insta::assert_snapshot!(focused(&score, StaffMode::Both));
+}
+
+#[test]
+fn a_lane_label_reserves_room_after_its_column() {
+    let score = lanes_score();
+    let list = render(&score, &options(StaffMode::Both));
+    let (staff, _) = tab_bar(&list, 0);
+    let first = &staff.bars[0].columns;
+    let text = opentab_layout::text::text_font();
+    assert!(first[0].right > text.measure("let ring", opentab_layout::MARK_EM));
+    assert!(first[1].right > text.measure("P.M.", opentab_layout::MARK_EM));
+    let second = &tab_bar(&list, 1).0.bars[1].columns;
+    assert!(second[3].right > text.measure("LT P.H.", opentab_layout::MARK_EM).half());
 }
 
 #[test]
