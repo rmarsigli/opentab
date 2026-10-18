@@ -180,12 +180,10 @@ impl Playback {
         let mut ending: Option<u8> = None;
         let mut jumped = false;
         let mut played = 0usize;
-        let mut steps = 0usize;
-        while let Some(bar) = master_bars.get(index) {
-            if steps >= MAX_UNROLL_STEPS {
+        for _ in 0..MAX_UNROLL_STEPS {
+            let Some(bar) = master_bars.get(index) else {
                 break;
-            }
-            steps += 1;
+            };
             if bar.repeat_start && !jumped {
                 start = index;
                 pass = 1;
@@ -223,5 +221,210 @@ impl Playback {
 
     pub fn position(&self, index: usize, occurrence: usize) -> Option<usize> {
         self.positions.get(index)?.get(occurrence).copied()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use opentab_model::{ElementId, KeySignature, MasterBarId, TimeSignature};
+
+    use super::*;
+
+    #[derive(Clone, Copy)]
+    struct Spec {
+        start: bool,
+        end: Option<u8>,
+        endings: u8,
+    }
+
+    const PLAIN: Spec = Spec {
+        start: false,
+        end: None,
+        endings: 0,
+    };
+
+    fn bars(specs: &[Spec]) -> Vec<MasterBar> {
+        specs
+            .iter()
+            .enumerate()
+            .map(|(index, spec)| MasterBar {
+                id: MasterBarId(ElementId(index as u64)),
+                time_signature: TimeSignature::new(4, 4).unwrap(),
+                key_signature: KeySignature::new(0, false).unwrap(),
+                repeat_start: spec.start,
+                repeat_end: spec.end,
+                alternate_endings: spec.endings,
+                double_bar: false,
+                marker: None,
+                tempo_changes: Vec::new(),
+            })
+            .collect()
+    }
+
+    fn positions(specs: &[Spec]) -> Vec<Vec<usize>> {
+        let playback = Playback::of(&bars(specs));
+        (0..specs.len())
+            .map(|index| {
+                (0..)
+                    .map_while(|occurrence| playback.position(index, occurrence))
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn bars_without_repeats_play_once_in_order() {
+        assert_eq!(
+            positions(&[PLAIN, PLAIN, PLAIN]),
+            [vec![0], vec![1], vec![2]]
+        );
+        assert!(positions(&[]).is_empty());
+    }
+
+    #[test]
+    fn a_repeat_plays_its_bars_again() {
+        let start = Spec {
+            start: true,
+            ..PLAIN
+        };
+        let end = Spec {
+            end: Some(2),
+            ..PLAIN
+        };
+        assert_eq!(
+            positions(&[PLAIN, start, end, PLAIN]),
+            [vec![0], vec![1, 3], vec![2, 4], vec![5]]
+        );
+    }
+
+    #[test]
+    fn alternate_endings_play_only_on_their_passes() {
+        let start = Spec {
+            start: true,
+            ..PLAIN
+        };
+        let first = Spec {
+            end: Some(2),
+            endings: 0b01,
+            ..PLAIN
+        };
+        let second = Spec {
+            endings: 0b10,
+            ..PLAIN
+        };
+        assert_eq!(
+            positions(&[start, first, second, PLAIN]),
+            [vec![0, 2], vec![1], vec![3], vec![4]]
+        );
+    }
+
+    #[test]
+    fn each_ending_plays_only_on_its_own_pass() {
+        let start = Spec {
+            start: true,
+            ..PLAIN
+        };
+        let first = Spec {
+            end: Some(3),
+            endings: 0b001,
+            ..PLAIN
+        };
+        let second = Spec {
+            end: Some(3),
+            endings: 0b010,
+            ..PLAIN
+        };
+        let third = Spec {
+            endings: 0b100,
+            ..PLAIN
+        };
+        assert_eq!(
+            positions(&[start, first, second, third]),
+            [vec![0, 2, 4], vec![1], vec![3], vec![5]]
+        );
+    }
+
+    #[test]
+    fn an_ending_mask_reaches_the_eighth_pass_and_no_further() {
+        let start = Spec {
+            start: true,
+            ..PLAIN
+        };
+        let eighth = Spec {
+            endings: 0b1000_0000,
+            ..PLAIN
+        };
+        let end = |passes| Spec {
+            end: Some(passes),
+            ..PLAIN
+        };
+        assert_eq!(
+            positions(&[start, end(8), eighth]),
+            [
+                vec![0, 2, 4, 6, 8, 10, 12, 14],
+                vec![1, 3, 5, 7, 9, 11, 13, 15],
+                vec![16]
+            ]
+        );
+        assert!(positions(&[start, end(9), eighth])[2].is_empty());
+    }
+
+    #[test]
+    fn a_new_repeat_start_clears_the_previous_ending() {
+        let first = Spec {
+            endings: 0b10,
+            ..PLAIN
+        };
+        let start = Spec {
+            start: true,
+            ..PLAIN
+        };
+        assert_eq!(
+            positions(&[first, start, PLAIN]),
+            [vec![], vec![0], vec![1]]
+        );
+    }
+
+    fn lyrics_with(children: Vec<Element>) -> Element {
+        let mut lyrics = Element::new(LYRICS);
+        for child in children {
+            lyrics.push(child);
+        }
+        lyrics
+    }
+
+    fn line_with(name: &str, child: &str) -> Element {
+        Element::new(name).with_child(Element::leaf(child, "0"))
+    }
+
+    #[test]
+    fn only_lines_holding_an_offset_are_lyric_sites() {
+        let lyrics = lyrics_with(vec![
+            line_with(LINE, "Text"),
+            line_with("Other", OFFSET),
+            line_with(LINE, OFFSET),
+        ]);
+        assert_eq!(
+            sites(&lyrics),
+            [Site {
+                kind: SiteKind::Offset,
+                path: vec![2]
+            }]
+        );
+    }
+
+    #[test]
+    fn only_automations_holding_a_bar_are_automation_sites() {
+        let root = Element::new("Root")
+            .with_child(Element::new(AUTOMATION).with_child(Element::leaf("Type", "Other")))
+            .with_child(line_with("Other", BAR))
+            .with_child(line_with(AUTOMATION, BAR));
+        assert_eq!(
+            sites(&root),
+            [Site {
+                kind: SiteKind::Bar,
+                path: vec![2]
+            }]
+        );
     }
 }
