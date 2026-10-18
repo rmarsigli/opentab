@@ -48,7 +48,7 @@ function Write-Result {
 }
 
 function Invoke-Step([string]$Name, [scriptblock]$Body) {
-  $rec = [ordered]@{ name = $Name; status = 'ok'; ms = 0; attempts = 1; error = $null; screenshot = $null }
+  $rec = New-GpStepRecord $Name 'ok'
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $script:Attempts = 1
   try {
@@ -62,13 +62,16 @@ function Invoke-Step([string]$Name, [scriptblock]$Body) {
   }
   $rec.ms = [int64]$sw.ElapsedMilliseconds
   $rec.attempts = $script:Attempts
-  [void]$Steps.Add([pscustomobject]$rec)
+  [void]$Steps.Add($rec)
   [void](Close-MenuRunspaces)
   $rec.status -eq 'ok'
 }
 
 function Skip-Step([string]$Name, [string]$Why) {
-  [void]$Steps.Add([pscustomobject][ordered]@{ name = $Name; status = 'skipped'; ms = 0; attempts = 0; error = $Why; screenshot = $null })
+  $rec = New-GpStepRecord $Name 'skipped'
+  $rec.attempts = 0
+  $rec.error = $Why
+  [void]$Steps.Add($rec)
 }
 
 function Open-GpDialog([string[]]$Menu, [string]$Kind) {
