@@ -366,7 +366,7 @@ Effect properties on notes:
 3. middle 2: offset 2 and the shared middle value;
 4. destination: an offset and a value.
 
-Offsets run from 0 to 100 across the note. **A value of 100 is a full tone**: GP exports 100 as `bend-alter 2` and 150 as `bend-alter 3`. So 25 units are one quarter tone, and the unit is one hundredth of a semitone (a cent). Observed values are 0, 12, 25, 37.5, 50, 75, 100 and 150. All observed offsets are whole numbers.
+Offsets run from 0 to 100 across the note. **GPIF counts bend values in hundredths of a tone: a value of 100 is a full tone.** GP exports 100 as `bend-alter 2` and 150 as `bend-alter 3`, so 25 is a quarter tone. Observed GPIF values are 0, 12, 25, 37.5, 50, 75, 100 and 150, and all observed offsets are whole numbers. The model counts in cents (hundredths of a semitone), so **model value = GPIF value × 2**: GPIF 25 is 50 cents and GPIF 37.5 is 75 cents. A GPIF value that does not become a whole number of cents, or an offset that is not a whole number, cannot be held by the model and stays opaque.
 
 ## 10. Mapping GPIF ↔ OpenTab model
 
@@ -395,7 +395,7 @@ Notation used in this table:
 | `Score.anacrusis` | `MasterTrack/Anacrusis` present | — |
 | `Score.extensions` | opaque GPIF keyed by owner id | — |
 | `Score.document_extensions` | opaque root-level GPIF: `GPVersion`, `GPRevision`, `Encoding`, `BackingTrack`, `Assets`, `ScoreViews` and similar | Not tied to any element. |
-| `Score.container` | every archive entry except `Content/score.gpif`, in archive order, with its exact bytes | Stored as base64 text in the JSON form. |
+| `Score.container` | every archive entry in archive order: an entry for each file with its name and exact bytes, and one `Score` entry (name only) at the place where `Content/score.gpif` sat | At most one `Score` entry. File data is stored as base64 text in the JSON form. |
 | `Score.ids` | — | The model allocator; not stored in GPIF. |
 
 ### Master bars
@@ -478,7 +478,7 @@ Notation used in this table:
 | `slide` | `Property Slide/Flags`, one bit | Shift 1, Legato 2, OutDownwards 4, OutUpwards 8, IntoFromBelow 16, IntoFromAbove 32. |
 | `harmonic.kind` | `HarmonicType/HType` | — |
 | `harmonic.fret` | `HarmonicFret/HFret` (float) | — |
-| `bend` | `Bended` and the `Bend…` properties | Four points: origin, middle start, middle end and destination. The two middle points share one value. Offsets run from 0 to 100 and values are in cents (hundredths of a semitone), from -1200 to 1200. |
+| `bend` | `Bended` and the `Bend…` properties | Four points: origin, middle start, middle end and destination. The two middle points share one value. Offsets run from 0 to 100 as in GPIF. Values are in cents, from -1200 to 1200 (GPIF ±600): model value = GPIF value × 2 (§9). |
 | `tap` | `Property Tapped` → Right, `Property LeftHandTapped` → Left | — |
 | `left_hand_finger` | `LeftFingering` | `Open`, `P` Thumb, `I` Index, `M` Middle, `A` Ring, `C` Little. |
 | `right_hand_finger` | `RightFingering` | `P` Thumb, `I` Index, `M` Middle, `A` Ring, `C` Little. |
@@ -559,7 +559,7 @@ We wrote a one-track, one-bar score from scratch and removed parts one at a time
 What each part does:
 
 - **`GPRevision` is mandatory.** Without it, GP neither opens the file nor shows any message: the open is silently ignored [m2].
-- **`InstrumentSet` is mandatory.** A score without it crashed GP [m1]; the same score with a revision and a set opened [m3]. A set with only `Type` is enough; GP fills in the rest on save [i-iset-type-only].
+- **`InstrumentSet` is required in practice.** A score that lacked both `GPRevision` and `InstrumentSet` crashed GP [m1]. We did not test a score that lacks only `InstrumentSet`, so a writer always emits one. The same score with a revision and a set opened [m3]. A set with only `Type` is enough; GP fills in the rest on save [i-iset-type-only].
 - **Everything else is optional:**
   - `GPVersion`, `Encoding`;
   - the other `Score` fields;
