@@ -10,13 +10,20 @@ pub trait Report: Serialize {
     fn human(&self) -> String;
 }
 
-pub fn emit<T: Report>(report: &T, json: bool) {
+pub fn emit<T: Report>(report: &T, json: bool) -> Result<(), CliError> {
     let text = if json {
-        serde_json::to_string(report).unwrap_or_default()
+        serde_json::to_string(report).map_err(|error| CliError::Internal {
+            message: error.to_string(),
+        })?
     } else {
         report.human()
     };
-    let _ = writeln!(std::io::stdout(), "{text}");
+    let mut stdout = std::io::stdout().lock();
+    writeln!(stdout, "{text}")
+        .and_then(|()| stdout.flush())
+        .map_err(|error| CliError::Output {
+            message: error.to_string(),
+        })
 }
 
 pub fn failure(error: &CliError, json: bool) -> ExitCode {
@@ -45,7 +52,9 @@ fn print_error(body: ErrorBody, json: bool) {
     if json {
         let envelope = ErrorEnvelope { error: body };
         let text = serde_json::to_string(&envelope).unwrap_or_default();
-        let _ = writeln!(std::io::stdout(), "{text}");
+        if writeln!(std::io::stdout(), "{text}").is_err() {
+            let _ = writeln!(std::io::stderr(), "error: {}", envelope.error.message);
+        }
     } else {
         let _ = writeln!(std::io::stderr(), "error: {}", body.message);
     }

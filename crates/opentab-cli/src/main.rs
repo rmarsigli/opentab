@@ -39,5 +39,4 @@ fn run(command: Subcommand) -> Result<(), CliError> {
             json,
         } => output::emit(&apply::run(&path, &commands, &out)?, json),
     }
-    Ok(())
 }

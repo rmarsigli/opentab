@@ -139,3 +139,82 @@ fn a_missing_input_file_exits_2() {
     assert_eq!(result.code, 2);
     assert_eq!(result.json()["error"]["kind"], "io");
 }
+
+#[cfg(target_os = "linux")]
+fn run_into_full_device(args: &[&str]) -> (i32, String) {
+    let full = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .expect("open /dev/full");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_opentab"))
+        .args(args)
+        .stdout(full)
+        .output()
+        .expect("spawn opentab");
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_lost_result_exits_two_instead_of_zero() {
+    let dir = temp();
+    let path = new_score(dir.path(), "a.opentab.json");
+    for args in [
+        vec!["info", path_str(&path), "--json"],
+        vec!["info", path_str(&path)],
+    ] {
+        let (code, stderr) = run_into_full_device(&args);
+        assert_eq!(code, 2, "{args:?}: {stderr}");
+        assert!(stderr.contains("cannot write the result"), "{stderr}");
+        assert!(!stderr.contains("panicked"), "{stderr}");
+    }
+}
+
+#[test]
+fn restoring_an_out_of_range_bend_is_an_invalid_command() {
+    let dir = temp();
+    let path = new_score(dir.path(), "a.opentab.json");
+    let commands = dir.path().join("restore.jsonl");
+    let line = serde_json::json!({
+        "op": "restore_beat",
+        "voice": 5,
+        "index": 0,
+        "beat": {
+            "id": 90,
+            "duration": {"value": "quarter", "dots": 0, "tuplet": null},
+            "effects": {
+                "tremolo_picking": null, "stroke": null, "chord_name": null, "text": null,
+                "fade_in": false, "tap": false, "slap": false, "pop": false
+            },
+            "notes": [{
+                "id": 91,
+                "kind": {"type": "fretted", "string": 0, "fret": 0},
+                "effects": {
+                    "tie_origin": false, "tie_destination": false, "ghost": false, "dead": false,
+                    "accent": null, "palm_mute": false, "let_ring": false, "staccato": false,
+                    "vibrato": null, "hammer_on_pull_off": false, "slide": null, "harmonic": null,
+                    "bend": {"points": [{"offset": 250, "value": 0}]},
+                    "left_hand_finger": null, "right_hand_finger": null
+                }
+            }]
+        },
+        "extensions": []
+    });
+    std::fs::write(&commands, format!("{line}\n")).unwrap();
+    let out = dir.path().join("b.opentab.json");
+    let result = run(&[
+        "apply",
+        path_str(&path),
+        path_str(&commands),
+        "--out",
+        path_str(&out),
+        "--json",
+    ]);
+    assert_eq!(result.code, 2, "{}", result.stdout);
+    assert_eq!(result.json()["error"]["kind"], "invalid_command");
+    assert!(result.stdout.contains("bend point"), "{}", result.stdout);
+    assert!(!out.exists());
+}

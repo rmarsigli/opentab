@@ -15,6 +15,7 @@ pub enum CliError {
     OutputExists { path: PathBuf },
     InvalidCommand { line: usize, message: String },
     CommandFailed { line: usize, source: CommandError },
+    Output { message: String },
     Internal { message: String },
 }
 
@@ -80,6 +81,11 @@ impl CliError {
                 kind: "command_failed",
                 message: format!("line {line}: {source}"),
                 line: Some(*line),
+            },
+            CliError::Output { message } => ErrorBody {
+                kind: "io",
+                message: format!("cannot write the result to stdout: {message}"),
+                line: None,
             },
             CliError::Internal { message } => ErrorBody {
                 kind: "internal",
