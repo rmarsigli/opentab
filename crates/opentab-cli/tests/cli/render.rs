@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use crate::support::{file_names, new_score, path_str, run, temp};
+use crate::support::{file_names, new_score, path_str, read_json, run, temp};
 
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
@@ -19,6 +19,37 @@ fn png_size(path: &Path) -> (u32, u32) {
         u32::from_be_bytes(bytes[offset..offset + 4].try_into().expect("four bytes"))
     };
     (word(16), word(20))
+}
+
+fn long_score(dir: &Path, bars: usize) -> PathBuf {
+    let path = new_score(dir, "long.opentab.json");
+    let mut score = read_json(&path);
+    let master = score["master_bars"][0].clone();
+    let bar = score["tracks"][0]["staves"][0]["bars"][0].clone();
+    let mut next = score["ids"]["next"].as_u64().unwrap();
+    let mut take = || {
+        next += 1;
+        next - 1
+    };
+    let mut masters = Vec::new();
+    let mut staff_bars = Vec::new();
+    for _ in 0..bars {
+        let mut master = master.clone();
+        master["id"] = json!(take());
+        master["tempo_changes"] = json!([]);
+        masters.push(master);
+        let mut bar = bar.clone();
+        bar["id"] = json!(take());
+        bar["voices"][0]["id"] = json!(take());
+        bar["voices"][0]["beats"][0]["id"] = json!(take());
+        staff_bars.push(bar);
+    }
+    score["master_bars"] = json!(masters);
+    score["tracks"][0]["staves"][0]["bars"] = json!(staff_bars);
+    score["ids"]["next"] = json!(take());
+    let path = dir.join("long-score.opentab.json");
+    std::fs::write(&path, serde_json::to_string(&score).unwrap()).unwrap();
+    path
 }
 
 #[test]
@@ -54,18 +85,20 @@ fn json_reports_the_pages_and_the_written_files() {
     assert_eq!(result.code, 0, "{}", result.stderr);
     assert_eq!(
         result.json(),
-        json!({"pages": 1, "files": [path_str(&out)]})
+        json!({"pages": 1, "systems": 1, "bars": 2, "files": [path_str(&out)]})
     );
     assert_eq!(file_names(dir.path()), vec!["song.svg"]);
 }
 
 #[test]
 fn several_pages_are_numbered_after_the_out_stem() {
+    let scores = temp();
+    let input = long_score(scores.path(), 200);
     let dir = temp();
-    let out = dir.path().join("tunings.SVG");
+    let out = dir.path().join("long.SVG");
     let result = run(&[
         "render",
-        path_str(&fixture("tunings.gp")),
+        path_str(&input),
         "--format",
         "svg",
         "--out",
@@ -73,26 +106,32 @@ fn several_pages_are_numbered_after_the_out_stem() {
         "--json",
     ]);
     assert_eq!(result.code, 0, "{}", result.stderr);
-    let first = dir.path().join("tunings-p1.SVG");
-    let second = dir.path().join("tunings-p2.SVG");
-    assert_eq!(
-        result.json(),
-        json!({"pages": 2, "files": [path_str(&first), path_str(&second)]})
-    );
-    assert_eq!(
-        file_names(dir.path()),
-        vec!["tunings-p1.SVG", "tunings-p2.SVG"]
-    );
-    let second_page = std::fs::read_to_string(&second).unwrap();
+    let wire = result.json();
+    let pages = wire["pages"].as_u64().unwrap();
+    assert!(pages >= 2, "{wire}");
+    assert_eq!(wire["bars"], 200);
+    assert!(wire["systems"].as_u64().unwrap() > pages);
+    let expected: Vec<String> = (1..=pages)
+        .map(|page| format!("long-p{page}.SVG"))
+        .collect();
+    assert_eq!(file_names(dir.path()), expected);
+    let files: Vec<String> = expected
+        .iter()
+        .map(|name| path_str(&dir.path().join(name)).to_string())
+        .collect();
+    assert_eq!(wire["files"], json!(files));
+    let second_page = std::fs::read_to_string(dir.path().join("long-p2.SVG")).unwrap();
     assert!(second_page.contains("<g data-id="), "{second_page}");
 }
 
 #[test]
 fn a_directory_out_names_pages_after_the_input() {
     let dir = temp();
+    let scores = temp();
+    let input = long_score(scores.path(), 120);
     let result = run(&[
         "render",
-        path_str(&fixture("tunings.gp")),
+        path_str(&input),
         "--format",
         "png",
         "--out",
@@ -106,9 +145,9 @@ fn a_directory_out_names_pages_after_the_input() {
     );
     assert_eq!(
         file_names(dir.path()),
-        vec!["tunings-p1.png", "tunings-p2.png"]
+        vec!["long-score-p1.png", "long-score-p2.png"]
     );
-    assert_eq!(png_size(&dir.path().join("tunings-p1.png")), (794, 1123));
+    assert_eq!(png_size(&dir.path().join("long-score-p1.png")), (794, 1123));
 
     let scores = temp();
     let score = new_score(scores.path(), "My.Song.opentab.json");
@@ -125,7 +164,7 @@ fn a_directory_out_names_pages_after_the_input() {
     let expected = dir.path().join("My.Song.svg");
     assert_eq!(
         single.json(),
-        json!({"pages": 1, "files": [path_str(&expected)]})
+        json!({"pages": 1, "systems": 1, "bars": 1, "files": [path_str(&expected)]})
     );
 }
 
@@ -157,11 +196,13 @@ fn the_png_scale_sets_the_pixel_size() {
 #[test]
 fn rendering_twice_writes_identical_bytes() {
     let dir = temp();
+    let scores = temp();
+    let input = long_score(scores.path(), 120);
     let render = |name: &str, format: &str| {
         let out = dir.path().join(name);
         let result = run(&[
             "render",
-            path_str(&fixture("tunings.gp")),
+            path_str(&input),
             "--format",
             format,
             "--out",
@@ -291,12 +332,78 @@ fn render_help_documents_the_options_and_the_json_shape() {
         "--out",
         "--scale",
         "--json",
+        "--track",
+        "--bars",
+        "--staff",
+        "standard",
         "-p<N>",
         "96 pixels per inch",
         "\"files\"",
+        "\"systems\"",
         "Examples:",
     ] {
         assert!(help.stdout.contains(needle), "{needle}\n{}", help.stdout);
     }
     assert!(run(&["--help"]).stdout.contains("render"));
+}
+
+fn render_json(input: &Path, extra: &[&str]) -> (crate::support::Run, tempfile::TempDir) {
+    let dir = temp();
+    let out = dir.path().join("page.svg");
+    let mut args = vec![
+        "render",
+        path_str(input),
+        "--format",
+        "svg",
+        "--out",
+        path_str(&out),
+    ];
+    args.extend(extra.iter().copied());
+    args.push("--json");
+    (run(&args), dir)
+}
+
+#[test]
+fn track_bar_and_staff_options_select_what_is_drawn() {
+    let input = fixture("multi-track.gp");
+    let (all, _keep) = render_json(&input, &[]);
+    assert_eq!(all.code, 0, "{}", all.stdout);
+    let (one, dir) = render_json(&input, &["--track", "3", "--bars", "2", "--staff", "tab"]);
+    assert_eq!(one.code, 0, "{}", one.stdout);
+    assert_eq!(one.json()["bars"], 1);
+    assert_eq!(one.json()["systems"], 1);
+    let svg = std::fs::read_to_string(dir.path().join("page.svg")).unwrap();
+    let full = std::fs::read_to_string(_keep.path().join("page.svg")).unwrap();
+    assert!(svg.len() < full.len() / 4, "{} {}", svg.len(), full.len());
+    let lines = svg.matches("<line ").count();
+    assert!(lines >= 4, "{lines}");
+    let (two, _dir) = render_json(&input, &["--track", "1", "--track", "2", "--bars", "1-2"]);
+    assert_eq!(two.code, 0, "{}", two.stdout);
+    assert_eq!(two.json()["bars"], 2);
+}
+
+#[test]
+fn out_of_range_tracks_and_bars_are_refused() {
+    let input = fixture("multi-track.gp");
+    for (extra, code, kind) in [
+        (vec!["--track", "5"], 2, "invalid_input"),
+        (vec!["--track", "0"], 1, "usage"),
+        (vec!["--bars", "3"], 2, "invalid_input"),
+        (vec!["--bars", "2-9"], 2, "invalid_input"),
+        (vec!["--bars", "2-1"], 1, "usage"),
+        (vec!["--bars", "x"], 1, "usage"),
+        (vec!["--staff", "piano"], 1, "usage"),
+    ] {
+        let (result, dir) = render_json(&input, &extra);
+        result.assert_no_panic();
+        assert_eq!(result.code, code, "{extra:?}: {}", result.stdout);
+        assert_eq!(result.json()["error"]["kind"], kind, "{extra:?}");
+        assert!(file_names(dir.path()).is_empty(), "{extra:?}");
+    }
+    let (track, _dir) = render_json(&input, &["--track", "5"]);
+    let message = track.json()["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(message.contains("4 track(s)"), "{message}");
 }

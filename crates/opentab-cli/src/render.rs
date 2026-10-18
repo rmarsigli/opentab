@@ -1,7 +1,8 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use opentab_layout::placeholder_layout;
+use opentab_layout::{BarRange, DisplayList, LayoutOptions, StaffMode, layout};
+use opentab_model::Score;
 use opentab_render::{Ratio, RenderError, to_png, to_svg};
 use serde::Serialize;
 
@@ -34,9 +35,34 @@ impl ImageFormat {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
+pub enum StaffChoice {
+    Standard,
+    Tab,
+    Both,
+}
+
+impl StaffChoice {
+    fn mode(self) -> StaffMode {
+        match self {
+            StaffChoice::Standard => StaffMode::Standard,
+            StaffChoice::Tab => StaffMode::Tab,
+            StaffChoice::Both => StaffMode::Both,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BarSpan {
+    pub first: u32,
+    pub last: u32,
+}
+
 #[derive(Serialize)]
 pub struct RenderedPages {
     pages: usize,
+    systems: usize,
+    bars: usize,
     files: Vec<String>,
 }
 
@@ -45,6 +71,61 @@ pub struct RenderRequest<'a> {
     pub format: ImageFormat,
     pub out: &'a Path,
     pub scale: Option<Ratio<u32>>,
+    pub tracks: Vec<u32>,
+    pub bars: Option<BarSpan>,
+    pub staff: Option<StaffChoice>,
+}
+
+fn options(request: &RenderRequest<'_>, score: &Score) -> Result<LayoutOptions, CliError> {
+    let track_count = score.tracks.len();
+    let mut tracks = Vec::with_capacity(request.tracks.len());
+    for number in &request.tracks {
+        let index = usize::try_from(*number)
+            .ok()
+            .and_then(|number| number.checked_sub(1))
+            .filter(|index| *index < track_count)
+            .ok_or_else(|| CliError::InvalidInput {
+                message: format!(
+                    "--track {number}: the score has {track_count} track(s), numbered from 1"
+                ),
+            })?;
+        tracks.push(index);
+    }
+    let bar_count = score.master_bars.len();
+    let bars = match request.bars {
+        Some(span) => {
+            let index = |number: u32| usize::try_from(number).ok().and_then(|n| n.checked_sub(1));
+            match (index(span.first), index(span.last)) {
+                (Some(first), Some(last)) if first <= last && last < bar_count => {
+                    Some(BarRange { first, last })
+                }
+                _ => {
+                    return Err(CliError::InvalidInput {
+                        message: format!(
+                            "--bars {}-{}: the score has {bar_count} bar(s), numbered from 1",
+                            span.first, span.last
+                        ),
+                    });
+                }
+            }
+        }
+        None => None,
+    };
+    Ok(LayoutOptions {
+        tracks: (!tracks.is_empty()).then_some(tracks),
+        bars,
+        staff_mode: request.staff.map(StaffChoice::mode),
+        ..LayoutOptions::default()
+    })
+}
+
+fn bar_count(list: &DisplayList) -> usize {
+    list.pages
+        .iter()
+        .flat_map(|page| &page.systems)
+        .filter_map(|system| system.staves.first())
+        .map(|staff| staff.bars.len())
+        .sum()
 }
 
 pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliError> {
@@ -59,8 +140,13 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
         require_extension(request.out, request.format)?;
     }
     let score = files::read_score(request.path)?;
-    let list = placeholder_layout(&score);
+    let options = options(request, &score)?;
+    let list = layout(&score, &options).map_err(|error| CliError::InvalidInput {
+        message: error.to_string(),
+    })?;
     let count = list.pages.len();
+    let systems = list.pages.iter().map(|page| page.systems.len()).sum();
+    let bars = bar_count(&list);
     let targets: Vec<PathBuf> = (1..=count)
         .map(|number| {
             if into_directory {
@@ -104,6 +190,8 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
     Ok(Rendered {
         wire: RenderedPages {
             pages: count,
+            systems,
+            bars,
             files: written,
         },
         human: lines.join("\n"),
@@ -171,6 +259,18 @@ fn input_stem(input: &Path, format: Format) -> OsString {
         .unwrap_or_default()
 }
 
+pub fn parse_bars(text: &str) -> Result<BarSpan, String> {
+    let invalid = || format!("invalid bars {text:?}: use A-B or A, counted from 1");
+    let (first, last) = text.split_once('-').unwrap_or((text, text));
+    let number = |part: &str| whole(part).filter(|value| *value > 0);
+    let first = number(first).ok_or_else(invalid)?;
+    let last = number(last).ok_or_else(invalid)?;
+    if first > last {
+        return Err(invalid());
+    }
+    Ok(BarSpan { first, last })
+}
+
 pub fn parse_scale(text: &str) -> Result<Ratio<u32>, String> {
     let invalid = || format!("invalid scale {text:?}: use a positive number such as 2, 1.5 or 3/2");
     let ratio = match text.split_once('/') {
@@ -224,6 +324,18 @@ mod tests {
         assert_eq!(parse_scale("3/2"), Ok(Ratio::new(3, 2)));
         assert_eq!(parse_scale("6/4"), Ok(Ratio::new(3, 2)));
         assert_eq!(parse_scale("2.50"), Ok(Ratio::new(5, 2)));
+    }
+
+    #[test]
+    fn bar_spans_parse_from_one_or_two_numbers() {
+        assert_eq!(parse_bars("3-7"), Ok(BarSpan { first: 3, last: 7 }));
+        assert_eq!(parse_bars("4"), Ok(BarSpan { first: 4, last: 4 }));
+        assert_eq!(parse_bars("2-2"), Ok(BarSpan { first: 2, last: 2 }));
+        for text in [
+            "", "0", "0-3", "5-4", "a", "1-", "-2", "1-2-3", " 1", "1.5", "+1",
+        ] {
+            assert!(parse_bars(text).is_err(), "{text}");
+        }
     }
 
     #[test]

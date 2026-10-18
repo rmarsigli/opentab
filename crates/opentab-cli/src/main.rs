@@ -49,6 +49,9 @@ fn run(command: Subcommand) -> Result<(), CliError> {
             format,
             out,
             scale,
+            tracks,
+            bars,
+            staff,
             json,
         } => {
             let request = RenderRequest {
@@ -56,6 +59,9 @@ fn run(command: Subcommand) -> Result<(), CliError> {
                 format,
                 out: &out,
                 scale,
+                tracks,
+                bars,
+                staff,
             };
             output::emit(&render::run(&request)?, json)
         }

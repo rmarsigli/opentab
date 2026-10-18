@@ -559,10 +559,14 @@ dependencies = [
 name = "opentab-layout"
 version = "0.1.0"
 dependencies = [
+ "insta",
  "opentab-gp",
  "opentab-model",
+ "opentab-testkit",
+ "proptest",
  "serde",
  "serde_json",
+ "thiserror",
  "ttf-parser",
 ]
 
