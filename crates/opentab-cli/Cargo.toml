@@ -14,12 +14,15 @@ path = "src/main.rs"
 opentab-model = { path = "../opentab-model" }
 opentab-command = { path = "../opentab-command" }
 opentab-gp = { path = "../opentab-gp" }
+opentab-layout = { path = "../opentab-layout" }
+opentab-render = { path = "../opentab-render" }
 clap = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+insta.workspace = true
 
 [lints]
 workspace = true

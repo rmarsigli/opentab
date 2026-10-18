@@ -7,6 +7,7 @@ mod gp;
 mod hostile;
 mod info;
 mod new;
+mod render;
 mod support;
 mod unicode;
 mod usage;

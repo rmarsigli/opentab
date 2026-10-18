@@ -7,6 +7,7 @@ mod ids;
 mod info;
 mod new;
 mod output;
+mod render;
 mod text;
 
 use std::ffi::OsString;
@@ -16,6 +17,7 @@ use clap::Parser;
 
 use crate::cli::{Cli, Subcommand};
 use crate::error::CliError;
+use crate::render::RenderRequest;
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().collect();
@@ -42,5 +44,20 @@ fn run(command: Subcommand) -> Result<(), CliError> {
             json,
         } => output::emit(&apply::run(&path, &commands, &out)?, json),
         Subcommand::Convert { path, out, json } => output::emit(&convert::run(&path, &out)?, json),
+        Subcommand::Render {
+            path,
+            format,
+            out,
+            scale,
+            json,
+        } => {
+            let request = RenderRequest {
+                path: &path,
+                format,
+                out: &out,
+                scale,
+            };
+            output::emit(&render::run(&request)?, json)
+        }
     }
 }

@@ -104,6 +104,10 @@ pub fn write_score(path: &Path, score: &Score, overwrite: Overwrite) -> Result<(
     }
 }
 
+pub fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    replace(path, bytes)
+}
+
 fn encode(path: &Path, score: &Score, format: Format) -> Result<Vec<u8>, CliError> {
     match format {
         Format::Json => to_json(score)
