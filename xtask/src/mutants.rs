@@ -1,3 +1,4 @@
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 pub const CRATES: [&str; 3] = ["opentab-model", "opentab-command", "opentab-gp"];
@@ -14,7 +15,32 @@ pub fn output_dir(root: &Path) -> PathBuf {
     root.join(OUTPUT_DIR)
 }
 
-pub fn mutants_args(output: &Path) -> Vec<String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shard {
+    pub index: u32,
+    pub count: u32,
+}
+
+impl Shard {
+    pub fn parse(text: &str) -> Result<Shard, String> {
+        let invalid = || format!("shard \"{text}\" must be K/N with 0 <= K < N, for example 0/4");
+        let (index, count) = text.split_once('/').ok_or_else(invalid)?;
+        let index: u32 = index.parse().map_err(|_| invalid())?;
+        let count: u32 = count.parse().map_err(|_| invalid())?;
+        if index >= count {
+            return Err(invalid());
+        }
+        Ok(Shard { index, count })
+    }
+}
+
+impl fmt::Display for Shard {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}/{}", self.index, self.count)
+    }
+}
+
+pub fn mutants_args(output: &Path, shard: Option<Shard>) -> Vec<String> {
     let mut args = vec!["mutants".to_owned()];
     for name in CRATES {
         args.push("--package".to_owned());
@@ -26,6 +52,10 @@ pub fn mutants_args(output: &Path) -> Vec<String> {
     args.push(TIMEOUT_SECS.to_string());
     args.push("--output".to_owned());
     args.push(output.display().to_string());
+    if let Some(shard) = shard {
+        args.push("--shard".to_owned());
+        args.push(shard.to_string());
+    }
     args
 }
 

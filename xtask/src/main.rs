@@ -2,7 +2,7 @@ use clap::{Args, Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use xtask::fixtures::write_fixtures;
-use xtask::mutants::{INSTALL_HINT, MutantsReport, mutants_args, output_dir, verdict};
+use xtask::mutants::{INSTALL_HINT, MutantsReport, Shard, mutants_args, output_dir, verdict};
 use xtask::oracle::check::check;
 use xtask::oracle::examples::{ExamplesOptions, harvest_examples};
 use xtask::oracle::harvest::{HarvestOptions, harvest};
@@ -25,9 +25,19 @@ enum TopCommand {
     #[command(about = "Guitar Pro 8 oracle: harvest goldens and check their freshness")]
     Oracle(OracleArgs),
     #[command(about = "Run cargo-mutants on opentab-model, opentab-command and opentab-gp")]
-    Mutants,
+    Mutants(MutantsArgs),
     #[command(about = "Write the synthetic .gp fixtures, one per feature family")]
     Fixtures(FixturesArgs),
+}
+
+#[derive(Debug, Args)]
+struct MutantsArgs {
+    #[arg(
+        long,
+        value_parser = Shard::parse,
+        help = "Run only shard K of N (K/N, from 0/N), passed to cargo mutants --shard"
+    )]
+    shard: Option<Shard>,
 }
 
 #[derive(Debug, Args)]
@@ -203,7 +213,7 @@ fn cargo_mutants_installed(root: &Path) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn run_mutants() -> ExitCode {
+fn run_mutants(args: MutantsArgs) -> ExitCode {
     let root = workspace_root();
     if !cargo_mutants_installed(&root) {
         return failure(INSTALL_HINT);
@@ -213,7 +223,7 @@ fn run_mutants() -> ExitCode {
         return failure(&format!("cannot create {}: {error}", output.display()));
     }
     let status = match Command::new("cargo")
-        .args(mutants_args(&output))
+        .args(mutants_args(&output, args.shard))
         .current_dir(&root)
         .status()
     {
@@ -239,7 +249,7 @@ fn run_mutants() -> ExitCode {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
-        TopCommand::Mutants => run_mutants(),
+        TopCommand::Mutants(args) => run_mutants(args),
         TopCommand::Fixtures(args) => run_fixtures(args),
         TopCommand::Oracle(oracle) => match oracle.command {
             OracleCommand::Harvest(args) => run_harvest(args),
