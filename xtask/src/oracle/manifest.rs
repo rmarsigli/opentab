@@ -26,6 +26,29 @@ pub struct Manifest {
     pub entries: Vec<ManifestEntry>,
 }
 
+fn has_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+fn is_safe_relative(path: &str, separators: &[char]) -> bool {
+    !path.is_empty()
+        && !path.starts_with(separators)
+        && !path.contains(':')
+        && !has_drive_prefix(path)
+        && path
+            .split(separators)
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+}
+
+pub fn is_safe_output_path(path: &str) -> bool {
+    is_safe_relative(path, &['/', '\\'])
+}
+
+pub fn is_safe_fixture_key(key: &str) -> bool {
+    is_safe_relative(key, &['/']) && !key.contains('\\')
+}
+
 impl Manifest {
     pub fn new(gp_version: impl Into<String>) -> Self {
         Self {
@@ -53,7 +76,35 @@ impl Manifest {
         self.entries.push(entry);
     }
 
+    pub fn validate(&self) -> Result<(), OracleError> {
+        let mut seen = BTreeSet::new();
+        for entry in &self.entries {
+            if !is_safe_fixture_key(&entry.fixture) {
+                return Err(OracleError::new(format!(
+                    "invalid manifest: unsafe fixture name {:?}",
+                    entry.fixture
+                )));
+            }
+            if !seen.insert(entry.fixture.as_str()) {
+                return Err(OracleError::new(format!(
+                    "invalid manifest: fixture {} listed twice",
+                    entry.fixture
+                )));
+            }
+            for output in &entry.outputs {
+                if !is_safe_output_path(&output.path) {
+                    return Err(OracleError::new(format!(
+                        "invalid manifest: unsafe output path {:?} in {}",
+                        output.path, entry.fixture
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn to_json(&self) -> Result<Vec<u8>, OracleError> {
+        self.validate()?;
         let mut bytes = serde_json::to_vec_pretty(&self.sorted())
             .map_err(|error| OracleError::new(format!("cannot serialise manifest: {error}")))?;
         bytes.push(b'\n');
@@ -63,15 +114,7 @@ impl Manifest {
     pub fn from_json(bytes: &[u8]) -> Result<Self, OracleError> {
         let manifest: Self = serde_json::from_slice(bytes)
             .map_err(|error| OracleError::new(format!("invalid manifest: {error}")))?;
-        let mut seen = BTreeSet::new();
-        for entry in &manifest.entries {
-            if !seen.insert(entry.fixture.as_str()) {
-                return Err(OracleError::new(format!(
-                    "invalid manifest: fixture {} listed twice",
-                    entry.fixture
-                )));
-            }
-        }
+        manifest.validate()?;
         Ok(manifest)
     }
 
@@ -83,9 +126,30 @@ impl Manifest {
     }
 
     pub fn save(&self, path: &Path) -> Result<(), OracleError> {
-        std::fs::write(path, self.to_json()?)
-            .map_err(|error| OracleError::io(format!("cannot write {}", path.display()), &error))
+        let bytes = self.to_json()?;
+        let temp = temp_path(path);
+        let written = write_synced(&temp, &bytes).and_then(|()| std::fs::rename(&temp, path));
+        written.map_err(|error| {
+            let _ = std::fs::remove_file(&temp);
+            OracleError::io(format!("cannot write {}", path.display()), &error)
+        })
     }
+}
+
+fn temp_path(path: &Path) -> std::path::PathBuf {
+    let mut name = path
+        .file_name()
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_default();
+    name.push(format!(".tmp-{}", std::process::id()));
+    path.with_file_name(name)
+}
+
+fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = std::fs::File::create(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 #[cfg(test)]
@@ -208,8 +272,110 @@ mod tests {
         let mut manifest = Manifest::new("8.1.5.31");
         manifest.entries.push(entry("x.gp", 1));
         manifest.entries.push(entry("x.gp", 2));
-        assert!(Manifest::from_json(&manifest.to_json().expect("serialises")).is_err());
+        assert!(manifest.to_json().is_err());
+        let forged = serde_json::to_vec(&manifest).expect("raw json");
+        assert!(Manifest::from_json(&forged).is_err());
         assert!(Manifest::from_json(b"\xff\x00garbage").is_err());
         assert!(Manifest::from_json(b"{\"gp_version\":\"8\"}").is_err());
+    }
+
+    fn listing(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .expect("list")
+            .map(|item| {
+                item.expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
+    }
+
+    fn manifest_with_output(path: &str) -> Manifest {
+        let mut manifest = Manifest::new("8.1.5.31");
+        let mut item = entry("x.gp", 1);
+        item.outputs.push(OutputEntry {
+            path: path.to_owned(),
+            sha256: None,
+            byte_identical: false,
+        });
+        manifest.upsert(item);
+        manifest
+    }
+
+    #[test]
+    fn unsafe_output_paths_are_rejected_everywhere() {
+        let bad = [
+            "../escape.mid",
+            "png/../../escape.png",
+            "a/./b.png",
+            "/abs/export.mid",
+            "\\share\\export.mid",
+            "C:\\x\\export.mid",
+            "C:export.mid",
+            "d:/export.mid",
+            "..\\export.mid",
+            "png//p.png",
+            "",
+            "png/",
+        ];
+        let dir = tempfile::tempdir().expect("tempdir");
+        for path in bad {
+            let manifest = manifest_with_output(path);
+            assert!(manifest.to_json().is_err(), "{path}");
+            assert!(manifest.save(&dir.path().join("m.json")).is_err(), "{path}");
+            assert!(!dir.path().join("m.json").exists(), "{path}");
+            let mut valid = manifest_with_output("export.mid");
+            valid.entries[0].outputs.pop();
+            let text = String::from_utf8(valid.to_json().expect("valid")).expect("utf8");
+            let forged = text.replace("export.mid", &path.replace('\\', "\\\\"));
+            assert!(Manifest::from_json(forged.as_bytes()).is_err(), "{path}");
+        }
+        assert!(manifest_with_output("png/page 1.png").to_json().is_ok());
+    }
+
+    #[test]
+    fn unsafe_fixture_names_are_rejected() {
+        for key in ["../x.gp", "/x.gp", "a/../b.gp", "C:/x.gp", "a\\b.gp", ""] {
+            let mut manifest = Manifest::new("8");
+            manifest.entries.push(entry(key, 1));
+            assert!(manifest.to_json().is_err(), "{key}");
+        }
+    }
+
+    #[test]
+    fn save_is_atomic_and_leaves_no_temp_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("manifest.json");
+        let mut first = Manifest::new("8.1.5.31");
+        first.upsert(entry("a.gp", 1));
+        first.save(&path).expect("save");
+        let before = std::fs::read(&path).expect("read");
+        let mut second = Manifest::new("8.1.5.31");
+        second.upsert(entry("b.gp", 2));
+        second.save(&path).expect("replace");
+        assert_ne!(std::fs::read(&path).expect("read"), before);
+        assert_eq!(listing(dir.path()), ["manifest.json"]);
+    }
+
+    #[test]
+    fn failed_save_keeps_the_old_manifest_and_cleans_up() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("manifest.json");
+        let mut good = Manifest::new("8.1.5.31");
+        good.upsert(entry("a.gp", 1));
+        good.save(&path).expect("save");
+        let before = std::fs::read(&path).expect("read");
+        let bad = manifest_with_output("../x");
+        assert!(bad.save(&path).is_err());
+        assert_eq!(std::fs::read(&path).expect("read"), before);
+        let blocked = dir.path().join("blocked");
+        std::fs::create_dir(&blocked).expect("mkdir");
+        std::fs::write(blocked.join("keep"), b"x").expect("write");
+        assert!(good.save(&blocked).is_err());
+        let mut names = listing(dir.path());
+        names.sort();
+        assert_eq!(names, ["blocked", "manifest.json"]);
+        assert!(!names.iter().any(|name| name.contains(".tmp-")));
     }
 }
