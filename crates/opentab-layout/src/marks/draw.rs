@@ -33,7 +33,10 @@ pub struct MarkOutput {
 
 impl MarkOutput {
     fn drop_mark(&mut self, bar: usize, kind: MarkKind) {
-        self.dropped.push(DroppedMark { bar, kind });
+        self.dropped.push(DroppedMark {
+            bar: Some(bar),
+            kind,
+        });
     }
 }
 
@@ -75,6 +78,10 @@ pub fn place(requests: &[Request], left: Units, right: Units) -> Vec<Option<Slot
     slots
 }
 
+fn legible(line: Option<Fitted>) -> Option<Fitted> {
+    line.filter(|line| line.text.chars().any(|character| character != ELLIPSIS))
+}
+
 fn least_text(em: Units, width: Units) -> Units {
     width.min(text_font().advance(ELLIPSIS, em))
 }
@@ -108,11 +115,11 @@ fn draw_texts(
         .collect();
     for (item, slot) in texts.iter().zip(place(&requests, marks.left, marks.right)) {
         let line = slot.and_then(|slot| {
-            if slot.width < item.line.width() {
+            legible(if slot.width < item.line.width() {
                 fit_line(&item.line.text, item.line.em, slot.width)
             } else {
                 Some(item.line.clone())
-            }
+            })
             .map(|line| (slot, line))
         });
         match line {
@@ -175,13 +182,14 @@ fn draw_free_texts(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
                 continue;
             };
             for text in &row_marks.texts {
-                if let Some(line) = fit_line(&text.text, TEXT_EM, room) {
-                    items.push(TextItem {
+                match legible(fit_line(&text.text, TEXT_EM, room)) {
+                    Some(line) => items.push(TextItem {
                         bar: plan.index,
                         desired: column_x(bar, text.column),
                         line,
                         back: TEXT_BACK,
-                    });
+                    }),
+                    None => out.drop_mark(plan.index, MarkKind::Text),
                 }
             }
         }
@@ -253,6 +261,7 @@ fn draw_tempos(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
                 TEMPO_EM,
                 marks.right - marks.left,
             ) else {
+                out.drop_mark(plan.index, MarkKind::Tempo);
                 continue;
             };
             items.push(TempoItem {
@@ -312,7 +321,7 @@ fn draw_section(
     slot: Slot,
     baseline: Units,
     out: &mut Vec<Primitive>,
-) {
+) -> bool {
     let mut cursor = slot.left;
     if let Some(letter) = &section.letter {
         let half = SECTION_LINE.half();
@@ -327,8 +336,12 @@ fn draw_section(
         cursor = slot.left + outer + SECTION_GAP;
     }
     let room = slot.left + slot.width - cursor;
-    if let Some(line) = text.and_then(|line| fit_line(&line.text, SECTION_EM, room)) {
-        out.push(line.run(cursor, baseline));
+    match legible(text.and_then(|line| fit_line(&line.text, SECTION_EM, room))) {
+        Some(line) => {
+            out.push(line.run(cursor, baseline));
+            true
+        }
+        None => section.text.is_empty(),
     }
 }
 
@@ -385,9 +398,11 @@ fn draw_sections(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
     for ((bar, section, text, _), slot) in
         found.iter().zip(place(&requests, marks.left, marks.right))
     {
-        match slot {
-            Some(slot) => draw_section(section, text.as_ref(), slot, baseline, &mut out.items),
-            None => out.drop_mark(*bar, MarkKind::Section),
+        let whole = slot.is_some_and(|slot| {
+            draw_section(section, text.as_ref(), slot, baseline, &mut out.items)
+        });
+        if !whole {
+            out.drop_mark(*bar, MarkKind::Section);
         }
     }
 }
@@ -432,17 +447,15 @@ fn draw_dynamics(marks: &SystemMarks<'_>, out: &mut MarkOutput) {
                 out.drop_mark(*bar, MarkKind::Dynamic);
                 continue;
             };
-            {
-                let ink = glyph_box(*sign, DYNAMIC_SIZE);
-                out.items.push(glyph(
-                    *sign,
-                    Point {
-                        x: slot.left - ink.min.x,
-                        y: baseline,
-                    },
-                    DYNAMIC_SIZE,
-                ));
-            }
+            let ink = glyph_box(*sign, DYNAMIC_SIZE);
+            out.items.push(glyph(
+                *sign,
+                Point {
+                    x: slot.left - ink.min.x,
+                    y: baseline,
+                },
+                DYNAMIC_SIZE,
+            ));
         }
     }
 }

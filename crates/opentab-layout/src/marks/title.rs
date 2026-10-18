@@ -1,7 +1,7 @@
 use opentab_model::ScoreMeta;
 
 use crate::display::Primitive;
-use crate::marks::fit::{Fitted, ascent, clean, fit_line, line_height, wrap};
+use crate::marks::fit::{Fitted, ascent, clean, fit_line, ink, line_height, wrap};
 use crate::units::{STAFF_SPACE, Units};
 
 pub const TITLE_EM: Units = Units(STAFF_SPACE.0 * 9 / 2);
@@ -18,6 +18,7 @@ pub const BLOCK_GAP: Units = STAFF_SPACE;
 pub struct TitleBlock {
     pub items: Vec<Primitive>,
     pub height: Units,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +41,13 @@ struct Writer {
     cursor: Units,
     items: Vec<Primitive>,
     full: bool,
+    truncated: bool,
+}
+
+fn squash(text: &str) -> String {
+    text.chars()
+        .filter(|character| !character.is_whitespace())
+        .collect()
 }
 
 impl Writer {
@@ -54,11 +62,12 @@ impl Writer {
     }
 
     fn row(&mut self, em: Units, cells: &[(Option<Fitted>, Align)]) {
-        if self.full || cells.iter().all(|(line, _)| line.is_none()) {
+        if cells.iter().all(|(line, _)| line.is_none()) {
             return;
         }
-        if self.cursor + line_height(em) > self.frame.bottom {
+        if self.full || self.cursor + line_height(em) > self.frame.bottom {
             self.full = true;
+            self.truncated = true;
             return;
         }
         let baseline = self.cursor + ascent(em);
@@ -75,6 +84,27 @@ impl Writer {
         for line in lines {
             self.row(em, &[(Some(line), Align::Centre)]);
         }
+    }
+
+    fn compare(&mut self, source: &str, lines: &[&Fitted], em: Units) {
+        let cleaned = clean(source);
+        let drawn: String = lines.iter().map(|line| squash(&line.text)).collect();
+        if squash(&cleaned) != drawn && ink(&cleaned, em).is_some() {
+            self.truncated = true;
+        }
+    }
+
+    fn wrapped(&mut self, source: &str, em: Units, limit: usize) {
+        let width = self.frame.right - self.frame.left;
+        let lines = wrap(source, em, width, limit);
+        self.compare(source, &lines.iter().collect::<Vec<_>>(), em);
+        self.lines(lines, em);
+    }
+
+    fn single(&mut self, source: &str, em: Units, room: Units) -> Option<Fitted> {
+        let line = fit_line(source, em, room);
+        self.compare(source, &line.iter().collect::<Vec<_>>(), em);
+        line
     }
 }
 
@@ -127,20 +157,14 @@ pub fn title_block(meta: &ScoreMeta, frame: Frame) -> TitleBlock {
         cursor: frame.top,
         items: Vec::new(),
         full: false,
+        truncated: false,
     };
-    writer.lines(wrap(&meta.title, TITLE_EM, width, TITLE_LINES), TITLE_EM);
-    writer.lines(
-        wrap(&meta.subtitle, SUBTITLE_EM, width, SUBTITLE_LINES),
-        SUBTITLE_EM,
-    );
-    writer.row(
-        ARTIST_EM,
-        &[(fit_line(&meta.artist, ARTIST_EM, width), Align::Centre)],
-    );
-    writer.row(
-        ALBUM_EM,
-        &[(fit_line(&meta.album, ALBUM_EM, width), Align::Centre)],
-    );
+    writer.wrapped(&meta.title, TITLE_EM, TITLE_LINES);
+    writer.wrapped(&meta.subtitle, SUBTITLE_EM, SUBTITLE_LINES);
+    let artist = writer.single(&meta.artist, ARTIST_EM, width);
+    writer.row(ARTIST_EM, &[(artist, Align::Centre)]);
+    let album = writer.single(&meta.album, ALBUM_EM, width);
+    writer.row(ALBUM_EM, &[(album, Align::Centre)]);
     let credits = credits(meta);
     let tab = tab_credit(meta);
     let shared = Units((width - CREDIT_GAP).0.max(0) / 2);
@@ -153,19 +177,9 @@ pub fn title_block(meta: &ScoreMeta, frame: Frame) -> TitleBlock {
         } else {
             width
         };
-        writer.row(
-            CREDIT_EM,
-            &[
-                (
-                    left.and_then(|text| fit_line(text, CREDIT_EM, room)),
-                    Align::Left,
-                ),
-                (
-                    right.and_then(|text| fit_line(text, CREDIT_EM, room)),
-                    Align::Right,
-                ),
-            ],
-        );
+        let left = left.and_then(|text| writer.single(text, CREDIT_EM, room));
+        let right = right.and_then(|text| writer.single(text, CREDIT_EM, room));
+        writer.row(CREDIT_EM, &[(left, Align::Left), (right, Align::Right)]);
     }
     let used = writer.cursor - frame.top;
     TitleBlock {
@@ -175,5 +189,6 @@ pub fn title_block(meta: &ScoreMeta, frame: Frame) -> TitleBlock {
             used + BLOCK_GAP
         },
         items: writer.items,
+        truncated: writer.truncated,
     }
 }

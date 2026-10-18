@@ -125,6 +125,7 @@ pub fn tempo_lane_height() -> Units {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MarkKind {
+    Title,
     Tempo,
     Section,
     Chord,
@@ -134,7 +135,7 @@ pub enum MarkKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DroppedMark {
-    pub bar: usize,
+    pub bar: Option<usize>,
     pub kind: MarkKind,
 }
 

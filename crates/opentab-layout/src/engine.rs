@@ -10,7 +10,7 @@ use crate::geometry::{
 };
 use crate::glyphs::Metrics;
 use crate::lanes::{Band, BandLayout};
-use crate::marks::{Frame as BlockFrame, TitleBlock, title_block};
+use crate::marks::{DroppedMark, Frame as BlockFrame, MarkKind, TitleBlock, title_block};
 use crate::options::{LayoutError, LayoutOptions};
 use crate::plan::{BarPlan, SystemPlan, VerticalNeeds, above_share, break_systems, plan_bars};
 use crate::select::{StaffSpec, select};
@@ -103,6 +103,12 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
     let mut pages: Vec<Page> = Vec::new();
     let mut crowded = Vec::new();
     let mut dropped = Vec::new();
+    if block.truncated {
+        dropped.push(DroppedMark {
+            bar: None,
+            kind: MarkKind::Title,
+        });
+    }
     let mut cursor = frame.bottom;
     if !block.items.is_empty() {
         let mut first = template.clone();
