@@ -1,7 +1,7 @@
 use crate::oracle::error::OracleError;
 use crate::oracle::fixtures::{Fixture, discover};
 use crate::oracle::hash::sha256_hex;
-use crate::oracle::host::{Host, KillOutcome, PidGate, PidRecord};
+use crate::oracle::host::{Host, KillOutcome, PidGate, PidRecord, ScriptRun};
 use crate::oracle::layout::{MANIFEST_FILE, is_byte_identical, select_outputs};
 use crate::oracle::manifest::{Manifest, ManifestEntry, OutputEntry};
 use crate::oracle::normalize::normalize_output;
@@ -122,17 +122,13 @@ fn describe_failure(result: &ExportResult) -> String {
     }
 }
 
-fn stop_script(host: &Host, job_out: &Path) -> &'static str {
-    let record = std::fs::read_to_string(job_out.join(PID_FILE))
-        .ok()
-        .and_then(|text| PidRecord::parse(&text));
-    match record.map(|record| host.stop_windows_process(&record)) {
-        Some(KillOutcome::Stopped) => "stopped the PowerShell process",
-        Some(KillOutcome::NotMatched) => {
+fn stop_script(host: &Host, record: &PidRecord) -> &'static str {
+    match host.stop_windows_process(record) {
+        KillOutcome::Stopped => "stopped the PowerShell process",
+        KillOutcome::NotMatched => {
             "did not stop PowerShell: pid no longer matches the recorded process"
         }
-        Some(KillOutcome::Unavailable) => "could not stop PowerShell: kill command failed",
-        None => "could not stop PowerShell: no pid recorded",
+        KillOutcome::Unavailable => "could not stop PowerShell: kill command failed",
     }
 }
 
@@ -214,27 +210,30 @@ fn run_fixture(
         wait: host.pid_wait,
     };
     let run = host.run_script(script, &args, &job.join(LOG_FILE), gate)?;
-    if run.pid_missing {
-        return Ok(FixtureOutcome::Failed(format!(
-            "no pid recorded within {} ms of starting PowerShell, so it could not be stopped by pid; job kept in {}",
-            host.pid_wait.as_millis(),
-            job.display()
-        )));
-    }
-    if run.timed_out {
-        let stopped = stop_script(host, &job_out);
-        return Ok(FixtureOutcome::Failed(format!(
-            "timed out after {} ms ({stopped}); job kept in {}",
-            host.timeout.as_millis(),
-            job.display()
-        )));
-    }
+    let status = match run {
+        ScriptRun::PidMissing => {
+            return Ok(FixtureOutcome::Failed(format!(
+                "no pid recorded within {} ms of starting PowerShell, so it could not be stopped by pid; job kept in {}",
+                host.pid_wait.as_millis(),
+                job.display()
+            )));
+        }
+        ScriptRun::TimedOut(record) => {
+            let stopped = stop_script(host, &record);
+            return Ok(FixtureOutcome::Failed(format!(
+                "timed out after {} ms ({stopped}); job kept in {}",
+                host.timeout.as_millis(),
+                job.display()
+            )));
+        }
+        ScriptRun::Exited(status) => status,
+    };
     let result_path = job_out.join(RESULT_FILE);
     let result = match std::fs::read(&result_path) {
         Ok(raw) => parse_result(&raw)?,
         Err(_) => {
             let log = std::fs::read(job.join(LOG_FILE)).unwrap_or_default();
-            let code = run.status.and_then(|status| status.code());
+            let code = status.code();
             let message = format!(
                 "PowerShell exited with {code:?} without writing result.json: {}",
                 String::from_utf8_lossy(&log).trim()
