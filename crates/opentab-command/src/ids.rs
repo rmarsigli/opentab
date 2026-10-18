@@ -1,0 +1,120 @@
+use std::collections::HashSet;
+use std::iter::once;
+
+use opentab_model::{Bar, Beat, ElementId, Extensions, Score, Track, Voice};
+
+use crate::{CommandError, ExtensionEntry};
+
+pub(crate) fn score_ids(score: &Score) -> impl Iterator<Item = ElementId> + '_ {
+    score
+        .master_bars
+        .iter()
+        .map(|master_bar| master_bar.id.0)
+        .chain(score.tracks.iter().flat_map(track_ids))
+}
+
+fn track_ids(track: &Track) -> impl Iterator<Item = ElementId> + '_ {
+    once(track.id.0).chain(
+        track
+            .staves
+            .iter()
+            .flat_map(|staff| once(staff.id.0).chain(staff.bars.iter().flat_map(bar_ids))),
+    )
+}
+
+pub(crate) fn bar_ids(bar: &Bar) -> impl Iterator<Item = ElementId> + '_ {
+    once(bar.id.0).chain(bar.voices.iter().flat_map(voice_ids))
+}
+
+fn voice_ids(voice: &Voice) -> impl Iterator<Item = ElementId> + '_ {
+    once(voice.id.0).chain(voice.beats.iter().flat_map(beat_ids))
+}
+
+pub(crate) fn beat_ids(beat: &Beat) -> impl Iterator<Item = ElementId> + '_ {
+    once(beat.id.0).chain(beat.notes.iter().map(|note| note.id.0))
+}
+
+pub(crate) fn reserve(score: &Score, count: u64) -> Result<(), CommandError> {
+    let next = score.ids.peek();
+    if next.0.checked_add(count).is_none() {
+        return Err(CommandError::invalid(format!(
+            "the id space is exhausted: allocator at {} cannot provide {count} more ids",
+            next.0
+        )));
+    }
+    if let Some(highest) = score_ids(score).max()
+        && highest >= next
+    {
+        return Err(CommandError::invalid(format!(
+            "element id {} is not below the id allocator ({}); run diagnose",
+            highest.0, next.0
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn check_restorable<I>(
+    score: &Score,
+    restored: I,
+    extensions: &[ExtensionEntry],
+) -> Result<(), CommandError>
+where
+    I: IntoIterator<Item = ElementId>,
+{
+    let mut fresh = HashSet::new();
+    for id in restored {
+        if !fresh.insert(id) {
+            return Err(CommandError::invalid(format!(
+                "element id {} appears twice in the restored elements",
+                id.0
+            )));
+        }
+    }
+    if let Some(id) = score_ids(score).find(|id| fresh.contains(id)) {
+        return Err(CommandError::invalid(format!(
+            "element id {} already exists in the score",
+            id.0
+        )));
+    }
+    let mut entries = HashSet::new();
+    for entry in extensions {
+        if !fresh.contains(&entry.id) {
+            return Err(CommandError::invalid(format!(
+                "extension entry {} does not belong to the restored elements",
+                entry.id.0
+            )));
+        }
+        if !entries.insert(entry.id) || score.extensions.0.contains_key(&entry.id) {
+            return Err(CommandError::invalid(format!(
+                "extension entry {} is duplicated",
+                entry.id.0
+            )));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn take_extensions<I>(extensions: &mut Extensions, ids: I) -> Vec<ExtensionEntry>
+where
+    I: IntoIterator<Item = ElementId>,
+{
+    let mut taken = Vec::new();
+    if extensions.0.is_empty() {
+        return taken;
+    }
+    for id in ids {
+        if let Some(payloads) = extensions.0.remove(&id) {
+            taken.push(ExtensionEntry { id, payloads });
+        }
+    }
+    taken.sort_by_key(|entry| entry.id);
+    taken
+}
+
+pub(crate) fn put_extensions(extensions: &mut Extensions, restored: &[ExtensionEntry]) {
+    extensions.0.extend(
+        restored
+            .iter()
+            .map(|entry| (entry.id, entry.payloads.clone())),
+    );
+}

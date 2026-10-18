@@ -351,6 +351,14 @@ dependencies = [
 [[package]]
 name = "opentab-command"
 version = "0.1.0"
+dependencies = [
+ "opentab-model",
+ "opentab-testkit",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "opentab-model"
