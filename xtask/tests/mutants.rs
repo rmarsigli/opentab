@@ -8,6 +8,10 @@ use xtask::mutants::{
 fn arguments_select_the_three_crates_serially_with_a_timeout_and_target_output() {
     let output = output_dir(Path::new("/work"));
     let args = mutants_args(&output, None, false);
+    let expected_output = Path::new("/work")
+        .join("target/mutants")
+        .display()
+        .to_string();
     assert_eq!(
         args,
         [
@@ -23,7 +27,7 @@ fn arguments_select_the_three_crates_serially_with_a_timeout_and_target_output()
             "--timeout",
             "120",
             "--output",
-            "/work/target/mutants",
+            expected_output.as_str(),
         ]
     );
     assert_eq!(CRATES, ["opentab-model", "opentab-command", "opentab-gp"]);
