@@ -4,6 +4,7 @@ mod ids;
 mod json;
 mod lookup;
 mod pitch;
+mod ranges;
 mod support;
 mod tempo;
 mod time_signature;

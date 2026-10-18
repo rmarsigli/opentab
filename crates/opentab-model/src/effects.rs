@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::fraction::deserialize_non_negative;
-use crate::{Fraction, NoteValue};
+use crate::{Fraction, ModelError, NoteValue};
+
+const MAX_BEND_OFFSET: u8 = 100;
+const MAX_BEND_VALUE: i16 = 48;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -75,10 +78,34 @@ pub struct Harmonic {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "BendPointRepr")]
 pub struct BendPoint {
     pub offset: u8,
     pub value: i16,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BendPointRepr {
+    offset: u8,
+    value: i16,
+}
+
+impl BendPoint {
+    pub fn new(offset: u8, value: i16) -> Result<BendPoint, ModelError> {
+        if offset > MAX_BEND_OFFSET || !(-MAX_BEND_VALUE..=MAX_BEND_VALUE).contains(&value) {
+            return Err(ModelError::InvalidBendPoint { offset, value });
+        }
+        Ok(BendPoint { offset, value })
+    }
+}
+
+impl TryFrom<BendPointRepr> for BendPoint {
+    type Error = ModelError;
+
+    fn try_from(repr: BendPointRepr) -> Result<Self, Self::Error> {
+        BendPoint::new(repr.offset, repr.value)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]

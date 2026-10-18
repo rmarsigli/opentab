@@ -5,6 +5,7 @@ use crate::{Fraction, MasterBarId, ModelError};
 
 const MIN_BPM: f64 = 1.0;
 const MAX_BPM: f64 = 1000.0;
+const MAX_ACCIDENTALS: i8 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "TimeSignatureRepr")]
@@ -51,10 +52,34 @@ impl TryFrom<TimeSignatureRepr> for TimeSignature {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "KeySignatureRepr")]
 pub struct KeySignature {
     pub accidentals: i8,
     pub minor: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeySignatureRepr {
+    accidentals: i8,
+    minor: bool,
+}
+
+impl KeySignature {
+    pub fn new(accidentals: i8, minor: bool) -> Result<KeySignature, ModelError> {
+        if !(-MAX_ACCIDENTALS..=MAX_ACCIDENTALS).contains(&accidentals) {
+            return Err(ModelError::InvalidKeySignature { accidentals });
+        }
+        Ok(KeySignature { accidentals, minor })
+    }
+}
+
+impl TryFrom<KeySignatureRepr> for KeySignature {
+    type Error = ModelError;
+
+    fn try_from(repr: KeySignatureRepr) -> Result<Self, Self::Error> {
+        KeySignature::new(repr.accidentals, repr.minor)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

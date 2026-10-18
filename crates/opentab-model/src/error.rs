@@ -12,6 +12,12 @@ pub enum ModelError {
     InvalidTuplet { num: u8, den: u8 },
     #[error("time signature {numerator}/{denominator} has a zero term")]
     InvalidTimeSignature { numerator: u8, denominator: u8 },
+    #[error(
+        "bend point offset {offset} value {value} is outside offset 0..=100 and value -48..=48"
+    )]
+    InvalidBendPoint { offset: u8, value: i16 },
+    #[error("key signature with {accidentals} accidentals is outside -7..=7")]
+    InvalidKeySignature { accidentals: i8 },
     #[error("missing \"opentab_json\" version field")]
     MissingVersion,
     #[error("unsupported opentab_json version {found}, expected 1")]
