@@ -30,3 +30,4 @@ pub const COUNT_RISE: Units = Units(STAFF_SPACE.0 / 2);
 pub const MIN_TAB_STRINGS: usize = 4;
 pub const MAX_TAB_STRINGS: usize = 8;
 pub const FIT_ATTEMPTS: usize = 8;
+pub const NOTATION_CLEARANCE: Units = Units(STAFF_SPACE.0 / 2);

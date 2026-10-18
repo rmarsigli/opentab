@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use opentab_model::Score;
 
 use crate::barline::EndSign;
@@ -12,12 +14,14 @@ use crate::geometry::{
     ENDING_RISE, NAME_EM, NAME_GAP, NAME_MAX, NUMBER_EM, NUMBER_RISE,
 };
 use crate::glyphs::{BRACKET_BOTTOM, BRACKET_TOP, Metrics};
+use crate::notes::draw_bar;
 use crate::options::LayoutError;
 use crate::plan::{BarPlan, SystemPlan};
 use crate::select::Selection;
 use crate::spacing::place;
 use crate::structure::{BarLayout, ClefSign, Column, StaffKind, StaffLayout, SystemLayout};
 use crate::text::text_font;
+use crate::ties::{TIE_END_GAP, TieAnchor, TieSpan, draw_ties};
 use crate::units::{Point, Rect, STAFF_SPACE, Units};
 
 pub struct Context<'a> {
@@ -115,6 +119,9 @@ pub fn draw_system(
             }));
         }
         let (span_top, span_bottom) = staff.span();
+        let mut bar_groups: Vec<(GroupId, Vec<Primitive>)> = Vec::with_capacity(plans.len());
+        let mut anchors: Vec<TieAnchor> = Vec::new();
+        let mut sequences: BTreeMap<u8, usize> = BTreeMap::new();
         for (offset, plan) in plans.iter().enumerate() {
             let at_start = offset == 0;
             let base = bases[offset];
@@ -129,7 +136,7 @@ pub fn draw_system(
             if let Some(Some(sign)) = head.clefs.get(row) {
                 draw_clef(*sign, head_left + head.clef_x, &staff, &mut bar_items);
             }
-            if let (Some(key), StaffKind::Standard) = (head.key, spec.kind) {
+            if let (Some(Some(key)), StaffKind::Standard) = (head.keys.get(row), spec.kind) {
                 key.draw(clef, head_left + head.key_x, &staff, &mut bar_items);
             }
             if let Some(time) = head.time {
@@ -162,6 +169,9 @@ pub fn draw_system(
                         left: extent.left,
                         right: extent.right,
                         graces: column.graces,
+                        lead: extent.lead,
+                        grace_advance: extent.grace_advance,
+                        grace_lead: extent.grace_lead,
                     }
                 })
                 .collect();
@@ -193,6 +203,34 @@ pub fn draw_system(
                     .cloned()
                     .unwrap_or_default(),
             });
+            if let (Some(Some(notation)), Some(layout)) =
+                (plan.notation.get(row), staff.bars.last())
+            {
+                draw_bar(
+                    notation,
+                    layout,
+                    &staff,
+                    offset,
+                    &mut bar_items,
+                    &mut anchors,
+                    &mut sequences,
+                );
+            }
+            bar_groups.push((group, bar_items));
+        }
+        let mut contents: Vec<Vec<Primitive>> = bar_groups
+            .iter_mut()
+            .map(|(_, items)| std::mem::take(items))
+            .collect();
+        let span = TieSpan {
+            incoming: (system.first > 0)
+                .then(|| staff.bars.first().map(|bar| bar.content))
+                .flatten(),
+            outgoing: (system.end < context.plans.len()).then_some(right - TIE_END_GAP),
+            last_bar: plans.len().saturating_sub(1),
+        };
+        draw_ties(&anchors, span, &sequences, &mut contents);
+        for ((group, _), bar_items) in bar_groups.into_iter().zip(contents) {
             items.push(Primitive::Group(Group {
                 id: group,
                 items: bar_items,

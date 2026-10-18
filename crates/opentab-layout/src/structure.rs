@@ -37,6 +37,9 @@ pub struct Column {
     pub left: Units,
     pub right: Units,
     pub graces: usize,
+    pub lead: Units,
+    pub grace_advance: Units,
+    pub grace_lead: Units,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,7 +65,8 @@ impl BarLayout {
             Some(grace) => {
                 let before =
                     i64::try_from(grace.count.saturating_sub(grace.order)).unwrap_or(i64::MAX);
-                column.x - Units(GRACE_ADVANCE.0.saturating_mul(before))
+                column.x - column.lead - Units(column.grace_advance.0.saturating_mul(before))
+                    + column.grace_lead
             }
             None => column.x,
         })

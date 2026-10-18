@@ -513,7 +513,17 @@ fn a_key_change_to_c_at_a_system_start_draws_cancelling_naturals() {
     );
     assert_eq!(count(opentab_layout::glyphs::ACCIDENTAL_SHARP.codepoint), 0);
     let later = &system.staves[0].bars[1];
-    assert!(bar_glyphs(page, later.group).is_empty());
+    let accidentals = bar_glyphs(page, later.group)
+        .iter()
+        .filter(|glyph| {
+            [
+                opentab_layout::glyphs::ACCIDENTAL_NATURAL.codepoint,
+                opentab_layout::glyphs::ACCIDENTAL_SHARP.codepoint,
+            ]
+            .contains(&glyph.codepoint)
+        })
+        .count();
+    assert_eq!(accidentals, 0);
 }
 
 #[test]
@@ -564,7 +574,7 @@ fn clefs_keys_and_times_appear_at_system_starts_and_changes() {
     assert_eq!(count('\u{E262}'), 3);
     assert_eq!(count('\u{E084}'), 2 * 2 + 2);
     assert_eq!(count('\u{E083}'), 2);
-    assert_eq!(count('\u{E261}'), 3);
+    assert_eq!(count('\u{E261}'), 3 + 1);
 }
 
 #[test]

@@ -6,7 +6,7 @@ use opentab_testkit::arb_score;
 use proptest::prelude::*;
 use proptest::sample::subsequence;
 
-use crate::support::check;
+use crate::support::{assert_too_tall, check};
 
 const CASES: u32 = 256;
 const MIN_PAGE_WIDTH_MM: i64 = 120;
@@ -84,6 +84,8 @@ proptest! {
             prop_assert_eq!(result, Err(LayoutError::NoBars));
         } else if !has_staves(&score, &options) {
             prop_assert_eq!(result, Err(LayoutError::NoStaves));
+        } else if result == Err(LayoutError::PageTooSmall) {
+            assert_too_tall(&score, &options);
         } else {
             let list = result.unwrap();
             check(&score, &options, &list);
@@ -97,8 +99,11 @@ proptest! {
     #[test]
     fn layout_at_the_default_options_keeps_every_invariant(score in arb_score()) {
         let options = LayoutOptions::default();
-        if let Ok(list) = layout(&score, &options) {
+        let result = layout(&score, &options);
+        if let Ok(list) = result {
             check(&score, &options, &list);
+        } else if result == Err(LayoutError::PageTooSmall) {
+            assert_too_tall(&score, &options);
         } else {
             prop_assert!(score.master_bars.is_empty() || !has_staves(&score, &options));
         }

@@ -6,11 +6,14 @@ use crate::barline::{EndSign, Strokes};
 use crate::display::GroupId;
 use crate::furniture::{HEAD_GAP, HEAD_PAD, KeyDraw, clef_glyph, time_width};
 use crate::geometry::{
-    BAR_LEAD, COLUMN_GAP, EMPTY_BAR, EMPTY_BAR_MINIMUM, END_PAD, MIN_COLUMN_GAP,
+    BAR_LEAD, COLUMN_GAP, EMPTY_BAR, EMPTY_BAR_MINIMUM, END_PAD, FOOTROOM, GROUP_GAP, HEADROOM,
+    MIN_COLUMN_GAP, NOTATION_CLEARANCE, STAFF_GAP,
 };
 use crate::glyphs::{Metrics, NOTEHEAD_BLACK};
 use crate::grid::{Grid, grid};
+use crate::notation::{ColumnNeed, RowInput, StaffNotation, analyse};
 use crate::options::LayoutError;
+use crate::pitch::written_key;
 use crate::select::{Selection, StaffSpec, model_bar, standard_clef};
 use crate::spacing::{Piece, duration_width, minimum_width, natural_width};
 use crate::structure::{ClefSign, GRACE_ADVANCE, StaffKind};
@@ -19,7 +22,7 @@ use crate::units::{STAFF_SPACE, Units};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Head {
     pub clefs: Vec<Option<ClefSign>>,
-    pub key: Option<KeyDraw>,
+    pub keys: Vec<Option<KeyDraw>>,
     pub time: Option<TimeSignature>,
     pub clef_x: Units,
     pub key_x: Units,
@@ -31,12 +34,16 @@ pub struct Head {
 pub struct Extent {
     pub left: Units,
     pub right: Units,
+    pub lead: Units,
+    pub grace_advance: Units,
+    pub grace_lead: Units,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct VerticalNeeds {
     pub above_system: Units,
     pub above_staff: Vec<Units>,
+    pub below_staff: Vec<Units>,
     pub below_system: Units,
 }
 
@@ -49,6 +56,7 @@ pub struct BarInput<'a> {
     pub clefs: &'a [ClefSign],
     pub key: KeySignature,
     pub grid: &'a Grid,
+    pub notation: &'a [Option<StaffNotation>],
 }
 
 pub struct BarPlan {
@@ -67,6 +75,7 @@ pub struct BarPlan {
     pub repeat_count: Option<u8>,
     pub groups: Vec<GroupId>,
     pub vertical: VerticalNeeds,
+    pub notation: Vec<Option<StaffNotation>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,15 +157,16 @@ pub struct SystemPlan {
 pub fn build_head(
     specs: &[StaffSpec],
     clefs: Vec<Option<ClefSign>>,
-    key: Option<KeyDraw>,
+    keys: Vec<Option<KeyDraw>>,
     time: Option<TimeSignature>,
 ) -> Head {
+    let key_width = keys.iter().flatten().map(|draw| draw.width()).max();
     let clef_column = specs
         .iter()
         .zip(&clefs)
         .filter_map(|(spec, clef)| clef.map(|clef| clef_glyph(clef, spec.shape).width()))
         .max();
-    let shows_anything = clef_column.is_some() || key.is_some() || time.is_some();
+    let shows_anything = clef_column.is_some() || key_width.is_some() || time.is_some();
     let mut cursor = if shows_anything {
         HEAD_PAD
     } else {
@@ -167,8 +177,8 @@ pub fn build_head(
         cursor += width + HEAD_GAP;
     }
     let key_x = cursor;
-    if let Some(draw) = key {
-        cursor += draw.width() + HEAD_GAP;
+    if let Some(width) = key_width {
+        cursor += width + HEAD_GAP;
     }
     let time_x = cursor;
     if let Some(time) = time {
@@ -176,7 +186,7 @@ pub fn build_head(
     }
     Head {
         clefs,
-        key,
+        keys,
         time,
         clef_x,
         key_x,
@@ -197,22 +207,126 @@ pub fn extents(input: &BarInput<'_>) -> Vec<Extent> {
         .grid
         .columns
         .iter()
-        .map(|column| {
+        .enumerate()
+        .map(|(index, column)| {
+            let mut need = ColumnNeed {
+                right: notehead,
+                ..ColumnNeed::default()
+            };
+            let mut graced = false;
+            for staff in input.notation.iter().flatten() {
+                if let Some(found) = staff.columns.get(index) {
+                    need.lead = need.lead.max(found.lead);
+                    need.right = need.right.max(found.right);
+                    need.grace_lead = need.grace_lead.max(found.grace_lead);
+                    need.grace_right = need.grace_right.max(found.grace_right);
+                    graced |= found.grace_right > Units::ZERO;
+                }
+            }
+            let grace_advance = if graced {
+                need.grace_advance().max(GRACE_ADVANCE)
+            } else {
+                GRACE_ADVANCE
+            };
             let graces = i64::try_from(column.graces).unwrap_or(i64::MAX);
             Extent {
-                left: Units(GRACE_ADVANCE.0.saturating_mul(graces)),
-                right: notehead,
+                left: need.lead + Units(grace_advance.0.saturating_mul(graces)),
+                right: need.right,
+                lead: need.lead,
+                grace_advance,
+                grace_lead: need.grace_lead,
             }
         })
         .collect()
 }
 
+fn gap_between(specs: &[StaffSpec], upper: usize) -> Option<Units> {
+    let first = specs.get(upper)?;
+    let second = specs.get(upper + 1)?;
+    Some(if first.source == second.source {
+        STAFF_GAP
+    } else {
+        GROUP_GAP
+    })
+}
+
 pub fn vertical_needs(input: &BarInput<'_>) -> VerticalNeeds {
-    VerticalNeeds {
+    let specs = &input.selection.specs;
+    let mut needs = VerticalNeeds {
         above_system: Units::ZERO,
-        above_staff: vec![Units::ZERO; input.selection.specs.len()],
+        above_staff: vec![Units::ZERO; specs.len()],
+        below_staff: vec![Units::ZERO; specs.len()],
         below_system: Units::ZERO,
+    };
+    for (row, spec) in specs.iter().enumerate() {
+        let Some(Some(notation)) = input.notation.get(row) else {
+            continue;
+        };
+        let above_share = match row.checked_sub(1) {
+            Some(upper) => gap_between(specs, upper).unwrap_or(GROUP_GAP).half(),
+            None => HEADROOM,
+        };
+        let below_share = gap_between(specs, row).map_or(FOOTROOM, Units::half);
+        let above = -notation.top + NOTATION_CLEARANCE;
+        let below = notation.bottom - spec.shape.height() + NOTATION_CLEARANCE;
+        needs.above_staff[row] = (above - above_share).max(Units::ZERO);
+        needs.below_staff[row] = (below - below_share).max(Units::ZERO);
     }
+    needs
+}
+
+pub fn staff_keys(
+    score: &Score,
+    selection: &Selection,
+    key: KeySignature,
+) -> Vec<Option<KeySignature>> {
+    selection
+        .specs
+        .iter()
+        .map(|spec| match spec.kind {
+            StaffKind::Tab => None,
+            StaffKind::Standard => {
+                let chromatic = score
+                    .tracks
+                    .get(spec.track)
+                    .map_or(0, |track| track.transpose.chromatic());
+                Some(written_key(key, chromatic))
+            }
+        })
+        .collect()
+}
+
+pub fn notation(
+    score: &Score,
+    selection: &Selection,
+    master: &MasterBar,
+    bars: &[Option<&Bar>],
+    clefs: &[ClefSign],
+    keys: &[Option<KeySignature>],
+    grid: &Grid,
+) -> Vec<Option<StaffNotation>> {
+    selection
+        .specs
+        .iter()
+        .zip(clefs)
+        .zip(keys)
+        .map(|((spec, clef), key)| {
+            if spec.kind != StaffKind::Standard {
+                return None;
+            }
+            let track = score.tracks.get(spec.track)?;
+            analyse(&RowInput {
+                track,
+                bar: bars.get(spec.source).copied().flatten(),
+                slots: grid.slots.get(spec.source).map_or(&[], Vec::as_slice),
+                columns: &grid.columns,
+                per_whole: grid.per_whole,
+                clef: *clef,
+                key: key.unwrap_or(master.key_signature),
+                time: master.time_signature,
+            })
+        })
+        .collect()
 }
 
 pub fn spaces(grid: &Grid, extents: &[Extent]) -> Vec<Piece> {
@@ -330,19 +444,30 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
         let time_changed =
             previous_master.is_none_or(|before| before.time_signature != master.time_signature);
         let time = time_changed.then_some(master.time_signature);
-        let start_key = match (previous_master, KeyDraw::of(master.key_signature)) {
-            (Some(before), None) => KeyDraw::change(before.key_signature, master.key_signature),
-            (_, key) => key,
-        };
+        let keys = staff_keys(score, selection, master.key_signature);
+        let previous_keys =
+            previous_master.map(|before| staff_keys(score, selection, before.key_signature));
+        let start_keys = keys
+            .iter()
+            .enumerate()
+            .map(|(row, key)| {
+                let key = (*key)?;
+                let before = previous_keys.as_ref().and_then(|known| known[row]);
+                match (before, KeyDraw::of(key)) {
+                    (Some(before), None) => KeyDraw::change(before, key),
+                    (_, draw) => draw,
+                }
+            })
+            .collect();
         let start = build_head(
             &selection.specs,
             clefs.iter().copied().map(Some).collect(),
-            start_key,
+            start_keys,
             time,
         );
         let inline = match previous_master {
             None => start.clone(),
-            Some(before) => {
+            Some(_) => {
                 let changed = clefs
                     .iter()
                     .zip(&previous_clefs)
@@ -350,14 +475,18 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
                         (*clef != ClefSign::Tab && Some(*clef) != *previous).then_some(*clef)
                     })
                     .collect();
-                build_head(
-                    &selection.specs,
-                    changed,
-                    KeyDraw::change(before.key_signature, master.key_signature),
-                    time,
-                )
+                let inline_keys = keys
+                    .iter()
+                    .enumerate()
+                    .map(|(row, key)| {
+                        let before = previous_keys.as_ref().and_then(|known| known[row])?;
+                        KeyDraw::change(before, (*key)?)
+                    })
+                    .collect();
+                build_head(&selection.specs, changed, inline_keys, time)
             }
         };
+        let notation = notation(score, selection, master, &bars, &clefs, &keys, &grid);
         let input = BarInput {
             score,
             selection,
@@ -367,6 +496,7 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
             clefs: &clefs,
             key: master.key_signature,
             grid: &grid,
+            notation: &notation,
         };
         let extents = extents(&input);
         let vertical = vertical_needs(&input);
@@ -401,6 +531,7 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
             repeat_count: master.repeat_end,
             groups,
             vertical,
+            notation,
         });
     }
     Ok(plans)
