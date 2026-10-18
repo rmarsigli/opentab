@@ -1,10 +1,11 @@
 use std::iter::once;
 
-use opentab_model::{BeatId, InstrumentKind, Note, NoteEffects, NoteId, NoteKind, Score};
+use opentab_model::{BeatId, Note, NoteEffects, NoteId, NoteKind, Score};
 
 use crate::beat::find_beat;
 use crate::ids::{check_restorable, next_id, put_extensions, reserve, take_extensions};
 use crate::locate::{beat_in, beat_ref, not_found, note_in};
+use crate::rules::check_note_in;
 use crate::{Command, CommandError, ExtensionEntry};
 
 const BEAT: &str = "beat";
@@ -18,27 +19,13 @@ pub(crate) fn add(
 ) -> Result<Command, CommandError> {
     let path = find_beat(score, beat)?;
     let track = score.tracks.get(path.track).ok_or(not_found(BEAT, beat))?;
-    if track.instrument.kind != InstrumentKind::Fretted {
-        return Err(CommandError::WrongInstrument { track: track.id });
-    }
-    let strings = track.tuning.strings.len();
-    if usize::from(string) >= strings {
-        return Err(CommandError::invalid(format!(
-            "string {string} is out of range for track {} with {strings} strings",
-            track.id.0.0
-        )));
-    }
     let target = beat_ref(&score.tracks, path).ok_or(not_found(BEAT, beat))?;
-    let occupied = target
-        .notes
-        .iter()
-        .any(|note| matches!(note.kind, NoteKind::Fretted { string: used, .. } if used == string));
-    if occupied {
-        return Err(CommandError::invalid(format!(
-            "beat {} already has a note on string {string}",
-            beat.0.0
-        )));
-    }
+    check_note_in(
+        track,
+        beat,
+        &target.notes,
+        NoteKind::Fretted { string, fret },
+    )?;
     reserve(score, 1)?;
     let Score { tracks, ids, .. } = score;
     let target = beat_in(tracks, path).ok_or(not_found(BEAT, beat))?;
@@ -76,10 +63,9 @@ pub(crate) fn restore(
     extensions: &[ExtensionEntry],
 ) -> Result<Command, CommandError> {
     let path = find_beat(score, beat)?;
-    let len = beat_ref(&score.tracks, path)
-        .ok_or(not_found(BEAT, beat))?
-        .notes
-        .len();
+    let track = score.tracks.get(path.track).ok_or(not_found(BEAT, beat))?;
+    let target = beat_ref(&score.tracks, path).ok_or(not_found(BEAT, beat))?;
+    let len = target.notes.len();
     if index > len {
         return Err(CommandError::IndexOutOfRange {
             what: NOTE,
@@ -87,6 +73,7 @@ pub(crate) fn restore(
             len,
         });
     }
+    check_note_in(track, beat, &target.notes, note.kind)?;
     check_restorable(score, once(note.id.0), extensions)?;
     let target = beat_in(&mut score.tracks, path).ok_or(not_found(BEAT, beat))?;
     target.notes.insert(index, note.clone());

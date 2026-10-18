@@ -1,5 +1,6 @@
 use opentab_model::{Fraction, Score, Tempo, TempoChange};
 
+use crate::rules::check_tempo_changes;
 use crate::{Command, CommandError};
 
 const WHAT: &str = "master bar";
@@ -49,16 +50,13 @@ pub(crate) fn restore(
     if master_bar >= score.master_bars.len() {
         return Err(out_of_range(score, master_bar));
     }
-    if let Some(change) = tempo_changes
-        .iter()
-        .find(|change| *change.position.numer() < 0 || *change.position.denom() <= 0)
-    {
-        return Err(CommandError::invalid(format!(
-            "tempo change position {}/{} is negative",
-            change.position.numer(),
-            change.position.denom()
-        )));
-    }
+    let error = out_of_range(score, master_bar);
+    let time_signature = score
+        .master_bars
+        .get(master_bar)
+        .ok_or(error)?
+        .time_signature;
+    check_tempo_changes(time_signature, tempo_changes)?;
     let error = out_of_range(score, master_bar);
     let target = score.master_bars.get_mut(master_bar).ok_or(error)?;
     let old = std::mem::replace(&mut target.tempo_changes, tempo_changes.to_vec());

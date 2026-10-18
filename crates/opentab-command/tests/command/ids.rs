@@ -2,7 +2,7 @@ use opentab_command::{Command, CommandError, apply};
 use opentab_model::{ElementId, IdAllocator, NoteValue};
 
 use crate::checks::rejected;
-use crate::support::{duration, fixture, four_four};
+use crate::support::{duration, fixture, four_four, staff_count};
 
 fn allocator(next: u64) -> IdAllocator {
     serde_json::from_value(serde_json::json!({ "next": next })).unwrap()
@@ -67,7 +67,12 @@ fn undoing_an_insert_keeps_the_allocator() {
     assert!(advanced.peek() > before.peek());
     apply(&mut fx.score, &inverse).unwrap();
     assert_eq!(fx.score.ids, advanced);
-    assert_eq!(fx.score.ids.peek(), ElementId(before.peek().0 + 5));
+    let per_master_bar = 1 + 2 * staff_count(&fx.score) as u64;
+    assert_eq!(per_master_bar, 5);
+    assert_eq!(
+        fx.score.ids.peek(),
+        ElementId(before.peek().0 + per_master_bar)
+    );
 }
 
 #[test]
@@ -361,7 +366,7 @@ fn restore_over_existing_extension_payloads_is_rejected() {
             .insert(prepared.own, crate::support::payload("stale"));
         set_extensions(&mut prepared.command, vec![entry(prepared.own, "fresh")]);
         let message = message_of(rejected(&mut prepared.fx.score, &prepared.command));
-        assert!(message.contains("is duplicated"), "{kind:?}: {message}");
+        assert!(message.contains("orphan"), "{kind:?}: {message}");
         assert_eq!(
             prepared.fx.score.extensions.0.get(&prepared.own),
             Some(&crate::support::payload("stale"))
@@ -379,5 +384,41 @@ fn a_clean_restore_with_its_own_extension_entry_still_applies() {
             prepared.fx.score.extensions.0.get(&prepared.own),
             Some(&crate::support::payload("kept"))
         );
+    }
+}
+
+#[test]
+fn restore_over_orphan_payloads_without_entries_is_rejected() {
+    for kind in ALL_RESTORED {
+        let mut prepared = prepare(kind);
+        prepared
+            .fx
+            .score
+            .extensions
+            .0
+            .insert(prepared.own, crate::support::payload("orphan"));
+        set_extensions(&mut prepared.command, Vec::new());
+        let message = message_of(rejected(&mut prepared.fx.score, &prepared.command));
+        assert!(message.contains("orphan"), "{kind:?}: {message}");
+    }
+}
+
+#[test]
+fn restore_over_orphan_payloads_of_a_nested_id_is_rejected() {
+    for kind in [Restored::MasterBar, Restored::Beat] {
+        let mut prepared = prepare(kind);
+        let nested = match &prepared.command {
+            Command::RestoreMasterBar { bars, .. } => bars[0].voices[0].id.0,
+            Command::RestoreBeat { beat, .. } => beat.notes[0].id.0,
+            other => panic!("unexpected restore {other:?}"),
+        };
+        prepared
+            .fx
+            .score
+            .extensions
+            .0
+            .insert(nested, crate::support::payload("orphan"));
+        let message = message_of(rejected(&mut prepared.fx.score, &prepared.command));
+        assert!(message.contains("orphan"), "{kind:?}: {message}");
     }
 }

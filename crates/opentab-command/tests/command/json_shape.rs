@@ -1,5 +1,8 @@
 use opentab_command::{Command, MetaField, apply};
-use opentab_model::{BeatId, ElementId, NoteId, NoteValue, TimeSignature, Tuplet, VoiceId};
+use opentab_model::{
+    Bar, BarId, BeatId, ElementId, NoteId, NoteValue, StaffId, TimeSignature, TrackId, Tuplet,
+    Voice, VoiceId,
+};
 use serde_json::{Value, json};
 
 use crate::support::{duration, fixture};
@@ -83,6 +86,43 @@ fn forward_commands_have_the_documented_json_shape() {
             bpm: 96.5,
         },
         json!({"op": "set_tempo", "master_bar": 0, "bpm": 96.5}),
+    );
+    shape(
+        &Command::PadStaffBars {
+            track: TrackId(ElementId(3)),
+            staff: StaffId(id),
+        },
+        json!({"op": "pad_staff_bars", "track": 3, "staff": 7}),
+    );
+    shape(
+        &Command::TrimStaffBars {
+            track: TrackId(ElementId(3)),
+            staff: StaffId(id),
+            len: 2,
+        },
+        json!({"op": "trim_staff_bars", "track": 3, "staff": 7, "len": 2}),
+    );
+}
+
+#[test]
+fn restore_staff_bars_has_the_documented_json_shape() {
+    let bar = Bar {
+        id: BarId(ElementId(8)),
+        voices: vec![Voice {
+            id: VoiceId(ElementId(9)),
+            beats: Vec::new(),
+        }],
+    };
+    shape(
+        &Command::RestoreStaffBars {
+            track: TrackId(ElementId(3)),
+            staff: StaffId(ElementId(7)),
+            bars: vec![bar],
+            extensions: Vec::new(),
+        },
+        json!({"op": "restore_staff_bars", "track": 3, "staff": 7,
+               "bars": [{"id": 8, "voices": [{"id": 9, "beats": []}]}],
+               "extensions": []}),
     );
 }
 

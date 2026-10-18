@@ -10,5 +10,7 @@ mod master_bar;
 mod meta;
 mod note;
 mod properties;
+mod restore_rules;
+mod staff;
 mod support;
 mod tempo;

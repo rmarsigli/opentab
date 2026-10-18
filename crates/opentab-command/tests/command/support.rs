@@ -183,3 +183,28 @@ pub fn fixture() -> Fixture {
 pub fn guitar_voice(score: &Score, bar: usize) -> &Voice {
     &score.tracks[0].staves[0].bars[bar].voices[0]
 }
+
+pub fn score_ids(score: &Score) -> Vec<ElementId> {
+    let mut ids: Vec<ElementId> = score.master_bars.iter().map(|m| m.id.0).collect();
+    for track in &score.tracks {
+        ids.push(track.id.0);
+        for staff in &track.staves {
+            ids.push(staff.id.0);
+            for bar in &staff.bars {
+                ids.push(bar.id.0);
+                for voice in &bar.voices {
+                    ids.push(voice.id.0);
+                    for beat in &voice.beats {
+                        ids.push(beat.id.0);
+                        ids.extend(beat.notes.iter().map(|note| note.id.0));
+                    }
+                }
+            }
+        }
+    }
+    ids
+}
+
+pub fn staff_count(score: &Score) -> usize {
+    score.tracks.iter().map(|track| track.staves.len()).sum()
+}

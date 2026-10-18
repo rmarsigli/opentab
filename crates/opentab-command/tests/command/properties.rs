@@ -11,6 +11,21 @@ use crate::generator::{Case, arb_case, resolve};
 const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 256;
 const SHIFTS: [usize; 4] = [0, 1, 2, usize::MAX];
+const MIN_SUCCESS_RATIO: f64 = 0.2;
+const FORWARD_OPS: [&str; 12] = [
+    "set_meta",
+    "insert_master_bar",
+    "remove_master_bar",
+    "insert_beat",
+    "remove_beat",
+    "set_beat_duration",
+    "add_note",
+    "remove_note",
+    "set_fret",
+    "set_tempo",
+    "pad_staff_bars",
+    "trim_staff_bars",
+];
 
 fn execute_all(case: &Case) -> (opentab_model::Score, History, usize) {
     let mut score = case.score.clone();
@@ -76,6 +91,7 @@ fn is_restore(command: &Command) -> bool {
             | Command::RestoreBeat { .. }
             | Command::RestoreNote { .. }
             | Command::RestoreTempoChanges { .. }
+            | Command::RestoreStaffBars { .. }
     )
 }
 
@@ -238,30 +254,19 @@ fn the_sequence_generator_mixes_successes_and_every_failure() {
             }
         }
     }
-    let ops = [
-        "set_meta",
-        "insert_master_bar",
-        "remove_master_bar",
-        "insert_beat",
-        "remove_beat",
-        "set_beat_duration",
-        "add_note",
-        "remove_note",
-        "set_fret",
-        "set_tempo",
-    ];
-    for op in ops {
-        assert!(
-            successes.get(op).copied().unwrap_or(0) > 0,
-            "{op} never succeeded: {successes:?}"
-        );
+    let mut rare = Vec::new();
+    for op in FORWARD_OPS {
+        let succeeded = successes.get(op).copied().unwrap_or(0);
+        let failed = failures.get(op).copied().unwrap_or(0);
+        let attempts = succeeded + failed;
+        if (succeeded as f64) < MIN_SUCCESS_RATIO * attempts.max(1) as f64 {
+            rare.push(format!("{op}: {succeeded} of {attempts}"));
+        }
         if op != "set_meta" {
-            assert!(
-                failures.get(op).copied().unwrap_or(0) > 0,
-                "{op} never failed: {failures:?}"
-            );
+            assert!(failed > 0, "{op} never failed: {failures:?}");
         }
     }
+    assert!(rare.is_empty(), "success ratio below 20%: {rare:?}");
     for kind in [
         "not_found",
         "index_out_of_range",
@@ -301,6 +306,7 @@ fn restore_replay_exercises_applied_and_rejected_restores_of_every_kind() {
         "restore_beat",
         "restore_note",
         "restore_tempo_changes",
+        "restore_staff_bars",
     ] {
         assert!(
             total.applied.get(op).copied().unwrap_or(0) > 0,

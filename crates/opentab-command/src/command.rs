@@ -1,6 +1,6 @@
 use opentab_model::{
-    Bar, Beat, BeatId, Duration, ElementId, MasterBar, Note, NoteId, OpaquePayload, TempoChange,
-    TimeSignature, VoiceId,
+    Bar, Beat, BeatId, Duration, ElementId, MasterBar, Note, NoteId, OpaquePayload, StaffId,
+    TempoChange, TimeSignature, TrackId, VoiceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -68,6 +68,15 @@ pub enum Command {
         master_bar: usize,
         bpm: f64,
     },
+    PadStaffBars {
+        track: TrackId,
+        staff: StaffId,
+    },
+    TrimStaffBars {
+        track: TrackId,
+        staff: StaffId,
+        len: usize,
+    },
     RestoreMasterBar {
         index: usize,
         master_bar: MasterBar,
@@ -89,5 +98,11 @@ pub enum Command {
     RestoreTempoChanges {
         master_bar: usize,
         tempo_changes: Vec<TempoChange>,
+    },
+    RestoreStaffBars {
+        track: TrackId,
+        staff: StaffId,
+        bars: Vec<Bar>,
+        extensions: Vec<ExtensionEntry>,
     },
 }

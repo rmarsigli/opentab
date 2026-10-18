@@ -1,7 +1,8 @@
 use opentab_model::{Beat, BeatEffects, BeatId, BeatPath, Duration, Score, VoiceId, VoicePath};
 
 use crate::ids::{beat_ids, check_restorable, next_id, put_extensions, reserve, take_extensions};
-use crate::locate::{beat_in, not_found, voice_in, voice_ref};
+use crate::locate::{beat_in, not_found, voice_in, voice_path, voice_ref};
+use crate::rules::check_beat;
 use crate::{Command, CommandError, ExtensionEntry};
 
 const BEAT: &str = "beat";
@@ -57,13 +58,7 @@ pub(crate) fn insert(
 
 pub(crate) fn remove(score: &mut Score, beat: BeatId) -> Result<Command, CommandError> {
     let path = find_beat(score, beat)?;
-    let voice_path = VoicePath {
-        track: path.track,
-        staff: path.staff,
-        bar: path.bar,
-        voice: path.voice,
-    };
-    let voice = voice_in(&mut score.tracks, voice_path).ok_or(not_found(BEAT, beat))?;
+    let voice = voice_in(&mut score.tracks, voice_path(path)).ok_or(not_found(BEAT, beat))?;
     if path.beat >= voice.beats.len() {
         return Err(not_found(BEAT, beat));
     }
@@ -87,6 +82,11 @@ pub(crate) fn restore(
 ) -> Result<Command, CommandError> {
     let (path, len) = find_voice(score, voice)?;
     check_insert_index(index, len)?;
+    let track = score
+        .tracks
+        .get(path.track)
+        .ok_or(not_found(VOICE, voice))?;
+    check_beat(track, beat)?;
     check_restorable(score, beat_ids(beat), extensions)?;
     let target = voice_in(&mut score.tracks, path).ok_or(not_found(VOICE, voice))?;
     target.beats.insert(index, beat.clone());
