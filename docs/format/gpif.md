@@ -394,7 +394,7 @@ Notation used in this table:
 | `Score.tracks` | `Tracks/Track`, in `MasterTrack/Tracks` order | — |
 | `Score.anacrusis` | `MasterTrack/Anacrusis` present | — |
 | `Score.extensions` | opaque GPIF keyed by owner id | — |
-| `Score.document_extensions` | opaque root-level GPIF: `GPVersion`, `GPRevision`, `Encoding`, `BackingTrack`, `Assets`, `ScoreViews` and similar | Not tied to any element. |
+| `Score.document_extensions` | opaque root-level GPIF: `GPVersion`, `GPRevision`, `Encoding`, `BackingTrack`, `Assets`, `ScoreViews` and similar | Not tied to any element. `GPVersion 8.1.5` and the writer's own `GPRevision` are generated, so they are not kept. |
 | `Score.container` | every archive entry in archive order: an entry for each file with its name and exact bytes, and one `Score` entry (name only) at the place where `Content/score.gpif` sat | At most one `Score` entry. File data is stored as base64 text in the JSON form. |
 | `Score.ids` | — | The model allocator; not stored in GPIF. |
 
@@ -487,7 +487,7 @@ Notation used in this table:
 
 These stay as opaque payloads of their owner, or of the score:
 
-- **Root level:** `GPVersion`, `GPRevision` (mandatory, see §12), `Encoding`, `BackingTrack`, `Assets`, `ScoreViews`.
+- **Root level:** `GPVersion` (other than `8.1.5`), `GPRevision` (mandatory, see §12), `Encoding`, `BackingTrack`, `Assets`, `ScoreViews`.
 - **Score:** `WordsAndMusic`, the page header and footer templates, and the system layout and zoom settings.
 - **MasterTrack:**
   - `RSE`;
@@ -559,13 +559,31 @@ We wrote a one-track, one-bar score from scratch and removed parts one at a time
 What each part does:
 
 - **`GPRevision` is mandatory.** Without it, GP neither opens the file nor shows any message: the open is silently ignored [m2].
-- **`InstrumentSet` is required in practice.** A score that lacked both `GPRevision` and `InstrumentSet` crashed GP [m1]. We did not test a score that lacks only `InstrumentSet`, so a writer always emits one. The same score with a revision and a set opened [m3]. A set with only `Type` is enough; GP fills in the rest on save [i-iset-type-only].
-- **Everything else is optional:**
-  - `GPVersion`, `Encoding`;
+- **`InstrumentSet` is required in practice.** A score that lacked both `GPRevision` and `InstrumentSet` crashed GP [m1]. We did not test a score that lacks only `InstrumentSet`, so a writer always emits one. The same score with a revision and a set opened [m3]. A set with only `Type` is enough for a stringed track; GP fills in the rest on save [i-iset-type-only]. It is **not** enough for a drum kit; see below.
+- **`GPVersion` decides how sounds are read.** Without `<GPVersion>8.1.5</GPVersion>`, GP opens the file but ignores every track's `Sounds`. Each track then plays and re-saves as a "Drum Kit" sound with program 0. We wrote five different `Sound` shapes, richer `InstrumentSet` bodies and `Sound` automations, and all of them were ignored [t6-sound-full, t6-sound-automation]. With `GPVersion` alone added, the programs are kept and the MIDI export uses them [t6-sound-gpversion]. `Encoding` alone does not help [t6-sound-encoding]. A writer therefore always emits `GPVersion`.
+- **`Sounds` is required once `GPVersion` is present.** A track with no `Sounds` element (program 0 left implicit) made GP's MIDI export crash [t6-mt-program0]. The same score with an explicit `Sounds/Sound/MIDI/Program` exported cleanly [t6-mt-program1]. A writer always emits `<Sounds><Sound><MIDI><Program>P</Program></MIDI></Sound></Sounds>`, even for program 0.
+- **Every staff needs its tuning and capo.** A second staff without a `Tuning` property gets a tuning of six `C`s, and its notes come out at absurd pitches. A writer gives every staff the track's `CapoFret` and `Tuning`, unless the staff carries its own.
+- **Chord diagram items need a `Diagram` child.**
+  - An item with only `id` and `name` makes GP silently refuse the whole file, with no window and no message [t6-chord-chordonly].
+  - So does an item whose `Diagram` has no attributes [t6-chord-bare-diagram]. The same file without chords opens [t6-chord-none].
+  - `<Item id="i" name="N"><Diagram stringCount="S" fretCount="5"/></Item>` opens, and GP shows the chord name above the staff without a grid [t6-chord-empty-diagram]. `S` is the staff's string count.
+  - On re-save GP adds its own `<Chord><KeyNote …/><BassNote …/></Chord>` to the item.
+- **A drum kit needs GP's kit data.** A drum track whose `InstrumentSet` holds only `Type drumKit` cannot be used:
+  - alone in a score, GP silently refuses the file. A dummy tuning, notes with `Midi`, `Fret` and `String`, and an explicit `PartConfiguration` did not change that [t6-drum-minimal, t6-drum-pc-midi];
+  - after a guitar track, it opens, but renders as a TAB staff of `-2147483648` frets.
+
+  A GP drum track passed through a reader and writer opens only when:
+  - its `PartConfiguration` names the track [t6-drum-gp-nopc crashed, t6-drum-gp-pc opened];
+  - it keeps its `InstrumentSet` body, including the articulation `Elements` [t6-drum-noiset, t6-drum-noelements crashed GP];
+  - it keeps its `Sounds` and RSE data [t6-drum-nosound crashed GP].
+
+  That data is GP's own content. A writer that may not copy it must refuse a percussion track that does not carry it from a `.gp` file.
+- **Everything else is optional for GP to open the file:**
+  - `Encoding`;
   - the other `Score` fields;
   - tempo (GP defaults to 120);
   - colour, layout and playing style;
-  - `Transpose`, `Sounds`, `MidiConnection`, playback state;
+  - `Transpose`, `MidiConnection`, playback state;
   - `CapoFret`, `FretCount` and the tuning extras;
   - track automations, `Key/TransposeAs`, `Dynamic`, `InstrumentArticulation`.
 
@@ -581,3 +599,23 @@ These are the normalisations we observed. Byte equality with a source file is no
 - **Missing optional elements** are filled with defaults (§12). Missing directory entries and container entries are written again.
 - **Element and property order** is GP's own: beat children as in §8, note properties as GP lists them. Our out-of-order input came back in GP's order.
 - **Text.** Values written without CDATA become empty (§2.1). That is data loss, not normalisation.
+
+On scores built from scratch we also saw the following. Each case is a file in `fixtures/gp/`, with its re-save committed as `goldens/gp/<file>/resave.gpif`.
+- **Default tempo.** A score with no tempo at position 0 of the first bar gets a 120 quarter-note tempo there. Tempo automations gain `Linear false` and `Visible true`.
+- **Characters outside the Basic Multilingual Plane** (emoji) become U+FFFD in titles and names. Accents and CJK text survive.
+- **Empty voices.** A voice with no beats is removed from its bar.
+- **Let ring on staccato notes.** `LetRing` is dropped from any note with the staccato accent bit. Palm mute, accent and vibrato do not affect it.
+- **Harmonic frets.** A harmonic at a fret that is not a harmonic node, such as 2.5, is dropped together with its type and fret [t6-harm-natural25]. 3.2, 5, 7, 12 and 17 survive.
+- **TransposedPitch spelling.** GP spells the written pitch by moving the concert spelling diatonically. In C sharp major with only an octave transposition, it keeps C sharp. For an instrument a tone below concert pitch, it writes B sharp. For a fourth plus an octave, it writes E sharp. A writer that picks the nearest enharmonic key instead differs only in spelling, never in pitch.
+- **Default view.** When `GPVersion` is present and the container carries no score views, GP's default view shows only the first track. The other tracks are present in the track list and in every export. Adding `ScoreViews` to the GPIF without the matching `Content/ScoreViews/*.gpsv` entries crashed GP [t6-views-one].
+
+## 14. Committed goldens
+
+The oracle harness saves every fixture through GP and exports it. The repository commits only output that holds no GP-authored assets:
+- `resave.gpif`: only `Content/score.gpif`, taken from GP's re-save;
+- `export.mid`;
+- `export.musicxml`;
+- `export.gp5`;
+- `png/*.png`.
+
+The full harvest stays local: the re-saved `.gp` container, `export.pdf` and `export.gpx`. The container and the GPX carry GP's default `BinaryStylesheet` and `Stylesheets/*.gpss`, and the PDF embeds font subsets. `cargo xtask oracle harvest` writes the full set into a directory outside the repository. `cargo xtask oracle publish --from <full> --out goldens/gp` copies the committed set and writes a manifest marked `"set": "published"`. `cargo xtask oracle check` then requires exactly that set.
