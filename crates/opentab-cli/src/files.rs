@@ -33,7 +33,12 @@ pub enum Format {
 pub fn format_of(path: &Path) -> Result<Format, CliError> {
     let name = path.file_name().map(|name| name.as_encoded_bytes());
     let has = |suffix: &str| {
-        name.is_some_and(|name| name.len() > suffix.len() && name.ends_with(suffix.as_bytes()))
+        name.is_some_and(|name| {
+            name.len() > suffix.len()
+                && name
+                    .get(name.len() - suffix.len()..)
+                    .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix.as_bytes()))
+        })
     };
     if has(SUFFIX) {
         Ok(Format::Json)

@@ -46,8 +46,8 @@ command_failed: not_found, index_out_of_range, invalid_value or wrong_instrument
 const CONVERT_ABOUT: &str = "Convert a score between .gp and .opentab.json";
 
 const CONVERT_LONG_ABOUT: &str = "Read PATH and write it to OUT. The format of each file is picked \
-by its suffix: .gp or .opentab.json, in any combination, so a .gp can also be rewritten as a \
-.gp.\n\n\
+by its suffix: .gp or .opentab.json, in any letter case and in any combination, so a .gp can \
+also be rewritten as a .gp.\n\n\
 Nothing is written unless the whole score converts. OUT replaces an existing file atomically; \
 a symbolic link at OUT is kept and its target is written. A score the .gp writer cannot \
 represent is refused with the error kind unsupported.";
