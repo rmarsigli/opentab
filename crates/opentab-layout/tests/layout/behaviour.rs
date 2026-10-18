@@ -1,11 +1,13 @@
 use opentab_layout::{
     BarRange, ClefSign, DEFAULT_STAFF_SPACE, DURATION_WIDTHS, LayoutError, LayoutOptions,
-    Micrometres, PageSize, Primitive, StaffKind, StaffMode, TAB_LINE_SPACING, Units, layout,
+    MIN_STAFF_SPACE, Micrometres, PageSize, Primitive, StaffKind, StaffMode, TAB_LINE_SPACING,
+    Units, layout,
 };
 use opentab_model::{Clef, InstrumentKind, KeySignature, NoteValue, Score};
 
 use crate::support::{
-    BarSpec, Item, add_track, check, guitar, lines, note, quarter_bars, systems, texts, whole_bars,
+    BarSpec, Item, add_track, bar_glyphs, bar_of, check, content, guitar, lines, note, notehead,
+    quarter_bars, systems, texts, whole_bars,
 };
 
 fn laid_out(score: &Score) -> opentab_layout::DisplayList {
@@ -101,11 +103,19 @@ fn a_dense_bar_with_tuplets_stays_inside_the_system() {
         voices: vec![septuplets],
     });
     let score = guitar(&specs);
-    laid_out(&score);
+    let list = laid_out(&score);
+    assert!(list.crowded.is_empty());
+    assert!(list.staff_space < DEFAULT_STAFF_SPACE);
+    assert!(list.staff_space.micrometres() >= MIN_STAFF_SPACE);
+    let dense = bar_of(&list, 1);
+    assert_eq!(dense.columns.len(), 112);
+    for pair in dense.columns.windows(2) {
+        assert!(pair[1].x - pair[0].x >= notehead());
+    }
 }
 
 #[test]
-fn a_bar_wider_than_the_page_gets_its_own_compressed_system() {
+fn a_bar_too_wide_even_at_the_smallest_staff_space_is_crowded_not_overflowing() {
     let mut specs = quarter_bars(2);
     specs.insert(
         1,
@@ -127,6 +137,56 @@ fn a_bar_wider_than_the_page_gets_its_own_compressed_system() {
     let bar = &holder.staves[0].bars[0];
     assert_eq!(bar.columns.len(), 512);
     assert!(bar.columns.last().unwrap().x < bar.rect.max.x);
+    assert_eq!(list.crowded, vec![1]);
+    assert_eq!(list.staff_space.micrometres(), MIN_STAFF_SPACE);
+    assert!(holder.rect.max.x <= content(&list.pages[0]).max.x);
+}
+
+#[test]
+fn a_system_too_tall_even_at_the_smallest_staff_space_is_an_error() {
+    let mut score = guitar(&whole_bars(2));
+    for index in 0..13 {
+        add_track(&mut score, &format!("T{index}"), 7, InstrumentKind::Fretted);
+    }
+    assert_eq!(
+        layout(&score, &LayoutOptions::default()),
+        Err(LayoutError::PageTooSmall)
+    );
+    score.tracks.truncate(8);
+    let list = laid_out(&score);
+    assert!(list.staff_space.micrometres() > MIN_STAFF_SPACE);
+}
+
+#[test]
+fn hundreds_of_grace_notes_on_one_onset_do_not_fit_any_line() {
+    let mut voice = vec![Item::Grace(NoteValue::Sixteenth); 300];
+    voice.push(note(NoteValue::Whole));
+    let score = guitar(&[BarSpec {
+        time: (4, 4),
+        voices: vec![voice],
+    }]);
+    assert_eq!(
+        layout(&score, &LayoutOptions::default()),
+        Err(LayoutError::PageTooSmall)
+    );
+}
+
+#[test]
+fn a_configured_staff_space_below_the_floor_is_kept_when_it_fits() {
+    let score = guitar(&quarter_bars(4));
+    let options = LayoutOptions {
+        staff_space: Micrometres(600),
+        ..LayoutOptions::default()
+    };
+    let list = layout(&score, &options).unwrap();
+    check(&score, &options, &list);
+    assert_eq!(list.staff_space.micrometres(), Micrometres(600));
+    let wide = LayoutOptions {
+        staff_space: Micrometres(2_500),
+        ..LayoutOptions::default()
+    };
+    let list = layout(&score, &wide).unwrap();
+    assert_eq!(list.staff_space.micrometres(), Micrometres(2_500));
 }
 
 #[test]
@@ -215,7 +275,7 @@ fn bad_options_are_refused() {
     assert_eq!(
         with(&|options| {
             options.page = PageSize {
-                width: Micrometres(40_000),
+                width: Micrometres(35_000),
                 height: Micrometres(297_000),
             }
         }),
@@ -334,18 +394,22 @@ fn a_pickup_bar_is_numbered_zero_and_numbers_mark_system_starts() {
 
 #[test]
 fn repeats_endings_and_double_bars_are_drawn() {
-    let mut score = guitar(&whole_bars(5));
-    score.master_bars[0].repeat_start = true;
-    score.master_bars[1].repeat_end = Some(3);
-    score.master_bars[1].alternate_endings = 0b011;
-    score.master_bars[2].alternate_endings = 0b100;
-    score.master_bars[2].double_bar = true;
-    score.master_bars[3].repeat_end = Some(2);
+    let mut score = guitar(&whole_bars(6));
+    let masters = &mut score.master_bars;
+    masters[0].repeat_start = true;
+    masters[1].repeat_end = Some(3);
+    masters[2].repeat_start = true;
+    masters[3].alternate_endings = 0b011;
+    masters[3].repeat_end = Some(4);
+    masters[4].alternate_endings = 0b100;
+    masters[4].double_bar = true;
+    masters[5].repeat_start = true;
     let list = laid_out(&score);
+    assert_eq!(systems(&list).len(), 1);
     let page = &list.pages[0];
     let words = texts(page);
     assert!(words.contains(&"\u{d7}3".to_string()), "{words:?}");
-    assert!(!words.contains(&"\u{d7}2".to_string()));
+    assert!(!words.contains(&"\u{d7}4".to_string()), "{words:?}");
     assert!(words.contains(&"1, 2.".to_string()));
     assert!(words.contains(&"3.".to_string()));
     let dots = opentab_layout::glyphs::REPEAT_DOT.codepoint;
@@ -353,20 +417,122 @@ fn repeats_endings_and_double_bars_are_drawn() {
         .into_iter()
         .filter(|item| matches!(item, Primitive::Glyph(glyph) if glyph.codepoint == dots))
         .count();
-    assert_eq!(count, 3 * 2 * 2);
+    assert_eq!(count, 5 * 2 * 2);
     let staff = &systems(&list)[0].staves[0];
     let (top, bottom) = staff.span();
-    let vertical_at = |x: Units| {
+    let vertical = |x: Units, thickness: Units| {
         lines(page)
             .iter()
-            .filter(|line| line.from.x == x && line.from.y == top && line.to.y == bottom)
+            .filter(|line| {
+                line.from.x == x
+                    && line.thickness == thickness
+                    && line.from.y == top
+                    && line.to.y == bottom
+            })
             .count()
     };
     let thin = Units(164);
+    let thick = Units(512);
     let gap = Units(410);
-    let double = staff.bars[2].rect.max.x;
-    assert_eq!(vertical_at(double - thin.half()), 1);
-    assert_eq!(vertical_at(double - thin - gap - thin.half()), 1);
+    let shared = staff.bars[1].rect.max.x;
+    assert_eq!(vertical(shared - thick.half(), thick), 1);
+    assert_eq!(vertical(shared + thick.half(), thick), 0);
+    assert_eq!(vertical(shared + gap + thin.half(), thin), 1);
+    let replaced = staff.bars[4].rect.max.x;
+    assert_eq!(vertical(replaced - thin.half(), thin), 0);
+    assert_eq!(vertical(replaced - thin - gap - thin.half(), thin), 0);
+    assert_eq!(vertical(replaced + thick.half(), thick), 1);
+    let plain = staff.bars[2].rect.max.x;
+    assert_eq!(vertical(plain - thin.half(), thin), 1);
+}
+
+#[test]
+fn an_ending_continued_on_the_next_system_has_no_label_or_opening_hook() {
+    let mut score = guitar(&quarter_bars(30));
+    for master in score.master_bars.iter_mut().skip(2) {
+        master.alternate_endings = 0b001;
+    }
+    let list = laid_out(&score);
+    let all = systems(&list);
+    assert!(all.len() >= 3);
+    let labels: usize = list
+        .pages
+        .iter()
+        .map(|page| texts(page).iter().filter(|text| *text == "1.").count())
+        .sum();
+    assert_eq!(labels, 1);
+    for (position, system) in all.iter().enumerate().skip(1) {
+        let page = list
+            .pages
+            .iter()
+            .find(|page| page.systems.contains(system))
+            .unwrap();
+        let first = &system.staves[0];
+        let ending_y = first.top - opentab_layout::ENDING_RISE;
+        let hooks = lines(page)
+            .iter()
+            .filter(|line| {
+                line.from.y == ending_y
+                    && line.to.y > ending_y
+                    && line.from.x < system.staves[0].bars[0].rect.max.x
+            })
+            .count();
+        assert_eq!(hooks, 0, "system {position}");
+    }
+}
+
+#[test]
+fn a_key_change_to_c_at_a_system_start_draws_cancelling_naturals() {
+    let mut score = guitar(&quarter_bars(40));
+    for master in &mut score.master_bars {
+        master.key_signature = KeySignature::new(3, false).unwrap();
+    }
+    let start = systems(&laid_out(&score))[1].staves[0].bars[0].index;
+    for master in score.master_bars.iter_mut().skip(start) {
+        master.key_signature = KeySignature::default();
+    }
+    let list = laid_out(&score);
+    let system = systems(&list)[1];
+    let bar = &system.staves[0].bars[0];
+    assert_eq!(bar.index, start);
+    let page = list
+        .pages
+        .iter()
+        .find(|page| page.systems.contains(system))
+        .unwrap();
+    let glyphs = bar_glyphs(page, bar.group);
+    let count = |codepoint: char| {
+        glyphs
+            .iter()
+            .filter(|glyph| glyph.codepoint == codepoint)
+            .count()
+    };
+    assert_eq!(
+        count(opentab_layout::glyphs::ACCIDENTAL_NATURAL.codepoint),
+        3
+    );
+    assert_eq!(count(opentab_layout::glyphs::ACCIDENTAL_SHARP.codepoint), 0);
+    let later = &system.staves[0].bars[1];
+    assert!(bar_glyphs(page, later.group).is_empty());
+}
+
+#[test]
+fn every_staff_bar_has_its_own_group_even_without_a_model_bar() {
+    let mut score = guitar(&whole_bars(4));
+    add_track(&mut score, "Bass", 4, InstrumentKind::Fretted);
+    score.tracks[0].staves[0].bars.truncate(1);
+    score.tracks[1].staves[0].bars.truncate(2);
+    let list = laid_out(&score);
+    let mut seen = std::collections::BTreeMap::new();
+    for staff in &systems(&list)[0].staves {
+        for bar in &staff.bars {
+            let owner = (staff.track, bar.index);
+            assert_eq!(*seen.entry(bar.group).or_insert(owner), owner);
+        }
+    }
+    assert_eq!(seen.len(), 2 * 4);
+    let largest_model_id = score.ids.peek().0;
+    assert!(seen.keys().filter(|id| id.0 >= largest_model_id).count() == 3 + 2);
 }
 
 #[test]
@@ -404,7 +570,7 @@ fn clefs_keys_and_times_appear_at_system_starts_and_changes() {
 #[test]
 fn a_tall_system_shrinks_the_staff_space_to_fit_the_page() {
     let mut score = guitar(&whole_bars(2));
-    for index in 0..12 {
+    for index in 0..7 {
         add_track(&mut score, &format!("T{index}"), 7, InstrumentKind::Fretted);
     }
     let list = laid_out(&score);

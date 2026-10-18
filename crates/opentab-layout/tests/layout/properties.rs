@@ -1,5 +1,5 @@
 use opentab_layout::{
-    BarRange, LayoutError, LayoutOptions, Micrometres, PageSize, StaffMode, layout,
+    BarRange, LayoutError, LayoutOptions, MIN_STAFF_SPACE, Micrometres, PageSize, StaffMode, layout,
 };
 use opentab_model::Score;
 use opentab_testkit::arb_score;
@@ -11,7 +11,7 @@ use crate::support::check;
 const CASES: u32 = 256;
 const MIN_PAGE_WIDTH_MM: i64 = 120;
 const MAX_PAGE_WIDTH_MM: i64 = 300;
-const MIN_PAGE_HEIGHT_MM: i64 = 100;
+const MIN_PAGE_HEIGHT_MM: i64 = 200;
 const MAX_PAGE_HEIGHT_MM: i64 = 420;
 const MIN_STAFF_SPACE_UM: i64 = 1_000;
 const MAX_STAFF_SPACE_UM: i64 = 2_500;
@@ -87,6 +87,9 @@ proptest! {
         } else {
             let list = result.unwrap();
             check(&score, &options, &list);
+            let used = list.staff_space.micrometres();
+            prop_assert!(used <= options.staff_space);
+            prop_assert!(used >= options.staff_space.min(MIN_STAFF_SPACE));
             prop_assert_eq!(layout(&score, &options).unwrap(), list);
         }
     }

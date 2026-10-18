@@ -25,11 +25,16 @@ pub use display::{
 };
 pub use draw::ending_label;
 pub use engine::layout;
+pub use furniture::StaffShape;
 pub use geometry::{
-    BAR_LEAD, COLUMN_GAP, EMPTY_BAR, END_PAD, FOOTROOM, GROUP_GAP, HEADROOM, MARGIN,
-    MIN_STAFF_SPACE, STAFF_GAP, STANDARD_LINES, TAB_LINE_SPACING,
+    BAR_LEAD, COLUMN_GAP, EMPTY_BAR, EMPTY_BAR_MINIMUM, END_PAD, ENDING_RISE, FOOTROOM, GROUP_GAP,
+    HEADROOM, MARGIN, MIN_COLUMN_GAP, MIN_STAFF_SPACE, NAME_MAX, STAFF_GAP, STANDARD_LINES,
+    TAB_LINE_SPACING,
 };
+pub use grid::{Grid, GridColumn};
 pub use options::{BarRange, LayoutError, LayoutOptions, StaffMode};
+pub use plan::{BarInput, Extent, VerticalNeeds};
+pub use select::{Selection, StaffSpec};
 pub use spacing::{DURATION_WIDTHS, WIDTH_PER_DOUBLING_BEYOND_WHOLE, duration_width};
 pub use structure::{
     BarLayout, BeatSlot, ClefSign, Column, GRACE_ADVANCE, GraceSlot, StaffKind, StaffLayout,

@@ -52,6 +52,10 @@ impl Strokes {
         self.thick + self.thin_thick_gap + self.thin + self.dot_gap + self.dot
     }
 
+    pub fn shared_start_repeat_width(self) -> Units {
+        self.thin_thick_gap + self.thin + self.dot_gap + self.dot
+    }
+
     pub fn draw_end(self, sign: EndSign, right: Units, staff: &StaffLayout) -> Vec<Primitive> {
         let mut items = Vec::new();
         match sign {
@@ -79,8 +83,13 @@ impl Strokes {
 
     pub fn draw_start_repeat(self, left: Units, staff: &StaffLayout) -> Vec<Primitive> {
         let mut items = vec![vertical(left + self.thick.half(), staff, self.thick)];
-        let thin_left = left + self.thick + self.thin_thick_gap;
-        items.push(vertical(thin_left + self.thin.half(), staff, self.thin));
+        items.extend(self.draw_shared_start_repeat(left + self.thick, staff));
+        items
+    }
+
+    pub fn draw_shared_start_repeat(self, left: Units, staff: &StaffLayout) -> Vec<Primitive> {
+        let thin_left = left + self.thin_thick_gap;
+        let mut items = vec![vertical(thin_left + self.thin.half(), staff, self.thin)];
         dots(thin_left + self.thin + self.dot_gap, staff, &mut items);
         items
     }

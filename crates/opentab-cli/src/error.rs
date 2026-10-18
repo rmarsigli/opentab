@@ -31,6 +31,9 @@ pub enum CliError {
     InvalidInput {
         message: String,
     },
+    LayoutLimit {
+        message: String,
+    },
     InvalidCommand {
         line: usize,
         message: String,
@@ -113,6 +116,12 @@ impl CliError {
             },
             CliError::InvalidInput { message } => ErrorBody {
                 kind: "invalid_input",
+                sub_kind: None,
+                message: message.clone(),
+                line: None,
+            },
+            CliError::LayoutLimit { message } => ErrorBody {
+                kind: "layout_limit",
                 sub_kind: None,
                 message: message.clone(),
                 line: None,

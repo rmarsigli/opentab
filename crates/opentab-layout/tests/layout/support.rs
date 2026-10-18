@@ -1,8 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use opentab_layout::glyphs::{
+    ACCIDENTAL_FLAT, ACCIDENTAL_NATURAL, ACCIDENTAL_SHARP, F_CLEF, G_CLEF, G_CLEF_8VB, Glyph,
+    Metrics, NOTEHEAD_BLACK, REPEAT_DOT, TAB_CLEF, TAB_CLEF_4, TIME_SIG_DIGITS,
+    UNPITCHED_PERCUSSION_CLEF_1,
+};
 use opentab_layout::{
-    DisplayList, LayoutOptions, Line, MARGIN, Page, Point, Primitive, Rect, StaffKind, StaffMode,
-    SystemLayout, Units,
+    BarLayout, DisplayList, GroupId, LayoutOptions, Line, MARGIN, Page, PlacedGlyph, Point,
+    Primitive, Rect, STAFF_SPACE, StaffKind, StaffMode, SystemLayout, Units,
 };
 use opentab_model::{
     Bar, Beat, BeatEffects, Clef, Duration, Grace, InstrumentKind, KeySignature, MasterBar,
@@ -237,6 +242,8 @@ pub fn check(score: &Score, options: &LayoutOptions, list: &DisplayList) {
             (range.first, range.last)
         });
     let mut per_staff: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    let mut owners: BTreeMap<GroupId, (usize, usize, usize)> = BTreeMap::new();
+    assert_eq!(list.staff_space, first_page.staff_space);
     for (position, system) in all.iter().enumerate() {
         assert_eq!(system.index, position);
         let found: Vec<(usize, usize, StaffKind)> = system
@@ -325,13 +332,37 @@ pub fn check(score: &Score, options: &LayoutOptions, list: &DisplayList) {
                     assert!(column.x < bar.rect.max.x);
                     previous = column.x;
                 }
-                for slot in &bar.beats {
-                    let x = bar.x_of(slot).unwrap();
+                let crowded = list.crowded.contains(&bar.index);
+                if !crowded {
+                    for pair in bar.columns.windows(2) {
+                        assert!(
+                            pair[1].x - pair[0].x >= notehead(),
+                            "columns of bar {} overlap",
+                            bar.index
+                        );
+                    }
+                }
+                let owner = (staff.track, staff.staff, bar.index);
+                assert_eq!(
+                    *owners.entry(bar.group).or_insert(owner),
+                    owner,
+                    "group id {} is shared",
+                    bar.group.0
+                );
+                for glyph in bar_glyphs(page, bar.group) {
+                    let ink = ink(&glyph);
                     assert!(
-                        x >= bar.content && x < bar.rect.max.x,
-                        "beat x of bar {}",
+                        ink.min.x >= bar.rect.min.x && ink.max.x <= bar.rect.max.x,
+                        "glyph U+{:04X} outside bar {}",
+                        u32::from(glyph.codepoint),
                         bar.index
                     );
+                    assert!(inside(content(page), ink), "glyph outside the content area");
+                }
+                for slot in &bar.beats {
+                    let x = bar.x_of(slot).unwrap();
+                    assert!(x < bar.rect.max.x, "beat x of bar {}", bar.index);
+                    assert!(crowded || x >= bar.content, "grace before content");
                     let column = &bar.columns[slot.column];
                     match slot.grace {
                         Some(grace) => {
@@ -343,9 +374,11 @@ pub fn check(score: &Score, options: &LayoutOptions, list: &DisplayList) {
                 }
                 let barline = drawn.iter().any(|line| {
                     line.from.x == line.to.x
-                        && line.from.x + line.thickness.half() == bar.rect.max.x
                         && line.from.y == top
                         && line.to.y == bottom
+                        && (line.from.x + line.thickness.half() == bar.rect.max.x
+                            || (line.thickness == Units(512)
+                                && line.from.x - line.thickness.half() == bar.rect.max.x))
                 });
                 assert!(barline, "barline of bar {} in row {row}", bar.index);
             }
@@ -464,4 +497,79 @@ pub fn dump(list: &DisplayList) -> String {
         dump_items(&page.items, 0, &mut out);
     }
     out
+}
+
+pub fn notehead() -> Units {
+    Metrics::bravura().bbox(NOTEHEAD_BLACK.name).unwrap().max.x
+}
+
+const FURNITURE: [Glyph; 10] = [
+    G_CLEF,
+    G_CLEF_8VB,
+    F_CLEF,
+    UNPITCHED_PERCUSSION_CLEF_1,
+    TAB_CLEF,
+    TAB_CLEF_4,
+    ACCIDENTAL_SHARP,
+    ACCIDENTAL_FLAT,
+    ACCIDENTAL_NATURAL,
+    REPEAT_DOT,
+];
+
+fn glyph_name(codepoint: char) -> &'static str {
+    FURNITURE
+        .iter()
+        .chain(TIME_SIG_DIGITS.iter())
+        .find(|glyph| glyph.codepoint == codepoint)
+        .map(|glyph| glyph.name)
+        .unwrap_or_else(|| panic!("unexpected glyph U+{:04X}", u32::from(codepoint)))
+}
+
+pub fn ink(glyph: &PlacedGlyph) -> Rect {
+    let bbox = Metrics::bravura()
+        .bbox(glyph_name(glyph.codepoint))
+        .unwrap();
+    let scale = |value: Units| Units(value.0 * glyph.staff_space.0 / STAFF_SPACE.0);
+    Rect::new(
+        Point {
+            x: glyph.origin.x + scale(bbox.min.x),
+            y: glyph.origin.y + scale(bbox.min.y),
+        },
+        Point {
+            x: glyph.origin.x + scale(bbox.max.x),
+            y: glyph.origin.y + scale(bbox.max.y),
+        },
+    )
+}
+
+fn groups_with<'a>(items: &'a [Primitive], id: GroupId, out: &mut Vec<&'a [Primitive]>) {
+    for item in items {
+        if let Primitive::Group(group) = item {
+            if group.id == id {
+                out.push(&group.items);
+            }
+            groups_with(&group.items, id, out);
+        }
+    }
+}
+
+pub fn bar_glyphs(page: &Page, id: GroupId) -> Vec<PlacedGlyph> {
+    let mut found = Vec::new();
+    groups_with(&page.items, id, &mut found);
+    found
+        .into_iter()
+        .flat_map(|items| flatten(items))
+        .filter_map(|item| match item {
+            Primitive::Glyph(glyph) => Some(*glyph),
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn bar_of(list: &DisplayList, index: usize) -> &BarLayout {
+    systems(list)
+        .into_iter()
+        .flat_map(|system| &system.staves[0].bars)
+        .find(|bar| bar.index == index)
+        .unwrap()
 }

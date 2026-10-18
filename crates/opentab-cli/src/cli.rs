@@ -71,10 +71,14 @@ It may be written as 2, 1.5 or 3/2.\n\n\
 Every track is drawn unless --track picks some; tracks are numbered from 1 as in `opentab info`, \
 and the option may be repeated. --bars A-B (or a single A) draws only the master bars A to B, \
 counted from 1. --staff forces the staves of every fretted track: standard notation, tablature \
-or both; by default a track with 4 to 8 strings gets both and other tracks get standard notation.";
+or both; by default a track with 4 to 8 strings gets both and other tracks get standard notation.\n\n\
+The staff space is 1.75 mm unless a system is too tall for the page or a bar too wide for a \
+line; then it shrinks, down to 0.9 mm, and the output says so. A bar still too wide at 0.9 mm \
+is squeezed until its notes may touch and is listed as crowded. A system still too tall at \
+0.9 mm is the error layout_limit.";
 
 const RENDER_AFTER_HELP: &str = "Examples:\n  opentab render song.gp --format svg --out song.svg\n  opentab render song.opentab.json --format png --scale 2 --out pages/\n  opentab render song.gp --format png --track 2 --bars 5-12 --staff tab --out riff.png\n\n\
-JSON result: {\"pages\": <count>, \"systems\": <count>, \"bars\": <count>, \"files\": [<written paths in page order>]}";
+JSON result: {\"pages\": <count>, \"systems\": <count>, \"bars\": <count>, \"staff_space\": <micrometres>, \"crowded\": [<bar numbers from 1>], \"files\": [<written paths in page order>]}";
 
 #[derive(Parser)]
 #[command(name = "opentab", version, about = ABOUT, long_about = LONG_ABOUT)]

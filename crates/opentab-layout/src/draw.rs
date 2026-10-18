@@ -1,5 +1,6 @@
 use opentab_model::Score;
 
+use crate::barline::EndSign;
 use crate::barline::Strokes;
 use crate::display::{
     Colour, FilledRect, Font, Group, GroupId, Line, PlacedGlyph, Primitive, TextAnchor, TextRun,
@@ -8,7 +9,7 @@ use crate::engine::Stack;
 use crate::furniture::{draw_clef, draw_time};
 use crate::geometry::{
     BRACKET_GAP, COUNT_EM, COUNT_RISE, ENDING_EM, ENDING_HOOK, ENDING_INSET, ENDING_LABEL_DROP,
-    ENDING_RISE, NAME_EM, NAME_GAP, NAME_SHARE, NUMBER_EM, NUMBER_RISE,
+    ENDING_RISE, NAME_EM, NAME_GAP, NAME_MAX, NUMBER_EM, NUMBER_RISE,
 };
 use crate::glyphs::{BRACKET_BOTTOM, BRACKET_TOP, Metrics};
 use crate::options::LayoutError;
@@ -23,7 +24,6 @@ pub struct Context<'a> {
     pub score: &'a Score,
     pub selection: &'a Selection,
     pub plans: &'a [BarPlan],
-    pub stack: &'a Stack,
     pub strokes: Strokes,
     pub labels: &'a [Label],
     pub bracket: bool,
@@ -43,11 +43,17 @@ pub fn fit_label(text: &str, max: Units) -> String {
     label.into_iter().collect()
 }
 
-pub fn labels(score: &Score, selection: &Selection, content: Units) -> Vec<Label> {
+pub struct DrawnSystem {
+    pub structure: SystemLayout,
+    pub items: Vec<Primitive>,
+    pub crowded: bool,
+}
+
+pub fn labels(score: &Score, selection: &Selection) -> Vec<Label> {
     if selection.tracks.len() < 2 {
         return Vec::new();
     }
-    let max = Units(content.0 / NAME_SHARE);
+    let max = NAME_MAX;
     selection
         .tracks
         .iter()
@@ -71,7 +77,8 @@ pub fn draw_system(
     system: &SystemPlan,
     index: usize,
     top: Units,
-) -> Result<(SystemLayout, Vec<Primitive>), LayoutError> {
+    stack: &Stack,
+) -> Result<DrawnSystem, LayoutError> {
     let plans = &context.plans[system.first..system.end];
     let strokes = context.strokes;
     let mut pieces = Vec::new();
@@ -80,7 +87,8 @@ pub fn draw_system(
         bases.push(pieces.len());
         pieces.extend(plan.pieces(offset == 0, strokes));
     }
-    let positions = place(&pieces, system.target).ok_or(LayoutError::PageTooSmall)?;
+    let placement = place(&pieces, system.target).ok_or(LayoutError::PageTooSmall)?;
+    let positions = &placement.positions;
     let x = |piece: usize| system.left + positions.get(piece).copied().unwrap_or_default();
     let right = system.left + system.target;
     let thickness = Metrics::bravura().engraving_defaults().staff_line_thickness;
@@ -91,7 +99,7 @@ pub fn draw_system(
             track: spec.track,
             staff: spec.staff,
             kind: spec.kind,
-            top: top + context.stack.tops.get(row).copied().unwrap_or_default(),
+            top: top + stack.tops.get(row).copied().unwrap_or_default(),
             lines: spec.shape.lines,
             line_spacing: spec.shape.spacing,
             bars: Vec::with_capacity(plans.len()),
@@ -110,40 +118,49 @@ pub fn draw_system(
         for (offset, plan) in plans.iter().enumerate() {
             let at_start = offset == 0;
             let base = bases[offset];
-            let count = plan.spaces.len();
+            let slots = plan.slots(at_start);
             let left = x(base);
-            let bar_right = x(base + 4 + count);
+            let bar_right = x(base + slots.right);
             let head = plan.head(at_start);
+            let head_left = x(base + slots.head);
             let group = plan.groups.get(spec.source).copied().unwrap_or(GroupId(0));
             let mut bar_items = Vec::new();
             let clef = plan.clefs.get(row).copied().unwrap_or(ClefSign::Treble);
             if let Some(Some(sign)) = head.clefs.get(row) {
-                draw_clef(*sign, left + head.clef_x, &staff, &mut bar_items);
+                draw_clef(*sign, head_left + head.clef_x, &staff, &mut bar_items);
             }
             if let (Some(key), StaffKind::Standard) = (head.key, spec.kind) {
-                key.draw(clef, left + head.key_x, &staff, &mut bar_items);
+                key.draw(clef, head_left + head.key_x, &staff, &mut bar_items);
             }
             if let Some(time) = head.time {
-                draw_time(time, left + head.time_x, &staff, &mut bar_items);
+                draw_time(time, head_left + head.time_x, &staff, &mut bar_items);
             }
             if plan.repeat_start {
-                let start = x(base + 2) - strokes.start_repeat_width();
-                bar_items.extend(strokes.draw_start_repeat(start, &staff));
+                let repeat_left = x(base + slots.repeat);
+                if !at_start && plan.shares_thick {
+                    bar_items.extend(strokes.draw_shared_start_repeat(repeat_left, &staff));
+                } else {
+                    bar_items.extend(strokes.draw_start_repeat(repeat_left, &staff));
+                }
             }
-            bar_items.extend(strokes.draw_end(plan.end, bar_right, &staff));
+            let replaced = plans.get(offset + 1).is_some_and(|next| {
+                next.repeat_start && matches!(plan.end, EndSign::Normal | EndSign::Double)
+            });
+            if !replaced {
+                bar_items.extend(strokes.draw_end(plan.end, bar_right, &staff));
+            }
             let columns = plan
                 .grid
                 .columns
                 .iter()
                 .enumerate()
                 .map(|(column_index, column)| {
-                    let (left_extent, right_extent) =
-                        plan.extents.get(column_index).copied().unwrap_or_default();
+                    let extent = plan.extents.get(column_index).copied().unwrap_or_default();
                     Column {
                         ticks: column.ticks,
-                        x: x(base + 3 + column_index),
-                        left: left_extent,
-                        right: right_extent,
+                        x: x(base + slots.columns + column_index),
+                        left: extent.left,
+                        right: extent.right,
                         graces: column.graces,
                     }
                 })
@@ -162,7 +179,7 @@ pub fn draw_system(
                         y: span_bottom,
                     },
                 ),
-                content: x(base + 2),
+                content: x(base + slots.lead),
                 start_width: plan.natural(true, strokes),
                 inline_width: plan.natural(false, strokes),
                 clef,
@@ -208,14 +225,18 @@ pub fn draw_system(
             },
             Point {
                 x: right,
-                y: top + context.stack.height,
+                y: top + stack.height,
             },
         ),
         natural: system.natural,
         available: system.available,
         staves,
     };
-    Ok((structure, items))
+    Ok(DrawnSystem {
+        structure,
+        items,
+        crowded: placement.crowded,
+    })
 }
 
 pub fn system_marks(
@@ -279,9 +300,20 @@ pub fn system_marks(
             end += 1;
         }
         if mask != 0 {
-            let start_x = x(bases[offset] + 1);
+            let first_plan = &plans[offset];
+            let start_x = if offset == 0 {
+                x(bases[offset] + first_plan.slots(true).repeat)
+            } else {
+                x(bases[offset])
+            };
             let last = &plans[end - 1];
-            let end_x = x(bases[end - 1] + 4 + last.spaces.len()) - ENDING_INSET;
+            let end_x = x(bases[end - 1] + last.slots(end - 1 == 0).right) - ENDING_INSET;
+            let continued = offset == 0
+                && system.first > 0
+                && context
+                    .plans
+                    .get(system.first - 1)
+                    .is_some_and(|before| before.ending == mask);
             let line = |from: Point, to: Point| {
                 Primitive::Line(Line {
                     from,
@@ -300,16 +332,18 @@ pub fn system_marks(
                     y: ending_y,
                 },
             ));
-            items.push(line(
-                Point {
-                    x: start_x,
-                    y: ending_y,
-                },
-                Point {
-                    x: start_x,
-                    y: ending_y + ENDING_HOOK,
-                },
-            ));
+            if !continued {
+                items.push(line(
+                    Point {
+                        x: start_x,
+                        y: ending_y,
+                    },
+                    Point {
+                        x: start_x,
+                        y: ending_y + ENDING_HOOK,
+                    },
+                ));
+            }
             if last.repeat_count.is_some() {
                 items.push(line(
                     Point {
@@ -322,21 +356,26 @@ pub fn system_marks(
                     },
                 ));
             }
-            items.push(text(
-                ending_label(mask),
-                Point {
-                    x: start_x + ENDING_INSET,
-                    y: ending_y + ENDING_LABEL_DROP,
-                },
-                ENDING_EM,
-                TextAnchor::Start,
-            ));
+            if !continued {
+                items.push(text(
+                    ending_label(mask),
+                    Point {
+                        x: start_x + ENDING_INSET,
+                        y: ending_y + ENDING_LABEL_DROP,
+                    },
+                    ENDING_EM,
+                    TextAnchor::Start,
+                ));
+            }
         }
         offset = end;
     }
     for (offset, plan) in plans.iter().enumerate() {
-        if let Some(count) = plan.repeat_count.filter(|count| *count > 2) {
-            let bar_right = x(bases[offset] + 4 + plan.spaces.len());
+        if let Some(count) = plan
+            .repeat_count
+            .filter(|count| *count > 2 && plan.ending == 0)
+        {
+            let bar_right = x(bases[offset] + plan.slots(offset == 0).right);
             items.push(text(
                 format!("\u{d7}{count}"),
                 Point {
