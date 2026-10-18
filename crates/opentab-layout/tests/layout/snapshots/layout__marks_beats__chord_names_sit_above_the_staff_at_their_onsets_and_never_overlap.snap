@@ -1,0 +1,188 @@
+---
+source: crates/opentab-layout/tests/layout/marks_beats.rs
+assertion_line: 262
+expression: dump(&list)
+---
+page 0 staff space 1750 um
+system 0 8777,8777 114103,33865 natural 80815 available 105326
+  staff track 0 staff 0 Standard top 12873 lines 5 spacing 1024
+    bar 0 number 1 group 41 8777,12873 114103,16969 content 16010 widths 80815 80815 Treble8vb ticks 16/16 [0@17034 1@23000 2@28967 3@34934 4@40901 5@46868 6@52835 7@58802 8@64769 9@70736 10@76703 11@82670 12@88637 13@94604 14@100571 15@106538]
+  staff track 0 staff 0 Tab top 23113 lines 6 spacing 1536
+    bar 0 number 1 group 41 8777,23113 114103,30793 content 16010 widths 80815 80815 Tab ticks 16/16 [0@17034 1@23000 2@28967 3@34934 4@40901 5@46868 6@52835 7@58802 8@64769 9@70736 10@76703 11@82670 12@88637 13@94604 14@100571 15@106538]
+group 5
+  line 8777,12873 114103,12873 thick 133
+  line 8777,13897 114103,13897 thick 133
+  line 8777,14921 114103,14921 thick 133
+  line 8777,15945 114103,15945 thick 133
+  line 8777,16969 114103,16969 thick 133
+  group 41
+    glyph U+E052 9289,15945 size 1024
+    glyph U+E084 13061,13897 size 1024
+    glyph U+E084 13061,15945 size 1024
+    line 113847,12873 113847,16969 thick 512
+    line 113099,12873 113099,16969 thick 164
+    group 10
+      group 9
+        glyph U+E0A4 17034,14409 size 1024
+      line 17096,14581 17096,17993 thick 123
+    group 12
+      group 11
+        glyph U+E0A4 23000,14409 size 1024
+      line 23062,14581 23062,17993 thick 123
+    group 14
+      group 13
+        glyph U+E0A4 28967,14409 size 1024
+      line 29029,14581 29029,17993 thick 123
+    group 16
+      group 15
+        glyph U+E0A4 34934,14409 size 1024
+      line 34996,14581 34996,17993 thick 123
+    group 18
+      group 17
+        glyph U+E0A4 40901,14409 size 1024
+      line 40963,14581 40963,17993 thick 123
+    group 20
+      group 19
+        glyph U+E0A4 46868,14409 size 1024
+      line 46930,14581 46930,17993 thick 123
+    group 22
+      group 21
+        glyph U+E0A4 52835,14409 size 1024
+      line 52897,14581 52897,17993 thick 123
+    group 24
+      group 23
+        glyph U+E0A4 58802,14409 size 1024
+      line 58864,14581 58864,17993 thick 123
+    group 26
+      group 25
+        glyph U+E0A4 64769,14409 size 1024
+      line 64831,14581 64831,17993 thick 123
+    group 28
+      group 27
+        glyph U+E0A4 70736,14409 size 1024
+      line 70798,14581 70798,17993 thick 123
+    group 30
+      group 29
+        glyph U+E0A4 76703,14409 size 1024
+      line 76765,14581 76765,17993 thick 123
+    group 32
+      group 31
+        glyph U+E0A4 82670,14409 size 1024
+      line 82732,14581 82732,17993 thick 123
+    group 34
+      group 33
+        glyph U+E0A4 88637,14409 size 1024
+      line 88699,14581 88699,17993 thick 123
+    group 36
+      group 35
+        glyph U+E0A4 94604,14409 size 1024
+      line 94666,14581 94666,17993 thick 123
+    group 38
+      group 37
+        glyph U+E0A4 100571,14409 size 1024
+      line 100633,14581 100633,17993 thick 123
+    group 40
+      group 39
+        glyph U+E0A4 106538,14409 size 1024
+      line 106600,14581 106600,17993 thick 123
+    shape Fill [MoveTo(Point { x: Units(17034), y: Units(17993) }), LineTo(Point { x: Units(35058), y: Units(17993) }), LineTo(Point { x: Units(35058), y: Units(17481) }), LineTo(Point { x: Units(17034), y: Units(17481) }), Close]
+    shape Fill [MoveTo(Point { x: Units(17034), y: Units(17225) }), LineTo(Point { x: Units(35058), y: Units(17225) }), LineTo(Point { x: Units(35058), y: Units(16713) }), LineTo(Point { x: Units(17034), y: Units(16713) }), Close]
+    shape Fill [MoveTo(Point { x: Units(40901), y: Units(17993) }), LineTo(Point { x: Units(58926), y: Units(17993) }), LineTo(Point { x: Units(58926), y: Units(17481) }), LineTo(Point { x: Units(40901), y: Units(17481) }), Close]
+    shape Fill [MoveTo(Point { x: Units(40901), y: Units(17225) }), LineTo(Point { x: Units(58926), y: Units(17225) }), LineTo(Point { x: Units(58926), y: Units(16713) }), LineTo(Point { x: Units(40901), y: Units(16713) }), Close]
+    shape Fill [MoveTo(Point { x: Units(64769), y: Units(17993) }), LineTo(Point { x: Units(82794), y: Units(17993) }), LineTo(Point { x: Units(82794), y: Units(17481) }), LineTo(Point { x: Units(64769), y: Units(17481) }), Close]
+    shape Fill [MoveTo(Point { x: Units(64769), y: Units(17225) }), LineTo(Point { x: Units(82794), y: Units(17225) }), LineTo(Point { x: Units(82794), y: Units(16713) }), LineTo(Point { x: Units(64769), y: Units(16713) }), Close]
+    shape Fill [MoveTo(Point { x: Units(88637), y: Units(17993) }), LineTo(Point { x: Units(106662), y: Units(17993) }), LineTo(Point { x: Units(106662), y: Units(17481) }), LineTo(Point { x: Units(88637), y: Units(17481) }), Close]
+    shape Fill [MoveTo(Point { x: Units(88637), y: Units(17225) }), LineTo(Point { x: Units(106662), y: Units(17225) }), LineTo(Point { x: Units(106662), y: Units(16713) }), LineTo(Point { x: Units(88637), y: Units(16713) }), Close]
+  line 8777,23113 114103,23113 thick 133
+  line 8777,24649 114103,24649 thick 133
+  line 8777,26185 114103,26185 thick 133
+  line 8777,27721 114103,27721 thick 133
+  line 8777,29257 114103,29257 thick 133
+  line 8777,30793 114103,30793 thick 133
+  group 41
+    glyph U+E06D 9289,26953 size 1016
+    glyph U+E084 13061,25929 size 1024
+    glyph U+E084 13061,27977 size 1024
+    line 113847,23113 113847,30793 thick 512
+    line 113099,23113 113099,30793 thick 164
+    group 10
+      group 9
+        rect 17103,25524 18173,26846 White
+        text "5" 17638,26675 em 1536 Middle Text
+    group 12
+      group 11
+        rect 23069,25524 24139,26846 White
+        text "5" 23604,26675 em 1536 Middle Text
+    group 14
+      group 13
+        rect 29036,25524 30106,26846 White
+        text "5" 29571,26675 em 1536 Middle Text
+    group 16
+      group 15
+        rect 35003,25524 36073,26846 White
+        text "5" 35538,26675 em 1536 Middle Text
+    group 18
+      group 17
+        rect 40970,25524 42040,26846 White
+        text "5" 41505,26675 em 1536 Middle Text
+    group 20
+      group 19
+        rect 46937,25524 48007,26846 White
+        text "5" 47472,26675 em 1536 Middle Text
+    group 22
+      group 21
+        rect 52904,25524 53974,26846 White
+        text "5" 53439,26675 em 1536 Middle Text
+    group 24
+      group 23
+        rect 58871,25524 59941,26846 White
+        text "5" 59406,26675 em 1536 Middle Text
+    group 26
+      group 25
+        rect 64838,25524 65908,26846 White
+        text "5" 65373,26675 em 1536 Middle Text
+    group 28
+      group 27
+        rect 70805,25524 71875,26846 White
+        text "5" 71340,26675 em 1536 Middle Text
+    group 30
+      group 29
+        rect 76772,25524 77842,26846 White
+        text "5" 77307,26675 em 1536 Middle Text
+    group 32
+      group 31
+        rect 82739,25524 83809,26846 White
+        text "5" 83274,26675 em 1536 Middle Text
+    group 34
+      group 33
+        rect 88706,25524 89776,26846 White
+        text "5" 89241,26675 em 1536 Middle Text
+    group 36
+      group 35
+        rect 94673,25524 95743,26846 White
+        text "5" 95208,26675 em 1536 Middle Text
+    group 38
+      group 37
+        rect 100640,25524 101710,26846 White
+        text "5" 101175,26675 em 1536 Middle Text
+    group 40
+      group 39
+        rect 106607,25524 107677,26846 White
+        text "5" 107142,26675 em 1536 Middle Text
+line 8859,12873 8859,30793 thick 164
+text "Cmaj7" 16954,12116 em 1536 Start Text
+text "Cmaj7" 22920,12116 em 1536 Start Text
+text "Cmaj7" 28887,12116 em 1536 Start Text
+text "Cmaj7" 34854,12116 em 1536 Start Text
+text "Cmaj7" 40821,12116 em 1536 Start Text
+text "Cmaj7" 46788,12116 em 1536 Start Text
+text "Cmaj7" 52755,12116 em 1536 Start Text
+text "Cmaj7" 58722,12116 em 1536 Start Text
+text "Cmaj7" 64689,12116 em 1536 Start Text
+text "Cmaj7" 70656,12116 em 1536 Start Text
+text "Cmaj7" 76623,12116 em 1536 Start Text
+text "Cmaj7" 82590,12116 em 1536 Start Text
+text "Cmaj7" 88557,12116 em 1536 Start Text
+text "Cmaj7" 94524,12116 em 1536 Start Text
+text "Cmaj7" 100491,12116 em 1536 Start Text
+text "Cmaj7" 106458,12116 em 1536 Start Text

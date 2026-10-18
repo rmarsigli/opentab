@@ -1,0 +1,113 @@
+---
+source: crates/opentab-layout/tests/layout/marks.rs
+assertion_line: 177
+expression: dump(&list)
+---
+page 0 staff space 1750 um
+system 0 8777,28472 73725,53560 natural 43299 available 105326
+  staff track 0 staff 0 Standard top 32568 lines 5 spacing 1024
+    bar 0 number 1 group 18 8777,32568 44406,36664 content 16010 widths 24805 24805 Treble8vb ticks 4/4 [0@17034 1@23836 2@30638 3@37440]
+    bar 1 number 2 group 28 44406,32568 73725,36664 content 44406 widths 22778 18494 Treble8vb ticks 4/4 [0@45430 1@52232 2@59034 3@65836]
+  staff track 0 staff 0 Tab top 42808 lines 6 spacing 1536
+    bar 0 number 1 group 18 8777,42808 44406,50488 content 16010 widths 24805 24805 Tab ticks 4/4 [0@17034 1@23836 2@30638 3@37440]
+    bar 1 number 2 group 28 44406,42808 73725,50488 content 44406 widths 22778 18494 Tab ticks 4/4 [0@45430 1@52232 2@59034 3@65836]
+text "Song Title" 51758,13385 em 4608 Start Text
+text "A Subtitle" 56303,17447 em 2560 Start Text
+text "The Artist" 57319,20330 em 2048 Start Text
+text "The Album" 57451,22790 em 1792 Start Text
+text "Tab by T. Tabber" 8734,24910 em 1536 Start Text
+text "Words by W. Writer" 102019,24910 em 1536 Start Text
+text "Music by M. Maker" 102490,26947 em 1536 Start Text
+group 5
+  line 8777,32568 73725,32568 thick 133
+  line 8777,33592 73725,33592 thick 133
+  line 8777,34616 73725,34616 thick 133
+  line 8777,35640 73725,35640 thick 133
+  line 8777,36664 73725,36664 thick 133
+  group 18
+    glyph U+E052 9289,35640 size 1024
+    glyph U+E084 13061,33592 size 1024
+    glyph U+E084 13061,35640 size 1024
+    line 44324,32568 44324,36664 thick 164
+    group 11
+      group 10
+        glyph U+E0A4 17034,35640 size 1024
+      line 18180,35468 18180,32056 thick 123
+    group 13
+      group 12
+        glyph U+E0A4 23836,35640 size 1024
+      line 24982,35468 24982,32056 thick 123
+    group 15
+      group 14
+        glyph U+E0A4 30638,35640 size 1024
+      line 31784,35468 31784,32056 thick 123
+    group 17
+      group 16
+        glyph U+E0A4 37440,35640 size 1024
+      line 38586,35468 38586,32056 thick 123
+  group 28
+    line 73469,32568 73469,36664 thick 512
+    line 72721,32568 72721,36664 thick 164
+    group 21
+      group 20
+        glyph U+E0A4 45430,35640 size 1024
+      line 46576,35468 46576,32056 thick 123
+    group 23
+      group 22
+        glyph U+E0A4 52232,35640 size 1024
+      line 53378,35468 53378,32056 thick 123
+    group 25
+      group 24
+        glyph U+E0A4 59034,35640 size 1024
+      line 60180,35468 60180,32056 thick 123
+    group 27
+      group 26
+        glyph U+E0A4 65836,35640 size 1024
+      line 66982,35468 66982,32056 thick 123
+  line 8777,42808 73725,42808 thick 133
+  line 8777,44344 73725,44344 thick 133
+  line 8777,45880 73725,45880 thick 133
+  line 8777,47416 73725,47416 thick 133
+  line 8777,48952 73725,48952 thick 133
+  line 8777,50488 73725,50488 thick 133
+  group 18
+    glyph U+E06D 9289,46648 size 1016
+    glyph U+E084 13061,45624 size 1024
+    glyph U+E084 13061,47672 size 1024
+    line 44324,42808 44324,50488 thick 164
+    group 11
+      group 10
+        rect 17103,45219 18173,46541 White
+        text "0" 17638,46370 em 1536 Middle Text
+    group 13
+      group 12
+        rect 23905,45219 24975,46541 White
+        text "0" 24440,46370 em 1536 Middle Text
+    group 15
+      group 14
+        rect 30707,45219 31777,46541 White
+        text "0" 31242,46370 em 1536 Middle Text
+    group 17
+      group 16
+        rect 37509,45219 38579,46541 White
+        text "0" 38044,46370 em 1536 Middle Text
+  group 28
+    line 73469,42808 73469,50488 thick 512
+    line 72721,42808 72721,50488 thick 164
+    group 21
+      group 20
+        rect 45499,45219 46569,46541 White
+        text "0" 46034,46370 em 1536 Middle Text
+    group 23
+      group 22
+        rect 52301,45219 53371,46541 White
+        text "0" 52836,46370 em 1536 Middle Text
+    group 25
+      group 24
+        rect 59103,45219 60173,46541 White
+        text "0" 59638,46370 em 1536 Middle Text
+    group 27
+      group 26
+        rect 65905,45219 66975,46541 White
+        text "0" 66440,46370 em 1536 Middle Text
+line 8859,32568 8859,50488 thick 164
