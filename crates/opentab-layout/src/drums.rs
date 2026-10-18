@@ -141,11 +141,6 @@ impl DrumKit {
     }
 
     pub fn key(&self, articulation: u16) -> Option<u8> {
-        if self.keys.is_empty() {
-            return u8::try_from(articulation)
-                .ok()
-                .filter(|key| u16::from(*key) <= MAX_GENERAL_MIDI_KEY);
-        }
         self.keys.get(usize::from(articulation)).copied().flatten()
     }
 
@@ -255,9 +250,9 @@ mod tests {
         assert_eq!(kit.entry(5).class, DrumClass::Kick);
         assert_eq!(kit.entry(9).class, DrumClass::Other);
         let bare = DrumKit::default();
-        assert_eq!(bare.key(42), Some(42));
-        assert_eq!(bare.key(127), Some(127));
-        assert_eq!(bare.key(128), None);
-        assert_eq!(bare.key(u16::MAX), None);
+        for articulation in [0, 38, 42, 127, 128, u16::MAX] {
+            assert_eq!(bare.key(articulation), None);
+            assert_eq!(bare.entry(articulation), DEFAULT_DRUM);
+        }
     }
 }
