@@ -25,6 +25,7 @@ mod tab;
 pub mod text;
 mod ties;
 mod units;
+mod unrendered;
 
 pub use accidentals::{Accidental, Carry};
 pub use barline::EndSign;
@@ -69,3 +70,6 @@ pub use tab::{
 };
 pub use ties::{TieAnchor, TieSpan, draw_ties, tie};
 pub use units::{Micrometres, Point, REFERENCE_EM, Rect, STAFF_SPACE, STAVES_PER_EM, Units};
+pub use unrendered::{
+    UNRENDERED, Unrendered, diagram_ids, has_visible_text, holds_lyrics, unrendered,
+};

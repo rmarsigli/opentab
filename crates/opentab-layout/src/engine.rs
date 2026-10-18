@@ -15,6 +15,7 @@ use crate::options::{LayoutError, LayoutOptions};
 use crate::plan::{BarPlan, SystemPlan, VerticalNeeds, above_share, break_systems, plan_bars};
 use crate::select::{StaffSpec, select};
 use crate::units::{Micrometres, STAFF_SPACE, Units};
+use crate::unrendered::unrendered;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stack {
@@ -152,6 +153,7 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         crowded,
         dropped,
         title_page,
+        unrendered: unrendered(score, &selection),
     })
 }
 

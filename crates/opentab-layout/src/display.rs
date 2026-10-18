@@ -3,6 +3,7 @@ use std::num::{NonZeroI64, NonZeroI128};
 use crate::marks::DroppedMark;
 use crate::structure::SystemLayout;
 use crate::units::{Micrometres, Point, Rect, STAFF_SPACE, Units, narrow, round_div};
+use crate::unrendered::Unrendered;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PageSize {
@@ -78,6 +79,7 @@ pub struct DisplayList {
     pub crowded: Vec<usize>,
     pub dropped: Vec<DroppedMark>,
     pub title_page: bool,
+    pub unrendered: Vec<Unrendered>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
