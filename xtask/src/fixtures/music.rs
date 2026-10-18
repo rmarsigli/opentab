@@ -1,11 +1,12 @@
 use opentab_model::{
     Clef, Fraction, KeySignature, Marker, NoteValue, Score, Tempo, TempoChange, TempoUnit,
+    blank_score,
 };
 
 use crate::fixtures::FixtureError;
 use crate::fixtures::sketch::{
-    BeatSketch, NoteSketch, STANDARD, Sketch, TrackSetup, beat, dotted, duration, fretted, rest,
-    tuplet, voice,
+    BeatSketch, NoteSketch, Sketch, TrackSetup, beat, dotted, duration, fretted, rest, tuplet,
+    voice,
 };
 
 pub fn metadata() -> Result<Score, FixtureError> {
@@ -451,16 +452,5 @@ pub fn multi_track() -> Result<Score, FixtureError> {
 }
 
 pub fn from_scratch() -> Result<Score, FixtureError> {
-    let mut sketch = Sketch::new("");
-    let bar = sketch.master_bar(4, 4)?;
-    sketch.score.master_bars[bar].tempo_changes = vec![change(
-        Fraction::from_integer(0),
-        120.0,
-        TempoUnit::Quarter,
-    )?];
-    let mut guitar = TrackSetup::guitar("Guitar", "Gtr");
-    guitar.program = 25;
-    guitar.tuning = STANDARD.to_vec();
-    sketch.track(guitar)?;
-    Ok(sketch.finish())
+    Ok(Sketch::from_score(blank_score()?).finish())
 }

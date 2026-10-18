@@ -1,4 +1,5 @@
 use crate::oracle::error::OracleError;
+use crate::oracle::manifest::GoldenSet;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -12,6 +13,22 @@ pub const REQUIRED_OUTPUTS: [&str; 6] = [
     "export.gp5",
     "export.gpx",
 ];
+pub const PUBLISHED_OUTPUTS: [&str; 4] =
+    ["resave.gpif", "export.mid", "export.musicxml", "export.gp5"];
+pub const RESAVE_GP: &str = "resave.gp";
+pub const RESAVE_GPIF: &str = "resave.gpif";
+
+pub fn required_outputs(set: GoldenSet) -> &'static [&'static str] {
+    match set {
+        GoldenSet::Full => &REQUIRED_OUTPUTS,
+        GoldenSet::Published => &PUBLISHED_OUTPUTS,
+    }
+}
+
+pub fn is_published_copy(path: &str) -> bool {
+    (PUBLISHED_OUTPUTS.contains(&path) && path != RESAVE_GPIF) || path.starts_with("png/")
+}
+
 pub const NON_BYTE_IDENTICAL_OUTPUTS: [&str; 1] = ["export.gp5"];
 
 pub fn is_byte_identical(path: &str) -> bool {

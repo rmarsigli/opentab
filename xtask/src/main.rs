@@ -7,6 +7,7 @@ use xtask::oracle::check::check;
 use xtask::oracle::examples::{ExamplesOptions, harvest_examples};
 use xtask::oracle::harvest::{HarvestOptions, harvest};
 use xtask::oracle::host::Host;
+use xtask::oracle::publish::{PublishOptions, publish};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -49,6 +50,18 @@ enum OracleCommand {
     Check(CheckArgs),
     #[command(about = "Save every built-in Guitar Pro 8 example as a .gp into a local corpus")]
     Examples(ExamplesArgs),
+    #[command(
+        about = "Copy the committable golden set (resave.gpif, MIDI, MusicXML, GP5, PNG) out of a full harvest"
+    )]
+    Publish(PublishArgs),
+}
+
+#[derive(Debug, Args)]
+struct PublishArgs {
+    #[arg(long, help = "Full harvest directory, kept outside the repository")]
+    from: PathBuf,
+    #[arg(long, help = "Golden directory to commit")]
+    out: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -130,6 +143,20 @@ fn run_examples(args: ExamplesArgs) -> ExitCode {
             report.failures.len() + report.saved.len(),
             report.failures.join(", ")
         )),
+        Err(error) => failure(error.message()),
+    }
+}
+
+fn run_publish(args: PublishArgs) -> ExitCode {
+    let options = PublishOptions {
+        from: args.from,
+        out: args.out,
+    };
+    match publish(&options) {
+        Ok(count) => {
+            println!("published {count} fixture(s) to {}", options.out.display());
+            ExitCode::SUCCESS
+        }
         Err(error) => failure(error.message()),
     }
 }
@@ -218,6 +245,7 @@ fn main() -> ExitCode {
             OracleCommand::Harvest(args) => run_harvest(args),
             OracleCommand::Check(args) => run_check(args),
             OracleCommand::Examples(args) => run_examples(args),
+            OracleCommand::Publish(args) => run_publish(args),
         },
     }
 }

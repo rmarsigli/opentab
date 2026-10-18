@@ -175,6 +175,23 @@ mod tests {
     }
 
     #[test]
+    fn every_committed_fixture_reads_back_as_the_built_score() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("fixtures")
+            .join("gp");
+        for family in families().expect("families") {
+            let bytes = std::fs::read(dir.join(family.file)).expect("fixture");
+            assert_eq!(
+                read_gp(&bytes).expect("read"),
+                family.score,
+                "{}",
+                family.file
+            );
+        }
+    }
+
+    #[test]
     fn write_fixtures_writes_one_file_per_family() {
         let dir = tempfile::tempdir().expect("tempdir");
         let out = dir.path().join("nested").join("gp");
