@@ -1,3 +1,63 @@
+class GpWindowInfo {
+  [IntPtr]$Handle
+  [string]$Title
+  [string]$Class
+  [IntPtr]$Owner
+  GpWindowInfo([IntPtr]$handle, [string]$title, [string]$windowClass, [IntPtr]$owner) {
+    $this.Handle = $handle
+    $this.Title = $title
+    $this.Class = $windowClass
+    $this.Owner = $owner
+  }
+}
+
+class GpChildWindow {
+  [IntPtr]$Handle
+  [int]$Id
+  [string]$Title
+  [string]$Class
+  [bool]$Visible
+  GpChildWindow([IntPtr]$handle, [int]$id, [string]$title, [string]$windowClass, [bool]$visible) {
+    $this.Handle = $handle
+    $this.Id = $id
+    $this.Title = $title
+    $this.Class = $windowClass
+    $this.Visible = $visible
+  }
+}
+
+class GpMenuRunspace {
+  [object]$PS
+  [object]$Handle
+  GpMenuRunspace([object]$ps, [object]$handle) {
+    $this.PS = $ps
+    $this.Handle = $handle
+  }
+}
+
+class GpClearResult {
+  [bool]$Cleared
+  [System.Collections.ArrayList]$Seen
+  GpClearResult([bool]$cleared, [System.Collections.ArrayList]$seen) {
+    $this.Cleared = $cleared
+    $this.Seen = $seen
+  }
+}
+
+class GpStepRecord {
+  [string]$name
+  [string]$status
+  [int64]$ms
+  [int]$attempts
+  [string]$error
+  [string]$screenshot
+  GpStepRecord([string]$stepName, [string]$stepStatus) {
+    $this.name = $stepName
+    $this.status = $stepStatus
+    $this.attempts = 1
+  }
+}
+
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
@@ -50,6 +110,29 @@ namespace GpOracle {
 }
 
 $script:MenuRunspaces = New-Object System.Collections.ArrayList
+$script:JobsRoot = 'C:\gf-oracle\jobs'
+$script:DefaultOwnerProbe = { param([IntPtr]$Handle) [GpOracle.W32]::GetWindow($Handle, 4) }
+$script:DefaultCloser = { param([IntPtr]$Handle, [uint32]$Message) [void][GpOracle.W32]::PostMessage($Handle, $Message, [IntPtr]::Zero, [IntPtr]::Zero) }
+$script:WindowOwnerProbe = $script:DefaultOwnerProbe
+$script:WindowCloser = $script:DefaultCloser
+
+function New-GpWindowInfo([IntPtr]$Handle, [string]$Title, [string]$Class, [IntPtr]$Owner) {
+  [GpWindowInfo]::new($Handle, $Title, $Class, $Owner)
+}
+
+function New-GpStepRecord([string]$Name, [string]$Status) {
+  [GpStepRecord]::new($Name, $Status)
+}
+
+function Set-GpWindowBackend([scriptblock]$OwnerProbe, [scriptblock]$Closer) {
+  $script:WindowOwnerProbe = $OwnerProbe
+  $script:WindowCloser = $Closer
+}
+
+function Reset-GpWindowBackend {
+  $script:WindowOwnerProbe = $script:DefaultOwnerProbe
+  $script:WindowCloser = $script:DefaultCloser
+}
 
 function Get-GpProcess {
   Get-Process -Name GuitarPro -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -72,7 +155,7 @@ function Get-ProcWindows([int]$ProcId) {
     [void][GpOracle.W32]::GetWindowThreadProcessId($h, [ref]$p)
     if ($p -eq $ProcId -and [GpOracle.W32]::IsWindowVisible($h)) {
       $c = New-Object System.Text.StringBuilder 256; [void][GpOracle.W32]::GetClassName($h, $c, 256)
-      [void]$list.Add([pscustomobject]@{ Handle = $h; Title = (Get-WindowText $h); Class = $c.ToString(); Owner = [GpOracle.W32]::GetWindow($h, 4) })
+      [void]$list.Add((New-GpWindowInfo $h (Get-WindowText $h) $c.ToString() ([GpOracle.W32]::GetWindow($h, 4))))
     }
     $true }
   [void][GpOracle.W32]::EnumWindows($cb, [IntPtr]::Zero)
@@ -83,7 +166,7 @@ function Get-ChildWindows([IntPtr]$Parent) {
   $list = New-Object System.Collections.ArrayList
   $cb = [GpOracle.W32+EnumProc]{ param($h, $l)
     $c = New-Object System.Text.StringBuilder 256; [void][GpOracle.W32]::GetClassName($h, $c, 256)
-    [void]$list.Add([pscustomobject]@{ Handle = $h; Id = [GpOracle.W32]::GetDlgCtrlID($h); Title = (Get-WindowText $h); Class = $c.ToString(); Visible = [GpOracle.W32]::IsWindowVisible($h) })
+    [void]$list.Add([GpChildWindow]::new($h, [GpOracle.W32]::GetDlgCtrlID($h), (Get-WindowText $h), $c.ToString(), [GpOracle.W32]::IsWindowVisible($h)))
     $true }
   [void][GpOracle.W32]::EnumChildWindows($Parent, $cb, [IntPtr]::Zero)
   $list
@@ -135,11 +218,13 @@ function Test-CloseAllowed([IntPtr]$Handle, [IntPtr]$Owner, [IntPtr]$Main) {
   $Main -ne [IntPtr]::Zero -and $Handle -ne [IntPtr]::Zero -and $Handle -ne $Main -and $Owner -eq $Main
 }
 
+function Test-ModalClass([string]$Class) {
+  $Class -like 'Qt*QWindowIcon' -or $Class -eq '#32770'
+}
+
 function Select-GpModals([object[]]$Windows, [IntPtr]$Main) {
   Assert-MainKnown $Main
-  @($Windows | Where-Object {
-      $_.Class -ne 'SysShadow' -and $_.Class -notlike '*ToolTip*' -and $_.Class -notlike '*Popup*' -and (Test-CloseAllowed $_.Handle $_.Owner $Main)
-    })
+  @($Windows | Where-Object { (Test-ModalClass $_.Class) -and (Test-CloseAllowed $_.Handle $_.Owner $Main) })
 }
 
 function Get-GpModals {
@@ -150,14 +235,27 @@ function Get-GpModals {
 
 function Close-OwnedWindow([IntPtr]$Handle, [IntPtr]$Main) {
   Assert-MainKnown $Main
-  if (-not (Test-CloseAllowed $Handle ([GpOracle.W32]::GetWindow($Handle, 4)) $Main)) { return $false }
-  [void][GpOracle.W32]::PostMessage($Handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+  if (-not (Test-CloseAllowed $Handle (& $script:WindowOwnerProbe $Handle) $Main)) { return $false }
+  & $script:WindowCloser $Handle 0x0010
   $true
+}
+
+function Select-PopupWindows([object[]]$Windows) {
+  @($Windows | Where-Object { $_.Class -like '*Popup*' })
+}
+
+function Test-GpPopupPresent {
+  $p = Get-GpProcess
+  if (-not $p) { return $false }
+  (Select-PopupWindows @(Get-ProcWindows $p.Id)).Count -gt 0
 }
 
 function Get-GpPopups {
   $p = Get-GpProcess
-  Get-ProcWindows $p.Id | Where-Object { $_.Class -like '*Popup*' } | ForEach-Object { [System.Windows.Automation.AutomationElement]::FromHandle($_.Handle) }
+  if (-not $p) { return @() }
+  $popups = Select-PopupWindows @(Get-ProcWindows $p.Id)
+  if ($popups.Count -eq 0) { return @() }
+  @($popups | ForEach-Object { [System.Windows.Automation.AutomationElement]::FromHandle($_.Handle) })
 }
 
 function ConvertTo-LabelKey([string]$Text) {
@@ -206,7 +304,7 @@ function Open-MenuPath([string[]]$Path) {
   [void](Expand-El $item)
   for ($i = 1; $i -lt $Path.Count; $i++) {
     $alts = $Path[$i].Split('|')
-    $found = Wait-For { foreach ($pp in Get-GpPopups) { $x = Find-MenuItem $pp $alts; if ($x) { return $x } } } 3000
+    $found = Wait-For { if (Test-GpPopupPresent) { foreach ($pp in Get-GpPopups) { $x = Find-MenuItem $pp $alts; if ($x) { return $x } } } } 3000
     if (-not $found) { throw "menu item not found: $($alts -join '|')" }
     if ($i -eq $Path.Count - 1) { return $found }
     [void](Expand-El $found)
@@ -218,7 +316,7 @@ function Invoke-MenuAsync([string[]]$Path) {
   $ps = [PowerShell]::Create()
   [void]$ps.AddScript({ param($el) $p = $null; if ($el.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$p)) { $p.Invoke() } }).AddArgument($leaf)
   $h = $ps.BeginInvoke()
-  [void]$script:MenuRunspaces.Add([pscustomobject]@{ PS = $ps; Handle = $h })
+  [void]$script:MenuRunspaces.Add([GpMenuRunspace]::new($ps, $h))
   $h
 }
 
@@ -243,11 +341,11 @@ function Close-GpMenus {
   $main = Get-GpMainHandle
   Assert-MainKnown $main
   for ($i = 0; $i -lt 4; $i++) {
-    if (@(Get-GpPopups).Count -eq 0) { return $true }
+    if (-not (Test-GpPopupPresent)) { return $true }
     if (-not (Send-KeysTo $main '{ESC}')) { return $false }
     Start-Sleep -Milliseconds 150
   }
-  @(Get-GpPopups).Count -eq 0
+  -not (Test-GpPopupPresent)
 }
 
 function Clear-GpModals([int]$MaxAttempts = 3) {
@@ -255,14 +353,15 @@ function Clear-GpModals([int]$MaxAttempts = 3) {
   Assert-MainKnown $main
   $seen = New-Object System.Collections.ArrayList
   for ($i = 0; $i -lt $MaxAttempts; $i++) {
-    if (@(Get-GpPopups).Count -gt 0) { [void](Close-GpMenus) }
+    if (Test-GpPopupPresent) { [void](Close-GpMenus) }
     $mods = Get-GpModals
-    if ($mods.Count -eq 0) { return [pscustomobject]@{ Cleared = $true; Seen = $seen } }
+    if ($mods.Count -eq 0) { return [GpClearResult]::new($true, $seen) }
     foreach ($m in $mods) {
       $label = "$($m.Title) [$($m.Class)]"
       if (-not $seen.Contains($label)) { [void]$seen.Add($label) }
+      if (-not (Test-ModalClass $m.Class)) { continue }
       if (-not [GpOracle.W32]::IsWindow($m.Handle)) { continue }
-      if (-not (Test-CloseAllowed $m.Handle ([GpOracle.W32]::GetWindow($m.Handle, 4)) $main)) { continue }
+      if (-not (Test-CloseAllowed $m.Handle (& $script:WindowOwnerProbe $m.Handle) $main)) { continue }
       if ($i -eq 0) {
         [void](Send-KeysTo $m.Handle '{ESC}')
       } else {
@@ -271,7 +370,7 @@ function Clear-GpModals([int]$MaxAttempts = 3) {
     }
     [void](Wait-For { if ((Get-GpModals).Count -eq 0) { $true } } 1500 100)
   }
-  [pscustomobject]@{ Cleared = ((Get-GpModals).Count -eq 0); Seen = $seen }
+  [GpClearResult]::new(((Get-GpModals).Count -eq 0), $seen)
 }
 
 function Wait-NewWindow([object[]]$Before, [int]$TimeoutMs) {
@@ -361,7 +460,15 @@ function Close-GpErrorToast {
   ($texts -join ' / ')
 }
 
+function Test-JobFolder([string]$Folder) {
+  if ([string]::IsNullOrWhiteSpace($Folder)) { return $false }
+  try { $full = [System.IO.Path]::GetFullPath($Folder).TrimEnd('\') } catch { return $false }
+  $prefix = $script:JobsRoot + '\'
+  $full.Length -gt $prefix.Length -and $full.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
 function Close-ExplorerFolder([string]$Folder, [int]$WaitMs = 0) {
+  if (-not (Test-JobFolder $Folder)) { return 0 }
   $target = [System.IO.Path]::GetFullPath($Folder).TrimEnd('\')
   $shell = New-Object -ComObject Shell.Application
   $script:closedExplorer = 0

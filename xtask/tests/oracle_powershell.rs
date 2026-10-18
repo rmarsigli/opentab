@@ -45,7 +45,8 @@ fn module_never_closes_unowned_or_main_windows() {
         .output()
         .expect("run powershell");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(output.status.code(), Some(0), "{stdout}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "{stdout}{stderr}");
     assert!(stdout.contains("PASS: "), "{stdout}");
 }
 
@@ -76,6 +77,71 @@ fn wm_close_is_only_sent_by_the_guarded_helper() {
     assert!(body.contains("Assert-MainKnown $Main"));
     assert!(body.contains("Test-CloseAllowed"));
     assert_eq!(module.matches("PostMessage(").count(), 3);
+    assert_eq!(module.matches("& $script:WindowCloser").count(), 1);
+    assert!(start < module.find("& $script:WindowCloser").unwrap());
+    assert!(module.find("& $script:WindowCloser").unwrap() < end);
+}
+
+fn function_body(source: &str, name: &str) -> String {
+    let start = source
+        .find(&format!("function {name}"))
+        .unwrap_or_else(|| panic!("function {name}"));
+    let end = source[start + 1..]
+        .find("\nfunction ")
+        .map_or(source.len(), |offset| start + 1 + offset);
+    source[start..end].to_owned()
+}
+
+#[test]
+fn clear_gp_modals_only_closes_modal_classes_and_probes_popups_cheaply() {
+    let module = oracle_source("GpOracle.psm1");
+    let clear = function_body(&module, "Clear-GpModals");
+    assert!(clear.contains("Test-ModalClass $m.Class"));
+    assert!(clear.contains("Test-GpPopupPresent"));
+    assert!(!clear.contains("Get-GpPopups"));
+    let close_menus = function_body(&module, "Close-GpMenus");
+    assert!(!close_menus.contains("Get-GpPopups"));
+    let select = function_body(&module, "Select-GpModals");
+    assert!(select.contains("Test-ModalClass"));
+    let classes = function_body(&module, "Test-ModalClass");
+    assert!(classes.contains("'Qt*QWindowIcon'"));
+    assert!(classes.contains("'#32770'"));
+    assert!(!classes.contains("Tool"));
+    let open = function_body(&module, "Open-MenuPath");
+    let gate = open.find("Test-GpPopupPresent").expect("gate");
+    assert!(gate < open.find("Get-GpPopups").expect("use"));
+}
+
+#[test]
+fn explorer_folders_are_only_closed_under_the_jobs_root() {
+    let module = oracle_source("GpOracle.psm1");
+    let body = function_body(&module, "Close-ExplorerFolder");
+    let guard = body.find("Test-JobFolder $Folder").expect("guard");
+    assert!(guard < body.find("New-Object -ComObject").expect("com"));
+    assert!(module.contains("$script:JobsRoot = 'C:\\gf-oracle\\jobs'"));
+}
+
+#[test]
+fn powershell_sources_use_classes_and_carry_no_comments() {
+    for name in [
+        "GpOracle.psm1",
+        "Invoke-GpExport.ps1",
+        "tests/Test-GpOracle.ps1",
+    ] {
+        let source = oracle_source(name);
+        assert!(!source.contains("pscustomobject"), "{name}");
+        assert!(!source.contains("<#"), "{name}");
+        for line in source.lines() {
+            assert!(!line.trim_start().starts_with('#'), "{name}: {line}");
+        }
+    }
+    let module = oracle_source("GpOracle.psm1");
+    let first_class = module
+        .find("\nclass ")
+        .or_else(|| module.starts_with("class ").then_some(0));
+    let first_function = module.find("\nfunction ").expect("functions");
+    assert!(first_class.expect("classes declared") < first_function);
+    assert!(module.starts_with("class "));
 }
 
 #[test]
