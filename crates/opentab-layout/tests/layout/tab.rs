@@ -2,9 +2,10 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::num::NonZeroI64;
 
+use opentab_layout::text::text_font;
 use opentab_layout::{
-    DisplayList, FRET_EM, Group, Page, PathSegment, Primitive, Rect, StaffKind, StaffMode,
-    SystemLayout, TextRun, Units, baseline_below_centre, fret_text, layout,
+    DisplayList, FRET_EM, Group, MARK_EM, Page, PathSegment, Primitive, Rect, StaffKind, StaffMode,
+    SystemLayout, TextAnchor, TextRun, Units, baseline_below_centre, fret_text, layout,
 };
 use opentab_model::{NoteKind, Score};
 use opentab_testkit::arb_score;
@@ -17,6 +18,7 @@ use crate::support::{check, ink};
 const CASES: u32 = 256;
 const MIN_LABELS: usize = 3_000;
 const MIN_SAME_STRING_PAIRS: usize = 1_000;
+const MIN_LANE_TEXT_PAIRS: usize = 1_000;
 const TEXT_ASCENT: i64 = 15;
 const TEXT_DESCENT: i64 = 4;
 const PARTS: NonZeroI64 = NonZeroI64::new(20).unwrap();
@@ -25,6 +27,37 @@ const PARTS: NonZeroI64 = NonZeroI64::new(20).unwrap();
 pub struct Tally {
     pub labels: usize,
     pub same_string_pairs: usize,
+    pub lane_text_pairs: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LaneText {
+    pub y: Units,
+    pub left: Units,
+    pub right: Units,
+    pub crowded: bool,
+}
+
+const LANE_WORDS: [&str; 8] = ["P.M.", "T", "LT", "A.H.", "P.H.", "T.H.", "S.H.", "F.H."];
+
+fn lane_text(text: &TextRun, crowded: bool) -> Option<LaneText> {
+    let lane =
+        text.text == "let ring" || text.text.split(' ').all(|word| LANE_WORDS.contains(&word));
+    if !lane || text.em != MARK_EM {
+        return None;
+    }
+    let width = text_font().measure(&text.text, text.em);
+    let left = match text.anchor {
+        TextAnchor::Start => text.origin.x,
+        TextAnchor::Middle => text.origin.x - width.half(),
+        TextAnchor::End => text.origin.x - width,
+    };
+    Some(LaneText {
+        y: text.origin.y,
+        left,
+        right: left + width,
+        crowded,
+    })
 }
 
 pub struct Label {
@@ -133,6 +166,7 @@ pub fn check_tab(score: &Score, list: &DisplayList) -> Tally {
         let staff = row.staff;
         let track = &score.tracks[staff.track];
         let mut boxes: Vec<(usize, Rect, bool)> = Vec::new();
+        let mut lanes: Vec<LaneText> = Vec::new();
         for (layout, group) in staff.bars.iter().zip(&row.bars) {
             for item in flat(&group.items) {
                 if let Some((top, bottom)) = vertical_span(item) {
@@ -145,6 +179,11 @@ pub fn check_tab(score: &Score, list: &DisplayList) -> Tally {
                 }
             }
             let crowded = list.crowded.contains(&layout.index);
+            for item in flat(&group.items) {
+                if let Primitive::Text(text) = item {
+                    lanes.extend(lane_text(text, crowded));
+                }
+            }
             let mut found = note_groups(group);
             let Some(bar) = track
                 .staves
@@ -187,6 +226,18 @@ pub fn check_tab(score: &Score, list: &DisplayList) -> Tally {
             }
             assert!(found.is_empty(), "stray note groups {:?}", found.keys());
         }
+        for (index, first) in lanes.iter().enumerate() {
+            for second in &lanes[index + 1..] {
+                if first.y != second.y || first.crowded || second.crowded {
+                    continue;
+                }
+                tally.lane_text_pairs += 1;
+                assert!(
+                    first.right <= second.left || second.right <= first.left,
+                    "lane texts overlap: {first:?} {second:?}"
+                );
+            }
+        }
         for (index, (line, rect, crowded)) in boxes.iter().enumerate() {
             for (other_line, other, other_crowded) in &boxes[index + 1..] {
                 if line != other_line || *crowded || *other_crowded {
@@ -225,6 +276,7 @@ fn every_fretted_note_has_one_label_on_its_string_and_labels_never_collide() {
                     let mut sum = total.borrow_mut();
                     sum.labels += tally.labels;
                     sum.same_string_pairs += tally.same_string_pairs;
+                    sum.lane_text_pairs += tally.lane_text_pairs;
                 }
                 Err(_) => prop_assert!(
                     score.master_bars.is_empty()
@@ -240,4 +292,5 @@ fn every_fretted_note_has_one_label_on_its_string_and_labels_never_collide() {
         tally.same_string_pairs >= MIN_SAME_STRING_PAIRS,
         "{tally:?}"
     );
+    assert!(tally.lane_text_pairs >= MIN_LANE_TEXT_PAIRS, "{tally:?}");
 }
