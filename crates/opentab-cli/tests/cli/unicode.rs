@@ -66,7 +66,7 @@ fn paths_with_spaces_and_accents_work() {
     assert_eq!(info.code, 0, "{}", info.stderr);
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn a_non_utf8_path_is_handled() {
     use std::ffi::OsStr;

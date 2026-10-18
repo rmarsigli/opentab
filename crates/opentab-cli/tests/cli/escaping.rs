@@ -1,4 +1,6 @@
-use crate::support::{path_str, run, run_os, temp};
+#[cfg(unix)]
+use crate::support::run_os;
+use crate::support::{path_str, run, temp};
 
 const HOSTILE: &str = "red\u{1b}[31m\nline\r\u{7}bell\u{85}next\u{9f}end\u{7f}";
 

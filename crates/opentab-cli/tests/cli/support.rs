@@ -31,6 +31,7 @@ pub fn run(args: &[&str]) -> Run {
     summarise(output)
 }
 
+#[cfg(unix)]
 pub fn run_os(args: &[&std::ffi::OsStr]) -> Run {
     let output = Command::new(env!("CARGO_BIN_EXE_opentab"))
         .args(args)
