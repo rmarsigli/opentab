@@ -20,7 +20,7 @@ The repository ships a `.cargo/config.toml` that limits build parallelism to two
 
 ## Command line
 
-The `opentab` binary works on `.opentab.json` scores and on Guitar Pro `.gp` files. The format of every path is picked by its suffix: `.gp` or `.opentab.json`, in any combination. It has four subcommands; `opentab <command> --help` shows the full help.
+The `opentab` binary works on `.opentab.json` scores and on Guitar Pro `.gp` files. The format of every path is picked by its suffix: `.gp` or `.opentab.json`, in any letter case and in any combination. It has four subcommands; `opentab <command> --help` shows the full help.
 
 ```
 opentab new --out song.opentab.json --title "My song"

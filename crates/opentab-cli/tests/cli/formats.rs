@@ -62,3 +62,34 @@ fn apply_with_an_unknown_output_suffix_exits_2() {
     assert_eq!(result.code, 2);
     assert!(!out.exists());
 }
+
+#[test]
+fn suffixes_match_in_any_ascii_case() {
+    let dir = temp();
+    let json = dir.path().join("Song.OpenTab.JSON");
+    let created = run(&["new", "--out", path_str(&json)]);
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    for name in ["upper.GP", "mixed.Gp"] {
+        let gp = dir.path().join(name);
+        let converted = run(&["convert", path_str(&json), path_str(&gp)]);
+        assert_eq!(converted.code, 0, "{name}: {}", converted.stderr);
+        let bytes = std::fs::read(&gp).unwrap();
+        assert!(bytes.starts_with(b"PK\x03\x04"), "{name} is a zip");
+        let info = run(&["info", path_str(&gp), "--json"]);
+        assert_eq!(info.code, 0, "{name}: {}", info.stderr);
+    }
+    let back = dir.path().join("back.OPENTAB.json");
+    let converted = run(&[
+        "convert",
+        path_str(&dir.path().join("upper.GP")),
+        path_str(&back),
+    ]);
+    assert_eq!(converted.code, 0, "{}", converted.stderr);
+    assert!(
+        std::fs::read_to_string(&back)
+            .unwrap()
+            .contains("opentab_json")
+    );
+    let bare = dir.path().join(".GP");
+    assert_eq!(run(&["info", path_str(&bare)]).code, 2);
+}
