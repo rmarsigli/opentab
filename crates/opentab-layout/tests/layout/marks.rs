@@ -76,6 +76,13 @@ pub fn top_texts(page: &Page) -> Vec<&TextRun> {
         .collect()
 }
 
+pub fn block_texts(page: &Page) -> Vec<&TextRun> {
+    top_texts(page)
+        .into_iter()
+        .filter(|run| !run.text.starts_with("= "))
+        .collect()
+}
+
 pub fn inside(outer: Rect, inner: Rect) -> bool {
     outer.min.x <= inner.min.x
         && outer.min.y <= inner.min.y
@@ -167,7 +174,7 @@ fn the_title_block_centres_titles_and_places_the_credits_at_the_sides() {
     assert_eq!(words.max.x, area.max.x);
     assert_eq!(music.max.x, area.max.x);
     assert!(music.min.y > words.max.y);
-    let lowest = top_texts(page)
+    let lowest = block_texts(page)
         .into_iter()
         .filter_map(text_ink)
         .map(|rect| rect.max.y)
@@ -189,13 +196,17 @@ fn equal_words_and_music_share_one_credit_and_empty_fields_take_no_space() {
         ..ScoreMeta::default()
     };
     let list = render(&score);
-    let texts: Vec<&str> = top_texts(&list.pages[0])
+    let texts: Vec<&str> = block_texts(&list.pages[0])
         .into_iter()
         .map(|run| run.text.as_str())
         .collect();
     assert_eq!(texts, vec!["Words & Music by Same Person"]);
     let bare = render(&guitar(&quarter_bars(2)));
-    assert!(top_texts(&bare.pages[0]).is_empty());
+    let tempo: Vec<&str> = top_texts(&bare.pages[0])
+        .into_iter()
+        .map(|run| run.text.as_str())
+        .collect();
+    assert_eq!(tempo, vec!["= 120"]);
     let mut titled = guitar(&quarter_bars(2));
     titled.meta = meta("Only a title");
     let with_title = render(&titled);

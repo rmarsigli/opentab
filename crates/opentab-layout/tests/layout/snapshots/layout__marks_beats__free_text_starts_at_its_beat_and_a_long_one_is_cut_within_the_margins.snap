@@ -1,58 +1,59 @@
 ---
 source: crates/opentab-layout/tests/layout/marks_beats.rs
-assertion_line: 348
 expression: dump(&list)
 ---
 page 0 staff space 1750 um
-system 0 8777,8777 73725,20041 natural 43299 available 105326
-  staff track 0 staff 0 Standard top 12873 lines 5 spacing 1024
-    bar 0 number 1 group 18 8777,12873 44406,16969 content 16010 widths 24805 24805 Treble8vb ticks 4/4 [0@17034 1@23836 2@30638 3@37440]
-    bar 1 number 2 group 28 44406,12873 73725,16969 content 44406 widths 22778 18494 Treble8vb ticks 4/4 [0@45430 1@52232 2@59034 3@65836]
+system 0 8777,8777 73725,21189 natural 43299 available 105326
+  staff track 0 staff 0 Standard top 14021 lines 5 spacing 1024
+    bar 0 number 1 group 18 8777,14021 44406,18117 content 16010 widths 24805 24805 Treble8vb ticks 4/4 [0@17034 1@23836 2@30638 3@37440]
+    bar 1 number 2 group 28 44406,14021 73725,18117 content 44406 widths 22778 18494 Treble8vb ticks 4/4 [0@45430 1@52232 2@59034 3@65836]
 group 5
-  line 8777,12873 73725,12873 thick 133
-  line 8777,13897 73725,13897 thick 133
-  line 8777,14921 73725,14921 thick 133
-  line 8777,15945 73725,15945 thick 133
-  line 8777,16969 73725,16969 thick 133
+  line 8777,14021 73725,14021 thick 133
+  line 8777,15045 73725,15045 thick 133
+  line 8777,16069 73725,16069 thick 133
+  line 8777,17093 73725,17093 thick 133
+  line 8777,18117 73725,18117 thick 133
   group 18
-    glyph U+E052 9289,15945 size 1024
-    glyph U+E084 13061,13897 size 1024
-    glyph U+E084 13061,15945 size 1024
-    line 44324,12873 44324,16969 thick 164
+    glyph U+E052 9289,17093 size 1024
+    glyph U+E084 13061,15045 size 1024
+    glyph U+E084 13061,17093 size 1024
+    line 44324,14021 44324,18117 thick 164
     group 11
       group 10
-        glyph U+E0A4 17034,14409 size 1024
-      line 17096,14581 17096,17993 thick 123
+        glyph U+E0A4 17034,15557 size 1024
+      line 17096,15729 17096,19141 thick 123
     group 13
       group 12
-        glyph U+E0A4 23836,14409 size 1024
-      line 23898,14581 23898,17993 thick 123
+        glyph U+E0A4 23836,15557 size 1024
+      line 23898,15729 23898,19141 thick 123
     group 15
       group 14
-        glyph U+E0A4 30638,14409 size 1024
-      line 30700,14581 30700,17993 thick 123
+        glyph U+E0A4 30638,15557 size 1024
+      line 30700,15729 30700,19141 thick 123
     group 17
       group 16
-        glyph U+E0A4 37440,14409 size 1024
-      line 37502,14581 37502,17993 thick 123
+        glyph U+E0A4 37440,15557 size 1024
+      line 37502,15729 37502,19141 thick 123
   group 28
-    line 73469,12873 73469,16969 thick 512
-    line 72721,12873 72721,16969 thick 164
+    line 73469,14021 73469,18117 thick 512
+    line 72721,14021 72721,18117 thick 164
     group 21
       group 20
-        glyph U+E0A4 45430,14409 size 1024
-      line 45492,14581 45492,17993 thick 123
+        glyph U+E0A4 45430,15557 size 1024
+      line 45492,15729 45492,19141 thick 123
     group 23
       group 22
-        glyph U+E0A4 52232,14409 size 1024
-      line 52294,14581 52294,17993 thick 123
+        glyph U+E0A4 52232,15557 size 1024
+      line 52294,15729 52294,19141 thick 123
     group 25
       group 24
-        glyph U+E0A4 59034,14409 size 1024
-      line 59096,14581 59096,17993 thick 123
+        glyph U+E0A4 59034,15557 size 1024
+      line 59096,15729 59096,19141 thick 123
     group 27
       group 26
-        glyph U+E0A4 65836,14409 size 1024
-      line 65898,14581 65898,17993 thick 123
-text "Hello" 16919,12200 em 1280 Start Text
-text "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…" 23818,12200 em 1280 Start Text
+        glyph U+E0A4 65836,15557 size 1024
+      line 65898,15729 65898,19141 thick 123
+glyph U+ECA5 16010,10998 size 614
+text "= 120" 17185,11345 em 1433 Start Text
+text "Hello" 16919,13348 em 1280 Start Text
+text "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…" 23818,13348 em 1280 Start Text

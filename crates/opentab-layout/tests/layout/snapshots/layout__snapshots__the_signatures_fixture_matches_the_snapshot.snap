@@ -1,6 +1,5 @@
 ---
 source: crates/opentab-layout/tests/layout/snapshots.rs
-assertion_line: 98
 expression: "dumped(&fixture(\"signatures.gp\"))"
 ---
 page 0 staff space 1750 um
@@ -202,6 +201,8 @@ group 16
         rect 108193,36590 109263,37912 White
         text "7" 108728,37741 em 1536 Middle Text
 line 8859,20007 8859,38787 thick 164
+glyph U+ECA5 24412,18937 size 614
+text "= 120" 25587,19284 em 1433 Start Text
 group 16
   line 8777,45955 114103,45955 thick 133
   line 8777,46979 114103,46979 thick 133

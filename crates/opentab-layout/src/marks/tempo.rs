@@ -105,6 +105,16 @@ fn pending(moment: Moment, change: &TempoChange) -> PendingTempo {
     }
 }
 
+pub const DEFAULT_BPM: &str = "120";
+
+pub fn default_tempo() -> PendingTempo {
+    PendingTempo {
+        moment: Moment::Start,
+        unit: TempoUnit::Quarter,
+        bpm: DEFAULT_BPM.to_string(),
+    }
+}
+
 fn in_effect(score: &Score, before: usize) -> Option<&TempoChange> {
     score
         .master_bars
@@ -139,8 +149,10 @@ pub fn plan_tempos(score: &Score, first: usize, last: usize) -> Vec<Vec<PendingT
                             .rfind(|change| change.position >= before_length)
                     })
             };
-            if let Some(change) = carried {
-                marks.push(pending(Moment::Start, change));
+            match carried {
+                Some(change) => marks.push(pending(Moment::Start, change)),
+                None if index == first => marks.push(default_tempo()),
+                None => {}
             }
         }
         for change in changes {
