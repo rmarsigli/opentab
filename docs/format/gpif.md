@@ -188,6 +188,14 @@ With no tempo automation at all, GP plays the score at 120: the MusicXML export 
 
 The other master automation type seen is `SyncPoint`. It aligns bars with a backing-track audio file and appears only in scores that have assets. Its `Value` holds sub-elements (bar index, occurrence, frame offset, tempi).
 
+**A sync point's `Bar` counts bars in playback order, not in the score.** `Value/BarIndex` is the master bar index and `Value/BarOccurrence` is the pass through that bar, counting from 0. In 5 examples, 546 sync points have `Bar` larger than the number of master bars, or different from `BarIndex`. Every one of them equals the position of (`BarIndex`, `BarOccurrence`) in the playback order that this rule produces:
+
+1. Bars play from left to right. A bar with a repeat start opens a section and resets the pass to 1, unless playback just jumped back to it.
+2. A bar with `AlternateEndings` starts an ending group. The group runs through the following bars that have no endings of their own, and stops at the next repeat start. On pass p, a bar in a group whose endings do not include p is skipped.
+3. At a repeat end with count c, while the pass is below c, the pass grows by one and playback jumps back to the start of the section, or to the first bar if no section was opened.
+
+None of these 5 examples has `Directions`, so the rule ignores them. The other automations in GPIF (tempo, the track's `Sound` automations and the `DSPParam` automations under `RSE`) all name a plain master bar index in `Bar`.
+
 ## 6. Master bars
 
 ```
@@ -257,6 +265,7 @@ The other master automation type seen is `SyncPoint`. It aligns bars with a back
 - **CapoFret** is the capo fret. Two tracks have a non-zero capo.
 - **Transpose** is the written-to-sounding offset used for standard notation. Guitars and basses carry `Octave -1`, because they are written an octave above concert pitch. Transposing instruments and detuned guitars also carry a `Chromatic` offset. 49 of 64 tracks have a non-zero transpose.
 - **Sounds/Sound/MIDI/Program** is the General MIDI program. Two tracks have two sounds, and `Sound` automations on the track switch between them over time.
+- **Lyrics/Line/Offset** is read as the master bar index where the line starts. GP's lyrics dialog starts each line at a bar. All 320 offsets in the corpus are 0, so the meaning has not been tested against GP.
 - The tuning name (`Staff/Properties/Name`) is sometimes cleared by GP on re-save; see §13.
 
 ## 8. Bars, voices, beats
@@ -438,7 +447,7 @@ Notation used in this table:
 |---|---|---|
 | `Bar.id` | `Bar/@id` | id |
 | `Bar.clef` | `Bar/Clef`: `G2` Treble, `F4` Bass, `Neutral` Neutral | Any other clef → opaque. |
-| `Bar.voices` | the used slots of `Bar/Voices` | Slots holding `-1` are skipped. The writer puts each voice in its slot and fills the other slots with `-1`. |
+| `Bar.voices` | the used slots of `Bar/Voices` | Slots holding `-1` are skipped. The writer puts each voice in its slot and fills the other slots with `-1`. A bar with no voice at all is GP's ordinary empty bar (59 in the corpus): the model holds it with an empty list, `diagnose` does not report it and the commands accept it. |
 | `Voice.id` | `Voice/@id` | id |
 | `Voice.slot` | the position (0 to 3) of the voice in `Bar/Voices` | Strictly increasing within a bar. |
 | `Voice.beats` | `Voice/Beats` | Shared beats are copied. |
@@ -525,9 +534,43 @@ These stay as opaque payloads of their owner, or of the score:
   - `Midi`, `ConcertPitch` and `TransposedPitch`. These are derived, but must be written back (§9). A writer replays the original values while string, fret, tuning and transpose are unchanged, and computes them otherwise.
   - The note's `InstrumentArticulation` on pitched tracks.
 
+### 11.1 Opaque data after an edit
+
+Each kept node or attribute is stored with the place it came from: a parent path below its owner and its index among the owner's children. Some kept data depends on a value that the model holds. That data carries a **guard**, the modelled value it was read under. On write, the writer compares each guard with the current value:
+
+- When they match, the kept data is written back, and it replaces the element the writer would have generated in its place.
+- When they differ, the kept data is dropped and the generated value is written.
+
+A guard covers, for example, a note's derived pitches (string, fret, tuning, capo and transpose), `HopoDestination` (whether the note on the same string in the previous beat is a hammer-on origin; for the first beat of a bar, the previous beat is the last beat of the same voice slot in the previous bar), accent bits the model cannot hold (accent and staccato), the brush start time (the stroke) and the extras of a tempo automation (its position in the bar). The extras of a tempo automation follow the tempo change at the same position, so adding a tempo change at the start of a bar does not move them to another change.
+
+Kept data that names a master bar by index is **anchored** to that master bar when it is read:
+
+- the `Bar` of every track, `RSE` and master automation;
+- the `BarIndex` of a sync point;
+- the `Offset` of a lyrics line.
+
+On write, the index is rewritten to the master bar's current position, so it follows inserted and removed bars. A sync point's `Bar` is recomputed in playback order (§5), and any difference GP's file had from that order is kept.
+
+When an anchored master bar has been removed:
+
+- an automation that names it is dropped;
+- a sync point is dropped when its master bar or its pass no longer exists;
+- a lyrics line starts at the next remaining master bar instead, or at the last one when none follows.
+
+So the writer never writes an index to a bar that does not exist. Undoing the removal restores the bar's id, and the anchor finds it again. Data that is not in the plain integer form GP writes is kept as it is, without an anchor.
+
+### 11.2 Opaque data the writer refuses
+
+Opaque data can come from an `.opentab.json` file, which is untrusted input. The writer refuses it with `MalformedPayload`, and does not write XML that is not well formed, in these cases:
+
+- **Names.** Every element name in a parent path, every kept element and attribute name, and the name of a kept attribute must be an XML `Name`. A `Property@…` or `XProperty@…` step holds an attribute value, so any text is allowed there. An ordinal after `#` must be a plain decimal number.
+- **Depth.** A parent path is capped at 256 steps. The finished document may not nest deeper than 256 elements, which is the reader's limit.
+- **Comments.** A kept comment may not contain `--` or end with `-`.
+- **Anchors.** A bar anchor list must match the kept data.
+
 ## 12. Minimal GPIF
 
-We wrote a one-track, one-bar score from scratch and removed parts one at a time. GP opened the following and exported it to MusicXML. The shape is schematic; the values are ours:
+We wrote a one-track, one-bar score from scratch and removed parts one at a time. GP opened the following and exported it to MusicXML. The shape is schematic; the values are ours. We never showed that GP opens a score with no master bar or no track, and GP crashed on several other degenerate files, so the writer refuses both (`NoMasterBars` at `master_bars`, `NoTracks` at `tracks`).
 
 ```
 <GPIF>

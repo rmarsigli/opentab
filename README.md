@@ -50,7 +50,7 @@ Add `--json` to any subcommand to get a single JSON line on standard output, for
 - `invalid_command`: a line of the commands file is not a valid command.
 - `command_failed`: a command could not be applied.
 - `output_exists`: `new` refused to overwrite a file.
-- `unsupported`: the `.gp` writer refuses the score, for example because a text holds a character a `.gp` cannot store; the message names the place in the score.
+- `unsupported`: the `.gp` writer refuses the score, for example because a text holds a character a `.gp` cannot store, or because the score has no master bar or no track; the message names the place in the score.
 - `internal`: an unexpected failure inside OpenTab, for example when a score cannot be encoded.
 
 Exit codes: 0 on success, 1 for a usage error and 2 for an input or output error. Human output prints control characters as `\u{XX}`; JSON output stays standard JSON.
