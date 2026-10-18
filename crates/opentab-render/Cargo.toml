@@ -13,6 +13,8 @@ resvg.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+opentab-gp = { path = "../opentab-gp" }
+opentab-model = { path = "../opentab-model" }
 insta.workspace = true
 
 [lints]
