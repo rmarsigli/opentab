@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use opentab_model::{Bar, Clef, InstrumentKind, Score, Track};
 
+use crate::drums::DrumKit;
 use crate::furniture::StaffShape;
 use crate::geometry::{MAX_TAB_STRINGS, MIN_TAB_STRINGS, STANDARD_LINES, TAB_LINE_SPACING};
 use crate::options::{LayoutError, LayoutOptions, StaffMode};
@@ -23,6 +24,7 @@ pub struct Selection {
     pub last: usize,
     pub specs: Vec<StaffSpec>,
     pub sources: Vec<(usize, usize)>,
+    pub kits: Vec<Option<DrumKit>>,
 }
 
 pub fn staff_kinds(track: &Track, mode: Option<StaffMode>) -> Vec<StaffKind> {
@@ -114,12 +116,20 @@ pub fn select(score: &Score, options: &LayoutOptions) -> Result<Selection, Layou
     if specs.is_empty() {
         return Err(LayoutError::NoStaves);
     }
+    let kits = score
+        .tracks
+        .iter()
+        .map(|track| {
+            (track.instrument.kind == InstrumentKind::Percussion).then(|| DrumKit::of(score, track))
+        })
+        .collect();
     Ok(Selection {
         tracks: drawn,
         first,
         last,
         specs,
         sources,
+        kits,
     })
 }
 

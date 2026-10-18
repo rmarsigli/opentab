@@ -3,6 +3,7 @@ mod barline;
 mod decimal;
 mod display;
 mod draw;
+mod drums;
 mod engine;
 mod furniture;
 mod geometry;
@@ -34,6 +35,10 @@ pub use display::{
     TextRun,
 };
 pub use draw::ending_label;
+pub use drums::{
+    DEFAULT_DRUM, DRUM_TABLE, DrumClass, DrumEntry, DrumHead, DrumKit, drum_entry, drum_glyph,
+    kit_keys,
+};
 pub use engine::Stack;
 pub use engine::layout;
 pub use furniture::StaffShape;
