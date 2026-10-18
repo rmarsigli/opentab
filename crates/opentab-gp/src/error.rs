@@ -51,8 +51,8 @@ pub enum GpifProblem {
     ElementLimit { limit: usize },
     #[error("references expand to more than {limit} model elements")]
     ExpansionLimit { limit: u64 },
-    #[error("opaque data would exceed {limit} bytes")]
-    OpaqueLimit { limit: u64 },
+    #[error("opaque data and text copied per reference would exceed {limit} bytes")]
+    RetainedLimit { limit: u64 },
     #[error("missing element <{name}>")]
     MissingElement { name: String },
     #[error("missing attribute \"{name}\"")]

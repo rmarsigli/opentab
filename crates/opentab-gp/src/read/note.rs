@@ -55,9 +55,9 @@ impl<T: Copy> Group<T> {
     }
 }
 
-struct NoteFrame {
+struct NoteFrame<'f> {
     kind: NoteKind,
-    pitch_guard: String,
+    pitch: PitchInputs<'f>,
     bend: Group<Bend>,
     harmonic: Group<Harmonic>,
     tap: Group<Tap>,
@@ -109,12 +109,12 @@ pub(crate) fn read_note(
     let kind = note_kind(element, &location, &properties, staff)?;
     let frame = NoteFrame {
         kind,
-        pitch_guard: guard::pitch(&PitchInputs {
+        pitch: PitchInputs {
             kind,
             tuning: staff.tuning,
             capo: staff.capo,
             transpose: staff.transpose,
-        }),
+        },
         bend: bend_group(&properties),
         harmonic: harmonic_group(&properties),
         tap: tap_group(&properties),
@@ -209,7 +209,7 @@ fn read_note_child(
     ctx: &mut Context,
     scope: &Scope,
     visit: &Visit<'_>,
-    frame: &NoteFrame,
+    frame: &NoteFrame<'_>,
     effects: &mut NoteEffects,
 ) -> Result<Handled, Fault> {
     match visit.key.as_str() {
@@ -297,17 +297,21 @@ pub(crate) fn accent_bits(accent: Option<Accent>, staccato: bool) -> u32 {
     }
 }
 
-fn note_property(property: &Visit<'_>, frame: &NoteFrame, effects: &mut NoteEffects) -> Handled {
+fn note_property(
+    property: &Visit<'_>,
+    frame: &NoteFrame<'_>,
+    effects: &mut NoteEffects,
+) -> Handled {
     let Some(name) = property.key.strip_prefix("Property@") else {
         return Handled::Unknown;
     };
     if PITCH_PROPERTIES.contains(&name) {
-        return Handled::Replayed(frame.pitch_guard.clone());
+        return Handled::Replayed(guard::pitch(&frame.pitch));
     }
     if POSITION_PROPERTIES.contains(&name) {
         return match frame.kind {
             NoteKind::Fretted { .. } => Handled::Mapped(&["name"]),
-            NoteKind::Percussion { .. } => Handled::Replayed(frame.pitch_guard.clone()),
+            NoteKind::Percussion { .. } => Handled::Replayed(guard::pitch(&frame.pitch)),
         };
     }
     if BEND_PROPERTIES.contains(&name) {
