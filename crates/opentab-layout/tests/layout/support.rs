@@ -238,8 +238,12 @@ pub fn check(score: &Score, options: &LayoutOptions, list: &DisplayList) {
     let all = systems(list);
     let count = all.len();
     let first_page = &list.pages[0];
-    for page in &list.pages {
-        assert!(!page.systems.is_empty(), "a page without systems");
+    for (number, page) in list.pages.iter().enumerate() {
+        let title_only = number == 0 && !page.items.is_empty() && list.pages.len() > 1;
+        assert!(
+            !page.systems.is_empty() || title_only,
+            "a page without systems"
+        );
         assert_eq!(page.staff_space, first_page.staff_space);
         assert_eq!(page.size, options.page);
         let area = content(page);

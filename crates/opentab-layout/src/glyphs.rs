@@ -249,6 +249,54 @@ pub const WIGGLE_VIBRATO_WIDE: Glyph = Glyph {
     name: "wiggleVibratoWide",
     codepoint: '\u{EAB1}',
 };
+pub const MET_NOTE_HALF_UP: Glyph = Glyph {
+    name: "metNoteHalfUp",
+    codepoint: '\u{ECA3}',
+};
+pub const MET_NOTE_QUARTER_UP: Glyph = Glyph {
+    name: "metNoteQuarterUp",
+    codepoint: '\u{ECA5}',
+};
+pub const MET_NOTE_8TH_UP: Glyph = Glyph {
+    name: "metNote8thUp",
+    codepoint: '\u{ECA7}',
+};
+pub const MET_AUGMENTATION_DOT: Glyph = Glyph {
+    name: "metAugmentationDot",
+    codepoint: '\u{ECB7}',
+};
+pub const DYNAMIC_PIANO: Glyph = Glyph {
+    name: "dynamicPiano",
+    codepoint: '\u{E520}',
+};
+pub const DYNAMIC_FORTE: Glyph = Glyph {
+    name: "dynamicForte",
+    codepoint: '\u{E522}',
+};
+pub const DYNAMIC_PPP: Glyph = Glyph {
+    name: "dynamicPPP",
+    codepoint: '\u{E52A}',
+};
+pub const DYNAMIC_PP: Glyph = Glyph {
+    name: "dynamicPP",
+    codepoint: '\u{E52B}',
+};
+pub const DYNAMIC_MP: Glyph = Glyph {
+    name: "dynamicMP",
+    codepoint: '\u{E52C}',
+};
+pub const DYNAMIC_MF: Glyph = Glyph {
+    name: "dynamicMF",
+    codepoint: '\u{E52D}',
+};
+pub const DYNAMIC_FF: Glyph = Glyph {
+    name: "dynamicFF",
+    codepoint: '\u{E52F}',
+};
+pub const DYNAMIC_FFF: Glyph = Glyph {
+    name: "dynamicFFF",
+    codepoint: '\u{E530}',
+};
 pub const TIME_SIG_0: Glyph = Glyph {
     name: "timeSig0",
     codepoint: '\u{E080}',
@@ -293,7 +341,7 @@ pub const TIME_SIG_DIGITS: [Glyph; 10] = [
     },
 ];
 
-pub const NAMED: [Glyph; 58] = [
+pub const NAMED: [Glyph; 70] = [
     G_CLEF,
     G_CLEF_8VB,
     F_CLEF,
@@ -352,6 +400,18 @@ pub const NAMED: [Glyph; 58] = [
     ARROWHEAD_BLACK_DOWN,
     WIGGLE_VIBRATO,
     WIGGLE_VIBRATO_WIDE,
+    MET_NOTE_HALF_UP,
+    MET_NOTE_QUARTER_UP,
+    MET_NOTE_8TH_UP,
+    MET_AUGMENTATION_DOT,
+    DYNAMIC_PIANO,
+    DYNAMIC_FORTE,
+    DYNAMIC_PPP,
+    DYNAMIC_PP,
+    DYNAMIC_MP,
+    DYNAMIC_MF,
+    DYNAMIC_FF,
+    DYNAMIC_FFF,
 ];
 
 pub const TUPLET_DIGITS: [Glyph; 10] = [

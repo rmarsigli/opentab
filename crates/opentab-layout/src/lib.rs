@@ -9,6 +9,7 @@ mod geometry;
 pub mod glyphs;
 mod grid;
 mod lanes;
+pub mod marks;
 mod notation;
 mod notes;
 mod options;

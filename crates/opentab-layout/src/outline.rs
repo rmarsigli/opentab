@@ -145,6 +145,14 @@ impl OutlineFont {
         positions
     }
 
+    pub fn ascent(&self, em: Units) -> Units {
+        self.to_em(i64::from(self.face.ascender()), em)
+    }
+
+    pub fn descent(&self, em: Units) -> Units {
+        self.to_em(-i64::from(self.face.descender()), em)
+    }
+
     pub fn measure(&self, text: &str, em: Units) -> Units {
         self.pen_positions(text, em)
             .last()

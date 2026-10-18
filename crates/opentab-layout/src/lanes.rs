@@ -1,3 +1,4 @@
+use crate::marks::lane_height;
 use crate::units::{STAFF_SPACE, Units};
 
 pub const LANE_GAP: Units = Units(STAFF_SPACE.0 / 4);
@@ -9,9 +10,22 @@ pub enum Lane {
     Vibrato,
     LetRing,
     PalmMute,
+    Text,
+    Chord,
+    Section,
+    Tempo,
 }
 
-pub const LANES: [Lane; 4] = [Lane::Marks, Lane::Vibrato, Lane::LetRing, Lane::PalmMute];
+pub const LANES: [Lane; 8] = [
+    Lane::Marks,
+    Lane::Vibrato,
+    Lane::LetRing,
+    Lane::PalmMute,
+    Lane::Text,
+    Lane::Chord,
+    Lane::Section,
+    Lane::Tempo,
+];
 
 impl Lane {
     pub fn bit(self) -> u8 {
@@ -20,11 +34,18 @@ impl Lane {
             Lane::Vibrato => 2,
             Lane::LetRing => 4,
             Lane::PalmMute => 8,
+            Lane::Text => 16,
+            Lane::Chord => 32,
+            Lane::Section => 64,
+            Lane::Tempo => 128,
         }
     }
 
     pub fn height(self) -> Units {
-        LANE_HEIGHT
+        match self {
+            Lane::Marks | Lane::Vibrato | Lane::LetRing | Lane::PalmMute => LANE_HEIGHT,
+            Lane::Text | Lane::Chord | Lane::Section | Lane::Tempo => lane_height(self),
+        }
     }
 }
 

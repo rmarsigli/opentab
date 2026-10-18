@@ -14,6 +14,7 @@ use crate::geometry::{
     ENDING_RISE, NAME_EM, NAME_GAP, NAME_MAX, NUMBER_EM, NUMBER_RISE,
 };
 use crate::glyphs::{BRACKET_BOTTOM, BRACKET_TOP, Metrics};
+use crate::marks::{SystemMarks, draw_marks};
 use crate::notes::{TieRow, draw_bar};
 use crate::options::LayoutError;
 use crate::plan::{BarPlan, SystemPlan};
@@ -322,6 +323,21 @@ pub fn draw_system(
         })
         .collect();
     system_marks(context, system, index, &staves, &x, &bases, &mut items);
+    let number = plans
+        .first()
+        .filter(|plan| index > 0 || plan.index > 0)
+        .map(|plan| plan.number.to_string());
+    draw_marks(
+        &SystemMarks {
+            plans,
+            staves: &staves,
+            bands: &stack.bands,
+            left: system.left,
+            right: system.left + system.available,
+            number,
+        },
+        &mut items,
+    );
     let structure = SystemLayout {
         index,
         rect: Rect::new(

@@ -12,6 +12,7 @@ use crate::geometry::{
 use crate::glyphs::{Metrics, NOTEHEAD_BLACK};
 use crate::grid::{Grid, grid};
 use crate::lanes::Band;
+use crate::marks::{BarMarks, MarkInput, MarkState, analyse_marks, plan_tempos};
 use crate::notation::{ColumnNeed, RowInput, StaffNotation, analyse};
 use crate::options::LayoutError;
 use crate::pitch::written_key;
@@ -61,6 +62,7 @@ pub struct BarInput<'a> {
     pub grid: &'a Grid,
     pub notation: &'a [Option<StaffNotation>],
     pub tab: &'a [Option<TabNotation>],
+    pub marks: &'a BarMarks,
 }
 
 pub struct BarPlan {
@@ -81,6 +83,7 @@ pub struct BarPlan {
     pub vertical: VerticalNeeds,
     pub notation: Vec<Option<StaffNotation>>,
     pub tab: Vec<Option<TabNotation>>,
+    pub marks: BarMarks,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,6 +259,7 @@ pub fn extents(input: &BarInput<'_>) -> Vec<Extent> {
                 .flatten()
                 .map(|staff| &staff.columns)
                 .chain(input.tab.iter().flatten().map(|tab| &tab.columns))
+                .chain(std::iter::once(&input.marks.columns))
             {
                 if let Some(found) = staff.get(index) {
                     need.lead = need.lead.max(found.lead);
@@ -327,7 +331,9 @@ pub fn vertical_needs(input: &BarInput<'_>) -> VerticalNeeds {
         let below = notation.bottom - spec.shape.height() + NOTATION_CLEARANCE;
         needs.above_staff[row] = (above - above_share).max(Units::ZERO);
         needs.below_staff[row] = (below - below_share).max(Units::ZERO);
+        needs.bands[row].near = needs.bands[row].near.max(-notation.top);
     }
+    input.marks.apply(specs, &mut needs);
     needs
 }
 
@@ -508,6 +514,8 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
     let mut plans: Vec<BarPlan> = Vec::new();
     let mut previous_clefs: Vec<Option<ClefSign>> = vec![None; selection.specs.len()];
     let mut synthetic = largest_id(score);
+    let tempos = plan_tempos(score, selection.first, selection.last);
+    let mut state = MarkState::default();
     for index in selection.first..=selection.last {
         let Some(master) = score.master_bars.get(index) else {
             continue;
@@ -584,6 +592,20 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
         };
         let notation = notation(score, selection, master, &bars, &clefs, &keys, &grid);
         let tab = tab_notation(score, selection, master, index, &bars, &grid);
+        let marks = analyse_marks(
+            &MarkInput {
+                selection,
+                master,
+                bars: &bars,
+                grid: &grid,
+                notation: &notation,
+                tab: &tab,
+                tempos: tempos
+                    .get(index - selection.first)
+                    .map_or(&[][..], Vec::as_slice),
+            },
+            &mut state,
+        );
         let input = BarInput {
             score,
             selection,
@@ -595,6 +617,7 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
             grid: &grid,
             notation: &notation,
             tab: &tab,
+            marks: &marks,
         };
         let extents = extents(&input);
         let vertical = vertical_needs(&input);
@@ -631,6 +654,7 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
             vertical,
             notation,
             tab,
+            marks,
         });
     }
     Ok(plans)
