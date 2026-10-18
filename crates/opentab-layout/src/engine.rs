@@ -157,13 +157,14 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         cursor += own.height;
     }
     let title_page = pages.first().is_some_and(|page| page.systems.is_empty());
+    let unrendered = unrendered(score, &selection, &pages);
     Ok(DisplayList {
         pages,
         staff_space,
         crowded,
         dropped,
         title_page,
-        unrendered: unrendered(score, &selection),
+        unrendered,
     })
 }
 

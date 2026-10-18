@@ -176,10 +176,7 @@ fn every_feature_together_is_listed_once_and_sorted_by_name() {
         bars: Some(BarRange { first: 2, last: 3 }),
         ..LayoutOptions::default()
     };
-    assert_eq!(
-        found(&all, &guitar_only),
-        vec![Unrendered::Lyrics, Unrendered::MultiBarRests]
-    );
+    assert_eq!(found(&all, &guitar_only), vec![Unrendered::MultiBarRests]);
     let drums_only = LayoutOptions {
         tracks: Some(vec![1]),
         bars: Some(BarRange { first: 1, last: 1 }),
@@ -241,4 +238,172 @@ fn look_alikes_of_each_feature_are_not_reported() {
     keep(&mut known, kit, &crate::percussion::general_kit());
     assert!(found(&quiet, &both).is_empty());
     assert!(found(&known, &both).is_empty());
+}
+
+fn names(score: &Score, options: &LayoutOptions) -> Vec<&'static str> {
+    found(score, options)
+        .into_iter()
+        .map(Unrendered::name)
+        .collect()
+}
+
+#[test]
+fn effects_hidden_by_the_staff_mode_are_named() {
+    let score = crate::snapshots::fixture("note-effects.gp");
+    assert_eq!(
+        names(&score, &options(StaffMode::Both)),
+        vec!["right_hand_fingering"]
+    );
+    assert_eq!(
+        names(&score, &options(StaffMode::Standard)),
+        vec![
+            "bends",
+            "hammer_on_pull_off",
+            "harmonic_types",
+            "let_ring",
+            "palm_mute",
+            "right_hand_fingering",
+            "slides",
+            "tapping",
+            "vibrato"
+        ]
+    );
+    assert_eq!(
+        names(&score, &options(StaffMode::Tab)),
+        vec!["accents", "right_hand_fingering", "staccato"]
+    );
+    let strums = crate::snapshots::fixture("beat-effects.gp");
+    assert!(names(&strums, &options(StaffMode::Standard)).contains(&"strokes"));
+    assert!(!names(&strums, &options(StaffMode::Both)).contains(&"strokes"));
+}
+
+#[test]
+fn model_fields_that_are_never_drawn_are_always_named() {
+    let both = options(StaffMode::Both);
+    let mut score = score(2);
+    {
+        let beats = &mut score.tracks[0].staves[0].bars[0].voices[0].beats;
+        beats[0].effects.fade_in = true;
+        beats[1].effects.slap = true;
+        beats[2].effects.pop = true;
+        beats[3].notes[0].effects.right_hand_finger = Some(opentab_model::Finger::Index);
+    }
+    score.meta.copyright = "(c) someone".to_string();
+    score.meta.instructions = "play softly".to_string();
+    score.meta.notices = "note".to_string();
+    score.meta.title = "Song \u{4E2D}".to_string();
+    assert_eq!(
+        names(&score, &both),
+        vec![
+            "copyright",
+            "fade_in",
+            "instructions",
+            "missing_characters",
+            "notices",
+            "pop",
+            "right_hand_fingering",
+            "slap"
+        ]
+    );
+    score.meta.copyright = " \t".to_string();
+    score.meta.title = "Song".to_string();
+    assert!(!names(&score, &both).contains(&"copyright"));
+    assert!(!names(&score, &both).contains(&"missing_characters"));
+}
+
+#[test]
+fn a_second_voice_has_no_rhythm_under_a_lone_tab() {
+    let two = build(&[measure(
+        (4, 4),
+        0,
+        vec![(0, quarters(&[(1, 5); 4])), (1, quarters(&[(4, 2); 4]))],
+    )]);
+    assert_eq!(
+        names(&two, &options(StaffMode::Tab)),
+        vec!["secondary_voice_rhythm"]
+    );
+    assert!(names(&two, &options(StaffMode::Both)).is_empty());
+    assert!(names(&score(1), &options(StaffMode::Tab)).is_empty());
+}
+
+#[test]
+fn opaque_guitar_pro_notation_is_named_by_its_element() {
+    let both = options(StaffMode::Both);
+    let cases: [(&str, &str); 11] = [
+        (
+            "<Directions><Target>Segno</Target></Directions>",
+            "directions",
+        ),
+        ("<TripletFeel>Triplet8th</TripletFeel>", "triplet_feel"),
+        ("<Arpeggio>Down</Arpeggio>", "arpeggios"),
+        ("<Wah>Open</Wah>", "wah"),
+        ("<Golpe>Thumb</Golpe>", "golpe"),
+        ("<Ornament>UpperMordent</Ornament>", "ornaments"),
+        ("<SimileMark>Simple</SimileMark>", "simile_marks"),
+        ("<Slashed/>", "slash_notation"),
+        ("<LetRingThroughout/>", "let_ring_throughout"),
+        (
+            "<Whammy originValue=\"0.000000\" middleValue=\"-50.000000\" destinationValue=\"0\"/>",
+            "whammy_bar",
+        ),
+        ("<Fermatas><Fermata/></Fermatas>", "fermatas"),
+    ];
+    for (element, name) in cases {
+        let mut one = score(2);
+        let ids = [
+            one.master_bars[1].id.0,
+            one.tracks[0].id.0,
+            one.tracks[0].staves[0].bars[1].id.0,
+            beat_id(&one, 1, 0),
+            one.tracks[0].staves[0].bars[1].voices[0].beats[0].notes[0]
+                .id
+                .0,
+        ];
+        for (place, id) in ids.iter().enumerate() {
+            let mut placed = one.clone();
+            keep(
+                &mut placed,
+                *id,
+                &format!("<Keep parent=\"\" index=\"{place}\">{element}</Keep>"),
+            );
+            assert_eq!(names(&placed, &both), vec![name], "{element} at {place}");
+        }
+        keep(
+            &mut one,
+            ids[0],
+            "<Keep parent=\"\" index=\"2\"><Wah>None</Wah></Keep>",
+        );
+        assert!(names(&one, &both).is_empty());
+    }
+    let mut outside = score(2);
+    let id = outside.master_bars[1].id.0;
+    keep(
+        &mut outside,
+        id,
+        "<Keep parent=\"\" index=\"2\"><Directions><Jump>DaCoda</Jump></Directions></Keep>",
+    );
+    let first = LayoutOptions {
+        bars: Some(BarRange { first: 0, last: 0 }),
+        ..LayoutOptions::default()
+    };
+    assert!(names(&outside, &first).is_empty());
+}
+
+#[test]
+fn track_lyrics_count_only_in_the_bars_their_syllables_reach() {
+    let mut sung = score(4);
+    let track = sung.tracks[0].id.0;
+    keep(
+        &mut sung,
+        track,
+        "<Keep parent=\"\" index=\"18\"><Lyrics dispatched=\"true\"><Line><Text><![CDATA[a-ma-zing grace how sweet]]></Text><Offset>1</Offset></Line></Lyrics></Keep>",
+    );
+    let range = |first: usize, last: usize| LayoutOptions {
+        bars: Some(BarRange { first, last }),
+        ..LayoutOptions::default()
+    };
+    assert!(names(&sung, &range(0, 0)).is_empty());
+    assert_eq!(names(&sung, &range(1, 1)), vec!["lyrics"]);
+    assert_eq!(names(&sung, &range(2, 2)), vec!["lyrics"]);
+    assert!(names(&sung, &range(3, 3)).is_empty());
 }
