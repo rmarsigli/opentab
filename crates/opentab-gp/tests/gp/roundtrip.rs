@@ -338,7 +338,12 @@ fn default_scores_are_refused_only_for_genuine_gp_limits() {
         config(),
         proptest::test_runner::TestRng::deterministic_rng(config().rng_algorithm),
     );
-    let outcome = runner.run(&arb_score().prop_map(stripped), |original| {
+    let strategy = arb_score()
+        .prop_filter("Guitar Pro needs a master bar and a track", |score| {
+            !score.master_bars.is_empty() && !score.tracks.is_empty()
+        })
+        .prop_map(stripped);
+    let outcome = runner.run(&strategy, |original| {
         seen.set(seen.get() + 1);
         let mut score = original.clone();
         for round in 0..MAX_ROUNDS {

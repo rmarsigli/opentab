@@ -246,6 +246,8 @@ pub fn documented(reason: &Refusal) -> bool {
             | Refusal::PayloadFormat { .. }
             | Refusal::MalformedPayload { .. }
             | Refusal::DanglingExtension { .. }
+            | Refusal::NoMasterBars
+            | Refusal::NoTracks
             | Refusal::BarCount { .. }
             | Refusal::VoiceSlots
             | Refusal::NoteKind

@@ -284,7 +284,18 @@ fn pool(name: &str, elements: Vec<Element>) -> Element {
     pool
 }
 
+fn check_not_empty(score: &Score) -> Result<(), Fail> {
+    if score.master_bars.is_empty() {
+        return Err(Fail::new(Refusal::NoMasterBars)).within(|| "master_bars".to_string());
+    }
+    if score.tracks.is_empty() {
+        return Err(Fail::new(Refusal::NoTracks)).within(|| "tracks".to_string());
+    }
+    Ok(())
+}
+
 pub(crate) fn write_gpif(score: &Score) -> Result<String, Fail> {
+    check_not_empty(score)?;
     check_bars(score)?;
     let anchors = BarAnchors::new(&score.master_bars);
     let mut owners = Owners::new(&score.extensions, &anchors);
