@@ -261,8 +261,6 @@ group 5
         text "0" 71416,31444 em 1536 Middle Text
     group 53
       group 52
-        rect 52396,30293 53466,31615 White
-        text "0" 52931,31444 em 1536 Middle Text
     group 55
       group 54
         rect 54509,30293 55579,31615 White
@@ -285,8 +283,6 @@ group 5
         text "0" 68142,31444 em 1536 Middle Text
     group 65
       group 64
-        rect 72155,30293 73225,31615 White
-        text "0" 72690,31444 em 1536 Middle Text
     group 67
       group 66
         rect 74268,30293 75338,31615 White
@@ -606,8 +602,6 @@ group 5
         text "0" 63433,92354 em 1536 Middle Text
     group 105
       group 104
-        rect 44162,91203 45232,92525 White
-        text "0" 44697,92354 em 1536 Middle Text
     group 107
       group 106
         rect 46317,91203 47387,92525 White
@@ -630,8 +624,6 @@ group 5
         text "0" 60117,92354 em 1536 Middle Text
     group 117
       group 116
-        rect 64172,91203 65242,92525 White
-        text "0" 64707,92354 em 1536 Middle Text
     group 119
       group 118
         rect 66327,91203 67397,92525 White
@@ -1213,8 +1205,6 @@ group 5
         text "0" 45844,87381 em 1536 Middle Text
     group 182
       group 181
-        rect 25828,86230 26898,87552 White
-        text "0" 26363,87381 em 1536 Middle Text
     group 184
       group 183
         rect 28106,86230 29176,87552 White
@@ -1237,8 +1227,6 @@ group 5
         text "0" 42404,87381 em 1536 Middle Text
     group 194
       group 193
-        rect 46583,86230 47653,87552 White
-        text "0" 47118,87381 em 1536 Middle Text
     group 196
       group 195
         rect 48862,86230 49932,87552 White
@@ -1567,8 +1555,6 @@ group 5
         text "0" 46508,29013 em 1536 Middle Text
     group 234
       group 233
-        rect 25828,27862 26898,29184 White
-        text "0" 26363,29013 em 1536 Middle Text
     group 236
       group 235
         rect 28217,27862 29287,29184 White
@@ -1591,8 +1577,6 @@ group 5
         text "0" 42957,29013 em 1536 Middle Text
     group 246
       group 245
-        rect 47247,27862 48317,29184 White
-        text "0" 47782,29013 em 1536 Middle Text
     group 248
       group 247
         rect 49636,27862 50706,29184 White
@@ -1826,8 +1810,6 @@ group 5
         text "0" 54543,89719 em 1536 Middle Text
     group 286
       group 285
-        rect 25828,88568 26898,89890 White
-        text "0" 26363,89719 em 1536 Middle Text
     group 288
       group 287
         rect 29556,88568 30626,89890 White
@@ -1850,8 +1832,6 @@ group 5
         text "0" 49653,89719 em 1536 Middle Text
     group 298
       group 297
-        rect 55282,88568 56352,89890 White
-        text "0" 55817,89719 em 1536 Middle Text
     group 300
       group 299
         rect 59010,88568 60080,89890 White

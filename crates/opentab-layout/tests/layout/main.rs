@@ -1,3 +1,4 @@
+mod beams;
 mod behaviour;
 mod capo;
 mod dropped;

@@ -7,7 +7,7 @@ use opentab_layout::{
     DisplayList, FRET_EM, Group, MARK_EM, Page, PathSegment, Primitive, Rect, StaffKind, StaffMode,
     SystemLayout, TextAnchor, TextRun, Units, baseline_below_centre, fret_text, layout,
 };
-use opentab_model::{NoteKind, Score};
+use opentab_model::{Bar, Fraction, Note, NoteKind, Score};
 use opentab_testkit::arb_score;
 use proptest::prelude::*;
 use proptest::test_runner::TestRunner;
@@ -28,6 +28,7 @@ pub struct Tally {
     pub labels: usize,
     pub same_string_pairs: usize,
     pub lane_text_pairs: usize,
+    pub merged_unisons: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -160,6 +161,40 @@ fn flat(items: &[Primitive]) -> Vec<&Primitive> {
     out
 }
 
+fn placed_notes(bar: &Bar) -> Vec<(Option<Fraction>, usize, &Note)> {
+    let mut out = Vec::new();
+    for (index, voice) in bar.voices.iter().enumerate() {
+        let mut onset = Fraction::new(0, 1);
+        for beat in &voice.beats {
+            let grace = beat.effects.grace.is_some();
+            for note in &beat.notes {
+                out.push(((!grace).then_some(onset), index, note));
+            }
+            if !grace {
+                onset += beat.duration.length();
+            }
+        }
+    }
+    out
+}
+
+fn unison_twin(
+    placed: &[(Option<Fraction>, usize, &Note)],
+    onset: Option<Fraction>,
+    voice: usize,
+    note: &Note,
+) -> bool {
+    let (Some(onset), NoteKind::Fretted { string, .. }) = (onset, note.kind) else {
+        return false;
+    };
+    placed.iter().any(|(other_onset, other_voice, other)| {
+        *other_onset == Some(onset)
+            && *other_voice < voice
+            && matches!(other.kind, NoteKind::Fretted { string: same, .. } if same == string)
+            && fret_text(other) == fret_text(note)
+    })
+}
+
 pub fn check_tab(score: &Score, list: &DisplayList) -> Tally {
     let mut tally = Tally::default();
     for (_, system, row) in tab_rows(list) {
@@ -193,12 +228,8 @@ pub fn check_tab(score: &Score, list: &DisplayList) -> Tally {
                 assert!(found.is_empty());
                 continue;
             };
-            for note in bar
-                .voices
-                .iter()
-                .flat_map(|voice| &voice.beats)
-                .flat_map(|beat| &beat.notes)
-            {
+            let placed = placed_notes(bar);
+            for (onset, voice, note) in &placed {
                 let NoteKind::Fretted { string, .. } = note.kind else {
                     continue;
                 };
@@ -206,6 +237,10 @@ pub fn check_tab(score: &Score, list: &DisplayList) -> Tally {
                 let labels = found.remove(&note.id.0.0).unwrap_or_default();
                 if line >= staff.lines {
                     assert!(labels.is_empty());
+                    continue;
+                }
+                if labels.is_empty() && unison_twin(&placed, *onset, *voice, note) {
+                    tally.merged_unisons += 1;
                     continue;
                 }
                 assert_eq!(labels.len(), 1, "note {} has one fret label", note.id.0.0);
@@ -277,6 +312,7 @@ fn every_fretted_note_has_one_label_on_its_string_and_labels_never_collide() {
                     sum.labels += tally.labels;
                     sum.same_string_pairs += tally.same_string_pairs;
                     sum.lane_text_pairs += tally.lane_text_pairs;
+                    sum.merged_unisons += tally.merged_unisons;
                 }
                 Err(_) => prop_assert!(
                     score.master_bars.is_empty()

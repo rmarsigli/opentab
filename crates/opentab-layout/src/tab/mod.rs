@@ -57,6 +57,7 @@ pub struct FretPlan {
     pub slide: Option<Slide>,
     pub bend: Option<BendShape>,
     pub finger: Option<&'static str>,
+    pub merged: bool,
 }
 
 impl FretPlan {
@@ -231,6 +232,7 @@ fn fret_plans(input: &TabInput<'_>, slot: &BeatSlot, beat: &Beat, size: Units) -
             line,
             y: line_y(line, input.spacing),
             dx: Units::ZERO,
+            merged: false,
             width: measure(&text, em),
             text,
             em,
@@ -341,11 +343,20 @@ fn reserve_lane_labels(columns: &mut [ColumnNeed], marks: &[ColumnMarks]) {
 fn separate_voices(beats: &mut [TabBeat], columns: usize) {
     for column in 0..columns {
         let mut placed: Vec<Rect> = Vec::new();
+        let mut shown: Vec<(usize, String)> = Vec::new();
         for beat in beats
             .iter_mut()
             .filter(|beat| beat.slot.column == column && beat.slot.grace.is_none())
         {
             for fret in &mut beat.frets {
+                if shown
+                    .iter()
+                    .any(|(line, text)| *line == fret.line && *text == fret.text)
+                {
+                    fret.merged = true;
+                    continue;
+                }
+                shown.push((fret.line, fret.text.clone()));
                 while let Some(blocker) = placed
                     .iter()
                     .find(|rect| rect.overlaps(&fret.label()))

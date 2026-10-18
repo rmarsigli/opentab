@@ -92,7 +92,9 @@ pub fn draw_bar(
         let mut beat_items = Vec::new();
         for fret in &beat.frets {
             let mut note_items = Vec::new();
-            draw_label(fret, at, &mut note_items);
+            if !fret.merged {
+                draw_label(fret, at, &mut note_items);
+            }
             beat_items.push(Primitive::Group(Group {
                 id: GroupId(fret.id.0.0),
                 items: note_items,

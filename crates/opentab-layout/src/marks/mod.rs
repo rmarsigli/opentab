@@ -20,9 +20,9 @@ pub use title::{
 
 use crate::geometry::{COUNT_EM, COUNT_RISE, ENDING_RISE, NOTATION_CLEARANCE};
 use crate::glyphs::{
-    DYNAMIC_FF, DYNAMIC_FFF, DYNAMIC_FORTE, DYNAMIC_MF, DYNAMIC_MP, DYNAMIC_PIANO, DYNAMIC_PP,
-    DYNAMIC_PPP, Glyph, MET_AUGMENTATION_DOT, MET_NOTE_8TH_UP, MET_NOTE_HALF_UP,
-    MET_NOTE_QUARTER_UP, Metrics,
+    BRACKET_TOP, DYNAMIC_FF, DYNAMIC_FFF, DYNAMIC_FORTE, DYNAMIC_MF, DYNAMIC_MP, DYNAMIC_PIANO,
+    DYNAMIC_PP, DYNAMIC_PPP, G_CLEF, Glyph, MET_AUGMENTATION_DOT, MET_NOTE_8TH_UP,
+    MET_NOTE_HALF_UP, MET_NOTE_QUARTER_UP, Metrics,
 };
 use crate::grid::Grid;
 use crate::lanes::{Lane, LaneSet};
@@ -117,6 +117,13 @@ pub fn text_lane_height() -> Units {
 
 pub fn chord_lane_height() -> Units {
     line_height(CHORD_EM)
+}
+
+pub fn section_rise() -> Units {
+    let clef = glyph_box(G_CLEF, STAFF_SPACE);
+    let bracket = glyph_box(BRACKET_TOP, STAFF_SPACE);
+    let clef_rise = -(clef.min.y + Units(STAFF_SPACE.0 * 3));
+    clef_rise.max(-bracket.min.y) + MARK_GAP
 }
 
 pub fn tempo_lane_height() -> Units {
@@ -398,6 +405,11 @@ impl BarMarks {
     }
 
     pub fn furniture_reach(&self) -> Units {
+        let section = if self.section.is_some() {
+            section_rise()
+        } else {
+            Units::ZERO
+        };
         let ending = if self.endings {
             ENDING_RISE
                 + Metrics::bravura()
@@ -411,7 +423,7 @@ impl BarMarks {
         } else {
             Units::ZERO
         };
-        ending.max(count)
+        ending.max(count).max(section)
     }
 
     pub fn apply(&self, specs: &[StaffSpec], needs: &mut VerticalNeeds) {

@@ -137,3 +137,46 @@ fn a_title_block_cut_short_is_reported_once_without_a_bar() {
     let list = render(&credit, &options(StaffMode::Standard));
     assert_eq!(dropped(&list, MarkKind::Title), vec![None]);
 }
+
+#[test]
+fn a_section_at_a_system_start_clears_the_bracket_and_the_clef() {
+    let mut score = quarter_score(2);
+    crate::support::add_track(
+        &mut score,
+        "Bass",
+        4,
+        opentab_model::InstrumentKind::Fretted,
+    );
+    marker(&mut score, 0, "", "Intro");
+    marker(&mut score, 1, "B", "Verse");
+    let list = render(&score, &options(StaffMode::Standard));
+    let page = &list.pages[0];
+    let found = crate::music::glyphs(&page.items);
+    let furniture: Vec<opentab_layout::Rect> = found
+        .iter()
+        .filter(|glyph| {
+            matches!(
+                crate::support::glyph_name(glyph.codepoint),
+                "bracketTop" | "gClef" | "gClef8vb"
+            )
+        })
+        .map(crate::support::ink)
+        .collect();
+    assert!(furniture.len() >= 3, "{}", furniture.len());
+    let top = furniture.iter().map(|rect| rect.min.y).min().unwrap();
+    for text in ["Intro", "B", "Verse"] {
+        let run = page
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Primitive::Text(run) if run.text == text => Some(run.clone()),
+                _ => None,
+            })
+            .unwrap();
+        let ink = crate::marks::text_ink(&run).unwrap();
+        assert!(
+            ink.max.y < top,
+            "{text} at {ink:?} reaches the furniture at {top:?}"
+        );
+    }
+}
