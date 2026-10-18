@@ -34,17 +34,13 @@ case "$FAKE_GP_MODE" in
 esac
 case "$FAKE_GP_MODE" in
   silent_hang)
-    i=0
-    while [ ! -e "$FAKE_GP_SENTINEL" ] && [ "$i" -lt 600 ]; do
+    while [ ! -e "$FAKE_GP_SENTINEL" ]; do
       sleep 0.1
-      i=$((i + 1))
     done
     exit 0 ;;
   hang)
-    i=0
-    while [ ! -e "$FAKE_GP_SENTINEL" ] && [ "$i" -lt 600 ]; do
+    while [ ! -e "$FAKE_GP_SENTINEL" ]; do
       sleep 0.1
-      i=$((i + 1))
     done
     exit 0 ;;
   not_running)

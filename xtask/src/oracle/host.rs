@@ -70,10 +70,10 @@ impl PidRecord {
 }
 
 #[derive(Debug)]
-pub struct ScriptRun {
-    pub status: Option<ExitStatus>,
-    pub timed_out: bool,
-    pub pid_missing: bool,
+pub enum ScriptRun {
+    Exited(ExitStatus),
+    TimedOut(PidRecord),
+    PidMissing,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -83,21 +83,25 @@ pub struct PidGate<'a> {
 }
 
 enum PidWait {
-    Recorded,
+    Recorded(PidRecord),
     Exited(ExitStatus),
     Missing,
 }
 
-pub fn pid_file_complete(path: &Path) -> bool {
-    std::fs::read_to_string(path)
-        .is_ok_and(|text| text.ends_with('\n') && PidRecord::parse(&text).is_some())
+pub fn read_complete_pid(path: &Path) -> Option<PidRecord> {
+    let text = std::fs::read_to_string(path).ok()?;
+    if text.ends_with('\n') {
+        PidRecord::parse(&text)
+    } else {
+        None
+    }
 }
 
 fn wait_for_pid(child: &mut Child, gate: PidGate<'_>) -> Result<PidWait, OracleError> {
     let deadline = Instant::now() + gate.wait;
     loop {
-        if pid_file_complete(gate.file) {
-            return Ok(PidWait::Recorded);
+        if let Some(record) = read_complete_pid(gate.file) {
+            return Ok(PidWait::Recorded(record));
         }
         match child.try_wait() {
             Ok(Some(status)) => return Ok(PidWait::Exited(status)),
@@ -231,44 +235,24 @@ impl Host {
                     &error,
                 )
             })?;
-        match wait_for_pid(&mut child, gate)? {
-            PidWait::Recorded => {}
-            PidWait::Exited(status) => {
-                return Ok(ScriptRun {
-                    status: Some(status),
-                    timed_out: false,
-                    pid_missing: false,
-                });
-            }
+        let record = match wait_for_pid(&mut child, gate)? {
+            PidWait::Recorded(record) => record,
+            PidWait::Exited(status) => return Ok(ScriptRun::Exited(status)),
             PidWait::Missing => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Ok(ScriptRun {
-                    status: None,
-                    timed_out: true,
-                    pid_missing: true,
-                });
+                return Ok(ScriptRun::PidMissing);
             }
-        }
+        };
         let deadline = Instant::now() + self.timeout;
         loop {
             match child.try_wait() {
-                Ok(Some(status)) => {
-                    return Ok(ScriptRun {
-                        status: Some(status),
-                        timed_out: false,
-                        pid_missing: false,
-                    });
-                }
+                Ok(Some(status)) => return Ok(ScriptRun::Exited(status)),
                 Ok(None) if Instant::now() < deadline => std::thread::sleep(POLL),
                 Ok(None) => {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Ok(ScriptRun {
-                        status: None,
-                        timed_out: true,
-                        pid_missing: false,
-                    });
+                    return Ok(ScriptRun::TimedOut(record));
                 }
                 Err(error) => return Err(OracleError::io("cannot wait for PowerShell", &error)),
             }
@@ -306,7 +290,7 @@ impl Host {
 
 #[cfg(test)]
 mod tests {
-    use super::{KILL_NOT_MATCHED_EXIT, PidRecord, pid_file_complete};
+    use super::{KILL_NOT_MATCHED_EXIT, PidRecord, read_complete_pid};
 
     #[test]
     fn pid_file_parses_with_and_without_start_time_and_bom() {
@@ -324,14 +308,14 @@ mod tests {
     fn pid_file_counts_only_when_completely_written() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("pid.txt");
-        assert!(!pid_file_complete(&path));
+        assert!(read_complete_pid(&path).is_none());
         for partial in ["", "42", "4242\n13300", "abc\n", "\n"] {
             std::fs::write(&path, partial).expect("write");
-            assert!(!pid_file_complete(&path), "{partial:?}");
+            assert!(read_complete_pid(&path).is_none(), "{partial:?}");
         }
         for complete in ["4242\n", "4242\n133000000000000000\n", "\u{feff}7\r\n9\r\n"] {
             std::fs::write(&path, complete).expect("write");
-            assert!(pid_file_complete(&path), "{complete:?}");
+            assert!(read_complete_pid(&path).is_some(), "{complete:?}");
         }
     }
 

@@ -164,3 +164,14 @@ fn module_never_synthesises_keyboard_input_outside_the_guarded_sender() {
     let entry = oracle_source("Invoke-GpExport.ps1");
     assert!(!entry.contains("SendKeys"));
 }
+
+#[test]
+fn pid_file_is_published_by_rename_only() {
+    let entry = oracle_source("Invoke-GpExport.ps1");
+    assert!(!entry.contains("Write-Utf8File (Join-Path $OutDir 'pid.txt')"));
+    let temp = entry.find("Write-Utf8File $PidTemp").expect("temp write");
+    let publish = entry
+        .find("Move-Item -LiteralPath $PidTemp -Destination (Join-Path $OutDir 'pid.txt') -Force")
+        .expect("rename");
+    assert!(temp < publish);
+}
