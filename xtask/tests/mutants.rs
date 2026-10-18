@@ -87,3 +87,21 @@ fn verdict_needs_a_successful_tool_and_a_clean_report() {
     assert!(!verdict(true, &missed));
     assert!(!verdict(true, &slow));
 }
+
+#[test]
+fn mutants_config_keeps_only_settings_the_arguments_do_not_override() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(".cargo")
+        .join("mutants.toml");
+    let text = std::fs::read_to_string(path).expect("mutants.toml readable");
+    let table: toml::Table = text.parse().expect("mutants.toml parses");
+    let keys: Vec<&str> = table.keys().map(String::as_str).collect();
+    assert_eq!(keys, ["build_timeout_multiplier", "cap_lints"]);
+    let args = mutants_args(&output_dir(Path::new("/work")));
+    for overridden in ["timeout_multiplier", "minimum_test_timeout", "jobs"] {
+        assert!(!table.contains_key(overridden), "{overridden}");
+    }
+    assert!(args.iter().any(|arg| arg == "--timeout"));
+    assert!(!args.iter().any(|arg| arg.starts_with("--build-timeout")));
+}
