@@ -14,8 +14,8 @@ pub use tempo::{
     nearest_column, plan_tempos, resolve, unit_glyph,
 };
 pub use title::{
-    ALBUM_EM, ARTIST_EM, BLOCK_GAP, CREDIT_EM, Frame, SUBTITLE_EM, SUBTITLE_LINES, TITLE_EM,
-    TITLE_LINES, TitleBlock, credits, tab_credit, title_block,
+    ALBUM_EM, ARTIST_EM, BLOCK_GAP, CAPO, CREDIT_EM, Frame, SUBTITLE_EM, SUBTITLE_LINES, TITLE_EM,
+    TITLE_LINES, TitleBlock, capo_notes, credits, tab_credit, title_block,
 };
 
 use crate::geometry::{COUNT_EM, COUNT_RISE, ENDING_RISE, NOTATION_CLEARANCE};

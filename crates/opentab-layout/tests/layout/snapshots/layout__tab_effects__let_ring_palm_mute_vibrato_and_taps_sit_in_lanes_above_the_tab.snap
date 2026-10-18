@@ -120,8 +120,8 @@ group 5
       text "T" 63004,26046 em 1126 Middle Text
     group 27
       group 26
-        rect 68959,27177 70959,28499 White
-        text "[7]" 69959,28328 em 1536 Middle Text
+        rect 67744,27177 72174,28499 White
+        text "7 <19>" 69959,28328 em 1536 Middle Text
       text "LT P.H." 69959,26046 em 1126 Middle Text
     glyph U+EAB1 55543,24766 size 1024
     glyph U+EAB1 56383,24766 size 1024

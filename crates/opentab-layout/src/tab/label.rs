@@ -81,8 +81,16 @@ pub fn half_head(size: Units) -> Units {
 }
 
 pub fn decimal(value: Fraction) -> String {
-    let numer = i128::from(*value.numer());
-    let denom = i128::from(*value.denom());
+    ratio_text(i128::from(*value.numer()), i128::from(*value.denom()))
+}
+
+pub fn harmonic_above(fret: u8, harmonic: Fraction) -> String {
+    let denom = i128::from(*harmonic.denom());
+    let numer = i128::from(*harmonic.numer()) + i128::from(fret) * denom;
+    ratio_text(numer, denom)
+}
+
+fn ratio_text(numer: i128, denom: i128) -> String {
     if denom <= 0 {
         return String::new();
     }
@@ -108,7 +116,7 @@ pub fn fret_text(note: &Note) -> Option<String> {
             Some(harmonic) if harmonic.kind == HarmonicKind::Natural => {
                 format!("<{}>", decimal(harmonic.fret))
             }
-            Some(_) => format!("[{fret}]"),
+            Some(harmonic) => format!("{fret} <{}>", harmonic_above(fret, harmonic.fret)),
             None => fret.to_string(),
         }
     };
@@ -253,7 +261,20 @@ mod tests {
             }),
             ..NoteEffects::default()
         };
-        assert_eq!(fret_text(&note(5, pinch)), Some("[5]".into()));
+        assert_eq!(fret_text(&note(5, pinch)), Some("5 <17>".into()));
+        let tapped = NoteEffects {
+            harmonic: Some(Harmonic {
+                kind: HarmonicKind::Tap,
+                fret: Fraction::new(5, 2),
+            }),
+            ghost: true,
+            ..NoteEffects::default()
+        };
+        assert_eq!(fret_text(&note(7, tapped)), Some("(7 <9.5>)".into()));
+        assert_eq!(
+            harmonic_above(u8::MAX, Fraction::new(i64::MAX, 1)),
+            format!("{}", i128::from(i64::MAX) + 255)
+        );
     }
 
     #[test]

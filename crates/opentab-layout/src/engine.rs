@@ -10,7 +10,9 @@ use crate::geometry::{
 };
 use crate::glyphs::Metrics;
 use crate::lanes::{Band, BandLayout};
-use crate::marks::{DroppedMark, Frame as BlockFrame, MarkKind, TitleBlock, title_block};
+use crate::marks::{
+    DroppedMark, Frame as BlockFrame, MarkKind, TitleBlock, capo_notes, title_block,
+};
 use crate::options::{LayoutError, LayoutOptions};
 use crate::plan::{BarPlan, SystemPlan, VerticalNeeds, above_share, break_systems, plan_bars};
 use crate::select::{StaffSpec, select};
@@ -79,6 +81,13 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         height: Units::ZERO,
     };
     let widest_fit = effective_staff_space(options.page, requested, need)?;
+    let capos: Vec<(&str, u8)> = selection
+        .tracks
+        .iter()
+        .filter_map(|index| score.tracks.get(*index))
+        .map(|track| (track.name.as_str(), track.capo))
+        .collect();
+    let notes = capo_notes(&capos);
     let fit = Fit {
         plans: &plans,
         specs: &selection.specs,
@@ -87,6 +96,7 @@ pub fn layout(score: &Score, options: &LayoutOptions) -> Result<DisplayList, Lay
         name_indent,
         page: options.page,
         meta: &score.meta,
+        notes: &notes,
     };
     let staff_space = fit.largest(requested, widest_fit)?;
     let template = Page::new(options.page, staff_space);
@@ -165,6 +175,7 @@ pub struct Fit<'a> {
     pub name_indent: Units,
     pub page: PageSize,
     pub meta: &'a ScoreMeta,
+    pub notes: &'a [String],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,6 +209,7 @@ impl Fit<'_> {
         let frame = self.frame(space);
         title_block(
             self.meta,
+            self.notes,
             BlockFrame {
                 left: frame.left,
                 right: frame.right,

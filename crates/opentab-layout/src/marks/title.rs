@@ -113,6 +113,19 @@ pub const WORDS: &str = "Words by ";
 pub const MUSIC: &str = "Music by ";
 pub const TAB: &str = "Tab by ";
 
+pub const CAPO: &str = "Capo fret ";
+
+pub fn capo_notes(tracks: &[(&str, u8)]) -> Vec<String> {
+    let capoed: Vec<&(&str, u8)> = tracks.iter().filter(|(_, capo)| *capo > 0).collect();
+    match (tracks.len(), capoed.as_slice()) {
+        (1, [(_, capo)]) => vec![format!("{CAPO}{capo}")],
+        _ => capoed
+            .iter()
+            .map(|(name, capo)| format!("{}: {CAPO}{capo}", clean(name)))
+            .collect(),
+    }
+}
+
 pub fn starts_with_ignoring_case(text: &str, prefix: &str) -> bool {
     let mut letters = text.chars().flat_map(char::to_lowercase);
     prefix
@@ -150,7 +163,7 @@ pub fn tab_credit(meta: &ScoreMeta) -> Option<String> {
     (!author.is_empty()).then(|| credited(TAB, &author))
 }
 
-pub fn title_block(meta: &ScoreMeta, frame: Frame) -> TitleBlock {
+pub fn title_block(meta: &ScoreMeta, notes: &[String], frame: Frame) -> TitleBlock {
     let width = frame.right - frame.left;
     let mut writer = Writer {
         frame,
@@ -180,6 +193,10 @@ pub fn title_block(meta: &ScoreMeta, frame: Frame) -> TitleBlock {
         let left = left.and_then(|text| writer.single(text, CREDIT_EM, room));
         let right = right.and_then(|text| writer.single(text, CREDIT_EM, room));
         writer.row(CREDIT_EM, &[(left, Align::Left), (right, Align::Right)]);
+    }
+    for note in notes {
+        let line = writer.single(note, CREDIT_EM, width);
+        writer.row(CREDIT_EM, &[(line, Align::Left)]);
     }
     let used = writer.cursor - frame.top;
     TitleBlock {

@@ -99,8 +99,8 @@ group 5
         rect 38455,32977 42197,34299 White
         text "<3.2>" 40326,34128 em 1536 Middle Text
       group 20
-        rect 39326,36049 41326,37371 White
-        text "[5]" 40326,37200 em 1536 Middle Text
+        rect 38111,36049 42541,37371 White
+        text "5 <22>" 40326,37200 em 1536 Middle Text
       text "A.H." 40326,29649 em 1126 Middle Text
 line 8859,18790 8859,38246 thick 164
 glyph U+ECA5 16010,10998 size 614
