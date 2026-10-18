@@ -1,0 +1,17 @@
+[package]
+name = "opentab-gp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+opentab-model = { path = "../opentab-model" }
+quick-xml.workspace = true
+zip.workspace = true
+flate2.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
