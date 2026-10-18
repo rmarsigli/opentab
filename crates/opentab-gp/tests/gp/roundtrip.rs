@@ -135,13 +135,8 @@ fn run<S: Strategy<Value = Score>>(strategy: S) -> Outcome {
 }
 
 fn with_drum_kits(mut score: Score) -> Score {
-    if !add_drum_kits(&mut score) {
-        return score;
-    }
-    write_gp(&score)
-        .ok()
-        .and_then(|bytes| read_gp(&bytes).ok())
-        .unwrap_or(score)
+    add_drum_kits(&mut score);
+    score
 }
 
 #[test]

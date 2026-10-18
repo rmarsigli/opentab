@@ -1,3 +1,4 @@
+mod blank;
 mod container;
 mod diagnostics;
 mod duration;
@@ -11,6 +12,7 @@ mod master_bar;
 mod score;
 mod track;
 
+pub use blank::blank_score;
 pub use container::{Base64Bytes, ContainerEntry};
 pub use diagnostics::{Diagnostic, diagnose};
 pub use duration::{Duration, NoteValue, Tuplet};

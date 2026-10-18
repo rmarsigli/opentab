@@ -181,7 +181,30 @@ pub fn gpif_path(error: &GpError) -> String {
     }
 }
 
-pub const DRUM_KIT: &str = "<Keep parent=\"InstrumentSet\" index=\"1\"><Elements/></Keep>";
+pub const DRUM_KIT: &str =
+    "<Keep parent=\"InstrumentSet\" index=\"1\"><Elements><Element/></Elements></Keep>";
+const TRACK_CHILDREN_BEFORE_INSTRUMENT_SET: usize = 2;
+
+fn top_level_index(payload: &OpaquePayload) -> Option<usize> {
+    let rest = payload.data.strip_prefix("<Keep parent=\"\" index=\"")?;
+    let end = rest.find('"')?;
+    rest[..end].parse().ok()
+}
+
+pub fn kit_position(payloads: &[OpaquePayload]) -> usize {
+    let mut indices: Vec<usize> = payloads.iter().filter_map(top_level_index).collect();
+    indices.sort_unstable();
+    let mut instrument_set = TRACK_CHILDREN_BEFORE_INSTRUMENT_SET;
+    for index in indices {
+        if index <= instrument_set {
+            instrument_set += 1;
+        }
+    }
+    payloads
+        .iter()
+        .filter(|payload| top_level_index(payload).is_some_and(|index| index < instrument_set))
+        .count()
+}
 
 pub fn add_drum_kits(score: &mut Score) -> bool {
     let drums: Vec<ElementId> = score
@@ -197,10 +220,14 @@ pub fn add_drum_kits(score: &mut Score) -> bool {
             .iter()
             .any(|payload| payload.data.contains("<Elements"))
         {
-            payloads.push(OpaquePayload {
-                format: "gpif".to_string(),
-                data: DRUM_KIT.to_string(),
-            });
+            let at = kit_position(payloads);
+            payloads.insert(
+                at,
+                OpaquePayload {
+                    format: "gpif".to_string(),
+                    data: DRUM_KIT.to_string(),
+                },
+            );
             changed = true;
         }
     }
