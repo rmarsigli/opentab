@@ -99,7 +99,10 @@ fn mutants_config_keeps_only_settings_the_arguments_do_not_override() {
     let text = std::fs::read_to_string(path).expect("mutants.toml readable");
     let table: toml::Table = text.parse().expect("mutants.toml parses");
     let keys: Vec<&str> = table.keys().map(String::as_str).collect();
-    assert_eq!(keys, ["build_timeout_multiplier", "cap_lints"]);
+    assert_eq!(
+        keys,
+        ["build_timeout_multiplier", "cap_lints", "exclude_re"]
+    );
     let args = mutants_args(&output_dir(Path::new("/work")), None, false);
     for overridden in ["timeout_multiplier", "minimum_test_timeout", "jobs"] {
         assert!(!table.contains_key(overridden), "{overridden}");
@@ -140,4 +143,27 @@ fn iterate_is_passed_through_to_cargo_mutants() {
     let shard = Shard::parse("2/4").expect("valid shard");
     let both = mutants_args(&output, Some(shard), true);
     assert_eq!(both[both.len() - 3..], ["--shard", "2/4", "--iterate"]);
+}
+
+#[test]
+fn only_the_proven_equivalent_mutants_are_excluded() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(".cargo")
+        .join("mutants.toml");
+    let text = std::fs::read_to_string(path).expect("mutants.toml readable");
+    let table: toml::Table = text.parse().expect("mutants.toml parses");
+    let excluded: Vec<&str> = table["exclude_re"]
+        .as_array()
+        .expect("exclude_re is a list")
+        .iter()
+        .filter_map(toml::Value::as_str)
+        .collect();
+    assert_eq!(
+        excluded,
+        [
+            r"replace /= with \*= in general_format",
+            r"replace \| with \^ in accent_bits",
+        ]
+    );
 }
