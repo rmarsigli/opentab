@@ -111,9 +111,9 @@ fn bend_point_value_is_validated_in_cents() {
 #[test]
 fn bend_middles_share_one_value() {
     let point = |offset, value| BendPoint::new(offset, value).unwrap();
-    let bend = Bend::new(point(0, 0), point(20, 100), point(60, 100), point(100, 50)).unwrap();
+    let bend = Bend::new(point(5, 30), point(20, 100), point(60, 100), point(100, 50)).unwrap();
     assert_eq!(bend.middle_value(), 100);
-    assert_eq!(bend.origin(), point(0, 0));
+    assert_eq!(bend.origin(), point(5, 30));
     assert_eq!(bend.middle_start(), point(20, 100));
     assert_eq!(bend.middle_end(), point(60, 100));
     assert_eq!(bend.destination(), point(100, 50));
