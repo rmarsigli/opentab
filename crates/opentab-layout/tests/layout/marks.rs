@@ -568,7 +568,7 @@ fn drawn_from(list: &DisplayList, sources: &[String], em: Option<Units>) -> usiz
         .filter(|run| em.is_none_or(|wanted| run.em == wanted))
         .filter(|run| {
             let kept = spaced(stripped(&run.text));
-            cleaned.iter().any(|source| source.contains(&kept))
+            !kept.is_empty() && cleaned.iter().any(|source| source.contains(&kept))
         })
         .count()
 }

@@ -73,12 +73,14 @@ pub struct RenderedPages {
 
 #[derive(Serialize)]
 pub struct DroppedEntry {
-    bar: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bar: Option<usize>,
     kind: &'static str,
 }
 
 fn kind_name(kind: MarkKind) -> &'static str {
     match kind {
+        MarkKind::Title => "title",
         MarkKind::Tempo => "tempo",
         MarkKind::Section => "section",
         MarkKind::Chord => "chord",
@@ -91,7 +93,7 @@ fn dropped_entries(dropped: &[DroppedMark]) -> Vec<DroppedEntry> {
     dropped
         .iter()
         .map(|mark| DroppedEntry {
-            bar: mark.bar + 1,
+            bar: mark.bar.map(|bar| bar + 1),
             kind: kind_name(mark.kind),
         })
         .collect()
@@ -231,7 +233,10 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
     if !dropped.is_empty() {
         let marks: Vec<String> = dropped
             .iter()
-            .map(|mark| format!("{} in bar {}", mark.kind, mark.bar))
+            .map(|mark| match mark.bar {
+                Some(bar) => format!("{} in bar {bar}", mark.kind),
+                None => format!("{} block", mark.kind),
+            })
             .collect();
         lines.push(format!(
             "marks left out for lack of room: {}",
