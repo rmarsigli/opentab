@@ -449,6 +449,8 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "opentab-model",
+ "opentab-testkit",
+ "proptest",
  "quick-xml",
  "thiserror",
  "zip",
