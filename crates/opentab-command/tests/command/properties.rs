@@ -12,8 +12,9 @@ const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 256;
 const SHIFTS: [usize; 4] = [0, 1, 2, usize::MAX];
 const MIN_SUCCESS_RATIO: f64 = 0.2;
-const FORWARD_OPS: [&str; 12] = [
+const FORWARD_OPS: [&str; 13] = [
     "set_meta",
+    "set_anacrusis",
     "insert_master_bar",
     "remove_master_bar",
     "insert_beat",
@@ -274,7 +275,7 @@ fn the_sequence_generator_mixes_successes_and_every_failure() {
         if (succeeded as f64) < MIN_SUCCESS_RATIO * attempts.max(1) as f64 {
             rare.push(format!("{op}: {succeeded} of {attempts}"));
         }
-        if op != "set_meta" {
+        if op != "set_meta" && op != "set_anacrusis" {
             assert!(failed > 0, "{op} never failed: {failures:?}");
         }
     }

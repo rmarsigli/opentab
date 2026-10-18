@@ -58,6 +58,9 @@ pub enum Step {
         field: usize,
         value: String,
     },
+    SetAnacrusis {
+        value: bool,
+    },
     InsertMasterBar {
         index: Pick,
         numerator: u8,
@@ -371,6 +374,7 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
                 fret: *fret,
             }
         }
+        Step::SetAnacrusis { value } => Command::SetAnacrusis { value: *value },
         Step::SetTempo { master_bar, bpm } => Command::SetTempo {
             master_bar: existing_index(*master_bar, master_bars),
             bpm: *bpm,
@@ -471,6 +475,7 @@ fn arb_step() -> impl Strategy<Value = Step> {
         }),
         arb_pick().prop_map(|note| Step::RemoveNote { note }),
         (arb_pick(), 0u8..=30).prop_map(|(note, fret)| Step::SetFret { note, fret }),
+        any::<bool>().prop_map(|value| Step::SetAnacrusis { value }),
         (arb_pick(), arb_bpm()).prop_map(|(master_bar, bpm)| Step::SetTempo { master_bar, bpm }),
         (arb_pick(), arb_pick()).prop_map(|(track, staff)| Step::PadStaffBars { track, staff }),
         (arb_pick(), arb_pick(), arb_pick()).prop_map(|(track, staff, len)| Step::TrimStaffBars {

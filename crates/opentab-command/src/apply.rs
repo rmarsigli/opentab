@@ -5,6 +5,7 @@ use crate::{Command, CommandError, beat, master_bar, meta, note, staff, tempo};
 pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandError> {
     match command {
         Command::SetMeta { field, value } => Ok(meta::set(score, *field, value)),
+        Command::SetAnacrusis { value } => Ok(meta::set_anacrusis(score, *value)),
         Command::InsertMasterBar {
             index,
             time_signature,

@@ -33,6 +33,9 @@ pub enum Command {
         field: MetaField,
         value: String,
     },
+    SetAnacrusis {
+        value: bool,
+    },
     InsertMasterBar {
         index: usize,
         time_signature: TimeSignature,

@@ -17,6 +17,11 @@ fn slot(meta: &mut ScoreMeta, field: MetaField) -> &mut String {
     }
 }
 
+pub(crate) fn set_anacrusis(score: &mut Score, value: bool) -> Command {
+    let old = std::mem::replace(&mut score.anacrusis, value);
+    Command::SetAnacrusis { value: old }
+}
+
 pub(crate) fn set(score: &mut Score, field: MetaField, value: &str) -> Command {
     let old = std::mem::replace(slot(&mut score.meta, field), value.to_owned());
     Command::SetMeta { field, value: old }
