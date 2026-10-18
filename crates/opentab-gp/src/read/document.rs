@@ -15,7 +15,7 @@ struct Deferred<'e> {
     pools: Vec<(&'e Element, Location)>,
 }
 
-pub(crate) fn read(root: &Element) -> Result<Score, Fault> {
+pub(crate) fn read(root: &Element, source_size: usize) -> Result<Score, Fault> {
     let location = Location::root();
     if root.name != "GPIF" {
         return Err(Fault::at(
@@ -25,9 +25,9 @@ pub(crate) fn read(root: &Element) -> Result<Score, Fault> {
             },
         ));
     }
-    let mut ctx = Context::new();
+    let mut ctx = Context::new(source_size);
     let document = Scope::new(Owner::Document, ParentPath::owner(), location);
-    ctx.keep_attributes(&document, root, &[]);
+    ctx.keep_attributes(&document, root, &[])?;
     let mut deferred = Deferred {
         master_track: None,
         master_bars: None,
@@ -69,7 +69,7 @@ pub(crate) fn read(root: &Element) -> Result<Score, Fault> {
         None => None,
     };
     read_tracks(&mut ctx, &mut pools, order, &frames)?;
-    pools.check_referenced()?;
+    pools.keep_unreferenced(&mut ctx)?;
     Ok(ctx.score)
 }
 

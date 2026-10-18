@@ -38,7 +38,7 @@ fn tempo_value_and_unit_are_mapped() {
 }
 
 #[test]
-fn position_is_rounded_to_the_grid_and_its_text_replayed() {
+fn position_is_rounded_and_every_extra_guarded_by_it() {
     let doc = with_automations(&automation("0", "0.333333", "120 2"), "3/4");
     let score = doc.read();
     let bar = master_bar(&score);
@@ -46,9 +46,9 @@ fn position_is_rounded_to_the_grid_and_its_text_replayed() {
     assert_eq!(
         payloads(&score, bar.id.0),
         vec![
-            "<Keep parent=\"*Tempo#0\" index=\"1\"><Linear>false</Linear></Keep>".to_string(),
+            "<Keep parent=\"*Tempo#0\" index=\"1\" guard=\"tempo-position:1/4\"><Linear>false</Linear></Keep>".to_string(),
             "<Keep parent=\"*Tempo#0\" index=\"3\" guard=\"tempo-position:1/4\"><Position>0.333333</Position></Keep>".to_string(),
-            "<Keep parent=\"*Tempo#0\" index=\"4\"><Visible>true</Visible></Keep>".to_string(),
+            "<Keep parent=\"*Tempo#0\" index=\"4\" guard=\"tempo-position:1/4\"><Visible>true</Visible></Keep>".to_string(),
         ]
     );
 }

@@ -51,6 +51,8 @@ pub enum GpifProblem {
     ElementLimit { limit: usize },
     #[error("references expand to more than {limit} model elements")]
     ExpansionLimit { limit: u64 },
+    #[error("opaque data would exceed {limit} bytes")]
+    OpaqueLimit { limit: u64 },
     #[error("missing element <{name}>")]
     MissingElement { name: String },
     #[error("missing attribute \"{name}\"")]
@@ -69,8 +71,6 @@ pub enum GpifProblem {
     },
     #[error("reference to missing {kind} id {id}")]
     MissingReference { kind: PoolKind, id: String },
-    #[error("{kind} is never referenced")]
-    Unreferenced { kind: PoolKind },
     #[error("track id {id} is listed more than once")]
     DuplicateTrackReference { id: usize },
     #[error("lists {found} bars, but the score has {expected} staves")]

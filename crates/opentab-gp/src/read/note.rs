@@ -104,7 +104,7 @@ pub(crate) fn read_note(
     let (element, location) = pools.notes.fetch(token, at)?;
     let id: NoteId = ctx.alloc(&location)?;
     let scope = Scope::new(Owner::Element(id.0), ParentPath::owner(), location.clone());
-    ctx.keep_attributes(&scope, element, &["id"]);
+    ctx.keep_attributes(&scope, element, &["id"])?;
     let properties = Properties::of(element, &location);
     let kind = note_kind(element, &location, &properties, staff)?;
     let frame = NoteFrame {
