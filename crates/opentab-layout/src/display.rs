@@ -1,5 +1,6 @@
 use std::num::{NonZeroI64, NonZeroI128};
 
+use crate::structure::SystemLayout;
 use crate::units::{Micrometres, Point, Rect, STAFF_SPACE, Units, narrow, round_div};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -43,6 +44,7 @@ pub struct Page {
     pub size: PageSize,
     pub staff_space: StaffSpace,
     pub items: Vec<Primitive>,
+    pub systems: Vec<SystemLayout>,
 }
 
 impl Page {
@@ -51,6 +53,7 @@ impl Page {
             size,
             staff_space,
             items: Vec::new(),
+            systems: Vec::new(),
         }
     }
 

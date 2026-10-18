@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use opentab_render::Ratio;
 
-use crate::render::{ImageFormat, parse_scale};
+use crate::render::{BarSpan, ImageFormat, StaffChoice, parse_bars, parse_scale};
 
 const ABOUT: &str = "OpenTab command line";
 
@@ -67,11 +67,14 @@ When --out is an existing directory the pages are written into it, named after P
 suffix of --format; one page is written to --out itself and several pages to \
 <out-stem>-p<N>.<ext> next to it. Existing files are replaced atomically.\n\n\
 --scale applies to PNG only: 1 means 96 pixels per inch, so an A4 page is 794x1123 pixels. \
-It may be written as 2, 1.5 or 3/2. The current layout is a placeholder: one empty system \
-per track, with a five-line staff and a tablature staff with one line per string.";
+It may be written as 2, 1.5 or 3/2.\n\n\
+Every track is drawn unless --track picks some; tracks are numbered from 1 as in `opentab info`, \
+and the option may be repeated. --bars A-B (or a single A) draws only the master bars A to B, \
+counted from 1. --staff forces the staves of every fretted track: standard notation, tablature \
+or both; by default a track with 4 to 8 strings gets both and other tracks get standard notation.";
 
-const RENDER_AFTER_HELP: &str = "Examples:\n  opentab render song.gp --format svg --out song.svg\n  opentab render song.opentab.json --format png --scale 2 --out pages/\n\n\
-JSON result: {\"pages\": <count>, \"files\": [<written paths in page order>]}";
+const RENDER_AFTER_HELP: &str = "Examples:\n  opentab render song.gp --format svg --out song.svg\n  opentab render song.opentab.json --format png --scale 2 --out pages/\n  opentab render song.gp --format png --track 2 --bars 5-12 --staff tab --out riff.png\n\n\
+JSON result: {\"pages\": <count>, \"systems\": <count>, \"bars\": <count>, \"files\": [<written paths in page order>]}";
 
 #[derive(Parser)]
 #[command(name = "opentab", version, about = ABOUT, long_about = LONG_ABOUT)]
@@ -134,6 +137,12 @@ pub enum Subcommand {
         out: PathBuf,
         #[arg(long, value_name = "F", value_parser = parse_scale, help = "PNG scale, 1 is 96 pixels per inch")]
         scale: Option<Ratio<u32>>,
+        #[arg(long = "track", value_name = "N", value_parser = clap::value_parser!(u32).range(1..), help = "Track to draw, counted from 1; repeat for several")]
+        tracks: Vec<u32>,
+        #[arg(long, value_name = "A-B", value_parser = parse_bars, help = "Master bars to draw, counted from 1")]
+        bars: Option<BarSpan>,
+        #[arg(long, value_enum, help = "Staves of fretted tracks")]
+        staff: Option<StaffChoice>,
         #[arg(long, help = "Print the result as JSON")]
         json: bool,
     },
