@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
 use opentab_model::{
-    Bar, Beat, BeatEffects, Duration, ElementId, Extensions, Instrument, InstrumentKind, Marker,
-    MasterBar, Note, NoteKind, Score, Staff, TempoChange, TimeSignature, Track, Tuning, Voice,
-    VoiceSlot,
+    Bar, Beat, BeatEffects, ContainerEntry, Duration, ElementId, Extensions, Instrument,
+    InstrumentKind, Marker, MasterBar, Note, NoteKind, Score, Staff, TempoChange, TimeSignature,
+    Track, Tuning, Voice, VoiceSlot,
 };
 
 use crate::fill::FillTable;
@@ -264,5 +264,13 @@ pub fn build_score(seed: ScoreSeed, beat_cap: usize) -> Score {
     builder.score.extensions = extensions;
     builder.score.document_extensions = seed.document_extensions;
     builder.score.container = seed.container;
+    if let Some(entry) = seed.score_entry {
+        let len = builder.score.container.len();
+        let position = entry.position.checked_rem(len + 1).unwrap_or(0);
+        builder
+            .score
+            .container
+            .insert(position, ContainerEntry::Score { name: entry.name });
+    }
     builder.score
 }

@@ -131,6 +131,12 @@ pub struct ExtensionSeed {
 }
 
 #[derive(Debug, Clone)]
+pub struct ScoreEntrySeed {
+    pub position: usize,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct ScoreSeed {
     pub meta: ScoreMeta,
     pub anacrusis: bool,
@@ -139,6 +145,7 @@ pub struct ScoreSeed {
     pub extensions: Vec<ExtensionSeed>,
     pub document_extensions: Vec<OpaquePayload>,
     pub container: Vec<ContainerEntry>,
+    pub score_entry: Option<ScoreEntrySeed>,
 }
 
 fn arb_note_seed() -> impl Strategy<Value = NoteSeed> {
@@ -309,7 +316,7 @@ fn arb_payload() -> impl Strategy<Value = OpaquePayload> {
 
 fn arb_container_entry() -> impl Strategy<Value = ContainerEntry> {
     (arb_text(16), vec(any::<u8>(), 0..=MAX_CONTAINER_BYTES)).prop_map(|(name, data)| {
-        ContainerEntry {
+        ContainerEntry::File {
             name,
             data: Base64Bytes(data),
         }
@@ -360,6 +367,10 @@ pub fn arb_score_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = ScoreSeed> {
         (
             vec(arb_payload(), 0..=MAX_EXTENSION_PAYLOADS),
             vec(arb_container_entry(), 0..=MAX_CONTAINER_ENTRIES),
+            option::of(
+                (any::<usize>(), arb_text(16))
+                    .prop_map(|(position, name)| ScoreEntrySeed { position, name }),
+            ),
         ),
     )
         .prop_flat_map(
@@ -367,7 +378,7 @@ pub fn arb_score_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = ScoreSeed> {
                 (meta, anacrusis),
                 master_bars,
                 extensions,
-                (document_extensions, container),
+                (document_extensions, container, score_entry),
             )| {
                 let bars = master_bars.len();
                 vec(arb_track_seed(cfg, bars), 0..=cfg.max_tracks).prop_map(move |tracks| {
@@ -379,6 +390,7 @@ pub fn arb_score_seed(cfg: ScoreGenConfig) -> impl Strategy<Value = ScoreSeed> {
                         extensions: extensions.clone(),
                         document_extensions: document_extensions.clone(),
                         container: container.clone(),
+                        score_entry: score_entry.clone(),
                     }
                 })
             },

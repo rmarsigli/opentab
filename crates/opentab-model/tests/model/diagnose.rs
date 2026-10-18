@@ -725,11 +725,10 @@ fn anacrusis_allows_an_underfull_first_bar_only() {
     let master = master_bar(&mut score, 4, 4);
     score.master_bars.push(master);
     let second_voice = score.tracks[0].staves[0].bars[1].voices[0].id;
-    let flagged = |score: &Score| diagnose(score);
-    assert_eq!(flagged(&score).len(), 2);
+    assert_eq!(diagnose(&score).len(), 2);
     score.anacrusis = true;
     assert_eq!(
-        flagged(&score),
+        diagnose(&score),
         vec![Diagnostic::IncompleteBar {
             voice: second_voice,
             filled: Fraction::new(1, 2),
