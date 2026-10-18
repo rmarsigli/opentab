@@ -14,3 +14,4 @@ mod restore_rules;
 mod staff;
 mod support;
 mod tempo;
+mod undoable;

@@ -6,7 +6,7 @@ use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 
 use crate::checks::without_ids;
-use crate::generator::{Case, arb_case, resolve};
+use crate::generator::{CORRUPTIONS, Case, Corruption, arb_case, resolve};
 
 const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 256;
@@ -233,9 +233,13 @@ fn the_sequence_generator_mixes_successes_and_every_failure() {
     let mut kinds: BTreeMap<&'static str, usize> = BTreeMap::new();
     let mut lengths: BTreeMap<usize, usize> = BTreeMap::new();
     let mut staff_mismatch_inserts = 0;
+    let mut corruptions: BTreeMap<Corruption, usize> = BTreeMap::new();
     for _ in 0..COVERAGE_SAMPLES {
         let case = strategy.new_tree(&mut runner).expect("case").current();
         *lengths.entry(case.steps.len()).or_default() += 1;
+        if let Some(corruption) = case.corruption {
+            *corruptions.entry(corruption).or_default() += 1;
+        }
         let mut score = case.score.clone();
         for step in &case.steps {
             let command = resolve(step, &score);
@@ -267,6 +271,12 @@ fn the_sequence_generator_mixes_successes_and_every_failure() {
         }
     }
     assert!(rare.is_empty(), "success ratio below 20%: {rare:?}");
+    for corruption in CORRUPTIONS {
+        assert!(
+            corruptions.get(&corruption).copied().unwrap_or(0) >= 3,
+            "{corruption:?} rarely generated: {corruptions:?}"
+        );
+    }
     for kind in [
         "not_found",
         "index_out_of_range",

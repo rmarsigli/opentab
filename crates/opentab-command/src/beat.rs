@@ -1,7 +1,9 @@
 use opentab_model::{Beat, BeatEffects, BeatId, BeatPath, Duration, Score, VoiceId, VoicePath};
 
-use crate::ids::{beat_ids, check_restorable, next_id, put_extensions, reserve, take_extensions};
-use crate::locate::{beat_in, not_found, voice_in, voice_path, voice_ref};
+use crate::ids::{
+    beat_ids, check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
+};
+use crate::locate::{beat_in, beat_ref, not_found, voice_in, voice_path, voice_ref};
 use crate::rules::check_beat;
 use crate::{Command, CommandError, ExtensionEntry};
 
@@ -58,6 +60,17 @@ pub(crate) fn insert(
 
 pub(crate) fn remove(score: &mut Score, beat: BeatId) -> Result<Command, CommandError> {
     let path = find_beat(score, beat)?;
+    let track = score.tracks.get(path.track).ok_or(not_found(BEAT, beat))?;
+    let current = beat_ref(&score.tracks, path).ok_or(not_found(BEAT, beat))?;
+    let owner = voice_ref(&score.tracks, voice_path(path)).ok_or(not_found(BEAT, beat))?;
+    if score.find_voice(owner.id) != Some(voice_path(path)) {
+        return Err(CommandError::invalid(format!(
+            "voice id {} is not unique, so the removal could not be undone; run diagnose",
+            owner.id.0.0
+        )));
+    }
+    check_beat(track, current)?;
+    check_removable(score, beat_ids(current))?;
     let voice = voice_in(&mut score.tracks, voice_path(path)).ok_or(not_found(BEAT, beat))?;
     if path.beat >= voice.beats.len() {
         return Err(not_found(BEAT, beat));

@@ -3,7 +3,9 @@ use std::iter::once;
 use opentab_model::{BeatId, Note, NoteEffects, NoteId, NoteKind, Score};
 
 use crate::beat::find_beat;
-use crate::ids::{check_restorable, next_id, put_extensions, reserve, take_extensions};
+use crate::ids::{
+    check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
+};
 use crate::locate::{beat_in, beat_ref, not_found, note_in};
 use crate::rules::check_note_in;
 use crate::{Command, CommandError, ExtensionEntry};
@@ -40,6 +42,26 @@ pub(crate) fn add(
 
 pub(crate) fn remove(score: &mut Score, note: NoteId) -> Result<Command, CommandError> {
     let path = score.find_note(note).ok_or(not_found(NOTE, note))?;
+    let track = score
+        .tracks
+        .get(path.beat.track)
+        .ok_or(not_found(NOTE, note))?;
+    let owner = beat_ref(&score.tracks, path.beat).ok_or(not_found(NOTE, note))?;
+    let current = owner.notes.get(path.note).ok_or(not_found(NOTE, note))?;
+    let before = owner.notes.get(..path.note).unwrap_or_default();
+    let after = owner
+        .notes
+        .get(path.note.saturating_add(1)..)
+        .unwrap_or_default();
+    if score.find_beat(owner.id) != Some(path.beat) {
+        return Err(CommandError::invalid(format!(
+            "beat id {} is not unique, so the removal could not be undone; run diagnose",
+            owner.id.0.0
+        )));
+    }
+    check_note_in(track, owner.id, before, current.kind)?;
+    check_note_in(track, owner.id, after, current.kind)?;
+    check_removable(score, once(current.id.0))?;
     let target = beat_in(&mut score.tracks, path.beat).ok_or(not_found(NOTE, note))?;
     if path.note >= target.notes.len() {
         return Err(not_found(NOTE, note));

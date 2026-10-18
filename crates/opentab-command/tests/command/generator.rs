@@ -1,7 +1,8 @@
 use opentab_command::{Command, MetaField};
 use opentab_model::{
-    BeatId, Duration, ElementId, InstrumentKind, NoteId, NoteKind, NoteValue, Score, StaffId,
-    TimeSignature, TrackId, Tuplet, VoiceId,
+    Beat, BeatId, BeatPath, Duration, ElementId, InstrumentKind, Note, NoteEffects, NoteId,
+    NoteKind, NoteValue, Score, StaffId, Tempo, TempoChange, TimeSignature, TrackId, Tuplet,
+    VoiceId,
 };
 use opentab_testkit::arb_score;
 use proptest::collection::vec;
@@ -20,6 +21,7 @@ const PERTURB_SHIFT: usize = 7;
 const MAX_DROPPED_BARS: usize = 2;
 const SELECTOR_BITS: usize = 32;
 const CLEAR_SHIFT: usize = 16;
+const CORRUPT_RATE: f64 = 0.25;
 const FIELDS: [MetaField; 10] = [
     MetaField::Title,
     MetaField::Subtitle,
@@ -103,9 +105,31 @@ pub enum Step {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Corruption {
+    TempoOutsideBar,
+    DuplicateString,
+    PercussionOnFretted,
+    BarWithoutVoices,
+    DuplicateId,
+    IdAboveAllocator,
+    StringOutOfRange,
+}
+
+pub const CORRUPTIONS: [Corruption; 7] = [
+    Corruption::TempoOutsideBar,
+    Corruption::DuplicateString,
+    Corruption::PercussionOnFretted,
+    Corruption::BarWithoutVoices,
+    Corruption::DuplicateId,
+    Corruption::IdAboveAllocator,
+    Corruption::StringOutOfRange,
+];
+
 #[derive(Debug, Clone)]
 pub struct Case {
     pub score: Score,
+    pub corruption: Option<Corruption>,
     pub steps: Vec<Step>,
 }
 
@@ -498,26 +522,161 @@ fn perturb(score: &mut Score, selector: usize) {
     }
 }
 
-fn keep_tempo_changes_inside_their_bars(score: &mut Score) {
-    for master_bar in &mut score.master_bars {
-        let length = master_bar.time_signature.bar_length();
-        for change in &mut master_bar.tempo_changes {
-            change.position %= length;
+fn beat_paths(score: &Score, kind: InstrumentKind) -> Vec<BeatPath> {
+    let mut paths = Vec::new();
+    for (track, t) in score.tracks.iter().enumerate() {
+        if t.instrument.kind != kind {
+            continue;
+        }
+        for (staff, s) in t.staves.iter().enumerate() {
+            for (bar, b) in s.bars.iter().enumerate() {
+                for (voice, v) in b.voices.iter().enumerate() {
+                    for beat in 0..v.beats.len() {
+                        paths.push(BeatPath {
+                            track,
+                            staff,
+                            bar,
+                            voice,
+                            beat,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    paths
+}
+
+fn beat_at(score: &mut Score, path: BeatPath) -> &mut Beat {
+    &mut score.tracks[path.track].staves[path.staff].bars[path.bar].voices[path.voice].beats
+        [path.beat]
+}
+
+fn fretted_paths_with_notes(score: &Score) -> Vec<BeatPath> {
+    beat_paths(score, InstrumentKind::Fretted)
+        .into_iter()
+        .filter(|path| {
+            !score.tracks[path.track].staves[path.staff].bars[path.bar].voices[path.voice].beats
+                [path.beat]
+                .notes
+                .is_empty()
+        })
+        .collect()
+}
+
+fn corrupt(score: &mut Score, corruption: Corruption, pick: usize) {
+    match corruption {
+        Corruption::TempoOutsideBar => {
+            let len = score.master_bars.len();
+            if let Some(master_bar) = score.master_bars.get_mut(pick % len.max(1)) {
+                let position = master_bar.time_signature.bar_length();
+                master_bar.tempo_changes.push(TempoChange {
+                    position,
+                    bpm: Tempo::new(90.0).expect("valid bpm"),
+                });
+            }
+        }
+        Corruption::DuplicateString => {
+            let paths = fretted_paths_with_notes(score);
+            if paths.is_empty() {
+                return;
+            }
+            let Some(id) = score.alloc::<NoteId>() else {
+                return;
+            };
+            let beat = beat_at(score, paths[pick % paths.len()]);
+            let mut copy = beat.notes[0].clone();
+            copy.id = id;
+            beat.notes.push(copy);
+        }
+        Corruption::PercussionOnFretted => {
+            let paths = beat_paths(score, InstrumentKind::Fretted);
+            if paths.is_empty() {
+                return;
+            }
+            let Some(id) = score.alloc::<NoteId>() else {
+                return;
+            };
+            beat_at(score, paths[pick % paths.len()]).notes.push(Note {
+                id,
+                kind: NoteKind::Percussion { articulation: 38 },
+                effects: NoteEffects::default(),
+            });
+        }
+        Corruption::BarWithoutVoices => {
+            let bars: Vec<StaffSlot> = score
+                .tracks
+                .iter()
+                .enumerate()
+                .flat_map(|(track, t)| {
+                    (0..t.staves.len()).map(move |staff| StaffSlot { track, staff })
+                })
+                .filter(|slot| !score.tracks[slot.track].staves[slot.staff].bars.is_empty())
+                .collect();
+            if bars.is_empty() {
+                return;
+            }
+            let slot = bars[pick % bars.len()];
+            let staff = &mut score.tracks[slot.track].staves[slot.staff];
+            let index = (pick / bars.len()) % staff.bars.len();
+            staff.bars[index].voices.clear();
+        }
+        Corruption::DuplicateId => {
+            let paths = fretted_paths_with_notes(score);
+            if paths.len() < 2 {
+                return;
+            }
+            let from = paths[pick % paths.len()];
+            let to = paths[(pick + 1) % paths.len()];
+            let id = beat_at(score, from).id;
+            beat_at(score, to).id = id;
+        }
+        Corruption::IdAboveAllocator => {
+            let paths = fretted_paths_with_notes(score);
+            if paths.is_empty() {
+                return;
+            }
+            let above = ElementId(score.ids.peek().0.saturating_add(3));
+            beat_at(score, paths[pick % paths.len()]).notes[0].id = NoteId(above);
+        }
+        Corruption::StringOutOfRange => {
+            let paths = fretted_paths_with_notes(score);
+            if paths.is_empty() {
+                return;
+            }
+            let note = &mut beat_at(score, paths[pick % paths.len()]).notes[0];
+            if let NoteKind::Fretted { fret, .. } = note.kind {
+                note.kind = NoteKind::Fretted { string: 200, fret };
+            }
         }
     }
 }
 
+fn arb_case_score() -> impl Strategy<Value = Score> {
+    prop_oneof![
+        1 => arb_score(),
+        3 => arb_score().prop_filter("a score with tracks", |score| !score.tracks.is_empty()),
+    ]
+}
+
 pub fn arb_case() -> impl Strategy<Value = Case> {
     (
-        arb_score(),
+        arb_case_score(),
         option::weighted(PERTURB_RATE, any::<usize>()),
+        option::weighted(CORRUPT_RATE, (select(CORRUPTIONS.to_vec()), any::<usize>())),
         vec(arb_step(), 0..=MAX_STEPS),
     )
-        .prop_map(|(mut score, perturbation, steps)| {
-            keep_tempo_changes_inside_their_bars(&mut score);
+        .prop_map(|(mut score, perturbation, corruption, steps)| {
             if let Some(selector) = perturbation {
                 perturb(&mut score, selector);
             }
-            Case { score, steps }
+            if let Some((kind, pick)) = corruption {
+                corrupt(&mut score, kind, pick);
+            }
+            Case {
+                score,
+                corruption: corruption.map(|(kind, _)| kind),
+                steps,
+            }
         })
 }

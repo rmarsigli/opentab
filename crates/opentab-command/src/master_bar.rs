@@ -2,7 +2,9 @@ use std::iter::once;
 
 use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature};
 
-use crate::ids::{bar_ids, check_restorable, next_id, put_extensions, reserve, take_extensions};
+use crate::ids::{
+    bar_ids, check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
+};
 use crate::rules::{check_bar, check_tempo_changes, empty_bar};
 use crate::{Command, CommandError, ExtensionEntry};
 
@@ -44,6 +46,21 @@ fn check_staves(score: &Score) -> Result<usize, CommandError> {
     Ok(count)
 }
 
+fn check_contents<'a, I>(score: &Score, master_bar: &MasterBar, bars: I) -> Result<(), CommandError>
+where
+    I: Iterator<Item = &'a Bar>,
+{
+    check_tempo_changes(master_bar.time_signature, &master_bar.tempo_changes)?;
+    let owners = score
+        .tracks
+        .iter()
+        .flat_map(|track| track.staves.iter().map(move |_| track));
+    for (track, bar) in owners.zip(bars) {
+        check_bar(track, bar)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn insert(
     score: &mut Score,
     index: usize,
@@ -82,6 +99,23 @@ pub(crate) fn insert(
 pub(crate) fn remove(score: &mut Score, index: usize) -> Result<Command, CommandError> {
     check_index(score, index, false)?;
     check_staves(score)?;
+    let current = score
+        .master_bars
+        .get(index)
+        .ok_or(CommandError::IndexOutOfRange {
+            what: WHAT,
+            index,
+            len: score.master_bars.len(),
+        })?;
+    let bars = || {
+        score
+            .tracks
+            .iter()
+            .flat_map(|track| &track.staves)
+            .filter_map(move |staff| staff.bars.get(index))
+    };
+    check_contents(score, current, bars())?;
+    check_removable(score, once(current.id.0).chain(bars().flat_map(bar_ids)))?;
     let master_bar = score.master_bars.remove(index);
     let bars: Vec<Bar> = score
         .tracks
@@ -112,17 +146,7 @@ pub(crate) fn restore(
             snapshot.bars.len()
         )));
     }
-    check_tempo_changes(
-        snapshot.master_bar.time_signature,
-        &snapshot.master_bar.tempo_changes,
-    )?;
-    let staves = score
-        .tracks
-        .iter()
-        .flat_map(|track| track.staves.iter().map(move |_| track));
-    for (track, bar) in staves.zip(snapshot.bars) {
-        check_bar(track, bar)?;
-    }
+    check_contents(score, snapshot.master_bar, snapshot.bars.iter())?;
     let restored = once(snapshot.master_bar.id.0).chain(snapshot.bars.iter().flat_map(bar_ids));
     check_restorable(score, restored, snapshot.extensions)?;
     score.master_bars.insert(index, snapshot.master_bar.clone());

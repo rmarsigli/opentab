@@ -288,3 +288,72 @@ fn restore_staff_bars_validates_ids() {
     let message = message_of(rejected(&mut fx.score, &restore));
     assert!(message.contains("orphan"), "{message}");
 }
+
+#[test]
+fn trim_staff_bars_refuses_an_overfull_staff() {
+    let mut fx = fixture();
+    let bar = opentab_model::Bar {
+        id: fx.score.alloc().unwrap(),
+        voices: vec![opentab_model::Voice {
+            id: fx.score.alloc().unwrap(),
+            beats: Vec::new(),
+        }],
+    };
+    fx.score.tracks[1].staves[0].bars.push(bar);
+    let trim = Command::TrimStaffBars {
+        track: fx.drums,
+        staff: drum_staff(&fx),
+        len: 2,
+    };
+    let message = message_of(rejected(&mut fx.score, &trim));
+    assert!(message.contains("not overfull"), "{message}");
+    fx.score.tracks[1].staves[0].bars.pop();
+    let pad = pad_drums(&fx);
+    rejected(&mut fx.score, &pad);
+}
+
+#[test]
+fn trim_staff_bars_refuses_a_bar_without_voices() {
+    let mut fx = short_drums();
+    let pad = pad_drums(&fx);
+    apply(&mut fx.score, &pad).unwrap();
+    fx.score.tracks[1].staves[0].bars[1].voices.clear();
+    let trim = Command::TrimStaffBars {
+        track: fx.drums,
+        staff: drum_staff(&fx),
+        len: 1,
+    };
+    let message = message_of(rejected(&mut fx.score, &trim));
+    assert!(message.contains("no voices"), "{message}");
+    let healthy = Command::TrimStaffBars {
+        track: fx.drums,
+        staff: drum_staff(&fx),
+        len: 1,
+    };
+    let voice = opentab_model::Voice {
+        id: fx.score.alloc().unwrap(),
+        beats: Vec::new(),
+    };
+    fx.score.tracks[1].staves[0].bars[1].voices.push(voice);
+    round_trip(&mut fx.score, &healthy);
+}
+
+#[test]
+fn trim_staff_bars_refuses_bars_with_shared_or_unallocated_ids() {
+    let mut fx = short_drums();
+    let pad = pad_drums(&fx);
+    apply(&mut fx.score, &pad).unwrap();
+    let trim = Command::TrimStaffBars {
+        track: fx.drums,
+        staff: drum_staff(&fx),
+        len: 1,
+    };
+    let shared = fx.score.tracks[0].staves[0].bars[0].voices[0].id;
+    fx.score.tracks[1].staves[0].bars[1].voices[0].id = shared;
+    let message = message_of(rejected(&mut fx.score, &trim));
+    assert!(message.contains("already exists in the score"), "{message}");
+    let above = opentab_model::VoiceId(ElementId(fx.score.ids.peek().0 + 2));
+    fx.score.tracks[1].staves[0].bars[1].voices[0].id = above;
+    let message = message_of(rejected(&mut fx.score, &trim));
+    assert!(message.contains("allocator"), "{message}");
+}
