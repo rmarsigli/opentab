@@ -1,0 +1,17 @@
+---
+source: crates/opentab-render/tests/svg.rs
+expression: to_svg(&sample_page())
+---
+<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="10.5mm" viewBox="0 0 11703 6144">
+<rect width="11703" height="6144" fill="#ffffff"/>
+<rect x="100" y="200" width="500" height="700" fill="#000000"/>
+<path d="M2445 3584C2810 3584 3256 3248 3256 2900C3256 2691 3092 2560 2859 2560C2408 2560 2048 2892 2048 3244C2048 3457 2224 3584 2445 3584Z"/>
+<line x1="0" y1="1024" x2="8192" y2="1024" stroke="#000000" stroke-width="133" stroke-dasharray="512 256"/>
+<path d="M1000 4000Q1500 3500 2000 4000Z" fill="#000000"/>
+<path d="M3000 4000C3200 3600 3800 3600 4000 4000" fill="none" stroke="#000000" stroke-width="160"/>
+<path d="M5703 5000L5789 5000L5789 4400L5991 4400L5991 4328L5500 4328L5500 4400L5703 4400ZM6101 5000L6470 5000L6470 4930L6334 4930L6334 4347L6270 4347C6234 4368 6191 4384 6132 4395L6132 4449L6251 4449L6251 4930L6101 4930Z"/>
+<g data-id="42">
+<rect x="7000" y="5000" width="500" height="600" fill="#ffffff"/>
+<line x1="7000" y1="5300" x2="7500" y2="5300" stroke="#000000" stroke-width="100"/>
+</g>
+</svg>

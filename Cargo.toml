@@ -7,6 +7,7 @@ members = [
     "crates/opentab-cli",
     "crates/opentab-gp",
     "crates/opentab-layout",
+    "crates/opentab-render",
     "xtask",
 ]
 
