@@ -58,6 +58,9 @@ pub enum Diagnostic {
         beat: BeatId,
         string: u8,
     },
+    VoiceSlotOrder {
+        bar: BarId,
+    },
     TempoChangeOutsideBar {
         master_bar: MasterBarId,
         #[serde(deserialize_with = "deserialize_non_negative")]
@@ -90,6 +93,12 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
         }
     }
     report.diagnostics
+}
+
+#[derive(Clone, Copy)]
+struct Expected {
+    length: Option<Fraction>,
+    pickup: bool,
 }
 
 struct Report {
@@ -126,8 +135,16 @@ impl Report {
                 .master_bars
                 .get(index)
                 .map(|master_bar| master_bar.time_signature.bar_length());
+            let pickup = index == 0 && score.anacrusis;
             for voice in &bar.voices {
-                self.voice(track, voice, expected);
+                self.voice(
+                    track,
+                    voice,
+                    Expected {
+                        length: expected,
+                        pickup,
+                    },
+                );
             }
         }
     }
@@ -149,6 +166,14 @@ impl Report {
         if bar.voices.is_empty() {
             self.diagnostics
                 .push(Diagnostic::BarWithoutVoices { bar: bar.id });
+        }
+        let ordered = bar.voices.windows(2).all(|pair| match pair {
+            [first, second] => first.slot < second.slot,
+            _ => true,
+        });
+        if !ordered {
+            self.diagnostics
+                .push(Diagnostic::VoiceSlotOrder { bar: bar.id });
         }
     }
 
@@ -188,7 +213,7 @@ impl Report {
         }
     }
 
-    fn voice(&mut self, track: &Track, voice: &Voice, expected: Option<Fraction>) {
+    fn voice(&mut self, track: &Track, voice: &Voice, expected: Expected) {
         self.id(voice.id.0);
         for beat in &voice.beats {
             self.id(beat.id.0);
@@ -198,19 +223,28 @@ impl Report {
             }
             self.strings(beat);
         }
-        if voice.beats.is_empty() {
+        let timed = || {
+            voice
+                .beats
+                .iter()
+                .filter(|beat| beat.effects.grace.is_none())
+        };
+        if timed().next().is_none() {
             return;
         }
-        let Some(filled) = checked_sum(voice.beats.iter().map(|beat| beat.duration.length()))
-        else {
+        let Some(filled) = checked_sum(timed().map(|beat| beat.duration.length())) else {
             self.diagnostics
                 .push(Diagnostic::FillNotComputable { voice: voice.id });
             return;
         };
-        let Some(expected) = expected else {
+        let pickup = expected.pickup;
+        let Some(expected) = expected.length else {
             return;
         };
         if filled < expected {
+            if pickup {
+                return;
+            }
             self.diagnostics.push(Diagnostic::IncompleteBar {
                 voice: voice.id,
                 filled,

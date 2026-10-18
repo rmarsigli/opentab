@@ -1,9 +1,10 @@
 use std::path::Path;
 
 use opentab_model::{
-    Bar, BarId, Beat, BeatEffects, BeatId, Duration, ElementId, Fraction, Instrument,
+    Bar, BarId, Beat, BeatEffects, BeatId, Clef, Duration, ElementId, Fraction, Instrument,
     InstrumentKind, KeySignature, MasterBar, MasterBarId, NoteValue, Pitch, Score, Staff, StaffId,
-    Tempo, TempoChange, TimeSignature, Track, TrackId, Tuning, Voice, VoiceId,
+    Tempo, TempoChange, TempoUnit, TimeSignature, Track, TrackId, Transpose, Tuning, Voice,
+    VoiceId, VoiceSlot,
 };
 use serde::Serialize;
 
@@ -14,6 +15,7 @@ use crate::text::escape_controls;
 
 const GUITAR_PROGRAM: u8 = 25;
 const STANDARD_TUNING: [u8; 6] = [64, 59, 55, 50, 45, 40];
+const GUITAR_OCTAVE: i8 = -1;
 const DEFAULT_BPM: f64 = 120.0;
 
 #[derive(Serialize)]
@@ -45,10 +47,12 @@ fn blank_score() -> Result<Score, CliError> {
         repeat_start: false,
         repeat_end: None,
         alternate_endings: 0,
+        double_bar: false,
         marker: None,
         tempo_changes: vec![TempoChange {
             position: Fraction::from_integer(0),
             bpm,
+            unit: TempoUnit::Quarter,
         }],
     };
     let track = guitar_track(&mut score)?;
@@ -66,10 +70,12 @@ fn guitar_track(score: &mut Score) -> Result<Track, CliError> {
     };
     let voice = Voice {
         id: alloc::<VoiceId>(score)?,
+        slot: VoiceSlot::default(),
         beats: vec![rest],
     };
     let bar = Bar {
         id: alloc::<BarId>(score)?,
+        clef: Clef::Treble,
         voices: vec![voice],
     };
     Ok(Track {
@@ -84,6 +90,7 @@ fn guitar_track(score: &mut Score) -> Result<Track, CliError> {
             strings: STANDARD_TUNING.iter().copied().map(Pitch).collect(),
         },
         capo: 0,
+        transpose: Transpose::new(0, GUITAR_OCTAVE).map_err(CliError::internal)?,
         staves: vec![Staff {
             id: alloc::<StaffId>(score)?,
             bars: vec![bar],

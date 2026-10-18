@@ -1,6 +1,6 @@
 use opentab_model::{
-    Bar, Beat, BeatId, Fraction, IdAllocator, InstrumentKind, Note, NoteKind, TempoChange,
-    TimeSignature, Track, Voice,
+    Bar, Beat, BeatId, Clef, Fraction, IdAllocator, InstrumentKind, Note, NoteKind, TempoChange,
+    TimeSignature, Track, Voice, VoiceSlot,
 };
 
 use crate::CommandError;
@@ -66,6 +66,16 @@ pub(crate) fn check_bar(track: &Track, bar: &Bar) -> Result<(), CommandError> {
             bar.id.0.0
         )));
     }
+    let ordered = bar.voices.windows(2).all(|pair| match pair {
+        [first, second] => first.slot < second.slot,
+        _ => true,
+    });
+    if !ordered {
+        return Err(CommandError::invalid(format!(
+            "bar {} has voice slots that are not strictly increasing",
+            bar.id.0.0
+        )));
+    }
     for voice in &bar.voices {
         for beat in &voice.beats {
             check_beat(track, beat)?;
@@ -84,14 +94,28 @@ pub(crate) fn check_empty_bar(bar: &Bar) -> Result<(), CommandError> {
     Ok(())
 }
 
-pub(crate) fn empty_bar(ids: &mut IdAllocator) -> Result<Bar, CommandError> {
+pub(crate) fn empty_bar(ids: &mut IdAllocator, clef: Clef) -> Result<Bar, CommandError> {
     Ok(Bar {
         id: next_id(ids)?,
+        clef,
         voices: vec![Voice {
             id: next_id(ids)?,
+            slot: VoiceSlot::default(),
             beats: Vec::new(),
         }],
     })
+}
+
+pub(crate) fn clef_for_new_bar(kind: InstrumentKind, bars: &[Bar], index: usize) -> Clef {
+    let neighbour = index
+        .checked_sub(1)
+        .and_then(|previous| bars.get(previous))
+        .or_else(|| bars.get(index));
+    match (neighbour, kind) {
+        (Some(bar), _) => bar.clef,
+        (None, InstrumentKind::Percussion) => Clef::Neutral,
+        (None, InstrumentKind::Fretted) => Clef::Treble,
+    }
 }
 
 pub(crate) fn check_tempo_changes(

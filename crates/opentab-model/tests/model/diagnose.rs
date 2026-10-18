@@ -1,9 +1,9 @@
 use opentab_model::{
     BarId, Diagnostic, Duration, ElementId, Fraction, Instrument, InstrumentKind, NoteId, NoteKind,
-    NoteValue, OpaquePayload, Score, TrackId, Tuning, Tuplet, diagnose,
+    NoteValue, OpaquePayload, Score, TrackId, Tuning, Tuplet, VoiceSlot, diagnose,
 };
 
-use crate::support::{bar, four_four, guitar, master_bar, quarters};
+use crate::support::{bar, beat, duration, four_four, guitar, master_bar, quarters, voice};
 
 fn first_voice(score: &Score) -> opentab_model::VoiceId {
     score.tracks[0].staves[0].bars[0].voices[0].id
@@ -547,6 +547,7 @@ fn tempo_at(numer: i64, denom: i64) -> opentab_model::TempoChange {
     opentab_model::TempoChange {
         position: Fraction::new(numer, denom),
         bpm: opentab_model::Tempo::new(100.0).unwrap(),
+        unit: opentab_model::TempoUnit::Quarter,
     }
 }
 
@@ -666,4 +667,130 @@ fn distinct_strings_are_not_duplicates() {
     ];
     score.tracks[0].staves[0].bars[0].voices[0].beats[0].notes = notes;
     assert_eq!(diagnose(&score), Vec::new());
+}
+
+fn grace_beat(score: &mut Score, grace: opentab_model::Grace) -> opentab_model::Beat {
+    let mut grace_beat = beat(score, duration(NoteValue::Sixteenth), Vec::new());
+    grace_beat.effects.grace = Some(grace);
+    grace_beat
+}
+
+#[test]
+fn grace_beats_do_not_count_toward_the_fill() {
+    for grace in [
+        opentab_model::Grace::BeforeBeat,
+        opentab_model::Grace::OnBeat,
+    ] {
+        let mut score = four_four(&quarters(4));
+        let extra = grace_beat(&mut score, grace);
+        score.tracks[0].staves[0].bars[0].voices[0]
+            .beats
+            .insert(2, extra);
+        assert_eq!(diagnose(&score), Vec::new());
+    }
+}
+
+#[test]
+fn grace_beats_do_not_hide_a_short_bar() {
+    let mut score = four_four(&quarters(3));
+    let extra = grace_beat(&mut score, opentab_model::Grace::BeforeBeat);
+    score.tracks[0].staves[0].bars[0].voices[0]
+        .beats
+        .push(extra);
+    assert_eq!(
+        diagnose(&score),
+        vec![Diagnostic::IncompleteBar {
+            voice: first_voice(&score),
+            filled: Fraction::new(3, 4),
+            expected: Fraction::new(1, 1),
+        }]
+    );
+}
+
+#[test]
+fn a_voice_of_only_grace_beats_counts_as_empty() {
+    let mut score = four_four(&[]);
+    let extra = grace_beat(&mut score, opentab_model::Grace::OnBeat);
+    score.tracks[0].staves[0].bars[0].voices[0]
+        .beats
+        .push(extra);
+    assert_eq!(diagnose(&score), Vec::new());
+}
+
+#[test]
+fn anacrusis_allows_an_underfull_first_bar_only() {
+    let mut score = four_four(&quarters(1));
+    let second = bar(&mut score, &quarters(2));
+    score.tracks[0].staves[0].bars.push(second);
+    let master = master_bar(&mut score, 4, 4);
+    score.master_bars.push(master);
+    let second_voice = score.tracks[0].staves[0].bars[1].voices[0].id;
+    let flagged = |score: &Score| diagnose(score);
+    assert_eq!(flagged(&score).len(), 2);
+    score.anacrusis = true;
+    assert_eq!(
+        flagged(&score),
+        vec![Diagnostic::IncompleteBar {
+            voice: second_voice,
+            filled: Fraction::new(1, 2),
+            expected: Fraction::new(1, 1),
+        }]
+    );
+}
+
+#[test]
+fn anacrusis_does_not_excuse_an_overfull_first_bar() {
+    let mut score = four_four(&quarters(5));
+    score.anacrusis = true;
+    assert_eq!(
+        diagnose(&score),
+        vec![Diagnostic::OverfullBar {
+            voice: first_voice(&score),
+            filled: Fraction::new(5, 4),
+            expected: Fraction::new(1, 1),
+        }]
+    );
+}
+
+fn two_voice_score(first: u8, second: u8) -> Score {
+    let mut score = four_four(&quarters(4));
+    let mut extra = voice(&mut score, &quarters(4));
+    let bar = &mut score.tracks[0].staves[0].bars[0];
+    bar.voices[0].slot = VoiceSlot::new(first).unwrap();
+    extra.slot = VoiceSlot::new(second).unwrap();
+    bar.voices.push(extra);
+    score
+}
+
+#[test]
+fn strictly_increasing_voice_slots_are_clean() {
+    for (first, second) in [(0, 1), (0, 3), (2, 3), (1, 2)] {
+        assert_eq!(diagnose(&two_voice_score(first, second)), Vec::new());
+    }
+}
+
+#[test]
+fn equal_or_decreasing_voice_slots_are_reported_once_per_bar() {
+    for (first, second) in [(0, 0), (3, 3), (1, 0), (3, 2)] {
+        let score = two_voice_score(first, second);
+        assert_eq!(
+            diagnose(&score),
+            vec![Diagnostic::VoiceSlotOrder {
+                bar: score.tracks[0].staves[0].bars[0].id
+            }]
+        );
+    }
+}
+
+#[test]
+fn voice_slot_order_round_trips_through_json() {
+    let diagnostic = Diagnostic::VoiceSlotOrder {
+        bar: BarId(ElementId(9)),
+    };
+    let text = serde_json::to_string(&diagnostic).unwrap();
+    assert_eq!(text, r#"{"kind":"voice_slot_order","bar":9}"#);
+    assert_eq!(
+        serde_json::from_str::<Diagnostic>(&text).unwrap(),
+        diagnostic
+    );
 }

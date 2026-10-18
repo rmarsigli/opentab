@@ -1,6 +1,7 @@
 use opentab_model::{
-    Bar, Beat, BeatEffects, Duration, Instrument, InstrumentKind, KeySignature, MasterBar, Note,
-    NoteEffects, NoteKind, NoteValue, Pitch, Score, Staff, TimeSignature, Track, Tuning, Voice,
+    Bar, Beat, BeatEffects, Clef, Duration, Instrument, InstrumentKind, KeySignature, MasterBar,
+    Note, NoteEffects, NoteKind, NoteValue, Pitch, Score, Staff, TimeSignature, Track, Transpose,
+    Tuning, Voice, VoiceSlot,
 };
 
 pub fn standard_tuning() -> Tuning {
@@ -21,6 +22,7 @@ pub fn master_bar(score: &mut Score, numerator: u8, denominator: u8) -> MasterBa
         repeat_start: false,
         repeat_end: None,
         alternate_endings: 0,
+        double_bar: false,
         marker: None,
         tempo_changes: Vec::new(),
     }
@@ -50,13 +52,21 @@ pub fn voice(score: &mut Score, durations: &[Duration]) -> Voice {
         let notes = vec![note(score, 0, 0)];
         beats.push(beat(score, *duration, notes));
     }
-    Voice { id, beats }
+    Voice {
+        id,
+        slot: VoiceSlot::default(),
+        beats,
+    }
 }
 
 pub fn bar(score: &mut Score, durations: &[Duration]) -> Bar {
     let id = score.alloc().unwrap();
     let voices = vec![voice(score, durations)];
-    Bar { id, voices }
+    Bar {
+        id,
+        clef: Clef::Treble,
+        voices,
+    }
 }
 
 pub fn guitar(score: &mut Score, bars: Vec<Vec<Duration>>) -> Track {
@@ -76,6 +86,7 @@ pub fn guitar(score: &mut Score, bars: Vec<Vec<Duration>>) -> Track {
         },
         tuning: standard_tuning(),
         capo: 0,
+        transpose: Transpose::default(),
         staves: vec![Staff {
             id: staff_id,
             bars: staff_bars,

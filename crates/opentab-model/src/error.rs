@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::NoteValue;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Error)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ModelError {
@@ -15,9 +17,19 @@ pub enum ModelError {
     )]
     InvalidTimeSignature { numerator: u8, denominator: u8 },
     #[error(
-        "bend point offset {offset} value {value} is outside offset 0..=100 and value -48..=48"
+        "bend point offset {offset} value {value} is outside offset 0..=100 and value -1200..=1200"
     )]
     InvalidBendPoint { offset: u8, value: i16 },
+    #[error("bend middle values {start} and {end} differ; both middle points share one value")]
+    InvalidBend { start: i16, end: i16 },
+    #[error("stroke duration {ticks} ticks is outside 30..=480")]
+    InvalidStrokeTicks { ticks: u16 },
+    #[error("tremolo picking {value:?} is not an eighth, sixteenth or thirty-second")]
+    InvalidTremolo { value: NoteValue },
+    #[error("transpose chromatic {chromatic} octave {octave} is outside -12..=12 and -3..=3")]
+    InvalidTranspose { chromatic: i8, octave: i8 },
+    #[error("voice slot {slot} is outside 0..=3")]
+    InvalidVoiceSlot { slot: u8 },
     #[error("key signature with {accidentals} accidentals is outside -7..=7")]
     InvalidKeySignature { accidentals: i8 },
     #[error("missing \"opentab_json\" version field")]

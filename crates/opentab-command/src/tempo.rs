@@ -1,4 +1,4 @@
-use opentab_model::{Fraction, Score, Tempo, TempoChange};
+use opentab_model::{Fraction, Score, Tempo, TempoChange, TempoUnit};
 
 use crate::rules::{already_broken, check_tempo_changes};
 use crate::{Command, CommandError};
@@ -34,6 +34,7 @@ pub(crate) fn set(score: &mut Score, master_bar: usize, bpm: f64) -> Result<Comm
             TempoChange {
                 position: start,
                 bpm: tempo,
+                unit: TempoUnit::default(),
             },
         ),
     }

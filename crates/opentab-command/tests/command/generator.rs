@@ -1,8 +1,8 @@
 use opentab_command::{Command, MetaField};
 use opentab_model::{
     Beat, BeatId, BeatPath, Duration, ElementId, InstrumentKind, Note, NoteEffects, NoteId,
-    NoteKind, NoteValue, Score, StaffId, Tempo, TempoChange, TimeSignature, TrackId, Tuplet,
-    VoiceId,
+    NoteKind, NoteValue, Score, StaffId, Tempo, TempoChange, TempoUnit, TimeSignature, TrackId,
+    Tuplet, VoiceId,
 };
 use opentab_testkit::arb_score;
 use proptest::collection::vec;
@@ -495,7 +495,7 @@ fn perturb(score: &mut Score, selector: usize) {
         .flat_map(|(track, t)| (0..t.staves.len()).map(move |staff| StaffSlot { track, staff }))
         .collect();
     for (index, slot) in staves.iter().enumerate() {
-        if (selector >> ((index + CLEAR_SHIFT) % SELECTOR_BITS)) & 1 == 1
+        if (selector >> ((index + CLEAR_SHIFT) % SELECTOR_BITS)) & 3 != 0
             && let Some(last) = score.tracks[slot.track].staves[slot.staff].bars.last_mut()
         {
             for voice in &mut last.voices {
@@ -573,6 +573,7 @@ fn corrupt(score: &mut Score, corruption: Corruption, pick: usize) {
                 master_bar.tempo_changes.push(TempoChange {
                     position,
                     bpm: Tempo::new(90.0).expect("valid bpm"),
+                    unit: TempoUnit::Quarter,
                 });
             }
         }

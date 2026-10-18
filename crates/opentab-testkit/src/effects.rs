@@ -1,58 +1,73 @@
 use opentab_model::{
-    Accent, BeatEffects, Bend, BendPoint, Fraction, Harmonic, HarmonicKind, NoteEffects, NoteValue,
-    Slide, Stroke, StrokeDirection, Vibrato,
+    Accent, BeatEffects, Bend, BendPoint, Dynamic, Finger, Fraction, Harmonic, HarmonicKind,
+    NoteEffects, NoteValue, Slide, Stroke, StrokeDirection, StrokeTicks, Tap, TremoloPicking,
+    Vibrato,
 };
-use proptest::collection::vec;
 use proptest::option;
 use proptest::prelude::*;
 use proptest::sample::select;
 
 use crate::text::arb_text;
 
-const MAX_BEND_POINTS: usize = 4;
+const MAX_BEND_VALUE: i16 = 1200;
+const MIN_STROKE_TICKS: u16 = 30;
+const MAX_STROKE_TICKS: u16 = 480;
 
-pub fn arb_note_value() -> impl Strategy<Value = NoteValue> {
+pub fn arb_dynamic() -> impl Strategy<Value = Dynamic> {
     select(vec![
-        NoteValue::Whole,
-        NoteValue::Half,
-        NoteValue::Quarter,
-        NoteValue::Eighth,
-        NoteValue::Sixteenth,
-        NoteValue::ThirtySecond,
-        NoteValue::SixtyFourth,
-        NoteValue::OneTwentyEighth,
+        Dynamic::Ppp,
+        Dynamic::Pp,
+        Dynamic::P,
+        Dynamic::Mp,
+        Dynamic::Mf,
+        Dynamic::F,
+        Dynamic::Ff,
+        Dynamic::Fff,
     ])
 }
 
 fn arb_stroke() -> impl Strategy<Value = Stroke> {
     (
         select(vec![StrokeDirection::Up, StrokeDirection::Down]),
-        arb_note_value(),
+        MIN_STROKE_TICKS..=MAX_STROKE_TICKS,
     )
-        .prop_map(|(direction, duration)| Stroke {
+        .prop_map(|(direction, ticks)| Stroke {
             direction,
-            duration,
+            duration: StrokeTicks::new(ticks).expect("ticks are within range"),
         })
+}
+
+fn arb_tremolo() -> impl Strategy<Value = TremoloPicking> {
+    select(vec![
+        NoteValue::Eighth,
+        NoteValue::Sixteenth,
+        NoteValue::ThirtySecond,
+    ])
+    .prop_map(|value| TremoloPicking::new(value).expect("value is a tremolo value"))
 }
 
 pub fn arb_beat_effects() -> impl Strategy<Value = BeatEffects> {
     (
-        option::of(arb_note_value()),
+        option::of(arb_tremolo()),
         option::of(arb_stroke()),
         option::of(arb_text(12)),
         option::of(arb_text(24)),
-        (any::<bool>(), any::<bool>(), any::<bool>(), any::<bool>()),
+        (any::<bool>(), any::<bool>(), any::<bool>()),
+        arb_dynamic(),
     )
         .prop_map(
-            |(tremolo_picking, stroke, chord_name, text, (fade_in, tap, slap, pop))| BeatEffects {
-                tremolo_picking,
-                stroke,
-                chord_name,
-                text,
-                fade_in,
-                tap,
-                slap,
-                pop,
+            |(tremolo_picking, stroke, chord_name, text, (fade_in, slap, pop), dynamic)| {
+                BeatEffects {
+                    tremolo_picking,
+                    stroke,
+                    chord_name,
+                    text,
+                    fade_in,
+                    slap,
+                    pop,
+                    grace: None,
+                    dynamic,
+                }
             },
         )
 }
@@ -76,14 +91,36 @@ fn arb_harmonic() -> impl Strategy<Value = Harmonic> {
         })
 }
 
+fn arb_bend_point(value: i16) -> impl Strategy<Value = BendPoint> {
+    (0u8..=100).prop_map(move |offset| {
+        BendPoint::new(offset, value).expect("offset and value are within range")
+    })
+}
+
 fn arb_bend() -> impl Strategy<Value = Bend> {
-    vec(
-        (0u8..=100, -48i16..=48).prop_map(|(offset, value)| {
-            BendPoint::new(offset, value).expect("offset and value are within range")
-        }),
-        0..=MAX_BEND_POINTS,
-    )
-    .prop_map(|points| Bend { points })
+    (-MAX_BEND_VALUE..=MAX_BEND_VALUE).prop_flat_map(|middle| {
+        (
+            (-MAX_BEND_VALUE..=MAX_BEND_VALUE).prop_flat_map(arb_bend_point),
+            arb_bend_point(middle),
+            arb_bend_point(middle),
+            (-MAX_BEND_VALUE..=MAX_BEND_VALUE).prop_flat_map(arb_bend_point),
+        )
+            .prop_map(|(origin, middle_start, middle_end, destination)| {
+                Bend::new(origin, middle_start, middle_end, destination)
+                    .expect("middle points share one value")
+            })
+    })
+}
+
+fn arb_finger() -> impl Strategy<Value = Finger> {
+    select(vec![
+        Finger::Open,
+        Finger::Thumb,
+        Finger::Index,
+        Finger::Middle,
+        Finger::Ring,
+        Finger::Little,
+    ])
 }
 
 #[derive(Debug, Clone)]
@@ -138,15 +175,15 @@ pub fn arb_note_effects() -> impl Strategy<Value = NoteEffects> {
         (
             option::of(arb_harmonic()),
             option::of(arb_bend()),
-            option::of(any::<u8>()),
-            option::of(any::<u8>()),
+            option::of(select(vec![Tap::Right, Tap::Left])),
+            (option::of(arb_finger()), option::of(arb_finger())),
         ),
     )
         .prop_map(
             |(
                 flags,
                 (accent, vibrato, slide),
-                (harmonic, bend, left_hand_finger, right_hand_finger),
+                (harmonic, bend, tap, (left_hand_finger, right_hand_finger)),
             )| NoteEffects {
                 tie_origin: flags.tie_origin,
                 tie_destination: flags.tie_destination,
@@ -161,6 +198,7 @@ pub fn arb_note_effects() -> impl Strategy<Value = NoteEffects> {
                 slide,
                 harmonic,
                 bend,
+                tap,
                 left_hand_finger,
                 right_hand_finger,
             },

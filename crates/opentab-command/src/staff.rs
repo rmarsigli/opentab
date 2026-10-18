@@ -4,7 +4,7 @@ use crate::ids::{
     bar_ids, check_removable, check_restorable, put_extensions, reserve, take_extensions,
 };
 use crate::locate::{StaffPath, find_staff, not_found};
-use crate::rules::{already_broken, check_bar, check_empty_bar, empty_bar};
+use crate::rules::{already_broken, check_bar, check_empty_bar, clef_for_new_bar, empty_bar};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const STAFF: &str = "staff";
@@ -59,9 +59,11 @@ pub(crate) fn pad(
         .and_then(|bars| bars.checked_mul(2))
         .ok_or_else(|| CommandError::invalid("too many bars to allocate ids for"))?;
     reserve(score, needed)?;
+    let kind = track_ref(score, path, staff)?.instrument.kind;
+    let clef = clef_for_new_bar(kind, &staff_ref(score, path, staff)?.bars, have);
     let mut bars = Vec::with_capacity(missing);
     for _ in 0..missing {
-        bars.push(empty_bar(&mut score.ids)?);
+        bars.push(empty_bar(&mut score.ids, clef)?);
     }
     staff_in(score, path, staff)?.bars.extend(bars);
     Ok(Command::TrimStaffBars {

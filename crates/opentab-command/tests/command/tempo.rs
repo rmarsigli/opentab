@@ -1,5 +1,5 @@
 use opentab_command::{Command, CommandError, apply};
-use opentab_model::{Fraction, Tempo, TempoChange};
+use opentab_model::{Fraction, Tempo, TempoChange, TempoUnit};
 
 use crate::checks::{rejected, round_trip};
 use crate::support::fixture;
@@ -8,6 +8,7 @@ fn change(position: Fraction, bpm: f64) -> TempoChange {
     TempoChange {
         position,
         bpm: Tempo::new(bpm).unwrap(),
+        unit: TempoUnit::Quarter,
     }
 }
 

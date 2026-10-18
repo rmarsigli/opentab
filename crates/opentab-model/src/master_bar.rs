@@ -103,6 +103,18 @@ impl TryFrom<KeySignatureRepr> for KeySignature {
 #[serde(deny_unknown_fields)]
 pub struct Marker {
     pub text: String,
+    pub letter: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TempoUnit {
+    Eighth,
+    #[default]
+    Quarter,
+    DottedQuarter,
+    Half,
+    DottedHalf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -143,6 +155,7 @@ pub struct TempoChange {
     #[serde(deserialize_with = "deserialize_non_negative")]
     pub position: Fraction,
     pub bpm: Tempo,
+    pub unit: TempoUnit,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -154,6 +167,7 @@ pub struct MasterBar {
     pub repeat_start: bool,
     pub repeat_end: Option<u8>,
     pub alternate_endings: u8,
+    pub double_bar: bool,
     pub marker: Option<Marker>,
     pub tempo_changes: Vec<TempoChange>,
 }
