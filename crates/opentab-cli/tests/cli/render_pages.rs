@@ -194,6 +194,7 @@ fn unrendered_features_of_the_drawn_bars_are_listed_in_json_and_text() {
         "format": "gpif",
         "data": "<Keep parent=\"\" index=\"18\"><Lyrics><Line><Text><![CDATA[la]]></Text><Offset>0</Offset></Line></Lyrics></Keep>"
     }]);
+    score["meta"]["copyright"] = json!("(c) 2026");
     let input = dir.path().join("held-bar.opentab.json");
     std::fs::write(&input, serde_json::to_string(&score).unwrap()).unwrap();
     let out = temp();
@@ -207,7 +208,7 @@ fn unrendered_features_of_the_drawn_bars_are_listed_in_json_and_text() {
         "--json",
     ]);
     assert_eq!(wire.code, 0, "{}", wire.stdout);
-    assert_eq!(wire.json()["unrendered"], json!(["fermatas", "lyrics"]));
+    assert_eq!(wire.json()["unrendered"], json!(["copyright", "fermatas"]));
     let human = run(&[
         "render",
         path_str(&input),
@@ -219,7 +220,7 @@ fn unrendered_features_of_the_drawn_bars_are_listed_in_json_and_text() {
     assert!(
         human
             .stdout
-            .contains("not drawn yet (outside the renderer's scope): fermatas, lyrics"),
+            .contains("not drawn yet (outside the renderer's scope): copyright, fermatas"),
         "{}",
         human.stdout
     );

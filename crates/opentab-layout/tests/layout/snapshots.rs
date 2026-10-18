@@ -5,7 +5,7 @@ use opentab_model::{Clef, InstrumentKind, KeySignature, NoteValue, Score};
 
 use crate::support::{BarSpec, Item, add_track, check, dump, guitar, note};
 
-fn fixture(name: &str) -> Score {
+pub fn fixture(name: &str) -> Score {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/gp")
         .join(name);
