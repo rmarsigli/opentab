@@ -478,4 +478,106 @@ mod tests {
     fn cdata_sections_are_joined_in_order() {
         assert_eq!(element(vec![cdata("a"), cdata("b")]).text(), "ab");
     }
+
+    fn nested(depth: usize) -> String {
+        let mut xml = String::new();
+        for _ in 0..depth {
+            xml.push_str("<e>");
+        }
+        for _ in 0..depth {
+            xml.push_str("</e>");
+        }
+        xml
+    }
+
+    fn siblings(count: usize) -> String {
+        let mut xml = String::from("<r>");
+        for _ in 1..count {
+            xml.push_str("<a/>");
+        }
+        xml.push_str("</r>");
+        xml
+    }
+
+    fn serialise(element: &Element) -> String {
+        let mut out = String::new();
+        write_element(element, &mut out);
+        out
+    }
+
+    #[test]
+    fn depth_counter_rejects_one_past_the_maximum_and_accepts_the_maximum() {
+        assert!(parse(&nested(MAX_XML_DEPTH)).is_ok());
+        let failure = parse(&nested(MAX_XML_DEPTH + 1)).unwrap_err();
+        assert_eq!(
+            failure.problem,
+            GpifProblem::DepthLimit {
+                limit: MAX_XML_DEPTH
+            }
+        );
+        assert_eq!(failure.path, "/e".repeat(MAX_XML_DEPTH));
+    }
+
+    #[test]
+    fn element_counter_rejects_one_past_the_maximum_and_accepts_the_maximum() {
+        assert!(parse(&siblings(MAX_ELEMENTS)).is_ok());
+        let failure = parse(&siblings(MAX_ELEMENTS + 1)).unwrap_err();
+        assert_eq!(
+            failure.problem,
+            GpifProblem::ElementLimit {
+                limit: MAX_ELEMENTS
+            }
+        );
+        assert_eq!(failure.path, "/r");
+    }
+
+    #[test]
+    fn failure_path_names_the_open_elements() {
+        let failure = parse("<a><b>&nope;</b></a>").unwrap_err();
+        assert_eq!(failure.path, "/a/b");
+        assert!(
+            matches!(failure.problem, GpifProblem::Syntax { ref message } if message.contains("&nope;"))
+        );
+        assert_eq!(parse("<a/><b/>").unwrap_err().path, "/");
+        assert_eq!(parse("").unwrap_err().path, "/");
+    }
+
+    #[test]
+    fn comments_and_instructions_inside_the_root_round_trip() {
+        let root = parse("<r><!--in--><?pi data?><a/></r>").unwrap();
+        assert_eq!(root.children[0], Node::Comment("in".to_string()));
+        assert_eq!(root.children[1], Node::Instruction("pi data".to_string()));
+        assert_eq!(serialise(&root), "<r><!--in--><?pi data?><a/></r>");
+    }
+
+    #[test]
+    fn comments_and_instructions_outside_the_root_are_dropped() {
+        let root = parse("<?pre x?><!--before--><r/><!--after--><?post y?>").unwrap();
+        assert_eq!(root, Element::new("r"));
+    }
+
+    #[test]
+    fn character_data_outside_the_root_is_rejected() {
+        let failure = parse("<![CDATA[x]]><r/>").unwrap_err();
+        assert_eq!(failure.path, "/");
+        assert!(
+            matches!(failure.problem, GpifProblem::Syntax { ref message } if message.contains("outside the root"))
+        );
+    }
+
+    #[test]
+    fn apostrophe_and_quote_references_decode() {
+        let root = parse("<r>a&apos;b&quot;c&lt;&gt;&amp;</r>").unwrap();
+        assert_eq!(root.text(), "a'b\"c<>&");
+    }
+
+    #[test]
+    fn carriage_return_in_text_is_escaped_and_survives_a_round_trip() {
+        let mut out = String::new();
+        escape_text("a\rb\nc", &mut out);
+        assert_eq!(out, "a&#13;b\nc");
+        let root = parse("<r>a&#13;b</r>").unwrap();
+        assert_eq!(root.text(), "a\rb");
+        assert_eq!(serialise(&root), "<r>a&#13;b</r>");
+    }
 }
