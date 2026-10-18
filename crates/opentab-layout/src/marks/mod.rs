@@ -47,6 +47,7 @@ pub const SECTION_GAP: Units = Units(STAFF_SPACE.0 * 2 / 5);
 pub const LETTER_MAX: Units = Units(STAFF_SPACE.0 * 6);
 pub const CHORD_MAX: Units = Units(STAFF_SPACE.0 * 20);
 pub const MARK_GAP: Units = Units(STAFF_SPACE.0 / 2);
+pub const TEXT_BACK: Units = Units(STAFF_SPACE.0 * 4);
 pub const DYNAMIC_SIZE: Units = STAFF_SPACE;
 pub const DYNAMIC_GAP: Units = Units(STAFF_SPACE.0 * 3 / 4);
 pub const NUMBER_GAP: Units = Units(STAFF_SPACE.0 / 2);

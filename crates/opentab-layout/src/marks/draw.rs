@@ -5,9 +5,9 @@ use crate::lanes::{BandLayout, Lane};
 use crate::marks::fit::{ELLIPSIS, Fitted, descent, fit_line};
 use crate::marks::tempo::{MarkAnchor, TempoMark, unit_glyph};
 use crate::marks::{
-    CHORD_EM, DYNAMIC_GAP, DYNAMIC_SIZE, MARK_GAP, NUMBER_GAP, SECTION_EM, SECTION_GAP,
+    CHORD_EM, CHORD_MAX, DYNAMIC_GAP, DYNAMIC_SIZE, MARK_GAP, NUMBER_GAP, SECTION_EM, SECTION_GAP,
     SECTION_LINE, SECTION_PAD, SectionMark, TEMPO_DOT_GAP, TEMPO_EM, TEMPO_SIZE, TEMPO_TEXT_GAP,
-    TEXT_EM, dynamic_ascent, dynamic_glyph,
+    TEXT_BACK, TEXT_EM, dynamic_ascent, dynamic_glyph,
 };
 use crate::plan::BarPlan;
 use crate::rhythm::{glyph, glyph_box};
@@ -29,6 +29,7 @@ pub struct Request {
     pub desired: Units,
     pub width: Units,
     pub least: Units,
+    pub back: Units,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +45,13 @@ pub fn place(requests: &[Request], left: Units, right: Units) -> Vec<Option<Slot
     let mut cursor = left;
     for index in order {
         let request = requests[index];
-        let start = request.desired.min(right - request.width).max(cursor);
+        let fitting = right - request.width;
+        let start = if fitting >= request.desired - request.back {
+            request.desired.min(fitting)
+        } else {
+            request.desired
+        }
+        .max(cursor);
         let width = request.width.min(right - start);
         if width < request.least || width <= Units::ZERO {
             continue;
@@ -66,6 +73,7 @@ fn column_x(bar: &BarLayout, column: usize) -> Units {
 struct TextItem {
     desired: Units,
     line: Fitted,
+    back: Units,
 }
 
 fn draw_texts(
@@ -80,6 +88,7 @@ fn draw_texts(
             desired: item.desired,
             width: item.line.width(),
             least: least_text(item.line.em, item.line.width()),
+            back: item.back.min(item.line.width()),
         })
         .collect();
     for (item, slot) in texts.iter().zip(place(&requests, marks.left, marks.right)) {
@@ -123,6 +132,7 @@ fn draw_chords(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
                 items.push(TextItem {
                     desired: column_x(bar, chord.column),
                     line: chord.name.clone(),
+                    back: CHORD_MAX,
                 });
             }
         }
@@ -146,6 +156,7 @@ fn draw_free_texts(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
                     items.push(TextItem {
                         desired: column_x(bar, text.column),
                         line,
+                        back: TEXT_BACK,
                     });
                 }
             }
@@ -234,6 +245,7 @@ fn draw_tempos(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
                 desired: item.desired,
                 width,
                 least: width,
+                back: width,
             }
         })
         .collect();
@@ -335,6 +347,7 @@ fn draw_sections(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
                 desired,
                 width,
                 least,
+                back: boxed,
             },
         ));
     }
@@ -375,6 +388,7 @@ fn draw_dynamics(marks: &SystemMarks<'_>, out: &mut Vec<Primitive>) {
                         desired: column_x(bar, mark.column),
                         width,
                         least: width,
+                        back: width,
                     },
                 ));
             }
@@ -413,6 +427,7 @@ mod tests {
             desired: Units(desired),
             width: Units(width),
             least: Units(least),
+            back: Units(width),
         }
     }
 
