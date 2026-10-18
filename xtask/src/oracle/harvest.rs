@@ -1,7 +1,7 @@
 use crate::oracle::error::OracleError;
 use crate::oracle::fixtures::{Fixture, discover};
 use crate::oracle::hash::sha256_hex;
-use crate::oracle::host::Host;
+use crate::oracle::host::{Host, KillOutcome, PidRecord};
 use crate::oracle::layout::{MANIFEST_FILE, is_byte_identical, select_outputs};
 use crate::oracle::manifest::{Manifest, ManifestEntry, OutputEntry};
 use crate::oracle::normalize::normalize_output;
@@ -122,11 +122,17 @@ fn describe_failure(result: &ExportResult) -> String {
     }
 }
 
-fn stop_script(host: &Host, job_out: &Path) {
-    if let Ok(text) = std::fs::read_to_string(job_out.join(PID_FILE))
-        && let Ok(pid) = text.trim().trim_start_matches('\u{feff}').parse::<u32>()
-    {
-        host.stop_windows_pid(pid);
+fn stop_script(host: &Host, job_out: &Path) -> &'static str {
+    let record = std::fs::read_to_string(job_out.join(PID_FILE))
+        .ok()
+        .and_then(|text| PidRecord::parse(&text));
+    match record.map(|record| host.stop_windows_process(&record)) {
+        Some(KillOutcome::Stopped) => "stopped the PowerShell process",
+        Some(KillOutcome::NotMatched) => {
+            "did not stop PowerShell: pid no longer matches the recorded process"
+        }
+        Some(KillOutcome::Unavailable) => "could not stop PowerShell: kill command failed",
+        None => "could not stop PowerShell: no pid recorded",
     }
 }
 
@@ -195,16 +201,19 @@ fn run_fixture(
     })?;
     let source_win = host.to_windows(&source)?;
     let out_win = host.to_windows(&job_out)?;
-    let run = host.run_script(
-        script,
-        &[("Source", &source_win), ("OutDir", &out_win)],
-        &job.join(LOG_FILE),
-    )?;
+    let budget_args = host.budget.script_args();
+    let mut args: Vec<(&str, &str)> = vec![("Source", &source_win), ("OutDir", &out_win)];
+    args.extend(
+        budget_args
+            .iter()
+            .map(|(name, value)| (*name, value.as_str())),
+    );
+    let run = host.run_script(script, &args, &job.join(LOG_FILE))?;
     if run.timed_out {
-        stop_script(host, &job_out);
+        let stopped = stop_script(host, &job_out);
         return Ok(FixtureOutcome::Failed(format!(
-            "timed out after {} s; job kept in {}",
-            host.timeout.as_secs(),
+            "timed out after {} ms ({stopped}); job kept in {}",
+            host.timeout.as_millis(),
             job.display()
         )));
     }
