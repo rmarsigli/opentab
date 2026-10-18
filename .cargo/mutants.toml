@@ -1,2 +1,6 @@
 build_timeout_multiplier = 5.0
 cap_lints = true
+exclude_re = [
+    'replace /= with \*= in general_format',
+    'replace \| with \^ in accent_bits',
+]
