@@ -1,0 +1,347 @@
+{
+  "gp_version": "8.1.5.31",
+  "set": "published",
+  "entries": [
+    {
+      "fixture": "beat-effects.gp",
+      "sha256": "61f52192b2fea154e4b2afc1556e7539acb8675dc9e5cdadbc3c90ae38d09843",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "f1f050f6896cd4068f2f7e0f50eb19b6ec572a1db16868770068f274c318c4c0",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "f70084cef90512c9159db7314affec47ded10cef11ff71d37aaf638c0934e746",
+          "byte_identical": true
+        },
+        {
+          "path": "png/beat-effects#1.png",
+          "sha256": "2116b0dc811ffddacc000049e82452fd3ce655b330fea0d696a45ada48396864",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "d47d6e74f949d5398b8ef3bcf1351fcf6825dcce15ccedc5b605b3d2f7308b36",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "durations.gp",
+      "sha256": "58ffb9d8670995356cf3c383634f93793836d9e1c8108eb7b4155d14bbd9e221",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "140ed8d002b2e6859579074482894b61af4050c8051fac366f849bc236aa2862",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "a24be9c9405f73f8ad72efae9e97e0877a174d014f5f60f2bc5609310b06d301",
+          "byte_identical": true
+        },
+        {
+          "path": "png/durations#1.png",
+          "sha256": "10d60a10fbac00b5dda2270f87f920e4f4d9e14593562231a7d7f04b54b74bad",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "61c60e468ad3777677c9004a8d93ead9479d374ec71d21213cf5af2ffb9e1b2e",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "from-scratch.gp",
+      "sha256": "7bf465086a6702a63c81c0e0c46e86493d4c0d2685619c26fc3de4aafa58371c",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "e0aec11a84e30895be07da11cbee4c4d35f6f3367c7951b25e5fbbaf65563885",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "0249379cd96560634a3003967a08eb9f2cdf5bab8cd20da9a0238f0ce09518a1",
+          "byte_identical": true
+        },
+        {
+          "path": "png/from-scratch#1.png",
+          "sha256": "e713f8b67e03854b0e685f761d0eee35f481563aa8adf6cb27fe7a7afb4f0725",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "5030524e52b30e9b6b4239e50afae06846846d2a2185c4ea6df551121e2f6431",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "metadata.gp",
+      "sha256": "a3404a61ca6ca91160d98b40250c9ed0847e5594f4cd7c9a08f240aca7c254f4",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "912b300322764fef06ffb49ce637e532bc38b66b2f319406b4cc417fff620c2f",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "97e087a091c49180263fe308c39b3636abd871574cfefba9dcaeef68867d4a6a",
+          "byte_identical": true
+        },
+        {
+          "path": "png/metadata#1.png",
+          "sha256": "a5f7243de57cb7c0a86711d838737a50827f71ef8b6e635a1c5cf80b6f060cfa",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "1776abc19ca1222234ded54e0c3ba13af3ce1c1e2a00acb308de42c5f6bf190e",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "multi-track.gp",
+      "sha256": "5b7059bacd1935ac3733236f765323b649cae5841d144efc964dada1e899f0a1",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "08afdd73425aa5c4fe8df158b2df55ce5c24a323893e8cf69ada9695b107f301",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "cb1b4097b4c94a81d5af8655568746ae8f237226f925f28b2915884907be84a3",
+          "byte_identical": true
+        },
+        {
+          "path": "png/multi-track#1.png",
+          "sha256": "ea3b999d8507694a53aa275a7d23585c161f1c794b519d23125faa21fdabab9b",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "47abbdee542cb7e796293c21ae750293397ca8bb5763c86ac9c1cfc09aac1606",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "multi-voice.gp",
+      "sha256": "6ce3dc0a12de6feeff5e5a88550c6af83e194953f1596a5b88870497fa278a88",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "5ba3d65f1398a31b7f09efad7665796d7b039b3704e160e63e3241fa33c3b8fc",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "9e6208f2fffa4fc3a80e16859a6762bef51d966a6619296335c5fa0510f7cb4a",
+          "byte_identical": true
+        },
+        {
+          "path": "png/multi-voice#1.png",
+          "sha256": "a315426da34d661d3f6674591ed7849b8a7e134abdc58f9c778d091ce4ad8487",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "4270f672bf9b3e032d81465e144aec578cf619f948c8c55f81cb34a28008bf73",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "note-effects.gp",
+      "sha256": "d648d378d628b53ba85689b16dc0ba53ac59777bd6b0131a7176f7dc63338ab8",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "713af581c9dfa00d7ea1055c554971db73a9e14e5d319bfa46d6e69a9d6d1dce",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "59c620e67d3deb17cfeae7dbcf7d464fadf0c62e6d982fcea34da7bde8a756b3",
+          "byte_identical": true
+        },
+        {
+          "path": "png/note-effects#1.png",
+          "sha256": "ee1d9349922f25fbca0f400b3f7ed9c70f78ddddf24cbe045d019cedd1062812",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "12a3b1f5e28f795d1976fa6eb98a6403edc8bbf88569fa48e00df64d6a42e5c7",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "repeats.gp",
+      "sha256": "30cf0df60ae0fac06becff825237da4a394e6272eabb3a1d930f7083acfaccf7",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "36598ee11d4f5c523258a0af5c4756c1edc00c25cf8ce30fbcbbb4d3ce0e40cb",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "efe72198d6c0d2fcfa3a3366b620b15faf04cd94213271bf4132bc969a9e021f",
+          "byte_identical": true
+        },
+        {
+          "path": "png/repeats#1.png",
+          "sha256": "e32a77915249ac475744d9f4403fa0c42b3a53bad10b08f57299e3df55adb30e",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "0ed2eb257220b9ee3e968b3f24ad9e6f08115e0268db779d0e7c08c814385ca1",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "signatures.gp",
+      "sha256": "92d8a84485a5690732a3d3fbe065517abb8585e9fb467c38eae3e7eadfc4ecc5",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "63f654ff359a26a1e2c82747219a6ac96989ced891682d010bf6e7ee9e63bd31",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "51c7c4d3b97c40a5a24b636b871d8661b2c813d7904bb64816cf4015e0fdd174",
+          "byte_identical": true
+        },
+        {
+          "path": "png/signatures#1.png",
+          "sha256": "b1fe350df6523a07976539e9ba53598faea62cf7f98930db0c38bab5538fb8ff",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "a992419216a724cd4b343df052a76773d648ebb7b94984672190b8d68cbcebac",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "tempo.gp",
+      "sha256": "901b0d905b87bcbf04194f15c6524d3a63b5243e1e76127d13333fc0378c68e1",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "9bed28e361aa66317640717dab82d5569467353d9de5c6d1dac143aecedd10e8",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "96038d4cb4da394aedc297aa89ef179c1e9a15eb4fd763271012aeaf5ad73f3b",
+          "byte_identical": true
+        },
+        {
+          "path": "png/tempo#1.png",
+          "sha256": "9fdef9afd44b5dfc34dce6b1fe0ed414c1ff69342d39fe49464b207749f7ef94",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "93dbbb46b099d65ec9eeb4af198830ea10a31767124ae6cd7049826cbf261e3e",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "tunings.gp",
+      "sha256": "5b019109f042e9b62ff67b1f9e6ae552aec26a770fe5cd9403dbccfc3f4da2e1",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "9afcd7ac45f80d7d3d5b20e23f59b5b3f6fe85164a10b8aa9401c10a56123ed0",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "2aeabe925ea4cbcb86ea0e9bad86dee06b803a33e4ac3a15283e34946c296d4f",
+          "byte_identical": true
+        },
+        {
+          "path": "png/tunings#1.png",
+          "sha256": "e62f884fca91fa3f8effc18fd1a774de1815744f2da6b1c32ac9d3c4c2985bf0",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "2ea750744dee08ab54058a82ba10f4046b23da40d0cd349ce4fd2effd80f705f",
+          "byte_identical": true
+        }
+      ]
+    }
+  ]
+}
