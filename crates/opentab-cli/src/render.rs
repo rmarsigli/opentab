@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 
 use opentab_layout::marks::{DroppedMark, MarkKind};
 use opentab_layout::{BarRange, DisplayList, LayoutError, LayoutOptions, StaffMode, layout};
@@ -68,6 +68,7 @@ pub struct RenderedPages {
     crowded: Vec<usize>,
     dropped: Vec<DroppedEntry>,
     title_page: bool,
+    unrendered: Vec<&'static str>,
     files: Vec<String>,
 }
 
@@ -107,6 +108,7 @@ pub struct RenderRequest<'a> {
     pub tracks: Vec<u32>,
     pub bars: Option<BarSpan>,
     pub staff: Option<StaffChoice>,
+    pub page: Option<u32>,
 }
 
 fn options(request: &RenderRequest<'_>, score: &Score) -> Result<LayoutOptions, CliError> {
@@ -170,7 +172,7 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
     }
     let into_directory = request.out.is_dir();
     if !into_directory {
-        require_extension(request.out, request.format)?;
+        check_out_file(request.out, request.format)?;
     }
     let score = files::read_score(request.path)?;
     let options = options(request, &score)?;
@@ -179,10 +181,20 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
     let crowded: Vec<usize> = list.crowded.iter().map(|index| index + 1).collect();
     let dropped = dropped_entries(&list.dropped);
     let title_page = list.title_page;
+    let unrendered: Vec<&'static str> = list
+        .unrendered
+        .iter()
+        .map(|feature| feature.name())
+        .collect();
     let count = list.pages.len();
     let systems = list.pages.iter().map(|page| page.systems.len()).sum();
     let bars = bar_count(&list);
-    let targets: Vec<PathBuf> = (1..=count)
+    let chosen: Vec<usize> = match request.page {
+        Some(number) => vec![page_index(number, count)?],
+        None => (1..=count).collect(),
+    };
+    let targets: Vec<PathBuf> = chosen
+        .iter()
         .map(|number| {
             if into_directory {
                 in_directory(
@@ -190,17 +202,20 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
                     input_format,
                     request.out,
                     request.format,
-                    number,
+                    *number,
                     count,
                 )
+            } else if request.page.is_some() {
+                request.out.to_path_buf()
             } else {
-                numbered(request.out, number, count)
+                numbered(request.out, *number, count)
             }
         })
         .collect();
     let scale = request.scale.unwrap_or_else(|| Ratio::from_integer(1));
-    let mut encoded = Vec::with_capacity(count);
-    for page in &list.pages {
+    let mut encoded = Vec::with_capacity(chosen.len());
+    for number in &chosen {
+        let page = &list.pages[number - 1];
         encoded.push(match request.format {
             ImageFormat::Svg => to_svg(page).into_bytes(),
             ImageFormat::Png => to_png(page, scale).map_err(render_failure)?,
@@ -213,10 +228,13 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
         .iter()
         .map(|target| target.display().to_string())
         .collect();
-    let mut lines = vec![format!(
-        "rendered {count} {}",
-        if count == 1 { "page" } else { "pages" }
-    )];
+    let mut lines = vec![match request.page {
+        Some(number) => format!("rendered page {number} of {count}"),
+        None => format!(
+            "rendered {count} {}",
+            if count == 1 { "page" } else { "pages" }
+        ),
+    }];
     if staff_space != options.staff_space.0 {
         lines.push(format!(
             "staff space reduced from {} to {staff_space} micrometres to fit the page",
@@ -246,6 +264,12 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
     if title_page {
         lines.push("the title block fills page 1; the music starts on page 2".to_string());
     }
+    if !unrendered.is_empty() {
+        lines.push(format!(
+            "not drawn yet (outside the renderer's scope): {}",
+            unrendered.join(", ")
+        ));
+    }
     lines.extend(
         written
             .iter()
@@ -260,6 +284,7 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
             crowded,
             dropped,
             title_page,
+            unrendered,
             files: written,
         },
         human: lines.join("\n"),
@@ -280,6 +305,40 @@ fn layout_failure(error: LayoutError) -> CliError {
 fn render_failure(error: RenderError) -> CliError {
     CliError::InvalidInput {
         message: error.to_string(),
+    }
+}
+
+fn page_index(number: u32, count: usize) -> Result<usize, CliError> {
+    usize::try_from(number)
+        .ok()
+        .filter(|number| (1..=count).contains(number))
+        .ok_or_else(|| CliError::InvalidInput {
+            message: format!("--page {number}: the score has {count} page(s), numbered from 1"),
+        })
+}
+
+fn names_a_directory(out: &Path) -> bool {
+    let text = out.as_os_str().to_string_lossy();
+    out.extension().is_none() || text.ends_with('/') || text.ends_with(MAIN_SEPARATOR)
+}
+
+fn check_out_file(out: &Path, format: ImageFormat) -> Result<(), CliError> {
+    if names_a_directory(out) {
+        return Err(CliError::Io {
+            path: out.to_path_buf(),
+            message: format!(
+                "no such directory; create it first, or give a file name ending in {}",
+                format.suffix()
+            ),
+        });
+    }
+    require_extension(out, format)?;
+    match out.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() && !parent.is_dir() => Err(CliError::Io {
+            path: parent.to_path_buf(),
+            message: "no such directory; create it first".to_string(),
+        }),
+        _ => Ok(()),
     }
 }
 

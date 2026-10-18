@@ -6,13 +6,13 @@ use crate::support::{file_names, new_score, path_str, read_json, run, temp};
 
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
-fn fixture(name: &str) -> PathBuf {
+pub fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/gp")
         .join(name)
 }
 
-fn png_size(path: &Path) -> (u32, u32) {
+pub fn png_size(path: &Path) -> (u32, u32) {
     let bytes = std::fs::read(path).expect("read png");
     assert!(bytes.starts_with(PNG_SIGNATURE), "{}", path.display());
     let word = |offset: usize| {
@@ -21,7 +21,7 @@ fn png_size(path: &Path) -> (u32, u32) {
     (word(16), word(20))
 }
 
-fn long_score(dir: &Path, bars: usize) -> PathBuf {
+pub fn long_score(dir: &Path, bars: usize) -> PathBuf {
     let path = new_score(dir, "long.opentab.json");
     let mut score = read_json(&path);
     let master = score["master_bars"][0].clone();
@@ -85,7 +85,7 @@ fn json_reports_the_pages_and_the_written_files() {
     assert_eq!(result.code, 0, "{}", result.stderr);
     assert_eq!(
         result.json(),
-        json!({"pages": 1, "systems": 1, "bars": 2, "staff_space": 1750, "crowded": [], "dropped": [], "title_page": false, "files": [path_str(&out)]})
+        json!({"pages": 1, "systems": 1, "bars": 2, "staff_space": 1750, "crowded": [], "dropped": [], "title_page": false, "unrendered": [], "files": [path_str(&out)]})
     );
     assert_eq!(file_names(dir.path()), vec!["song.svg"]);
 }
@@ -164,7 +164,7 @@ fn a_directory_out_names_pages_after_the_input() {
     let expected = dir.path().join("My.Song.svg");
     assert_eq!(
         single.json(),
-        json!({"pages": 1, "systems": 1, "bars": 1, "staff_space": 1750, "crowded": [], "dropped": [], "title_page": false, "files": [path_str(&expected)]})
+        json!({"pages": 1, "systems": 1, "bars": 1, "staff_space": 1750, "crowded": [], "dropped": [], "title_page": false, "unrendered": [], "files": [path_str(&expected)]})
     );
 }
 
@@ -344,6 +344,9 @@ fn render_help_documents_the_options_and_the_json_shape() {
         "\"crowded\"",
         "\"dropped\"",
         "\"title_page\"",
+        "\"unrendered\"",
+        "--page",
+        "60 million",
         "0.9 mm",
         "layout_limit",
         "Examples:",
