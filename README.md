@@ -89,7 +89,7 @@ A mutated build can make a test allocate without bound, and on a small WSL machi
 cargo xtask capped -- cargo test --workspace
 ```
 
-The exit code is the command's. The cap needs Linux and a working `systemd-run --user`; when either is missing, both commands print a warning and run without a limit.
+The scope sets `OOMPolicy=continue`, so when one process is OOM-killed only that process dies and the rest of the run, such as cargo-mutants, keeps going. The exit code is the command's. The cap needs Linux and a working `systemd-run --user`; when either is missing, both commands print a warning and run without a limit.
 
 ## Platforms
 
