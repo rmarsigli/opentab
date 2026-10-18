@@ -3,6 +3,7 @@ mod disk;
 mod errors;
 mod escaping;
 mod formats;
+mod gp;
 mod hostile;
 mod info;
 mod new;

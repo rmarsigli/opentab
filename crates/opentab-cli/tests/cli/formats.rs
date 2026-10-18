@@ -1,13 +1,17 @@
 use crate::support::{new_score, path_str, run, temp};
 
 #[test]
-fn an_unknown_suffix_exits_2_and_lists_the_supported_format() {
+fn an_unknown_suffix_exits_2_and_lists_the_supported_formats() {
     let dir = temp();
-    let path = dir.path().join("song.gp");
+    let path = dir.path().join("song.txt");
     std::fs::write(&path, "x").unwrap();
     let human = run(&["info", path_str(&path)]);
     assert_eq!(human.code, 2);
-    assert!(human.stderr.contains(".opentab.json"), "{}", human.stderr);
+    assert!(
+        human.stderr.contains(".gp, .opentab.json"),
+        "{}",
+        human.stderr
+    );
     let machine = run(&["info", path_str(&path), "--json"]);
     assert_eq!(machine.code, 2);
     let body = machine.json();
@@ -16,7 +20,7 @@ fn an_unknown_suffix_exits_2_and_lists_the_supported_format() {
         body["error"]["message"]
             .as_str()
             .unwrap()
-            .contains(".opentab.json")
+            .contains(".gp, .opentab.json")
     );
 }
 
@@ -47,7 +51,7 @@ fn apply_with_an_unknown_output_suffix_exits_2() {
     let score = new_score(dir.path(), "a.opentab.json");
     let commands = dir.path().join("c.jsonl");
     std::fs::write(&commands, "").unwrap();
-    let out = dir.path().join("b.gp");
+    let out = dir.path().join("b.txt");
     let result = run(&[
         "apply",
         path_str(&score),

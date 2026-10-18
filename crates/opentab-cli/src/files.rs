@@ -3,11 +3,14 @@ use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use opentab_gp::{GpError, read_gp, write_gp};
 use opentab_model::{Score, from_json, to_json};
 
 use crate::error::CliError;
 
 pub const SUFFIX: &str = ".opentab.json";
+pub const GP_SUFFIX: &str = ".gp";
+pub const SUPPORTED: &str = ".gp, .opentab.json";
 
 const TEMP_ATTEMPTS: usize = 16;
 const MAX_LINK_HOPS: usize = 40;
@@ -21,23 +24,52 @@ pub enum Overwrite {
     Refused,
 }
 
-pub fn require_format(path: &Path) -> Result<(), CliError> {
-    let supported = path
-        .file_name()
-        .map(|name| name.as_encoded_bytes())
-        .is_some_and(|name| name.len() > SUFFIX.len() && name.ends_with(SUFFIX.as_bytes()));
-    if supported {
-        Ok(())
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Format {
+    Json,
+    Gp,
+}
+
+pub fn format_of(path: &Path) -> Result<Format, CliError> {
+    let name = path.file_name().map(|name| name.as_encoded_bytes());
+    let has = |suffix: &str| {
+        name.is_some_and(|name| name.len() > suffix.len() && name.ends_with(suffix.as_bytes()))
+    };
+    if has(SUFFIX) {
+        Ok(Format::Json)
+    } else if has(GP_SUFFIX) {
+        Ok(Format::Gp)
     } else {
-        Err(CliError::UnsupportedFormat {
-            path: path.to_path_buf(),
-        })
+        Err(unsupported_format(path, SUPPORTED))
+    }
+}
+
+pub fn require_json(path: &Path) -> Result<(), CliError> {
+    match format_of(path) {
+        Ok(Format::Json) => Ok(()),
+        _ => Err(unsupported_format(path, SUFFIX)),
+    }
+}
+
+fn unsupported_format(path: &Path, supported: &'static str) -> CliError {
+    CliError::UnsupportedFormat {
+        path: path.to_path_buf(),
+        supported,
     }
 }
 
 pub fn read_score(path: &Path) -> Result<Score, CliError> {
-    require_format(path)?;
+    let format = format_of(path)?;
     let bytes = fs::read(path).map_err(|error| CliError::io(path, &error))?;
+    match format {
+        Format::Json => parse_json(path, bytes),
+        Format::Gp => read_gp(&bytes).map_err(|error| CliError::InvalidInput {
+            message: format!("{}: {error}", path.display()),
+        }),
+    }
+}
+
+fn parse_json(path: &Path, bytes: Vec<u8>) -> Result<Score, CliError> {
     let text = String::from_utf8(bytes).map_err(|_| CliError::InvalidScore {
         path: path.to_path_buf(),
         message: "file is not valid UTF-8".to_string(),
@@ -56,14 +88,38 @@ pub fn read_text(path: &Path) -> Result<String, CliError> {
 }
 
 pub fn write_score(path: &Path, score: &Score, overwrite: Overwrite) -> Result<(), CliError> {
-    require_format(path)?;
+    let format = format_of(path)?;
     if overwrite == Overwrite::Refused && fs::symlink_metadata(path).is_ok() {
         return Err(output_exists(path));
     }
-    let text = to_json(score).map_err(CliError::internal)?;
+    let bytes = encode(path, score, format)?;
     match overwrite {
-        Overwrite::Allowed => replace(path, text.as_bytes()),
-        Overwrite::Refused => create(path, text.as_bytes()),
+        Overwrite::Allowed => replace(path, &bytes),
+        Overwrite::Refused => create(path, &bytes),
+    }
+}
+
+fn encode(path: &Path, score: &Score, format: Format) -> Result<Vec<u8>, CliError> {
+    match format {
+        Format::Json => to_json(score)
+            .map(String::into_bytes)
+            .map_err(CliError::internal),
+        Format::Gp => write_gp(score).map_err(|error| refusal(path, error)),
+    }
+}
+
+fn refusal(path: &Path, error: GpError) -> CliError {
+    match error {
+        GpError::Unsupported {
+            path: model,
+            reason,
+        } => CliError::Unsupported {
+            path: path.to_path_buf(),
+            message: format!("{model}: {reason}"),
+        },
+        other => CliError::Internal {
+            message: other.to_string(),
+        },
     }
 }
 

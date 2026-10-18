@@ -9,15 +9,42 @@ pub const EXIT_INPUT: u8 = 2;
 
 #[derive(Debug)]
 pub enum CliError {
-    Io { path: PathBuf, message: String },
-    UnsupportedFormat { path: PathBuf },
-    InvalidScore { path: PathBuf, message: String },
-    OutputExists { path: PathBuf },
-    InvalidInput { message: String },
-    InvalidCommand { line: usize, message: String },
-    CommandFailed { line: usize, source: CommandError },
-    Output { message: String },
-    Internal { message: String },
+    Io {
+        path: PathBuf,
+        message: String,
+    },
+    UnsupportedFormat {
+        path: PathBuf,
+        supported: &'static str,
+    },
+    Unsupported {
+        path: PathBuf,
+        message: String,
+    },
+    InvalidScore {
+        path: PathBuf,
+        message: String,
+    },
+    OutputExists {
+        path: PathBuf,
+    },
+    InvalidInput {
+        message: String,
+    },
+    InvalidCommand {
+        line: usize,
+        message: String,
+    },
+    CommandFailed {
+        line: usize,
+        source: CommandError,
+    },
+    Output {
+        message: String,
+    },
+    Internal {
+        message: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -57,13 +84,18 @@ impl CliError {
                 sub_kind: None,
                 line: None,
             },
-            CliError::UnsupportedFormat { path } => ErrorBody {
+            CliError::UnsupportedFormat { path, supported } => ErrorBody {
                 kind: "unsupported_format",
                 message: format!(
-                    "{}: unsupported file type, supported formats: {}",
-                    path.display(),
-                    crate::files::SUFFIX
+                    "{}: unsupported file type, supported formats: {supported}",
+                    path.display()
                 ),
+                sub_kind: None,
+                line: None,
+            },
+            CliError::Unsupported { path, message } => ErrorBody {
+                kind: "unsupported",
+                message: format!("{}: {message}", path.display()),
                 sub_kind: None,
                 line: None,
             },

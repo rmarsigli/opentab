@@ -76,6 +76,23 @@ fn subcommand_help_documents_arguments_examples_and_json_shapes() {
             apply.stdout
         );
     }
+    let convert = run(&["convert", "--help"]);
+    assert_eq!(convert.code, 0);
+    for needle in [
+        "OUT",
+        "--json",
+        "\"converted\"",
+        ".gp",
+        "unsupported",
+        "symbolic link",
+        "Examples:",
+    ] {
+        assert!(
+            convert.stdout.contains(needle),
+            "convert: {needle}\n{}",
+            convert.stdout
+        );
+    }
 }
 
 #[test]
@@ -84,4 +101,5 @@ fn top_level_help_lists_exit_codes() {
     assert!(help.stdout.contains("Exit codes"), "{}", help.stdout);
     assert!(help.stdout.contains("new"));
     assert!(help.stdout.contains("info"));
+    assert!(help.stdout.contains("convert"));
 }
