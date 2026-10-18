@@ -34,10 +34,43 @@ impl NoteValue {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "TupletRepr")]
 pub struct Tuplet {
-    pub num: u8,
-    pub den: u8,
+    num: u8,
+    den: u8,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TupletRepr {
+    num: u8,
+    den: u8,
+}
+
+impl Tuplet {
+    pub fn new(num: u8, den: u8) -> Result<Tuplet, ModelError> {
+        let valid = 1..=MAX_TUPLET_TERM;
+        if !valid.contains(&num) || !valid.contains(&den) {
+            return Err(ModelError::InvalidTuplet { num, den });
+        }
+        Ok(Tuplet { num, den })
+    }
+
+    pub fn num(&self) -> u8 {
+        self.num
+    }
+
+    pub fn den(&self) -> u8 {
+        self.den
+    }
+}
+
+impl TryFrom<TupletRepr> for Tuplet {
+    type Error = ModelError;
+
+    fn try_from(repr: TupletRepr) -> Result<Self, Self::Error> {
+        Tuplet::new(repr.num, repr.den)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -61,11 +94,8 @@ impl Duration {
         if dots > MAX_DOTS {
             return Err(ModelError::InvalidDots { dots });
         }
-        if let Some(Tuplet { num, den }) = tuplet {
-            let valid = 1..=MAX_TUPLET_TERM;
-            if !valid.contains(&num) || !valid.contains(&den) {
-                return Err(ModelError::InvalidTuplet { num, den });
-            }
+        if let Some(tuplet) = tuplet {
+            Tuplet::new(tuplet.num, tuplet.den)?;
         }
         Ok(Duration {
             value,

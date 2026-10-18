@@ -1,6 +1,4 @@
-use opentab_model::{
-    Diagnostic, InstrumentKind, NoteKind, Score, Tuplet, diagnose, from_json, to_json,
-};
+use opentab_model::{Diagnostic, InstrumentKind, NoteKind, Score, diagnose, from_json, to_json};
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
 use proptest::prelude::*;
 use proptest::strategy::{Strategy, ValueTree};
@@ -257,7 +255,7 @@ fn observe(coverage: &mut Coverage, score: &Score) {
 }
 
 fn observe_beat(coverage: &mut Coverage, beat: &opentab_model::Beat) {
-    coverage.tuplet |= matches!(beat.duration.tuplet(), Some(Tuplet { .. }));
+    coverage.tuplet |= beat.duration.tuplet().is_some();
     coverage.dotted |= beat.duration.dots() > 0;
     coverage.rest_beat |= beat.notes.is_empty();
     coverage.chord_beat |= beat.notes.len() > 1;

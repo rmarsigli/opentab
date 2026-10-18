@@ -69,7 +69,7 @@ fn rich_score() -> Score {
         right_hand_finger: Some(4),
     };
     first_voice.beats[1].duration =
-        Duration::new(NoteValue::Eighth, 2, Some(Tuplet { num: 7, den: 8 })).unwrap();
+        Duration::new(NoteValue::Eighth, 2, Some(Tuplet::new(7, 8).unwrap())).unwrap();
     let drum_id = score.alloc().unwrap();
     let staff_id = score.alloc().unwrap();
     let drum_note = Note {

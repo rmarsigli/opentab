@@ -33,12 +33,21 @@ fn zero_terms_are_rejected() {
 }
 
 #[test]
-fn zero_denominator_literal_does_not_panic() {
-    let signature = TimeSignature {
-        numerator: 4,
-        denominator: 0,
-    };
-    assert_eq!(signature.bar_length(), Fraction::from_integer(0));
+fn accessors_return_the_validated_terms() {
+    let signature = TimeSignature::new(7, 8).unwrap();
+    assert_eq!((signature.numerator(), signature.denominator()), (7, 8));
+}
+
+#[test]
+fn zero_and_invalid_terms_are_rejected_from_json() {
+    for text in [
+        r#"{"numerator":4,"denominator":0}"#,
+        r#"{"numerator":0,"denominator":4}"#,
+        r#"{"numerator":4,"denominator":3}"#,
+    ] {
+        let error = serde_json::from_str::<TimeSignature>(text).unwrap_err();
+        assert!(error.to_string().contains("time signature"), "{text}");
+    }
 }
 
 #[test]
@@ -48,7 +57,7 @@ fn only_powers_of_two_up_to_sixty_four_are_denominators() {
         let result = TimeSignature::new(4, denominator);
         if allowed.contains(&denominator) {
             let signature = result.unwrap();
-            assert_eq!(signature.denominator, denominator);
+            assert_eq!(signature.denominator(), denominator);
         } else {
             assert_eq!(
                 result,

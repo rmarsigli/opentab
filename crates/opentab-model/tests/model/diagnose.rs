@@ -1,6 +1,6 @@
 use opentab_model::{
     BarId, Diagnostic, Duration, ElementId, Fraction, Instrument, InstrumentKind, NoteId, NoteKind,
-    NoteValue, OpaquePayload, Score, TimeSignature, TrackId, Tuning, Tuplet, diagnose,
+    NoteValue, OpaquePayload, Score, TrackId, Tuning, Tuplet, diagnose,
 };
 
 use crate::support::{bar, four_four, guitar, master_bar, quarters};
@@ -16,7 +16,7 @@ fn exactly_filled_bar_is_clean() {
 
 #[test]
 fn exactly_filled_triplet_bar_is_clean() {
-    let triplet = Duration::new(NoteValue::Quarter, 0, Some(Tuplet { num: 3, den: 2 })).unwrap();
+    let triplet = Duration::new(NoteValue::Quarter, 0, Some(Tuplet::new(3, 2).unwrap())).unwrap();
     assert_eq!(diagnose(&four_four(&[triplet; 6])), Vec::new());
 }
 
@@ -153,6 +153,21 @@ fn id_at_or_above_allocator_is_reported() {
 }
 
 #[test]
+fn id_u64_max_against_exhausted_allocator_is_above_allocator() {
+    let mut score = four_four(&quarters(4));
+    score.ids = serde_json::from_str(r#"{"next": 18446744073709551615}"#).unwrap();
+    let max = ElementId(u64::MAX);
+    score.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0]
+        .id
+        .0 = max;
+    let found: Vec<Diagnostic> = diagnose(&score)
+        .into_iter()
+        .filter(|d| matches!(d, Diagnostic::IdAboveAllocator { id } if *id == max))
+        .collect();
+    assert_eq!(found, vec![Diagnostic::IdAboveAllocator { id: max }]);
+}
+
+#[test]
 fn id_just_below_allocator_is_clean() {
     let mut score = four_four(&quarters(4));
     let below = ElementId(score.ids.peek().0 - 1);
@@ -210,23 +225,6 @@ fn diagnostics_follow_track_staff_bar_voice_beat_order() {
 }
 
 #[test]
-fn zero_denominator_time_signature_does_not_panic() {
-    let mut score = four_four(&quarters(4));
-    score.master_bars[0].time_signature = TimeSignature {
-        numerator: 4,
-        denominator: 0,
-    };
-    assert_eq!(
-        diagnose(&score),
-        vec![Diagnostic::OverfullBar {
-            voice: first_voice(&score),
-            filled: Fraction::new(1, 1),
-            expected: Fraction::from_integer(0),
-        }]
-    );
-}
-
-#[test]
 fn fill_beyond_i64_is_reported_as_not_computable() {
     let primes = [
         2u8, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61,
@@ -237,7 +235,7 @@ fn fill_beyond_i64_is_reported_as_not_computable() {
             Duration::new(
                 NoteValue::OneTwentyEighth,
                 3,
-                Some(Tuplet { num: *p, den: 1 }),
+                Some(Tuplet::new(*p, 1).unwrap()),
             )
             .unwrap()
         })
@@ -456,7 +454,7 @@ fn fill_not_computable_is_reported_even_without_a_master_bar() {
             Duration::new(
                 NoteValue::OneTwentyEighth,
                 3,
-                Some(Tuplet { num: *p, den: 1 }),
+                Some(Tuplet::new(*p, 1).unwrap()),
             )
             .unwrap()
         })

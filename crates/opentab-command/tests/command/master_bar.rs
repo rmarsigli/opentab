@@ -82,19 +82,16 @@ fn insert_master_bar_past_the_end_is_out_of_range() {
 }
 
 #[test]
-fn insert_master_bar_rejects_a_zero_time_signature() {
-    let mut fx = fixture();
-    let command = Command::InsertMasterBar {
-        index: 0,
-        time_signature: TimeSignature {
-            numerator: 0,
-            denominator: 4,
-        },
-    };
-    assert!(matches!(
-        rejected(&mut fx.score, &command),
-        CommandError::InvalidValue { .. }
-    ));
+fn insert_master_bar_json_rejects_invalid_time_signatures() {
+    let valid =
+        r#"{"op":"insert_master_bar","index":0,"time_signature":{"numerator":4,"denominator":4}}"#;
+    assert!(serde_json::from_str::<Command>(valid).is_ok());
+    for (numerator, denominator) in [(0, 4), (4, 0), (4, 3), (4, 128)] {
+        let text = format!(
+            r#"{{"op":"insert_master_bar","index":0,"time_signature":{{"numerator":{numerator},"denominator":{denominator}}}}}"#
+        );
+        assert!(serde_json::from_str::<Command>(&text).is_err(), "{text}");
+    }
 }
 
 #[test]

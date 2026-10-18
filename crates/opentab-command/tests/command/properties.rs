@@ -39,14 +39,6 @@ fn error_kind(error: &CommandError) -> &'static str {
     }
 }
 
-fn has_zero_term(command: &Command) -> bool {
-    matches!(
-        command,
-        Command::InsertMasterBar { time_signature, .. }
-            if time_signature.numerator == 0 || time_signature.denominator == 0
-    )
-}
-
 fn undo_all(
     history: &mut History,
     score: &mut opentab_model::Score,
@@ -205,10 +197,8 @@ proptest! {
         for step in &case.steps {
             let command = resolve(step, &score);
             let text = serde_json::to_string(&command).expect("serialises");
-            match serde_json::from_str::<Command>(&text) {
-                Ok(back) => prop_assert_eq!(&back, &command),
-                Err(_) => prop_assert!(has_zero_term(&command), "{text}"),
-            }
+            let back: Command = serde_json::from_str(&text).expect("parses");
+            prop_assert_eq!(&back, &command);
             if let Ok(inverse) = apply(&mut score, &command) {
                 let text = serde_json::to_string(&inverse).expect("serialises");
                 let back: Command = serde_json::from_str(&text).expect("parses");

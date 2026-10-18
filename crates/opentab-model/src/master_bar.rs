@@ -11,8 +11,8 @@ const MAX_DENOMINATOR: u8 = 64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "TimeSignatureRepr")]
 pub struct TimeSignature {
-    pub numerator: u8,
-    pub denominator: u8,
+    numerator: u8,
+    denominator: u8,
 }
 
 #[derive(Deserialize)]
@@ -39,10 +39,15 @@ impl TimeSignature {
         })
     }
 
+    pub fn numerator(&self) -> u8 {
+        self.numerator
+    }
+
+    pub fn denominator(&self) -> u8 {
+        self.denominator
+    }
+
     pub fn bar_length(&self) -> Fraction {
-        if self.denominator == 0 {
-            return Fraction::from_integer(0);
-        }
         Fraction::new(i64::from(self.numerator), i64::from(self.denominator))
     }
 }
