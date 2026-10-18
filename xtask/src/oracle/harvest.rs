@@ -1,7 +1,7 @@
 use crate::oracle::error::OracleError;
 use crate::oracle::fixtures::{Fixture, discover};
 use crate::oracle::hash::sha256_hex;
-use crate::oracle::host::{Host, KillOutcome, PidRecord};
+use crate::oracle::host::{Host, KillOutcome, PidGate, PidRecord};
 use crate::oracle::layout::{MANIFEST_FILE, is_byte_identical, select_outputs};
 use crate::oracle::manifest::{Manifest, ManifestEntry, OutputEntry};
 use crate::oracle::normalize::normalize_output;
@@ -208,7 +208,19 @@ fn run_fixture(
             .iter()
             .map(|(name, value)| (*name, value.as_str())),
     );
-    let run = host.run_script(script, &args, &job.join(LOG_FILE))?;
+    let pid_file = job_out.join(PID_FILE);
+    let gate = PidGate {
+        file: &pid_file,
+        wait: host.pid_wait,
+    };
+    let run = host.run_script(script, &args, &job.join(LOG_FILE), gate)?;
+    if run.pid_missing {
+        return Ok(FixtureOutcome::Failed(format!(
+            "no pid recorded within {} ms of starting PowerShell, so it could not be stopped by pid; job kept in {}",
+            host.pid_wait.as_millis(),
+            job.display()
+        )));
+    }
     if run.timed_out {
         let stopped = stop_script(host, &job_out);
         return Ok(FixtureOutcome::Failed(format!(

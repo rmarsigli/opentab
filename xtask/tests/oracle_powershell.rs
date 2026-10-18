@@ -96,7 +96,8 @@ fn function_body(source: &str, name: &str) -> String {
 fn clear_gp_modals_only_closes_modal_classes_and_probes_popups_cheaply() {
     let module = oracle_source("GpOracle.psm1");
     let clear = function_body(&module, "Clear-GpModals");
-    assert!(clear.contains("Test-ModalClass $m.Class"));
+    assert!(clear.contains("Get-GpModals"));
+    assert!(!clear.contains("Test-ModalClass"));
     assert!(clear.contains("Test-GpPopupPresent"));
     assert!(!clear.contains("Get-GpPopups"));
     let close_menus = function_body(&module, "Close-GpMenus");
@@ -108,8 +109,11 @@ fn clear_gp_modals_only_closes_modal_classes_and_probes_popups_cheaply() {
     assert!(classes.contains("'#32770'"));
     assert!(!classes.contains("Tool"));
     let open = function_body(&module, "Open-MenuPath");
-    let gate = open.find("Test-GpPopupPresent").expect("gate");
-    assert!(gate < open.find("Get-GpPopups").expect("use"));
+    assert!(open.contains("Get-GpPopups"));
+    assert!(!open.contains("Test-GpPopupPresent"));
+    let popups = function_body(&module, "Get-GpPopups");
+    let guard = popups.find("$popups.Count -eq 0").expect("guard");
+    assert!(guard < popups.find("FromHandle").expect("uia"));
 }
 
 #[test]

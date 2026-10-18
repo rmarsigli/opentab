@@ -304,7 +304,7 @@ function Open-MenuPath([string[]]$Path) {
   [void](Expand-El $item)
   for ($i = 1; $i -lt $Path.Count; $i++) {
     $alts = $Path[$i].Split('|')
-    $found = Wait-For { if (Test-GpPopupPresent) { foreach ($pp in Get-GpPopups) { $x = Find-MenuItem $pp $alts; if ($x) { return $x } } } } 3000
+    $found = Wait-For { foreach ($pp in Get-GpPopups) { $x = Find-MenuItem $pp $alts; if ($x) { return $x } } } 3000
     if (-not $found) { throw "menu item not found: $($alts -join '|')" }
     if ($i -eq $Path.Count - 1) { return $found }
     [void](Expand-El $found)
@@ -359,7 +359,6 @@ function Clear-GpModals([int]$MaxAttempts = 3) {
     foreach ($m in $mods) {
       $label = "$($m.Title) [$($m.Class)]"
       if (-not $seen.Contains($label)) { [void]$seen.Add($label) }
-      if (-not (Test-ModalClass $m.Class)) { continue }
       if (-not [GpOracle.W32]::IsWindow($m.Handle)) { continue }
       if (-not (Test-CloseAllowed $m.Handle (& $script:WindowOwnerProbe $m.Handle) $main)) { continue }
       if ($i -eq 0) {

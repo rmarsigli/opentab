@@ -22,14 +22,18 @@ if [ -n "$cmd" ]; then
   exit "${FAKE_GP_KILL_EXIT:-0}"
 fi
 [ -n "$out" ] || exit 0
-if [ "$FAKE_GP_PID_START" = "none" ]; then
-  echo 4242 > "$out/pid.txt"
-else
-  printf '4242\n133000000000000000\n' > "$out/pid.txt"
-fi
+case "$FAKE_GP_MODE" in
+  silent|silent_hang) ;;
+  *)
+    if [ "$FAKE_GP_PID_START" = "none" ]; then
+      printf '4242\n' > "$out/pid.tmp"
+    else
+      printf '4242\n133000000000000000\n' > "$out/pid.tmp"
+    fi
+    mv "$out/pid.tmp" "$out/pid.txt" ;;
+esac
 case "$FAKE_GP_MODE" in
   silent_hang)
-    rm -f "$out/pid.txt"
     i=0
     while [ ! -e "$FAKE_GP_SENTINEL" ] && [ "$i" -lt 600 ]; do
       sleep 0.1
@@ -51,7 +55,6 @@ case "$FAKE_GP_MODE" in
     printf '{"ok":false,"gp_running":true,"gp_version":"8.1.5.31","steps":[{"name":"pdf","status":"failed","ms":5,"attempts":3,"error":"dialog never appeared","screenshot":"x.png"}]}' > "$out/result.json"
     exit 1 ;;
   silent)
-    rm -f "$out/pid.txt"
     exit 3 ;;
 esac
 cp "$src" "$out/resave.gp"
@@ -407,8 +410,34 @@ fn kill_that_matches_nothing_is_reported() {
 #[test]
 fn hang_before_any_pid_is_recorded_reports_that_nothing_was_killed() {
     let sandbox = sandbox();
-    let output = harvest_hanging(&sandbox, &[("FAKE_GP_MODE", "silent_hang")]);
+    let output = harvest_hanging(
+        &sandbox,
+        &[
+            ("FAKE_GP_MODE", "silent_hang"),
+            ("OPENTAB_ORACLE_PID_WAIT_MS", "300"),
+        ],
+    );
     assert_eq!(output.status.code(), Some(2), "{}", text(&output));
-    assert!(text(&output).contains("no pid recorded"));
+    assert!(text(&output).contains("no pid recorded within 300 ms"));
+    assert!(!text(&output).contains("timed out after"));
     assert!(kill_log(&sandbox).is_empty());
+}
+
+#[test]
+fn unsupported_fixture_name_is_rejected_before_any_guitar_pro_work() {
+    let sandbox = sandbox();
+    std::fs::write(sandbox.input.join("bad:name.gp"), b"x").expect("write");
+    let out = sandbox.root.join("out");
+    let output = harvest(
+        &sandbox,
+        &out,
+        &[(
+            "FAKE_GP_KILL_LOG",
+            sandbox.root.join("calls.log").to_str().expect("utf8"),
+        )],
+    );
+    assert_eq!(output.status.code(), Some(2), "{}", text(&output));
+    assert!(text(&output).contains("not supported"));
+    assert!(!out.exists());
+    assert!(!sandbox.jobs.exists());
 }

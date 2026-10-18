@@ -2,17 +2,18 @@ use crate::oracle::budget::StepBudget;
 use crate::oracle::error::OracleError;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 pub const POWERSHELL_ENV: &str = "OPENTAB_ORACLE_POWERSHELL";
 pub const WSLPATH_ENV: &str = "OPENTAB_ORACLE_WSLPATH";
 pub const JOBS_ENV: &str = "OPENTAB_ORACLE_JOBS";
 pub const TIMEOUT_ENV: &str = "OPENTAB_ORACLE_TIMEOUT_MS";
+pub const PID_WAIT_ENV: &str = "OPENTAB_ORACLE_PID_WAIT_MS";
 pub const DEFAULT_JOBS: &str = "C:\\gf-oracle\\jobs";
 pub const KILL_NOT_MATCHED_EXIT: i32 = 3;
 pub const SCRIPT_NAME: &str = "Invoke-GpExport";
-const POLL: Duration = Duration::from_millis(200);
+const POLL: Duration = Duration::from_millis(50);
 const KILL_WAIT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,7 @@ pub struct Host {
     pub jobs_windows: String,
     pub budget: StepBudget,
     pub timeout: Duration,
+    pub pid_wait: Duration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +73,39 @@ impl PidRecord {
 pub struct ScriptRun {
     pub status: Option<ExitStatus>,
     pub timed_out: bool,
+    pub pid_missing: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PidGate<'a> {
+    pub file: &'a Path,
+    pub wait: Duration,
+}
+
+enum PidWait {
+    Recorded,
+    Exited(ExitStatus),
+    Missing,
+}
+
+pub fn pid_file_complete(path: &Path) -> bool {
+    std::fs::read_to_string(path)
+        .is_ok_and(|text| text.ends_with('\n') && PidRecord::parse(&text).is_some())
+}
+
+fn wait_for_pid(child: &mut Child, gate: PidGate<'_>) -> Result<PidWait, OracleError> {
+    let deadline = Instant::now() + gate.wait;
+    loop {
+        if pid_file_complete(gate.file) {
+            return Ok(PidWait::Recorded);
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(PidWait::Exited(status)),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(POLL),
+            Ok(None) => return Ok(PidWait::Missing),
+            Err(error) => return Err(OracleError::io("cannot wait for PowerShell", &error)),
+        }
+    }
 }
 
 fn resolve_program(name: &OsString) -> Option<PathBuf> {
@@ -113,10 +148,19 @@ impl Host {
             })?),
             Err(_) => budget.backstop(),
         };
+        let pid_wait = match std::env::var(PID_WAIT_ENV) {
+            Ok(text) => Duration::from_millis(text.parse::<u64>().map_err(|_| {
+                OracleError::new(format!(
+                    "{PID_WAIT_ENV} must be a number of milliseconds, got {text}"
+                ))
+            })?),
+            Err(_) => budget.startup(),
+        };
         Ok(Self {
             powershell,
             wslpath,
             jobs_windows,
+            pid_wait,
             budget,
             timeout,
         })
@@ -156,6 +200,7 @@ impl Host {
         script: &str,
         args: &[(&str, &str)],
         log: &Path,
+        gate: PidGate<'_>,
     ) -> Result<ScriptRun, OracleError> {
         let log_file = std::fs::File::create(log)
             .map_err(|error| OracleError::io(format!("cannot create {}", log.display()), &error))?;
@@ -186,6 +231,25 @@ impl Host {
                     &error,
                 )
             })?;
+        match wait_for_pid(&mut child, gate)? {
+            PidWait::Recorded => {}
+            PidWait::Exited(status) => {
+                return Ok(ScriptRun {
+                    status: Some(status),
+                    timed_out: false,
+                    pid_missing: false,
+                });
+            }
+            PidWait::Missing => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Ok(ScriptRun {
+                    status: None,
+                    timed_out: true,
+                    pid_missing: true,
+                });
+            }
+        }
         let deadline = Instant::now() + self.timeout;
         loop {
             match child.try_wait() {
@@ -193,6 +257,7 @@ impl Host {
                     return Ok(ScriptRun {
                         status: Some(status),
                         timed_out: false,
+                        pid_missing: false,
                     });
                 }
                 Ok(None) if Instant::now() < deadline => std::thread::sleep(POLL),
@@ -202,6 +267,7 @@ impl Host {
                     return Ok(ScriptRun {
                         status: None,
                         timed_out: true,
+                        pid_missing: false,
                     });
                 }
                 Err(error) => return Err(OracleError::io("cannot wait for PowerShell", &error)),
@@ -240,7 +306,7 @@ impl Host {
 
 #[cfg(test)]
 mod tests {
-    use super::{KILL_NOT_MATCHED_EXIT, PidRecord};
+    use super::{KILL_NOT_MATCHED_EXIT, PidRecord, pid_file_complete};
 
     #[test]
     fn pid_file_parses_with_and_without_start_time_and_bom() {
@@ -252,6 +318,21 @@ mod tests {
         assert!(PidRecord::parse("").is_none());
         assert!(PidRecord::parse("abc\n1").is_none());
         assert!(PidRecord::parse("-5").is_none());
+    }
+
+    #[test]
+    fn pid_file_counts_only_when_completely_written() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("pid.txt");
+        assert!(!pid_file_complete(&path));
+        for partial in ["", "42", "4242\n13300", "abc\n", "\n"] {
+            std::fs::write(&path, partial).expect("write");
+            assert!(!pid_file_complete(&path), "{partial:?}");
+        }
+        for complete in ["4242\n", "4242\n133000000000000000\n", "\u{feff}7\r\n9\r\n"] {
+            std::fs::write(&path, complete).expect("write");
+            assert!(pid_file_complete(&path), "{complete:?}");
+        }
     }
 
     #[test]
