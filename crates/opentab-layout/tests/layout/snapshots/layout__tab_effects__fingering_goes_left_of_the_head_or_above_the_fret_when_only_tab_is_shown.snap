@@ -1,0 +1,93 @@
+---
+source: crates/opentab-layout/tests/layout/tab_effects.rs
+expression: "focused(&score, StaffMode::Tab)"
+---
+page 0 staff space 1750 um
+system 0 8777,8777 73302,25673 natural 43017 available 105326
+  staff track 0 staff 0 Tab top 12873 lines 6 spacing 1536
+    bar 0 number 1 group 18 8777,12873 43256,20553 content 14920 widths 23725 23725 Tab ticks 4/4 [0@15954 1@22738 2@29523 3@36307]
+    bar 1 number 2 group 28 43256,12873 73302,20553 content 43256 widths 22486 19292 Tab ticks 4/4 [0@45078 1@51862 2@58647 3@65431]
+group 5
+  line 8777,12873 73302,12873 thick 133
+  line 8777,14409 73302,14409 thick 133
+  line 8777,15945 73302,15945 thick 133
+  line 8777,17481 73302,17481 thick 133
+  line 8777,19017 73302,19017 thick 133
+  line 8777,20553 73302,20553 thick 133
+  group 18
+    glyph U+E06D 9289,16713 size 1016
+    glyph U+E084 11971,15689 size 1024
+    glyph U+E084 11971,17737 size 1024
+    line 43174,12873 43174,20553 thick 164
+    group 11
+      group 10
+        rect 16023,15284 17093,16606 White
+        text "2" 16558,16435 em 1536 Middle Text
+      line 16558,21577 16558,25161 thick 123
+      glyph U+E220 16558,23369 size 1024
+    group 13
+      group 12
+        rect 22807,15284 23877,16606 White
+        text "2" 23342,16435 em 1536 Middle Text
+      line 23342,21577 23342,25161 thick 123
+      glyph U+E221 23342,23369 size 1024
+    group 15
+      group 14
+        rect 29592,15284 30662,16606 White
+        text "2" 30127,16435 em 1536 Middle Text
+      line 30127,21577 30127,25161 thick 123
+      glyph U+E222 30127,23369 size 1024
+    group 17
+      group 16
+        rect 36376,15284 37446,16606 White
+        text "2" 36911,16435 em 1536 Middle Text
+      line 36911,21577 36911,25161 thick 123
+  group 28
+    line 73046,12873 73046,20553 thick 512
+    line 72298,12873 72298,20553 thick 164
+    group 21
+      group 29
+        rect 45147,12212 46217,13534 White
+        text "0" 45682,13363 em 1536 Middle Text
+      group 30
+        rect 45147,13748 46217,15070 White
+        text "0" 45682,14899 em 1536 Middle Text
+      group 20
+        rect 45147,15284 46217,16606 White
+        text "2" 45682,16435 em 1536 Middle Text
+      group 31
+        rect 45147,16820 46217,18142 White
+        text "0" 45682,17971 em 1536 Middle Text
+      line 44560,12994 44560,18095 thick 123
+      glyph U+EB78 44280,12994 size 614
+      line 45682,21577 45682,25161 thick 123
+    group 23
+      group 32
+        rect 51931,12212 53001,13534 White
+        text "0" 52466,13363 em 1536 Middle Text
+      group 33
+        rect 51931,13748 53001,15070 White
+        text "0" 52466,14899 em 1536 Middle Text
+      group 22
+        rect 51931,15284 53001,16606 White
+        text "2" 52466,16435 em 1536 Middle Text
+      group 34
+        rect 51931,16820 53001,18142 White
+        text "0" 52466,17971 em 1536 Middle Text
+      line 51344,12259 51344,17360 thick 123
+      glyph U+EB7C 51064,18095 size 614
+      line 52466,21577 52466,25161 thick 123
+    group 25
+      group 24
+        rect 58716,15284 59786,16606 White
+        text "2" 59251,16435 em 1536 Middle Text
+      rect 58105,15012 58716,15792 White
+      text "1" 58614,15792 em 1024 End Text
+      line 59251,21577 59251,25161 thick 123
+    group 27
+      group 26
+        rect 65500,15284 66570,16606 White
+        text "2" 66035,16435 em 1536 Middle Text
+      rect 64849,15012 65500,15792 White
+      text "T" 65398,15792 em 1024 End Text
+      line 66035,21577 66035,25161 thick 123

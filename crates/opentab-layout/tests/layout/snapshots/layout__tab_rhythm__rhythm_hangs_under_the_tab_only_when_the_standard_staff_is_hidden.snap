@@ -1,0 +1,46 @@
+---
+source: crates/opentab-layout/tests/layout/tab_rhythm.rs
+expression: "focused(&score, StaffMode::Tab)"
+---
+page 0 staff space 1750 um
+system 0 8777,8777 55962,25673 natural 31457 available 105326
+  staff track 0 staff 0 Tab top 12873 lines 6 spacing 1536
+    bar 0 number 1 group 17 8777,12873 43318,20553 content 14920 widths 23203 23203 Tab ticks 8/8 [0@15944 4@24721 5@30427 6@36132]
+    bar 1 number 2 group 21 43318,12873 55962,20553 content 43318 widths 11448 8254 Tab ticks 1/1 [0@44342]
+group 5
+  line 8777,12873 55962,12873 thick 133
+  line 8777,14409 55962,14409 thick 133
+  line 8777,15945 55962,15945 thick 133
+  line 8777,17481 55962,17481 thick 133
+  line 8777,19017 55962,19017 thick 133
+  line 8777,20553 55962,20553 thick 133
+  group 17
+    glyph U+E06D 9289,16713 size 1016
+    glyph U+E084 11971,15689 size 1024
+    glyph U+E084 11971,17737 size 1024
+    line 43236,12873 43236,20553 thick 164
+    group 11
+      group 10
+        rect 16013,15284 17083,16606 White
+        text "2" 16548,16435 em 1536 Middle Text
+      line 16548,23369 16548,25161 thick 123
+    group 13
+      group 12
+        rect 24790,15284 25860,16606 White
+        text "3" 25325,16435 em 1536 Middle Text
+      line 25325,21577 25325,25161 thick 123
+    group 15
+      group 14
+        rect 30496,15284 31566,16606 White
+        text "4" 31031,16435 em 1536 Middle Text
+      line 31031,21577 31031,25161 thick 123
+    group 16
+      glyph U+E4E5 36181,23369 size 1024
+    shape Fill [MoveTo(Point { x: Units(25263), y: Units(25161) }), LineTo(Point { x: Units(31093), y: Units(25161) }), LineTo(Point { x: Units(31093), y: Units(24649) }), LineTo(Point { x: Units(25263), y: Units(24649) }), Close]
+  group 21
+    line 55706,12873 55706,20553 thick 512
+    line 54958,12873 54958,20553 thick 164
+    group 20
+      group 19
+        rect 44411,13748 45481,15070 White
+        text "0" 44946,14899 em 1536 Middle Text
