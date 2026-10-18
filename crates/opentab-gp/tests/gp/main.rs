@@ -3,6 +3,7 @@ mod archive;
 mod beat;
 mod container;
 mod corpus;
+mod edits;
 mod envelope;
 mod fuzz;
 mod limits;

@@ -1,4 +1,4 @@
-use opentab_model::{ElementId, Score};
+use opentab_model::{BarId, ElementId, NoteId, Score};
 
 use crate::support::read_gpif;
 
@@ -6,10 +6,14 @@ pub const ROOT_MARKER: &str = "root-marker";
 pub const INTRO_MARKER: &str = "intro-marker";
 pub const SOUND_MARKER: &str = "sound-switch";
 pub const SECOND_SOUND: &str = "second-sound";
+pub const PITCH_MARKER: &str = "<Number>99</Number>";
 pub const ACCENT_MARKER: &str = "<Accent>10</Accent>";
+pub const BRUSH_MARKER: &str = "<XProperty id=\"687935490\">";
 pub const ORNAMENT_MARKER: &str = "UpperMordent";
 pub const UNREFERENCED_MARKER: &str = "LowerMordent";
 pub const SIMILE_MARKER: &str = "<SimileMark>Simple</SimileMark>";
+pub const MASTER_MARKER: &str = "<XProperty id=\"1124139010\">";
+pub const HOPO_DESTINATION: &str = "<Property name=\"HopoDestination\">";
 pub const FRAME_OFFSETS: [&str; 3] = ["1000", "2000", "3000"];
 
 fn sync(bar: usize, index: usize, occurrence: usize, frame: &str) -> String {
@@ -156,10 +160,33 @@ pub fn rich_gpif() -> String {
 pub struct Rich {
     pub score: Score,
     pub master_ids: Vec<ElementId>,
+    pub pitched: NoteId,
+    pub accented: NoteId,
+    pub ornamented: NoteId,
+    pub destinations: Vec<NoteId>,
+    pub brushed: ElementId,
+    pub simile: BarId,
 }
 
 pub fn rich() -> Rich {
     let score = read_gpif(&rich_gpif());
     let master_ids = score.master_bars.iter().map(|master| master.id.0).collect();
-    Rich { score, master_ids }
+    let bars = &score.tracks[0].staves[0].bars;
+    let first = &bars[0].voices[0].beats;
+    let second = &bars[1].voices[0].beats;
+    let third = &bars[2].voices[0].beats;
+    Rich {
+        master_ids,
+        pitched: first[0].notes[0].id,
+        accented: first[0].notes[1].id,
+        ornamented: second[0].notes[0].id,
+        destinations: vec![
+            first[1].notes[0].id,
+            second[1].notes[0].id,
+            third[0].notes[0].id,
+        ],
+        brushed: first[1].id.0,
+        simile: bars[0].id,
+        score,
+    }
 }
