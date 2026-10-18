@@ -24,6 +24,7 @@ proptest = "1"
 clap = { version = "4", features = ["derive"] }
 sha2 = "0.10"
 toml = "0.8"
+tempfile = "3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
