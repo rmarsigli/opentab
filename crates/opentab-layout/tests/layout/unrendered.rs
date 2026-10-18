@@ -224,6 +224,11 @@ fn look_alikes_of_each_feature_are_not_reported() {
     );
     rests(&mut quiet);
     quiet.master_bars[3].repeat_start = true;
+    let mut empty = score(4);
+    for bar in [1, 2] {
+        empty.tracks[0].staves[0].bars[bar].voices.clear();
+    }
+    assert!(found(&empty, &both).is_empty());
     let mut known = score(4);
     drums(&mut known);
     let drums = known.tracks.len() - 1;
