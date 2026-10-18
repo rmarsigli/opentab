@@ -936,3 +936,48 @@ fn central_directory_system_and_attributes_are_pinned() {
             .all(|(system, _, attributes)| *system == 3 && *attributes == file)
     );
 }
+
+#[test]
+fn a_kept_gp_version_replaces_the_generated_one() {
+    let score = read_gpif(
+        &Doc {
+            root: "<GPVersion>7.6.0</GPVersion>".to_string(),
+            ..Doc::default()
+        }
+        .render(),
+    );
+    let gpif = gpif_of(&written(&score));
+    assert_eq!(gpif.matches("<GPVersion>").count(), 1);
+    assert!(gpif.contains("<GPVersion>7.6.0</GPVersion>"));
+    assert!(!gpif.contains("8.1.5"));
+    assert_eq!(read_gp(&written(&score)).expect("read"), score);
+    let fresh = gpif_of(&written(&one_note()));
+    assert_eq!(fresh.matches("<GPVersion>8.1.5</GPVersion>").count(), 1);
+}
+
+#[test]
+fn an_empty_drum_kit_is_refused() {
+    let mut drums = Scratch::new(1);
+    drums.track(
+        InstrumentKind::Percussion,
+        vec![vec![(
+            NoteValue::Whole,
+            vec![NoteKind::Percussion { articulation: 3 }],
+        )]],
+    );
+    let id = drums.score.tracks[0].id.0;
+    drums.score.extensions.0.insert(
+        id,
+        vec![OpaquePayload {
+            format: "gpif".to_string(),
+            data: "<Keep parent=\"InstrumentSet\" index=\"1\"><Elements/></Keep>".to_string(),
+        }],
+    );
+    assert_eq!(
+        refusal(&drums.score),
+        ("tracks[0]".to_string(), Refusal::DrumKit)
+    );
+    drums.score.extensions.0.clear();
+    assert!(crate::support::add_drum_kits(&mut drums.score));
+    assert_eq!(read_gp(&written(&drums.score)).expect("read"), drums.score);
+}

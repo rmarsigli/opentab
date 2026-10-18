@@ -227,7 +227,7 @@ fn has_drum_kit(items: &[Item]) -> bool {
         item.parent == "InstrumentSet"
             && item
                 .element()
-                .is_some_and(|element| element.name == "Elements")
+                .is_some_and(|element| element.name == "Elements" && element.has_elements())
     })
 }
 

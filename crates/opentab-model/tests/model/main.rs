@@ -1,3 +1,4 @@
+mod blank;
 mod diagnose;
 mod duration;
 mod ids;

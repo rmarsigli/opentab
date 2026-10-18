@@ -34,6 +34,8 @@ pub enum ModelError {
     InvalidKeySignature { accidentals: i8 },
     #[error("container has {scores} score entries; at most one is allowed")]
     InvalidContainer { scores: usize },
+    #[error("the score's id space is exhausted")]
+    IdsExhausted,
     #[error("missing \"opentab_json\" version field")]
     MissingVersion,
     #[error("unsupported opentab_json version {found}, expected 2")]
