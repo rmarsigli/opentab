@@ -152,3 +152,8 @@ impl FillTable {
         out
     }
 }
+
+pub fn min_beats_for_bar(time_signature: TimeSignature) -> usize {
+    let units = to_units(time_signature.bar_length()).unwrap_or(0);
+    FillTable::shared().min_beats(units)
+}

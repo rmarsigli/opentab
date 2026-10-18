@@ -1,5 +1,5 @@
-use opentab_model::{Diagnostic, InstrumentKind, NoteKind, Score, diagnose, from_json, to_json};
-use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
+use opentab_model::{Diagnostic, NoteKind, Score, diagnose, from_json, to_json};
+use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with, min_beats_for_bar};
 use proptest::prelude::*;
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::{Config, RngAlgorithm, TestError, TestRng, TestRunner};
@@ -83,7 +83,7 @@ proptest! {
                         bar.voices
                             .iter()
                             .enumerate()
-                            .filter(|(_, voice)| !voice.beats.is_empty())
+                            .filter(|(_, voice)| voice.beats.len() >= 2)
                             .map(move |(v, _)| (t, s, b, v))
                     })
                 })
@@ -98,14 +98,34 @@ proptest! {
         let flagged = diagnostics
             .iter()
             .any(|d| matches!(d, Diagnostic::IncompleteBar { voice, .. } if *voice == id));
-        prop_assert!(flagged || voice_is_now_empty(&broken, (t, s, b, v)));
+        prop_assert!(flagged);
     }
 }
 
-fn voice_is_now_empty(score: &Score, path: (usize, usize, usize, usize)) -> bool {
-    score.tracks[path.0].staves[path.1].bars[path.2].voices[path.3]
-        .beats
-        .is_empty()
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(CASES))]
+
+    #[test]
+    fn max_beats_per_voice_is_a_soft_cap(
+        (cap, score) in (0usize..=8).prop_flat_map(|cap| {
+            arb_score_with(ScoreGenConfig {
+                max_beats_per_voice: cap,
+                ..ScoreGenConfig::default()
+            })
+            .prop_map(move |score| (cap, score))
+        })
+    ) {
+        for track in &score.tracks {
+            for staff in &track.staves {
+                for (bar, master_bar) in staff.bars.iter().zip(&score.master_bars) {
+                    let limit = cap.max(min_beats_for_bar(master_bar.time_signature));
+                    for voice in &bar.voices {
+                        prop_assert!(voice.beats.len() <= limit);
+                    }
+                }
+            }
+        }
+    }
 }
 
 proptest! {
@@ -190,17 +210,25 @@ struct Coverage {
     beat_stroke: bool,
     beat_chord_name: bool,
     beat_text: bool,
-    beat_flags: bool,
-    note_tie: bool,
-    note_ghost_dead: bool,
+    beat_fade_in: bool,
+    beat_tap: bool,
+    beat_slap: bool,
+    beat_pop: bool,
+    note_tie_origin: bool,
+    note_tie_destination: bool,
+    note_ghost: bool,
+    note_dead: bool,
     note_accent: bool,
-    note_palm_let_staccato: bool,
+    note_palm_mute: bool,
+    note_let_ring: bool,
+    note_staccato: bool,
     note_vibrato: bool,
-    note_hammer: bool,
+    note_hammer_on_pull_off: bool,
     note_slide: bool,
     note_harmonic: bool,
     note_bend: bool,
-    note_fingers: bool,
+    note_left_hand_finger: bool,
+    note_right_hand_finger: bool,
     marker: bool,
     repeats: bool,
     tempo_changes: bool,
@@ -236,10 +264,6 @@ fn observe(coverage: &mut Coverage, score: &Score) {
         coverage.tempo_changes |= !master_bar.tempo_changes.is_empty();
     }
     for track in &score.tracks {
-        match track.instrument.kind {
-            InstrumentKind::Fretted => coverage.fretted = true,
-            InstrumentKind::Percussion => coverage.percussion = true,
-        }
         coverage.multi_staff |= track.staves.len() > 1;
         for staff in &track.staves {
             for bar in &staff.bars {
@@ -264,25 +288,31 @@ fn observe_beat(coverage: &mut Coverage, beat: &opentab_model::Beat) {
     coverage.beat_stroke |= effects.stroke.is_some();
     coverage.beat_chord_name |= effects.chord_name.is_some();
     coverage.beat_text |= effects.text.is_some();
-    coverage.beat_flags |= effects.fade_in && effects.tap || effects.slap || effects.pop;
+    coverage.beat_fade_in |= effects.fade_in;
+    coverage.beat_tap |= effects.tap;
+    coverage.beat_slap |= effects.slap;
+    coverage.beat_pop |= effects.pop;
     for note in &beat.notes {
+        match note.kind {
+            NoteKind::Fretted { .. } => coverage.fretted = true,
+            NoteKind::Percussion { .. } => coverage.percussion = true,
+        }
         let effects = &note.effects;
-        coverage.note_tie |= effects.tie_origin || effects.tie_destination;
-        coverage.note_ghost_dead |= effects.ghost || effects.dead;
+        coverage.note_tie_origin |= effects.tie_origin;
+        coverage.note_tie_destination |= effects.tie_destination;
+        coverage.note_ghost |= effects.ghost;
+        coverage.note_dead |= effects.dead;
         coverage.note_accent |= effects.accent.is_some();
-        coverage.note_palm_let_staccato |=
-            effects.palm_mute || effects.let_ring || effects.staccato;
+        coverage.note_palm_mute |= effects.palm_mute;
+        coverage.note_let_ring |= effects.let_ring;
+        coverage.note_staccato |= effects.staccato;
         coverage.note_vibrato |= effects.vibrato.is_some();
-        coverage.note_hammer |= effects.hammer_on_pull_off;
+        coverage.note_hammer_on_pull_off |= effects.hammer_on_pull_off;
         coverage.note_slide |= effects.slide.is_some();
         coverage.note_harmonic |= effects.harmonic.is_some();
         coverage.note_bend |= effects.bend.is_some();
-        coverage.note_fingers |=
-            effects.left_hand_finger.is_some() && effects.right_hand_finger.is_some();
-        assert!(matches!(
-            note.kind,
-            NoteKind::Fretted { .. } | NoteKind::Percussion { .. }
-        ));
+        coverage.note_left_hand_finger |= effects.left_hand_finger.is_some();
+        coverage.note_right_hand_finger |= effects.right_hand_finger.is_some();
     }
 }
 
@@ -314,17 +344,25 @@ fn generator_covers_every_feature() {
         ("beat_stroke", coverage.beat_stroke),
         ("beat_chord_name", coverage.beat_chord_name),
         ("beat_text", coverage.beat_text),
-        ("beat_flags", coverage.beat_flags),
-        ("note_tie", coverage.note_tie),
-        ("note_ghost_dead", coverage.note_ghost_dead),
+        ("beat_fade_in", coverage.beat_fade_in),
+        ("beat_tap", coverage.beat_tap),
+        ("beat_slap", coverage.beat_slap),
+        ("beat_pop", coverage.beat_pop),
+        ("note_tie_origin", coverage.note_tie_origin),
+        ("note_tie_destination", coverage.note_tie_destination),
+        ("note_ghost", coverage.note_ghost),
+        ("note_dead", coverage.note_dead),
         ("note_accent", coverage.note_accent),
-        ("note_palm_let_staccato", coverage.note_palm_let_staccato),
+        ("note_palm_mute", coverage.note_palm_mute),
+        ("note_let_ring", coverage.note_let_ring),
+        ("note_staccato", coverage.note_staccato),
         ("note_vibrato", coverage.note_vibrato),
-        ("note_hammer", coverage.note_hammer),
+        ("note_hammer_on_pull_off", coverage.note_hammer_on_pull_off),
         ("note_slide", coverage.note_slide),
         ("note_harmonic", coverage.note_harmonic),
         ("note_bend", coverage.note_bend),
-        ("note_fingers", coverage.note_fingers),
+        ("note_left_hand_finger", coverage.note_left_hand_finger),
+        ("note_right_hand_finger", coverage.note_right_hand_finger),
         ("marker", coverage.marker),
         ("repeats", coverage.repeats),
         ("tempo_changes", coverage.tempo_changes),
