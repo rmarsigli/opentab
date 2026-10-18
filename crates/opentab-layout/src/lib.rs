@@ -57,7 +57,7 @@ pub use notation::{
 pub use options::{BarRange, LayoutError, LayoutOptions, StaffMode};
 pub use pitch::{Spelling, key_alter, position, spell, written_key, written_midi};
 pub use plan::{BarInput, Extent, VerticalNeeds};
-pub use select::{Selection, StaffSpec};
+pub use select::{Selection, StaffSpec, TAB_PROGRAMS, tab_by_default};
 pub use spacing::{DURATION_WIDTHS, WIDTH_PER_DOUBLING_BEYOND_WHOLE, duration_width};
 pub use structure::{
     BarLayout, BeatSlot, ClefSign, Column, GRACE_ADVANCE, GraceSlot, StaffKind, StaffLayout,

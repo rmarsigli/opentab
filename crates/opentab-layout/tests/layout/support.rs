@@ -219,7 +219,11 @@ pub fn expected_staves(score: &Score, options: &LayoutOptions) -> Vec<(usize, us
             (false, _) | (true, Some(StaffMode::Standard)) => vec![StaffKind::Standard],
             (true, Some(StaffMode::Tab)) => vec![StaffKind::Tab],
             (true, Some(StaffMode::Both)) => vec![StaffKind::Standard, StaffKind::Tab],
-            (true, None) if (4..=8).contains(&strings) => {
+            (true, None)
+                if (4..=8).contains(&strings)
+                    && ((24..=39).contains(&track.instrument.midi_program)
+                        || (104..=107).contains(&track.instrument.midi_program)) =>
+            {
                 vec![StaffKind::Standard, StaffKind::Tab]
             }
             (true, None) => vec![StaffKind::Standard],

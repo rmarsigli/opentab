@@ -358,6 +358,46 @@ fn staff_modes_follow_the_string_count_unless_forced() {
 }
 
 #[test]
+fn only_guitar_family_programs_get_a_tab_staff_by_default() {
+    let mut score = guitar(&whole_bars(1));
+    let programs: [u8; 9] = [4, 16, 23, 24, 39, 40, 103, 104, 107];
+    for program in programs {
+        let index = add_track(
+            &mut score,
+            &format!("P{program}"),
+            6,
+            InstrumentKind::Fretted,
+        );
+        score.tracks[index].instrument.midi_program = program;
+    }
+    let kinds = |mode: Option<StaffMode>| {
+        let options = LayoutOptions {
+            staff_mode: mode,
+            page: opentab_layout::PageSize {
+                width: opentab_layout::A4.width,
+                height: opentab_layout::Micrometres::from_mm(3_000),
+            },
+            ..LayoutOptions::default()
+        };
+        let list = layout(&score, &options).unwrap();
+        check(&score, &options, &list);
+        systems(&list)[0]
+            .staves
+            .iter()
+            .filter(|staff| staff.kind == StaffKind::Tab)
+            .map(|staff| score.tracks[staff.track].instrument.midi_program)
+            .collect::<Vec<_>>()
+    };
+    let guitar_program = score.tracks[0].instrument.midi_program;
+    assert_eq!(kinds(None), vec![guitar_program, 24, 39, 104, 107]);
+    let mut forced = vec![guitar_program];
+    forced.extend(programs);
+    assert_eq!(kinds(Some(StaffMode::Tab)), forced);
+    assert_eq!(kinds(Some(StaffMode::Both)), forced);
+    assert!(kinds(Some(StaffMode::Standard)).is_empty());
+}
+
+#[test]
 fn tab_staves_space_their_lines_one_and_a_half_staff_spaces_apart() {
     let score = guitar(&whole_bars(1));
     let list = laid_out(&score);

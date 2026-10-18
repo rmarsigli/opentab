@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::ops::RangeInclusive;
 
 use opentab_model::{Bar, Clef, InstrumentKind, Score, Track};
 
@@ -27,6 +28,14 @@ pub struct Selection {
     pub kits: Vec<Option<DrumKit>>,
 }
 
+pub const TAB_PROGRAMS: [RangeInclusive<u8>; 2] = [24..=39, 104..=107];
+
+pub fn tab_by_default(track: &Track) -> bool {
+    let program = track.instrument.midi_program;
+    (MIN_TAB_STRINGS..=MAX_TAB_STRINGS).contains(&track.tuning.strings.len())
+        && TAB_PROGRAMS.iter().any(|range| range.contains(&program))
+}
+
 pub fn staff_kinds(track: &Track, mode: Option<StaffMode>) -> Vec<StaffKind> {
     let strings = track.tuning.strings.len();
     let fretted = track.instrument.kind == InstrumentKind::Fretted && strings > 0;
@@ -37,9 +46,7 @@ pub fn staff_kinds(track: &Track, mode: Option<StaffMode>) -> Vec<StaffKind> {
         Some(StaffMode::Standard) => vec![StaffKind::Standard],
         Some(StaffMode::Tab) => vec![StaffKind::Tab],
         Some(StaffMode::Both) => vec![StaffKind::Standard, StaffKind::Tab],
-        None if (MIN_TAB_STRINGS..=MAX_TAB_STRINGS).contains(&strings) => {
-            vec![StaffKind::Standard, StaffKind::Tab]
-        }
+        None if tab_by_default(track) => vec![StaffKind::Standard, StaffKind::Tab],
         None => vec![StaffKind::Standard],
     }
 }
