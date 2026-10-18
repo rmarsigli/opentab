@@ -29,20 +29,12 @@ namespace GpOracle {
     [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr h, int id);
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
     [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
-    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
-    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
-    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-    [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
     public static bool Focus(IntPtr h) {
       if (IsIconic(h)) ShowWindow(h, 9);
       if (SetForegroundWindow(h) && GetForegroundWindow() == h) return true;
       keybd_event(0x12, 0, 0, UIntPtr.Zero);
       keybd_event(0x12, 0, 2, UIntPtr.Zero);
       return SetForegroundWindow(h);
-    }
-    public static void ClickRel(IntPtr h, int x, int y) {
-      RECT r; GetWindowRect(h, out r); SetCursorPos(r.Left + x, r.Top + y);
-      mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero);
     }
   }
 }
@@ -72,7 +64,7 @@ function Get-ProcWindows([int]$ProcId) {
     [void][GpOracle.W32]::GetWindowThreadProcessId($h, [ref]$p)
     if ($p -eq $ProcId -and [GpOracle.W32]::IsWindowVisible($h)) {
       $c = New-Object System.Text.StringBuilder 256; [void][GpOracle.W32]::GetClassName($h, $c, 256)
-      [void]$list.Add([pscustomobject]@{ Handle = $h; Title = (Get-WindowText $h); Class = $c.ToString() })
+      [void]$list.Add([pscustomobject]@{ Handle = $h; Title = (Get-WindowText $h); Class = $c.ToString(); Owner = [GpOracle.W32]::GetWindow($h, 4) })
     }
     $true }
   [void][GpOracle.W32]::EnumWindows($cb, [IntPtr]::Zero)
@@ -127,11 +119,32 @@ function Get-GpMainHandle {
 
 function Get-GpTitle { Get-WindowText (Get-GpMainHandle) }
 
+function Assert-MainKnown([IntPtr]$Main) {
+  if ($Main -eq [IntPtr]::Zero) { throw 'Guitar Pro main window is unknown; refusing to dismiss or close any window' }
+}
+
+function Test-CloseAllowed([IntPtr]$Handle, [IntPtr]$Owner, [IntPtr]$Main) {
+  $Main -ne [IntPtr]::Zero -and $Handle -ne [IntPtr]::Zero -and $Handle -ne $Main -and $Owner -eq $Main
+}
+
+function Select-GpModals([object[]]$Windows, [IntPtr]$Main) {
+  Assert-MainKnown $Main
+  @($Windows | Where-Object {
+      $_.Class -ne 'SysShadow' -and $_.Class -notlike '*ToolTip*' -and $_.Class -notlike '*Popup*' -and (Test-CloseAllowed $_.Handle $_.Owner $Main)
+    })
+}
+
 function Get-GpModals {
   $p = Get-GpProcess
   if (-not $p) { return @() }
-  $main = Get-GpMainHandle
-  @(Get-ProcWindows $p.Id | Where-Object { $_.Handle -ne $main -and $_.Class -ne 'SysShadow' -and $_.Class -notlike '*ToolTip*' })
+  Select-GpModals @(Get-ProcWindows $p.Id) (Get-GpMainHandle)
+}
+
+function Close-OwnedWindow([IntPtr]$Handle, [IntPtr]$Main) {
+  Assert-MainKnown $Main
+  if (-not (Test-CloseAllowed $Handle ([GpOracle.W32]::GetWindow($Handle, 4)) $Main)) { return $false }
+  [void][GpOracle.W32]::PostMessage($Handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+  $true
 }
 
 function Get-GpPopups {
@@ -219,28 +232,33 @@ function Send-KeysTo([IntPtr]$Handle, [string]$Keys) {
 }
 
 function Close-GpMenus {
+  $main = Get-GpMainHandle
+  Assert-MainKnown $main
   for ($i = 0; $i -lt 4; $i++) {
     if (@(Get-GpPopups).Count -eq 0) { return $true }
-    if (-not (Send-KeysTo (Get-GpMainHandle) '{ESC}')) { return $false }
+    if (-not (Send-KeysTo $main '{ESC}')) { return $false }
     Start-Sleep -Milliseconds 150
   }
   @(Get-GpPopups).Count -eq 0
 }
 
 function Clear-GpModals([int]$MaxAttempts = 3) {
+  $main = Get-GpMainHandle
+  Assert-MainKnown $main
   $seen = New-Object System.Collections.ArrayList
   for ($i = 0; $i -lt $MaxAttempts; $i++) {
+    if (@(Get-GpPopups).Count -gt 0) { [void](Close-GpMenus) }
     $mods = Get-GpModals
     if ($mods.Count -eq 0) { return [pscustomobject]@{ Cleared = $true; Seen = $seen } }
     foreach ($m in $mods) {
       $label = "$($m.Title) [$($m.Class)]"
       if (-not $seen.Contains($label)) { [void]$seen.Add($label) }
       if (-not [GpOracle.W32]::IsWindow($m.Handle)) { continue }
-      if ($m.Class -like '*Popup*') { [void](Close-GpMenus); continue }
+      if (-not (Test-CloseAllowed $m.Handle ([GpOracle.W32]::GetWindow($m.Handle, 4)) $main)) { continue }
       if ($i -eq 0) {
         [void](Send-KeysTo $m.Handle '{ESC}')
       } else {
-        [void][GpOracle.W32]::PostMessage($m.Handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+        [void](Close-OwnedWindow $m.Handle $main)
       }
     }
     [void](Wait-For { if ((Get-GpModals).Count -eq 0) { $true } } 1500 100)

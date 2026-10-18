@@ -3,8 +3,6 @@ const MUSICXML_CLOSE: &[u8] = b"</encoding-date>";
 const MUSICXML_EPOCH: &[u8] = b"1970-01-01";
 const PDF_DATE_KEYS: [&[u8]; 2] = [b"/CreationDate", b"/ModDate"];
 const PDF_EPOCH: &[u8] = b"(D:19700101000000Z)";
-const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
-const PNG_VOLATILE_CHUNKS: [&[u8]; 1] = [b"tIME"];
 
 pub fn normalize_musicxml(input: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(input.len());
@@ -30,21 +28,12 @@ pub fn normalize_pdf(input: &[u8]) -> Vec<u8> {
     current
 }
 
-pub fn normalize_png(input: &[u8]) -> Vec<u8> {
-    match strip_png_chunks(input) {
-        Some(stripped) => stripped,
-        None => input.to_vec(),
-    }
-}
-
 pub fn normalize_output(path: &str, input: &[u8]) -> Vec<u8> {
     let lower = path.to_ascii_lowercase();
     if lower.ends_with(".musicxml") || lower.ends_with(".xml") {
         normalize_musicxml(input)
     } else if lower.ends_with(".pdf") {
         normalize_pdf(input)
-    } else if lower.ends_with(".png") {
-        normalize_png(input)
     } else {
         input.to_vec()
     }
@@ -147,28 +136,9 @@ fn replace_pdf_date(input: &[u8], key: &[u8]) -> Vec<u8> {
     out
 }
 
-fn strip_png_chunks(input: &[u8]) -> Option<Vec<u8>> {
-    let body = input.strip_prefix(PNG_SIGNATURE)?;
-    let mut out = Vec::with_capacity(input.len());
-    out.extend_from_slice(PNG_SIGNATURE);
-    let mut pos = 0;
-    while pos < body.len() {
-        let length_bytes: [u8; 4] = body.get(pos..pos + 4)?.try_into().ok()?;
-        let length = usize::try_from(u32::from_be_bytes(length_bytes)).ok()?;
-        let chunk_end = pos.checked_add(12)?.checked_add(length)?;
-        let chunk = body.get(pos..chunk_end)?;
-        let kind = &chunk[4..8];
-        if !PNG_VOLATILE_CHUNKS.contains(&kind) {
-            out.extend_from_slice(chunk);
-        }
-        pos = chunk_end;
-    }
-    Some(out)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{PDF_EPOCH, normalize_musicxml, normalize_output, normalize_pdf, normalize_png};
+    use super::{PDF_EPOCH, normalize_musicxml, normalize_output, normalize_pdf};
 
     fn pdf_with(creation: &str, modified: &str) -> Vec<u8> {
         format!(
@@ -279,44 +249,6 @@ mod tests {
         assert_eq!(normalize_musicxml(&input), input);
     }
 
-    fn png_chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
-        let mut chunk = Vec::new();
-        chunk.extend_from_slice(&u32::try_from(data.len()).expect("small").to_be_bytes());
-        chunk.extend_from_slice(kind);
-        chunk.extend_from_slice(data);
-        chunk.extend_from_slice(&[0, 0, 0, 0]);
-        chunk
-    }
-
-    fn png_with(time: Option<&[u8]>) -> Vec<u8> {
-        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
-        png.extend(png_chunk(b"IHDR", &[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]));
-        if let Some(time) = time {
-            png.extend(png_chunk(b"tIME", time));
-        }
-        png.extend(png_chunk(b"IDAT", b"pixels"));
-        png.extend(png_chunk(b"IEND", b""));
-        png
-    }
-
-    #[test]
-    fn png_time_chunks_are_removed() {
-        let reference = png_with(None);
-        for second in 0u8..60 {
-            let stamped = png_with(Some(&[0x07, 0xea, 10, 17, 21, 33, second]));
-            assert_eq!(normalize_png(&stamped), reference);
-        }
-        assert_eq!(normalize_png(&reference), reference);
-    }
-
-    #[test]
-    fn malformed_png_is_left_alone() {
-        let mut truncated = png_with(Some(&[1, 2, 3, 4, 5, 6, 7]));
-        truncated.truncate(truncated.len() - 3);
-        assert_eq!(normalize_png(&truncated), truncated);
-        assert_eq!(normalize_png(b"not a png"), b"not a png".to_vec());
-    }
-
     #[test]
     fn output_dispatch_by_extension() {
         let xml = b"<encoding-date>2026-10-17</encoding-date>";
@@ -326,5 +258,7 @@ mod tests {
         );
         assert_eq!(normalize_output("export.mid", xml), xml.to_vec());
         assert_eq!(normalize_output("resave.gp", xml), xml.to_vec());
+        let png = b"\x89PNG\r\n\x1a\n\0\0\0\x07tIME\x07\xea\x0a\x11\x15\x21\x00\0\0\0\0";
+        assert_eq!(normalize_output("png/a#01.png", png), png.to_vec());
     }
 }

@@ -103,18 +103,6 @@ function Test-FileReady([string]$Path) {
   } catch { $false }
 }
 
-function Wait-StableFile([string]$Path) {
-  $script:lastLen = -1
-  Wait-For {
-    if (Test-Path -LiteralPath $Path) {
-      $l = (Get-Item -LiteralPath $Path).Length
-      if ($l -gt 0 -and $l -eq $script:lastLen -and (Test-FileReady $Path)) { return $true }
-      $script:lastLen = $l
-    }
-    $null
-  } $StepTimeoutMs 300
-}
-
 function Get-ModalTitles { (@(Get-GpModals) | ForEach-Object { "'$($_.Title)' [$($_.Class)]" }) -join ', ' }
 
 function Export-ViaFileDialog([string[]]$Menu, [string]$Target) {
@@ -127,8 +115,8 @@ function Export-ViaFileDialog([string[]]$Menu, [string]$Target) {
   $done = Wait-For {
     $report = @(Get-GpModals | Where-Object { $_.Title -eq "Export result$GpSuffix" }) | Select-Object -First 1
     if ($report) {
+      if (-not (Close-OwnedWindow $report.Handle (Get-GpMainHandle))) { throw "'$($report.Title)' is not owned by the main window; not closed" }
       [void]$Notes.Add("$(Split-Path -Leaf $Target): dismissed '$($report.Title)'")
-      [void][GpOracle.W32]::PostMessage($report.Handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
       [void](Wait-For { if (-not [GpOracle.W32]::IsWindow($report.Handle)) { $true } } 5000)
       return $null
     }
