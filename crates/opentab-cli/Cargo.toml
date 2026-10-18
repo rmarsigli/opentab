@@ -11,7 +11,14 @@ name = "opentab"
 path = "src/main.rs"
 
 [dependencies]
+opentab-model = { path = "../opentab-model" }
+opentab-command = { path = "../opentab-command" }
 clap = { workspace = true }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true
