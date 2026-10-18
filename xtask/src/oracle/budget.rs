@@ -148,6 +148,22 @@ mod tests {
     }
 
     #[test]
+    fn example_script_shares_the_budget_and_fits_its_backstop() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("oracle")
+            .join("Invoke-GpExample.ps1");
+        let text = std::fs::read_to_string(path).expect("script readable");
+        let budget = StepBudget::default();
+        for (name, value) in budget.script_args() {
+            assert!(text.contains(&format!("[int]${name} = {value}")), "{name}");
+        }
+        let steps = text.matches("Invoke-Step '").count() as u64;
+        assert!(steps >= 4);
+        assert!(steps <= budget.steps);
+    }
+
+    #[test]
     fn script_args_carry_the_budget() {
         let args = StepBudget::default().script_args();
         assert_eq!(args[0], ("DialogTimeoutMs", String::from("8000")));
