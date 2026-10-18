@@ -1,11 +1,10 @@
 use std::path::Path;
 
-use opentab_command::{apply, parse_jsonl_lines};
+use opentab_command::{apply, element_ids, parse_jsonl_lines};
 use serde::Serialize;
 
 use crate::error::CliError;
 use crate::files::{self, Overwrite};
-use crate::ids::IdTree;
 use crate::output::Rendered;
 use crate::text::escape_controls;
 
@@ -24,18 +23,14 @@ pub fn run(path: &Path, commands: &Path, out: &Path) -> Result<Rendered<Applied>
         line: error.line,
         message: error.message,
     })?;
-    let before = IdTree::of(&score).all();
+    let before = element_ids(&score);
     for numbered in &parsed {
         apply(&mut score, &numbered.command).map_err(|source| CliError::CommandFailed {
             line: numbered.line,
             source,
         })?;
     }
-    let allocated: Vec<u64> = IdTree::of(&score)
-        .all()
-        .difference(&before)
-        .copied()
-        .collect();
+    let allocated: Vec<u64> = element_ids(&score).difference(&before).copied().collect();
     files::write_score(out, &score, Overwrite::Allowed)?;
     let noun = if parsed.len() == 1 {
         "command"

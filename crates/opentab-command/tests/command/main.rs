@@ -5,6 +5,7 @@ mod focus;
 mod generator;
 mod history;
 mod ids;
+mod info;
 mod json_shape;
 mod jsonl;
 mod master_bar;
