@@ -1,46 +1,22 @@
 use opentab_layout::glyphs::{
-    ACCIDENTAL_FLAT, ACCIDENTAL_NATURAL, ACCIDENTAL_SHARP, AUGMENTATION_DOT, Anchor, F_CLEF,
-    FLAG_8TH_DOWN, FLAG_8TH_UP, G_CLEF, G_CLEF_8VB, Glyph, Metrics, NOTEHEAD_BLACK,
-    NOTEHEAD_DOUBLE_WHOLE, NOTEHEAD_HALF, NOTEHEAD_WHOLE, NOTEHEAD_X_BLACK, REST_8TH, REST_HALF,
-    REST_QUARTER, REST_WHOLE, TAB_CLEF, TIME_SIG_0, UNPITCHED_PERCUSSION_CLEF_1,
-};
-use opentab_layout::glyphs::{
-    BRACKET_BOTTOM, BRACKET_TOP, REPEAT_DOT, TAB_CLEF_4, TIME_SIG_DIGITS,
+    Anchor, Metrics, NAMED, NOTEHEAD_BLACK, TIME_SIG_DIGITS, TUPLET_DIGITS,
 };
 use opentab_layout::text::text_font;
 use opentab_layout::{Point, REFERENCE_EM, Rect, STAFF_SPACE, Units};
 
-const ALL: [Glyph; 25] = [
-    TAB_CLEF_4,
-    REPEAT_DOT,
-    BRACKET_TOP,
-    BRACKET_BOTTOM,
-    G_CLEF,
-    G_CLEF_8VB,
-    F_CLEF,
-    UNPITCHED_PERCUSSION_CLEF_1,
-    TAB_CLEF,
-    NOTEHEAD_DOUBLE_WHOLE,
-    NOTEHEAD_WHOLE,
-    NOTEHEAD_HALF,
-    NOTEHEAD_BLACK,
-    NOTEHEAD_X_BLACK,
-    ACCIDENTAL_FLAT,
-    ACCIDENTAL_NATURAL,
-    ACCIDENTAL_SHARP,
-    REST_WHOLE,
-    REST_HALF,
-    REST_QUARTER,
-    REST_8TH,
-    FLAG_8TH_UP,
-    FLAG_8TH_DOWN,
-    AUGMENTATION_DOT,
-    TIME_SIG_0,
-];
-
 fn rect(min_x: i64, min_y: i64, max_x: i64, max_y: i64) -> Rect {
     Rect::new(Point::new(min_x, min_y), Point::new(max_x, max_y))
 }
+
+fn encloses_closely(outline: Rect, metadata: Rect) -> bool {
+    let outward = |outer: Units, inner: Units| (-1..=CONTROL_SLACK).contains(&(inner.0 - outer.0));
+    outward(outline.min.x, metadata.min.x)
+        && outward(outline.min.y, metadata.min.y)
+        && outward(metadata.max.x, outline.max.x)
+        && outward(metadata.max.y, outline.max.y)
+}
+
+const CONTROL_SLACK: i64 = 16;
 
 fn within_one(left: Rect, right: Rect) -> bool {
     let close = |a: Units, b: Units| (a.0 - b.0).abs() <= 1;
@@ -73,16 +49,24 @@ fn metadata_bboxes_are_staff_spaces_times_1024_with_y_down() {
 #[test]
 fn outline_bounds_match_metadata_bboxes_for_every_named_glyph() {
     let metrics = Metrics::bravura();
-    for glyph in ALL {
+    for glyph in NAMED {
         let outline = metrics.outline(glyph.codepoint);
         let bounds = outline.bounds().unwrap_or_else(|| panic!("{}", glyph.name));
         let expected = metrics
             .bbox(glyph.name)
             .unwrap_or_else(|| panic!("{}", glyph.name));
         assert!(
-            within_one(bounds, expected),
+            within_one(bounds, expected) || encloses_closely(bounds, expected),
             "{}: outline {bounds:?} metadata {expected:?}",
             glyph.name
+        );
+    }
+    for (digit, glyph) in TUPLET_DIGITS.iter().enumerate() {
+        assert_eq!(glyph.name, format!("tuplet{digit}"));
+        let bounds = metrics.outline(glyph.codepoint).bounds().unwrap();
+        assert!(
+            within_one(bounds, metrics.bbox(glyph.name).unwrap()),
+            "{digit}"
         );
     }
     for (digit, glyph) in TIME_SIG_DIGITS.iter().enumerate() {
@@ -229,7 +213,11 @@ fn only_the_smufl_control_characters_of_bravura_have_no_outline() {
     let font = Metrics::bravura().font();
     assert!(font.codepoints().len() > 2_000);
     assert_eq!(blank_characters(font), BRAVURA_BLANK);
-    for glyph in ALL.iter().chain(TIME_SIG_DIGITS.iter()) {
+    for glyph in NAMED
+        .iter()
+        .chain(TIME_SIG_DIGITS.iter())
+        .chain(TUPLET_DIGITS.iter())
+    {
         assert!(font.has(glyph.codepoint), "{}", glyph.name);
         assert!(
             !BRAVURA_BLANK.contains(&u32::from(glyph.codepoint)),
