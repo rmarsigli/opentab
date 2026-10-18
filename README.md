@@ -77,7 +77,19 @@ cargo xtask mutants --shard 3/4
 
 Each run replaces `target/mutants/mutants.out/` (cargo-mutants keeps the previous one as `mutants.out.old`), so read or copy a shard's results before you start the next one. The M1 milestone gate ran `opentab-model` and `opentab-command` in full but only shard 0/4 of the `opentab-gp` mutants; the other three `opentab-gp` shards have not run yet.
 
+`--iterate` is passed to cargo-mutants as well: it retests only the mutants the previous run in `target/mutants/mutants.out/` missed or left unknown, which is the quick way to check fixes after a full run.
+
 It is not part of continuous integration: the run is too slow and too heavy for a shared runner, and its result depends on timing and on the machine. Run it before closing a milestone and whenever the model, command or gp crates change.
+
+## Memory safety for heavy runs
+
+A mutated build can make a test allocate without bound, and on a small WSL machine that can freeze or take down the whole VM. `cargo xtask mutants` therefore runs cargo-mutants inside a systemd user scope limited to 5 GB of memory and 1 GB of swap, so the kernel kills a runaway process instead of the machine. The same cap is available for any heavy command:
+
+```
+cargo xtask capped -- cargo test --workspace
+```
+
+The exit code is the command's. The cap needs Linux and a working `systemd-run --user`; when either is missing, both commands print a warning and run without a limit.
 
 ## Platforms
 

@@ -40,7 +40,7 @@ impl fmt::Display for Shard {
     }
 }
 
-pub fn mutants_args(output: &Path, shard: Option<Shard>) -> Vec<String> {
+pub fn mutants_args(output: &Path, shard: Option<Shard>, iterate: bool) -> Vec<String> {
     let mut args = vec!["mutants".to_owned()];
     for name in CRATES {
         args.push("--package".to_owned());
@@ -55,6 +55,9 @@ pub fn mutants_args(output: &Path, shard: Option<Shard>) -> Vec<String> {
     if let Some(shard) = shard {
         args.push("--shard".to_owned());
         args.push(shard.to_string());
+    }
+    if iterate {
+        args.push("--iterate".to_owned());
     }
     args
 }
