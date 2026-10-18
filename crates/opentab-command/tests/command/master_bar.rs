@@ -274,3 +274,17 @@ fn restore_master_bar_out_of_range() {
         }
     );
 }
+
+#[test]
+fn remove_master_bar_at_the_length_is_out_of_range_before_checking_staves() {
+    let mut fx = fixture();
+    fx.score.tracks[1].staves[0].bars.pop();
+    assert_eq!(
+        rejected(&mut fx.score, &Command::RemoveMasterBar { index: 2 }),
+        CommandError::IndexOutOfRange {
+            what: "master bar",
+            index: 2,
+            len: 2
+        }
+    );
+}
