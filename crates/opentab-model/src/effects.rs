@@ -1,0 +1,108 @@
+use serde::{Deserialize, Serialize};
+
+use crate::fraction::deserialize_non_negative;
+use crate::{Fraction, NoteValue};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrokeDirection {
+    Up,
+    Down,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Stroke {
+    pub direction: StrokeDirection,
+    pub duration: NoteValue,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeatEffects {
+    pub tremolo_picking: Option<NoteValue>,
+    pub stroke: Option<Stroke>,
+    pub chord_name: Option<String>,
+    pub text: Option<String>,
+    pub fade_in: bool,
+    pub tap: bool,
+    pub slap: bool,
+    pub pop: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Accent {
+    Normal,
+    Heavy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Vibrato {
+    Slight,
+    Wide,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Slide {
+    Shift,
+    Legato,
+    IntoFromBelow,
+    IntoFromAbove,
+    OutDownwards,
+    OutUpwards,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HarmonicKind {
+    Natural,
+    Artificial,
+    Pinch,
+    Tap,
+    Semi,
+    Feedback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Harmonic {
+    pub kind: HarmonicKind,
+    #[serde(deserialize_with = "deserialize_non_negative")]
+    pub fret: Fraction,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BendPoint {
+    pub offset: u8,
+    pub value: i16,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Bend {
+    pub points: Vec<BendPoint>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoteEffects {
+    pub tie_origin: bool,
+    pub tie_destination: bool,
+    pub ghost: bool,
+    pub dead: bool,
+    pub accent: Option<Accent>,
+    pub palm_mute: bool,
+    pub let_ring: bool,
+    pub staccato: bool,
+    pub vibrato: Option<Vibrato>,
+    pub hammer_on_pull_off: bool,
+    pub slide: Option<Slide>,
+    pub harmonic: Option<Harmonic>,
+    pub bend: Option<Bend>,
+    pub left_hand_finger: Option<u8>,
+    pub right_hand_finger: Option<u8>,
+}
