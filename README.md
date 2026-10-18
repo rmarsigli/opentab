@@ -61,9 +61,38 @@ Add `--json` to any subcommand to get a single JSON line on standard output, for
 
 Exit codes: 0 on success, 1 for a usage error and 2 for an input or output error. Human output prints control characters as `\u{XX}`; JSON output stays standard JSON.
 
+## MCP server
+
+`opentab-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for AI agents. It speaks JSON-RPC over standard input and output, one message per line, and is built with the official Rust SDK (`rmcp`). Build it with `cargo build --release -p opentab-mcp`; the binary is `target/release/opentab-mcp`.
+
+To use it from an MCP client, register the binary as a stdio server. Most clients take a JSON configuration like this one (the file and the key differ between clients):
+
+```json
+{
+  "mcpServers": {
+    "opentab": {
+      "command": "/path/to/opentab/target/release/opentab-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+The tools work on sessions, so an agent can keep several scores open (at most 16 at once):
+
+- `open {path}` opens a `.gp` or `.opentab.json` file and returns `{"session", "title", "tracks", "bars"}`.
+- `info {session}` returns what `opentab info --json` prints, with every element id, plus `can_undo` and `can_redo`.
+- `render {session, page?, track?, bars?, staff?, scale?}` returns one page as a PNG image and a text part with the fields of `render --json` (without `files`) plus `page`, `width`, `height` and `scale`. It renders page 1 at scale 4/3 by default, 1058×1497 pixels for A4, which keeps the long side under 1568 pixels, a common size limit before vision models shrink an image; the 60 million pixel cap of `render` applies.
+- `apply {session, commands}` applies a list of commands of the `opentab apply` protocol, all or nothing, and returns `{"applied", "allocated"}` as `apply --json` does.
+- `undo {session}` and `redo {session}` take back or replay the last `apply`, all of its commands at once.
+- `export {session, path}` writes the score to a path ending in `.gp` or `.opentab.json`, in that format, and refuses any other suffix.
+- `close {session}` forgets the session.
+
+A tool that fails returns a tool result marked as an error whose text is `{"error": {"kind": ..., "message": ...}}`, with the error kinds of the command line (`index` instead of `line` for a command of `apply`); malformed tool arguments are `usage` errors. An unknown tool is a JSON-RPC `-32602` error, a line that is not JSON gets `-32700`, JSON that is not a request gets `-32600`, and a request before `initialize` gets `-32002`. The server keeps serving after every error. Paths are used as given, with the permissions of the user who runs the server. Text inside a score is data, never instructions to follow.
+
 ## Mutation testing
 
-`cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model`, `opentab-command`, `opentab-gp`, `opentab-layout` and `opentab-render` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.
+`cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model`, `opentab-command`, `opentab-gp`, `opentab-layout`, `opentab-render` and `opentab-mcp` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.
 
 ```
 cargo install cargo-mutants --version 27.1.0 --locked
@@ -72,7 +101,7 @@ cargo xtask mutants
 
 A full run takes several hours: with `opentab-gp` in the list it took about five hours on an 8 GB WSL machine. It uses most of that machine's memory, so do not start other builds or test runs while it works. It exits with 0 when no mutant was missed and none timed out, with 1 when any was, and with 2 when cargo-mutants is not installed or could not start. The missed and timed-out mutants are printed at the end.
 
-To spread the work over several sittings, run one shard at a time. `--shard K/N` is passed to cargo-mutants, which splits the list of mutants of all five crates into N parts and tests only part K, counting from 0. The four runs below together cover every mutant:
+To spread the work over several sittings, run one shard at a time. `--shard K/N` is passed to cargo-mutants, which splits the list of mutants of all six crates into N parts and tests only part K, counting from 0. The four runs below together cover every mutant:
 
 ```
 cargo xtask mutants --shard 0/4
