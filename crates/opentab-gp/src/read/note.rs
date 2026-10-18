@@ -1,9 +1,12 @@
 use opentab_model::{
-    Accent, Bend, BendPoint, Harmonic, InstrumentKind, Note, NoteEffects, NoteId, NoteKind, Tap,
+    Accent, Bend, BendPoint, Harmonic, InstrumentKind, KeySignature, Note, NoteEffects, NoteId,
+    NoteKind, Tap,
 };
 
+use crate::canon;
 use crate::codes::{
-    ACCENT_BIT, FINGERS, GHOST, HARMONICS, HEAVY_ACCENT_BIT, SLIDES, STACCATO_BIT, VIBRATOS, lookup,
+    ACCENT_BIT, FINGERS, GHOST, HARMONICS, HEAVY_ACCENT_BIT, SLIDES, STACCATO_BIT, VIBRATOS,
+    accent_bits, lookup,
 };
 use crate::dom::Element;
 use crate::error::GpifProblem;
@@ -57,6 +60,7 @@ impl<T: Copy> Group<T> {
 
 struct NoteFrame<'f> {
     kind: NoteKind,
+    key: KeySignature,
     pitch: PitchInputs<'f>,
     bend: Group<Bend>,
     harmonic: Group<Harmonic>,
@@ -109,6 +113,7 @@ pub(crate) fn read_note(
     let kind = note_kind(element, &location, &properties, staff)?;
     let frame = NoteFrame {
         kind,
+        key: staff.key,
         pitch: PitchInputs {
             kind,
             tuning: staff.tuning,
@@ -284,19 +289,6 @@ fn read_accent(visit: &Visit<'_>, effects: &mut NoteEffects) -> Result<Handled, 
     }
 }
 
-pub(crate) fn accent_bits(accent: Option<Accent>, staccato: bool) -> u32 {
-    let accent = match accent {
-        Some(Accent::Normal) => ACCENT_BIT,
-        Some(Accent::Heavy) => HEAVY_ACCENT_BIT,
-        None => 0,
-    };
-    if staccato {
-        accent | STACCATO_BIT
-    } else {
-        accent
-    }
-}
-
 fn note_property(
     property: &Visit<'_>,
     frame: &NoteFrame<'_>,
@@ -306,6 +298,10 @@ fn note_property(
         return Handled::Unknown;
     };
     if PITCH_PROPERTIES.contains(&name) {
+        let computed = canon::pitch_property(name, &frame.pitch, frame.key);
+        if computed.as_ref() == Some(property.element) {
+            return Handled::Mapped(&["name"]);
+        }
         return Handled::Replayed(guard::pitch(&frame.pitch));
     }
     if POSITION_PROPERTIES.contains(&name) {

@@ -36,10 +36,16 @@ fn the_capo_is_mapped_and_raises_the_pitch() {
 #[test]
 fn the_instrument_type_is_replayed_and_drum_kits_are_percussion() {
     let score = Doc::default().read();
+    assert_eq!(payloads(&score, track(&score).id.0), Vec::<String>::new());
+    let steel = Doc {
+        instrument: "steelGuitar".to_string(),
+        ..Doc::default()
+    }
+    .read();
     assert_eq!(
-        payloads(&score, track(&score).id.0),
+        payloads(&steel, track(&steel).id.0),
         vec![
-            "<Keep parent=\"InstrumentSet\" index=\"0\" guard=\"instrument:fretted\"><Type>electricGuitar</Type></Keep>"
+            "<Keep parent=\"InstrumentSet\" index=\"0\" guard=\"instrument:fretted\"><Type>steelGuitar</Type></Keep>"
                 .to_string()
         ]
     );
@@ -123,7 +129,7 @@ fn tracks_follow_the_master_track_order() {
     assert_eq!(score.tracks[1].staves[0].bars.len(), 1);
 }
 
-fn two_staff_document(second_staff_properties: &str) -> String {
+pub fn two_staff_document(second_staff_properties: &str) -> String {
     let second_staff = format!("<Staff><Properties>{second_staff_properties}</Properties></Staff>");
     Doc::default()
         .render()

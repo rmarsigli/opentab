@@ -7,9 +7,13 @@ mod pools;
 mod property;
 mod track;
 
+pub(crate) use pools::POOLS;
+pub(crate) use track::ChordItem;
+pub(crate) use track::chord_items;
+
 use opentab_model::Score;
 
-use crate::archive::{SCORE_ENTRY, read_archive};
+use crate::archive::{SCORE_ENTRY, minimal_container, read_archive};
 use crate::dom;
 use crate::error::{GpError, GpifProblem};
 
@@ -18,7 +22,9 @@ const BYTE_ORDER_MARK: &[u8] = b"\xEF\xBB\xBF";
 pub fn read_gp(bytes: &[u8]) -> Result<Score, GpError> {
     let archive = read_archive(bytes)?;
     let mut score = read_gpif(&archive.score)?;
-    score.container = archive.entries;
+    if archive.entries != minimal_container() {
+        score.container = archive.entries;
+    }
     Ok(score)
 }
 

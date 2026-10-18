@@ -1,7 +1,9 @@
 use opentab_model::{
-    Instrument, InstrumentKind, Pitch, Staff, StaffId, Track, TrackId, Transpose, Tuning,
+    Instrument, InstrumentKind, KeySignature, Pitch, Staff, StaffId, Track, TrackId, Transpose,
+    Tuning,
 };
 
+use crate::canon;
 use crate::codes::DRUM_KIT;
 use crate::dom::{Element, Node};
 use crate::error::GpifProblem;
@@ -20,6 +22,7 @@ pub(crate) struct StaffFrame<'t> {
     pub capo: u8,
     pub transpose: Transpose,
     pub chords: &'t [ChordItem],
+    pub key: KeySignature,
 }
 
 pub(crate) struct ChordItem {
@@ -30,6 +33,7 @@ pub(crate) struct ChordItem {
 struct BarColumn<'f> {
     tokens: Vec<&'f str>,
     location: Location,
+    key: KeySignature,
 }
 
 struct TrackFields<'e> {
@@ -60,7 +64,7 @@ pub(crate) fn read_tracks(
         total = total.saturating_add(staff_count(element));
     }
     let mut columns = Vec::with_capacity(frames.len());
-    for frame in frames {
+    for (index, frame) in frames.iter().enumerate() {
         let (text, location) = frame
             .bars
             .as_ref()
@@ -75,9 +79,16 @@ pub(crate) fn read_tracks(
                 },
             ));
         }
+        let key = ctx
+            .score
+            .master_bars
+            .get(index)
+            .map(|master| master.key_signature)
+            .unwrap_or_default();
         columns.push(BarColumn {
             tokens: text.split_whitespace().collect(),
             location: location.clone(),
+            key,
         });
     }
     let mut listed = vec![false; pools.tracks.items.len()];
@@ -218,7 +229,11 @@ fn read_instrument_set(
             if visit.text().trim() == DRUM_KIT {
                 kind = InstrumentKind::Percussion;
             }
-            Ok(Handled::Replayed(guard::instrument(kind)))
+            if *visit.element == canon::instrument_type(kind) {
+                Ok(Handled::Mapped(&[]))
+            } else {
+                Ok(Handled::Replayed(guard::instrument(kind)))
+            }
         }
         _ => Ok(Handled::Unknown),
     })?;
@@ -314,15 +329,17 @@ fn read_staff(
     } else {
         head.tuning.take()
     };
-    let frame = StaffFrame {
+    let mut frame = StaffFrame {
         kind: track.instrument.kind,
         tuning: own_tuning.as_deref().unwrap_or(&track.tuning.strings),
         capo: head.capo.unwrap_or(track.capo),
         transpose: track.transpose,
         chords: &head.chords,
+        key: KeySignature::default(),
     };
     let mut bars = Vec::with_capacity(columns.len());
     for column in columns {
+        frame.key = column.key;
         let token = column.tokens.get(global).copied().unwrap_or_default();
         bars.push(read_bar(ctx, pools, &frame, token, &column.location)?);
     }
@@ -411,7 +428,7 @@ fn read_pitches(element: &Element, location: &Location) -> Result<Vec<Pitch>, Fa
     Ok(pitches)
 }
 
-fn chord_items(collection: &Element) -> Vec<ChordItem> {
+pub(crate) fn chord_items(collection: &Element) -> Vec<ChordItem> {
     let Some((_, items)) = collection.child("Items") else {
         return Vec::new();
     };

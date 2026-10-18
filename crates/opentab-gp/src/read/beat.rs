@@ -3,6 +3,7 @@ use opentab_model::{
     TremoloPicking, Tuplet, Voice, VoiceId, VoiceSlot,
 };
 
+use crate::canon;
 use crate::codes::{
     BRUSH_DURATION, BRUSH_START_TIME, CLEFS, DYNAMICS, FADE_IN, GRACES, NOTE_VALUES,
     STROKE_DIRECTIONS, TREMOLOS, lookup,
@@ -242,7 +243,18 @@ fn read_beat_child(
                 .iter()
                 .find(|item| item.id == id.trim())
                 .map(|item| item.name.clone());
-            let handled = Handled::Replayed(guard::chord(name.as_deref()));
+            let canonical = name.as_ref().and_then(|name| {
+                staff
+                    .chords
+                    .iter()
+                    .find(|item| item.name == *name)
+                    .map(|item| canon::chord(&item.id))
+            });
+            let handled = if canonical.as_ref() == Some(visit.element) {
+                Handled::Mapped(&[])
+            } else {
+                Handled::Replayed(guard::chord(name.as_deref()))
+            };
             if let Some(name) = &name {
                 ctx.charge(name.len(), &visit.location)?;
             }

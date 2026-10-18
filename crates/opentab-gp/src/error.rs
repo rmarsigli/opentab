@@ -85,6 +85,46 @@ pub enum GpifProblem {
     Model(#[from] ModelError),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum Refusal {
+    #[error("text contains U+{code:04X}, which a GPIF text value cannot hold")]
+    Character { code: u32 },
+    #[error("the container has {count} score entries; a non-empty container needs exactly one")]
+    ScoreEntries { count: usize },
+    #[error("the score entry is named \"{name}\"; it must be Content/score.gpif")]
+    ScoreEntryName { name: String },
+    #[error("entry \"{name}\" appears more than once")]
+    DuplicateEntry { name: String },
+    #[error("entry name \"{name}\" does not survive the zip format unchanged")]
+    EntryName { name: String },
+    #[error("directory entry \"{name}\" carries data")]
+    DirectoryData { name: String },
+    #[error("opaque payload format \"{format}\" is not gpif")]
+    PayloadFormat { format: String },
+    #[error("opaque payload is malformed: {problem}")]
+    MalformedPayload { problem: String },
+    #[error("opaque payloads belong to element {id}, which the score does not contain")]
+    DanglingExtension { id: u64 },
+    #[error("the staff has {found} bars, but the score has {expected} master bars")]
+    BarCount { expected: usize, found: usize },
+    #[error("voice slots are not strictly increasing")]
+    VoiceSlots,
+    #[error("the note kind does not match the instrument kind of its track")]
+    NoteKind,
+    #[error("string {string} does not exist on a {strings}-string tuning")]
+    String { string: u8, strings: usize },
+    #[error("the sounding pitch is outside MIDI 0..=127")]
+    Pitch,
+    #[error("tempo position {numer}/{denom} is not on the 1/3840 grid within its bar")]
+    TempoPosition { numer: i64, denom: i64 },
+    #[error("harmonic fret {numer}/{denom} is not a non-negative decimal of at most 30 places")]
+    HarmonicFret { numer: i64, denom: i64 },
+    #[error("the right hand has no open-string fingering in GPIF")]
+    RightHandOpen,
+    #[error("chord \"{name}\" has no diagram in its staff")]
+    ChordWithoutDiagram { name: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum GpError {
     #[error("archive: {reason}")]
@@ -104,4 +144,8 @@ pub enum GpError {
         path: String,
         problem: GpifProblem,
     },
+    #[error("{path}: {reason}")]
+    Unsupported { path: String, reason: Refusal },
+    #[error("writing the archive failed: {reason}")]
+    Write { reason: String },
 }

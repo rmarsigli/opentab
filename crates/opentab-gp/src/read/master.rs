@@ -3,6 +3,7 @@ use opentab_model::{
     TimeSignature,
 };
 
+use crate::canon;
 use crate::codes::{MINOR, TEMPO_POSITION_GRID, TEMPO_UNITS};
 use crate::dom::{Element, Node};
 use crate::error::GpifProblem;
@@ -287,16 +288,20 @@ fn read_tempo(ctx: &mut Context, element: &Element, location: &Location) -> Resu
         ));
     };
     let owner = Owner::Element(master.id.0);
-    let numerator = i64::from(master.time_signature.numerator());
-    let denominator = i64::from(master.time_signature.denominator());
+    let time = master.time_signature;
+    let numerator = i64::from(time.numerator());
+    let denominator = i64::from(time.denominator());
     let ordinal = master.tempo_changes.len();
     let scope = Scope::new(owner, ParentPath::tempo(ordinal), location.clone());
     ctx.keep_attributes(&scope, element, &[])?;
     let position = tempo_position(element, location, numerator, denominator)?;
     let position_guard = guard::tempo_position(position);
     let mut value = None;
+    let canonical =
+        canon::tempo_position(position, time).map(|text| Element::leaf("Position", &text));
     ctx.visit(&scope, element, |_, visit| match visit.key.as_str() {
         "Type" | "Bar" => Ok(Handled::Mapped(&[])),
+        "Position" if canonical.as_ref() == Some(visit.element) => Ok(Handled::Mapped(&[])),
         "Value" => {
             value = Some(read_tempo_value(visit)?);
             Ok(Handled::Mapped(&[]))
