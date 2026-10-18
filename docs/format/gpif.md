@@ -7,6 +7,7 @@ Words used in this document:
 - **GP** means Guitar Pro 8.1.5.
 - **Accepted** means GP opened the file with no error notice and did not crash.
 - **Re-save** means GP opened a file and saved it with "Save As" into a new path.
+- **Experiment files** named in brackets, such as [min-all], are kept locally in the oracle machine's experiments folder (`C:\gf-oracle\corpus\experiments\`). They are not part of the repository; a bracketed name identifies the experiment files whose names start with it.
 
 ## 1. Container
 
@@ -51,7 +52,7 @@ The minimal container has three entries, in any order:
 - `VERSION`, containing `7.0`;
 - `Content/PartConfiguration`.
 
-An archive with exactly these three entries was accepted. That held when `PartConfiguration` was a copy from an example, an 8-byte "zero parts" record, or **zero bytes long**. The empty form carries no vendor-authored content, so it suits a generated container (M1-D7). On re-save, GP writes every other entry again with its defaults. It also writes a real `PartConfiguration`.
+An archive with exactly these three entries was accepted. That held when `PartConfiguration` was a copy from an example, an 8-byte "zero parts" record, or **zero bytes long**. The empty form carries no vendor-authored content, so a writer that generates a container from scratch should use it. On re-save, GP writes every other entry again with its defaults. It also writes a real `PartConfiguration`.
 
 `PartConfiguration`, as far as we decoded it, is laid out as follows. We never need to write a non-empty one.
 
@@ -139,7 +140,7 @@ So a reader must treat a shared beat or note as a value. It copies the element o
 </Rhythm>
 ```
 
-The `NoteValue` names are `Whole`, `Half`, `Quarter`, `Eighth`, `16th`, `32nd`, `64th` and `128th`. `128th` did not occur in the corpus; we assume it by analogy.
+The `NoteValue` names are `Whole`, `Half`, `Quarter`, `Eighth`, `16th`, `32nd`, `64th` and `128th`. `128th` did not occur in the corpus, so we tested it: a score of 128th notes was accepted, re-saved with `128th` unchanged, and exported as MusicXML `128th` notes [n128].
 
 `AugmentationDot/@count` is the number of dots. The corpus has 1 and 2.
 
@@ -173,7 +174,7 @@ The `NoteValue` names are `Whole`, `Half`, `Quarter`, `Eighth`, `16th`, `32nd`, 
 | Code | Unit |
 |---|---|
 | 1 | eighth |
-| 2 | quarter (36 of the 39 tempo automations in the corpus) |
+| 2 | quarter (37 of the 39 tempo automations in the corpus; one uses 1 and one uses 3) |
 | 3 | dotted quarter |
 | 4 | half |
 | 5 | dotted half |
@@ -183,7 +184,7 @@ MusicXML playback tempo is converted to quarter notes. For example, 80 with unit
 
 `Position` is written with at most six significant digits, for example `0.333333`. It is not an exact rational.
 
-With no tempo automation at all, GP plays the score at 120.
+With no tempo automation at all, GP plays the score at 120: the MusicXML export of a score without one carries a quarter = 120 metronome mark [min-all].
 
 The other master automation type seen is `SyncPoint`. It aligns bars with a backing-track audio file and appears only in scores that have assets. Its `Value` holds sub-elements (bar index, occurrence, frame offset, tempi).
 
@@ -284,7 +285,7 @@ Beat effects the corpus shows. Elements are written `<Name>` and named propertie
 
 | Effect | Where it is stored |
 |---|---|
-| Brush stroke | `Property Brush` holding `Direction` `Up` or `Down`. The duration sits in an `XProperty` as an integer in units we have not established. |
+| Brush stroke | `Property Brush` holding `Direction` `Up` or `Down`, plus two beat `XProperty` entries. Id 687935489 holds an `Int`: the brush duration in ticks of **480 per quarter note**. GP's dialog offers 30 (64th) to 480 (quarter) on a continuous slider, and the default is 480 [fx-brush-d-default, fx-brush-home, fx-brush-half-default]. The corpus holds values off the note grid, such as 45, 57 and 147. Id 687935490 holds a `Float` from 0 to 1: the dialog's start-time slider, where 0 is "falls on time" and 1, the default, is "starts on time" [fx-brush-start]. |
 | Pick direction | `Property PickStroke`, holding a `Direction`. |
 | Slap and pop | `Property Slapped` and `Property Popped`, each with an `Enable` child. |
 | Rasgueado and golpe | `Property Rasgueado` and `<Golpe>`. |
@@ -296,7 +297,13 @@ Beat effects the corpus shows. Elements are written `<Name>` and named propertie
 | Slurs across beats | `<Legato origin destination>`. |
 | Free text | `<FreeText>`. |
 
-Tremolo picking, fade-in and tapping never occurred in the corpus, so this document does not describe how they are stored.
+Effects that never occurred in the corpus. We applied each one through GP's Effects menu to a score we built, saved it, and compared the result with a plain re-save [fx-plain]:
+
+| Effect | Where it is stored |
+|---|---|
+| Tremolo picking | Beat element `<Tremolo>`, holding a fraction: `1/2` for eighth notes, `1/4` for sixteenths, `1/8` for thirty-seconds. These are the only three values GP's menu offers. The value does not depend on the beat's own duration [fx-trem8, fx-trem16, fx-trem32, fx-trem8-half]. |
+| Fade in | Beat element `<Fadding>FadeIn</Fadding>`. The element name is spelled this way by GP [fx-fadein]. |
+| Tapping | **Not a beat effect in GPIF.** It is a note property: `Property Tapped` with an `Enable` child, on the note under the cursor. Left-hand tapping is `Property LeftHandTapped` [fx-tap, fx-lhtap]. |
 
 ## 9. Notes
 
@@ -321,7 +328,7 @@ Tremolo picking, fade-in and tapping never occurred in the corpus, so this docum
 - **Midi** is the sounding MIDI number. **ConcertPitch** and **TransposedPitch** spell that note as step, accidental (`#`, `b` or empty) and octave. Here octave is the MIDI number divided by 12, so MIDI 48 is octave 4. TransposedPitch applies the track's `Transpose`.
 - These three properties are derived data, but they must be **written consistently with string, fret, tuning and transpose.** Two experiments show this:
   - A bare score, with an InstrumentSet that has only a type and no transpose, had notes with only string and fret. GP filled in all three.
-  - Real examples behaved differently. Removing ConcertPitch and TransposedPitch, or all three properties, made GP **silently lose the notes**: 133 notes collapsed to 6 on re-save. Removing only `Midi` changed three notes. Removing only the stem orientations changed 11 bytes of the re-saved file.
+  - Real examples behaved differently. Removing ConcertPitch and TransposedPitch, or all three properties, made GP **silently lose the notes**: 133 notes collapsed to 6 on re-save. Removing only `Midi` changed three notes [t3]. Removing only the stem orientations changed 11 bytes of the re-saved file [t1]. The losses are in [t4], [t5-ex1] and [t6].
 - **Accent** is a bit set. We read the meaning of each bit from GP's MusicXML export:
 
   | Bit | Meaning |
@@ -363,8 +370,9 @@ Offsets run from 0 to 100 across the note. **A value of 100 is a full tone**: GP
 
 Notation used in this table:
 
-- "id" means GPIF ids are read as references and re-assigned when writing (M1-D4). Model ids come from the model's allocator.
-- "→ opaque" means the GPIF data stays as an opaque payload of the owning element (M1-D3).
+- "id" means GPIF ids are read as references and re-assigned in document order when writing. Model ids come from the model's allocator.
+- "→ opaque" means the GPIF data stays as an opaque payload of the owning element, with enough position information to restore its place among its siblings.
+- A modelled value that has no GPIF encoding is never guessed: the writer refuses it with an "unsupported" error.
 
 ### Score and metadata
 
@@ -428,12 +436,12 @@ Notation used in this table:
 | `Beat.duration.dots` | `Rhythm/AugmentationDot/@count` | — |
 | `Beat.duration.tuplet` | `Rhythm/PrimaryTuplet` (num, den) | — |
 | `Beat.notes` | `Beat/Notes` | Shared notes are copied. |
-| `BeatEffects.tremolo_picking` | not observed | — |
-| `BeatEffects.stroke` | `Property Brush/Direction` | The duration is unestablished (§8). |
+| `BeatEffects.tremolo_picking` | `Beat/Tremolo`: `1/2` Eighth, `1/4` Sixteenth, `1/8` ThirtySecond | Any other note value cannot be written: the writer refuses it with an "unsupported" error. |
+| `BeatEffects.stroke` | `Property Brush/Direction`, with the duration in XProperty 687935489 (ticks, 480 per quarter) | Duration ticks 30, 60, 120, 240 and 480 map to SixtyFourth, ThirtySecond, Sixteenth, Eighth and Quarter. The reader keeps any other tick value, and the start-time XProperty, as opaque data on the beat. In that case it does not set `stroke`. The writer refuses durations outside SixtyFourth..Quarter. |
 | `BeatEffects.chord_name` | `Beat/Chord` → `DiagramCollection/Item/@name` | — |
 | `BeatEffects.text` | `Beat/FreeText` | CDATA |
-| `BeatEffects.fade_in` | not observed | — |
-| `BeatEffects.tap` | not observed | — |
+| `BeatEffects.fade_in` | `Beat/Fadding` = `FadeIn` | Other values (fade out, volume swell) → opaque. |
+| `BeatEffects.tap` | none at beat level | GPIF stores tapping per note (`Property Tapped`). The reader keeps note-level tapping as opaque data on the note. The writer refuses `tap = true` with an "unsupported" error until tapping is modelled per note. |
 | `BeatEffects.slap` | `Property Slapped` | — |
 | `BeatEffects.pop` | `Property Popped` | — |
 
@@ -459,8 +467,8 @@ Notation used in this table:
 | `harmonic.kind` | `HarmonicType/HType` | — |
 | `harmonic.fret` | `HarmonicFret/HFret` (float) | — |
 | `bend.points` | the four bend points | offset as is; value ÷ 25 = quarter tones |
-| `left_hand_finger` | `LeftFingering` | Mapping to be fixed in M1-T2. |
-| `right_hand_finger` | `RightFingering` | Mapping to be fixed in M1-T2. |
+| `left_hand_finger` | `LeftFingering` | `Open` = open string, `P` thumb, `I` index, `M` middle, `A` ring, `C` little; the numeric encoding is left to the model. |
+| `right_hand_finger` | `RightFingering` | `P` thumb, `I` index, `M` middle, `A` ring, `C` little. |
 
 ## 11. GPIF parts not modelled (opaque)
 
@@ -493,15 +501,16 @@ These stay as opaque payloads of their owner, or of the score:
   - `GraceNotes`, `Dynamic`, the stem orientation elements;
   - `Whammy`, `Variation`, `Wah`, `Golpe`, `Slashed`, `Hairpin`, `Legato`, `Arpeggio`, `Lyrics`;
   - the pickup properties, `PickStroke`, the barre properties, `Rasgueado`, `VibratoWTremBar`;
-  - the brush duration and the remaining `XProperties`.
+  - the brush start time, brush durations off the note grid, and the remaining `XProperties`;
+  - `Fadding` values other than `FadeIn`.
 - **Note:**
   - `Ornament`;
   - Accent bits 2 and 16;
-  - `ShowStringNumber`, `HopoDestination`;
+  - `ShowStringNumber`, `HopoDestination`, `Tapped`, `LeftHandTapped`;
   - `Midi`, `ConcertPitch` and `TransposedPitch`. These are derived, but must be written back (§9).
   - The note's `InstrumentArticulation` on pitched tracks.
 
-Some of these are proposed as model fields in M1-T2, because M2 needs them to render standard notation: clef, transpose, dynamic, grace notes, voice slot and tempo unit.
+Rendering standard notation needs several of these: clef, transpose, dynamic, grace notes, voice slot and tempo unit. They are candidates for model fields.
 
 ## 12. Minimal GPIF
 
@@ -551,9 +560,9 @@ What each part does:
 
 ## 13. What GP changes on re-save
 
-These are the normalisations we observed. They matter for the fidelity rule M1-D5(d).
+These are the normalisations we observed. Byte equality with a source file is not expected after a round trip, so a fidelity check must tolerate them.
 
-- **Unchanged examples.** Re-saving keeps `score.gpif` byte-identical in one example (amazing-grace). In two others, it **clears the tuning name** of some staves (a drum track's dummy tuning name, and a bass's `E A D G`). `BinaryStylesheet` changes bytes but not length.
+- **Unchanged examples.** Re-saving keeps `score.gpif` byte-identical in one example [e4-pcempty]. In two others [r-ex1, r-ex2], it **clears the tuning name** of some staves (a drum track's dummy tuning name, and a bass's `E A D G`). `BinaryStylesheet` changes bytes but not length.
 - **Sharing.** GP rebuilds beat and note sharing from scratch (§3.1).
 - **Tempo.** Unit code 0 becomes 2.
 - **Missing optional elements** are filled with defaults (§12). Missing directory entries and container entries are written again.
