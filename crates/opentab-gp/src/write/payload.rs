@@ -7,9 +7,10 @@ use opentab_model::{
 use crate::dom::{self, Attribute, Element, Node};
 use crate::error::Refusal;
 use crate::guard::{self, PitchInputs};
+use crate::limits::MAX_XML_DEPTH;
 use crate::number;
 use crate::opaque::{FORMAT, KEEP, KEEP_ATTRIBUTE, RHYTHM_ROOT, TEMPO_ROOT};
-use crate::write::xml::{check_escaped, check_text};
+use crate::write::xml::{check_escaped, check_text, is_name};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Content {
@@ -76,6 +77,7 @@ pub(crate) fn parse(payload: &OpaquePayload) -> Result<Item, Refusal> {
         .attribute("parent")
         .ok_or_else(|| malformed("missing parent"))?
         .to_string();
+    check_parent(&parent)?;
     let index = root
         .attribute("index")
         .and_then(number::integer::<usize>)
@@ -126,15 +128,60 @@ pub(crate) fn parse(payload: &OpaquePayload) -> Result<Item, Refusal> {
     })
 }
 
+fn check_name(name: &str) -> Result<(), Refusal> {
+    if is_name(name) {
+        Ok(())
+    } else {
+        Err(malformed(&format!("\"{name}\" is not an XML name")))
+    }
+}
+
+fn check_step(step: &str) -> Result<(), Refusal> {
+    if let Some(value) = step
+        .strip_prefix("Property@")
+        .or_else(|| step.strip_prefix("XProperty@"))
+    {
+        return check_escaped(value);
+    }
+    match step.split_once('#') {
+        Some((name, ordinal)) => {
+            check_name(name)?;
+            if ordinal.is_empty() || !ordinal.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(malformed("invalid parent ordinal"));
+            }
+            Ok(())
+        }
+        None => check_name(step),
+    }
+}
+
+fn check_parent(parent: &str) -> Result<(), Refusal> {
+    if parent.is_empty() {
+        return Ok(());
+    }
+    if parent.split('/').count() > MAX_XML_DEPTH {
+        return Err(malformed(&format!(
+            "parent path has more than {MAX_XML_DEPTH} steps"
+        )));
+    }
+    for (position, step) in parent.split('/').enumerate() {
+        if position == 0 && step.starts_with('*') {
+            continue;
+        }
+        check_step(step)?;
+    }
+    Ok(())
+}
+
 fn check_attribute(attribute: &Attribute) -> Result<(), Refusal> {
-    check_text(&attribute.name)?;
+    check_name(&attribute.name)?;
     check_escaped(&attribute.value)
 }
 
 fn check_node(node: &Node) -> Result<(), Refusal> {
     match node {
         Node::Element(element) => {
-            check_text(&element.name)?;
+            check_name(&element.name)?;
             for attribute in &element.attributes {
                 check_attribute(attribute)?;
             }
@@ -144,7 +191,13 @@ fn check_node(node: &Node) -> Result<(), Refusal> {
             Ok(())
         }
         Node::Text(text) => check_escaped(text),
-        Node::CData(text) | Node::Comment(text) | Node::Instruction(text) => check_text(text),
+        Node::Comment(text) => {
+            if text.contains("--") || text.ends_with('-') {
+                return Err(malformed("a comment cannot hold \"--\" or end with \"-\""));
+            }
+            check_text(text)
+        }
+        Node::CData(text) | Node::Instruction(text) => check_text(text),
     }
 }
 

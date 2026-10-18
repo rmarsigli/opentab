@@ -2,6 +2,7 @@ mod archive;
 mod beat;
 mod container;
 mod corpus;
+mod envelope;
 mod fuzz;
 mod limits;
 mod master_bar;
