@@ -7,7 +7,7 @@ use crate::tab::{
 };
 use crate::units::{Point, Rect, STAFF_SPACE, Units};
 
-pub const FINGER_GAP: Units = Units(STAFF_SPACE.0 / 6);
+pub const STANDARD_FINGER_GAP: Units = Units(STAFF_SPACE.0 / 6);
 pub const OPEN_TREMOLO_GAP: Units = Units(STAFF_SPACE.0 / 2);
 
 pub fn tremolo(
@@ -76,16 +76,15 @@ pub fn fingers(beat: &BeatPlan, notes: &[Note]) -> Vec<FingerPlan> {
         let text = finger_text(finger);
         let mut plan = FingerPlan {
             text,
-            right: left - FINGER_GAP,
+            right: left - STANDARD_FINGER_GAP,
             baseline: head.y + baseline_below_centre(FINGER_EM),
             width: measure(text, FINGER_EM),
         };
-        while let Some(blocker) = placed.iter().find(|other| {
-            let a = finger_rect(other);
-            let b = finger_rect(&plan);
-            a.min.x < b.max.x && b.min.x < a.max.x && a.min.y < b.max.y && b.min.y < a.max.y
-        }) {
-            plan.right = blocker.right - blocker.width - FINGER_GAP;
+        while let Some(blocker) = placed
+            .iter()
+            .find(|other| finger_rect(other).overlaps(&finger_rect(&plan)))
+        {
+            plan.right = blocker.right - blocker.width - STANDARD_FINGER_GAP;
         }
         placed.push(plan);
     }
