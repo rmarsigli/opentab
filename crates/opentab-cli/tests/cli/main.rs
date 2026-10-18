@@ -8,6 +8,7 @@ mod hostile;
 mod info;
 mod new;
 mod render;
+mod render_pages;
 mod support;
 mod unicode;
 mod usage;
