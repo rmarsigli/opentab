@@ -6,7 +6,7 @@ use opentab_model::{
 use crate::checks::{rejected, round_trip};
 use crate::support::fixture;
 
-fn quarter_time() -> TimeSignature {
+fn four_four_time() -> TimeSignature {
     TimeSignature::new(4, 4).unwrap()
 }
 
@@ -27,7 +27,7 @@ fn inserted_master_bars_inherit_clefs_and_start_with_slot_zero() {
     fx.score.tracks[1].staves[0].bars[1].clef = Clef::Neutral;
     let insert = |index| Command::InsertMasterBar {
         index,
-        time_signature: quarter_time(),
+        time_signature: four_four_time(),
     };
     round_trip(&mut fx.score, &insert(1));
     apply(&mut fx.score, &insert(1)).unwrap();
@@ -53,7 +53,7 @@ fn inserting_into_a_score_without_bars_picks_a_clef_by_instrument() {
         &mut fx.score,
         &Command::InsertMasterBar {
             index: 0,
-            time_signature: quarter_time(),
+            time_signature: four_four_time(),
         },
     )
     .unwrap();

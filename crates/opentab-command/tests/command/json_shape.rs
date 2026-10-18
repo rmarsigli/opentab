@@ -81,6 +81,10 @@ fn forward_commands_have_the_documented_json_shape() {
         json!({"op": "set_fret", "note": 7, "fret": 3}),
     );
     shape(
+        &Command::SetAnacrusis { value: true },
+        json!({"op": "set_anacrusis", "value": true}),
+    );
+    shape(
         &Command::SetTempo {
             master_bar: 0,
             bpm: 96.5,

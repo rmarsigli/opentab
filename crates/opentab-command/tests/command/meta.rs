@@ -64,3 +64,17 @@ fn set_meta_inverse_carries_the_old_value() {
         }
     );
 }
+
+#[test]
+fn set_anacrusis_inverts_to_the_old_value() {
+    let mut fx = fixture();
+    assert!(!fx.score.anacrusis);
+    let inverse = round_trip(&mut fx.score, &Command::SetAnacrusis { value: true });
+    assert_eq!(inverse, Command::SetAnacrusis { value: false });
+    apply(&mut fx.score, &Command::SetAnacrusis { value: true }).unwrap();
+    assert!(fx.score.anacrusis);
+    let inverse = round_trip(&mut fx.score, &Command::SetAnacrusis { value: true });
+    assert_eq!(inverse, Command::SetAnacrusis { value: true });
+    let inverse = round_trip(&mut fx.score, &Command::SetAnacrusis { value: false });
+    assert_eq!(inverse, Command::SetAnacrusis { value: true });
+}
