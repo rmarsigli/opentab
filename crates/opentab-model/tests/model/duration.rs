@@ -91,3 +91,21 @@ fn new_accepts_boundaries() {
         assert_eq!(duration.tuplet(), Some(Tuplet::new(num, den).unwrap()));
     }
 }
+
+#[test]
+fn tuplet_accessors_return_the_written_terms() {
+    let tuplet = Tuplet::new(5, 4).unwrap();
+    assert_eq!(tuplet.num(), 5);
+    assert_eq!(tuplet.den(), 4);
+}
+
+#[test]
+fn duration_tuplet_terms_survive_a_json_round_trip() {
+    let duration = Duration::new(NoteValue::Eighth, 0, Some(Tuplet::new(5, 4).unwrap())).unwrap();
+    let text = serde_json::to_string(&duration).unwrap();
+    let back: Duration = serde_json::from_str(&text).unwrap();
+    assert_eq!(back, duration);
+    let tuplet = back.tuplet().expect("tuplet survives the round trip");
+    assert_eq!(tuplet.num(), 5);
+    assert_eq!(tuplet.den(), 4);
+}
