@@ -61,8 +61,15 @@ pub(crate) fn check_restorable<I>(
 where
     I: IntoIterator<Item = ElementId>,
 {
+    let next = score.ids.peek();
     let mut fresh = HashSet::new();
     for id in restored {
+        if id >= next {
+            return Err(CommandError::invalid(format!(
+                "element id {} is not below the id allocator ({}); restored ids must have been allocated",
+                id.0, next.0
+            )));
+        }
         if !fresh.insert(id) {
             return Err(CommandError::invalid(format!(
                 "element id {} appears twice in the restored elements",
