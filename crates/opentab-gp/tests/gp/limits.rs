@@ -126,6 +126,23 @@ fn an_entry_that_lies_about_its_size_is_refused_within_bounds() {
 }
 
 #[test]
+fn an_inflated_compressed_size_cannot_widen_the_entry_cap() {
+    let zeros = vec![0u8; 100 * MIB];
+    let mut bomb = RawEntry::deflated("liar", &zeros).declaring(1000);
+    let real = bomb.compressed_size;
+    bomb.compressed_size = u32::try_from(MIB).expect("lie");
+    assert!(bomb.compressed_size > real);
+    let padding = RawEntry::stored("padding", &vec![7u8; 2 * MIB]);
+    let bytes = build(&[score_entry(), bomb, padding]);
+    assert_eq!(
+        limit_of(read_gp(&bytes)),
+        LimitProblem::EntrySize {
+            limit: ENTRY_LIMIT as u64
+        }
+    );
+}
+
+#[test]
 fn an_entry_that_lies_and_stays_inside_the_ratio_hits_the_entry_limit() {
     let data = runs(ENTRY_LIMIT + MIB);
     let bomb = RawEntry::deflated("liar", &data).declaring(1000);

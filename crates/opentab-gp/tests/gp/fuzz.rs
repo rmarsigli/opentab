@@ -1,8 +1,9 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::sync::LazyLock;
 
-use opentab_gp::{GpError, read_gp, write_gp};
+use opentab_gp::{GpError, GpifProblem, read_gp, write_gp};
 use opentab_model::{from_json, to_json};
 use opentab_testkit::{ScoreGenConfig, arb_score_with};
 use proptest::collection::vec;
@@ -12,7 +13,10 @@ use proptest::test_runner::{Config, FileFailurePersistence, TestCaseError, TestR
 use zip::ZipArchive;
 
 use crate::corpus::corpus_paths;
-use crate::rawzip::{CENTRAL_HEADER_SIZE, END_RECORD_SIZE, LOCAL_HEADER_SIZE, RawEntry, build};
+use crate::rawzip::{
+    CENTRAL_HEADER_SIZE, CENTRAL_SIGNATURE, END_RECORD_SIZE, END_SIGNATURE, LOCAL_HEADER_SIZE,
+    LOCAL_SIGNATURE, RawEntry, build,
+};
 use crate::support::{SCORE_ENTRY, documented};
 
 const CASES: u32 = 256;
@@ -20,9 +24,6 @@ const LONG_CASES: u32 = 20_000;
 const SEED_POOL: usize = 24;
 const SEED_ATTEMPTS: usize = 400;
 const MEMBER_LIMIT: u64 = 16 * 1024 * 1024;
-const LOCAL_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
-const CENTRAL_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
-const END_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
 const NAMES: [&str; 9] = [
     "Content/score.gpif",
     "content/score.gpif",
@@ -525,6 +526,26 @@ fn arb_flip() -> impl Strategy<Value = ByteFlip> {
     (any::<usize>(), 1u8..=255).prop_map(|(at, xor)| ByteFlip { at, xor })
 }
 
+fn arb_semantic_edit() -> impl Strategy<Value = XmlEdit> {
+    prop_oneof![
+        (any::<usize>(), any::<usize>()).prop_map(|(nth, value)| XmlEdit::Number { nth, value }),
+        any::<usize>().prop_map(|nth| XmlEdit::Attribute { nth }),
+        (any::<usize>(), any::<usize>(), any::<bool>()).prop_map(|(tag, nth, delete)| {
+            let action = if delete {
+                SpanAction::Delete
+            } else {
+                SpanAction::Duplicate
+            };
+            XmlEdit::Element { tag, nth, action }
+        }),
+    ]
+}
+
+fn arb_xml_mutation() -> impl Strategy<Value = Mutation> {
+    let edit = prop_oneof![3 => arb_semantic_edit(), 1 => arb_edit()];
+    (arb_layout(), edit).prop_map(|(layout, edit)| Mutation::Xml { layout, edit })
+}
+
 fn arb_mutation() -> impl Strategy<Value = Mutation> {
     prop_oneof![
         2 => vec(arb_flip(), 1..=8).prop_map(Mutation::Flip),
@@ -541,6 +562,7 @@ fn arb_mutation() -> impl Strategy<Value = Mutation> {
 struct Tally {
     accepted: Cell<usize>,
     rejected: Cell<usize>,
+    classes: RefCell<BTreeMap<&'static str, usize>>,
     written: Cell<usize>,
     refused: Cell<usize>,
 }
@@ -549,10 +571,39 @@ fn bump(cell: &Cell<usize>) {
     cell.set(cell.get() + 1);
 }
 
+fn class_of(error: &GpError) -> &'static str {
+    match error {
+        GpError::Archive { .. } => "archive",
+        GpError::DuplicateEntry { .. } => "duplicate entry",
+        GpError::Entry { .. } => "entry",
+        GpError::Limit { .. } => "archive limit",
+        GpError::MissingScore => "missing score",
+        GpError::Gpif { problem, .. } => match problem {
+            GpifProblem::Syntax { .. }
+            | GpifProblem::NotUtf8
+            | GpifProblem::UnexpectedRoot { .. } => "gpif xml",
+            GpifProblem::DepthLimit { .. }
+            | GpifProblem::ElementLimit { .. }
+            | GpifProblem::ExpansionLimit { .. }
+            | GpifProblem::RetainedLimit { .. } => "gpif limit",
+            _ => "gpif mapping",
+        },
+        GpError::Unsupported { .. } | GpError::Write { .. } => "unexpected",
+    }
+}
+
 fn check(bytes: &[u8], tally: &Tally) -> Result<(), TestCaseError> {
-    let Ok(score) = read_gp(bytes) else {
-        bump(&tally.rejected);
-        return Ok(());
+    let score = match read_gp(bytes) {
+        Ok(score) => score,
+        Err(error) => {
+            bump(&tally.rejected);
+            *tally
+                .classes
+                .borrow_mut()
+                .entry(class_of(&error))
+                .or_default() += 1;
+            return Ok(());
+        }
     };
     bump(&tally.accepted);
     let json = to_json(&score).map_err(|error| TestCaseError::fail(error.to_string()))?;
@@ -581,7 +632,8 @@ fn fuzz(cases: u32) -> Tally {
         failure_persistence: Some(Box::new(FileFailurePersistence::Off)),
         ..Config::default()
     });
-    let strategy = (0..seeds.len(), vec(arb_mutation(), 1..=4));
+    let mutations = prop_oneof![vec(arb_mutation(), 1..=4), vec(arb_xml_mutation(), 1..=4),];
+    let strategy = (0..seeds.len(), mutations);
     let outcome = runner.run(&strategy, |(seed, mutations)| {
         let mut bytes = seeds[seed].clone();
         for mutation in &mutations {
@@ -603,6 +655,7 @@ fn report(tally: &Tally) {
         tally.written.get(),
         tally.refused.get()
     );
+    println!("fuzz rejections by class: {:?}", tally.classes.borrow());
 }
 
 #[test]
