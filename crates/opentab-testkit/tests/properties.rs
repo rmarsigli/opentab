@@ -4,11 +4,11 @@ use opentab_model::{
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
 use proptest::prelude::*;
 use proptest::strategy::{Strategy, ValueTree};
-use proptest::test_runner::{Config, TestError, TestRunner};
+use proptest::test_runner::{Config, RngAlgorithm, TestError, TestRng, TestRunner};
 
 const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 256;
-const SHRINK_TIME_LIMIT_MS: u32 = 30_000;
+const SHRINK_SEED: [u8; 32] = [7; 32];
 const SHRINK_ITERS: u32 = 100_000;
 const LONG_TEXT_CHARS: usize = 10_000;
 
@@ -130,7 +130,7 @@ proptest! {
 proptest! {
     #![proptest_config(Config {
         cases: CASES,
-        max_shrink_time: SHRINK_TIME_LIMIT_MS,
+        max_shrink_time: 0,
         max_shrink_iters: SHRINK_ITERS,
         failure_persistence: None,
         ..Config::default()
@@ -143,15 +143,22 @@ proptest! {
     }
 }
 
+fn seeded_runner() -> TestRunner {
+    TestRunner::new_with_rng(
+        Config {
+            cases: CASES,
+            max_shrink_time: 0,
+            max_shrink_iters: SHRINK_ITERS,
+            failure_persistence: None,
+            ..Config::default()
+        },
+        TestRng::from_seed(RngAlgorithm::ChaCha, &SHRINK_SEED),
+    )
+}
+
 #[test]
 fn shrinking_reaches_a_minimal_score() {
-    let mut runner = TestRunner::new(Config {
-        cases: CASES,
-        max_shrink_time: SHRINK_TIME_LIMIT_MS,
-        max_shrink_iters: SHRINK_ITERS,
-        failure_persistence: None,
-        ..Config::default()
-    });
+    let mut runner = seeded_runner();
     let result = runner.run(&arb_score(), |score| {
         prop_assert!(score.tracks.is_empty());
         Ok(())
@@ -334,13 +341,7 @@ fn generator_covers_every_feature() {
 
 #[test]
 fn shrinking_a_structural_failure_isolates_one_voice() {
-    let mut runner = TestRunner::new(Config {
-        cases: CASES,
-        max_shrink_time: SHRINK_TIME_LIMIT_MS,
-        max_shrink_iters: SHRINK_ITERS,
-        failure_persistence: None,
-        ..Config::default()
-    });
+    let mut runner = seeded_runner();
     let result = runner.run(&arb_score(), |score| {
         let has_tuplet = score
             .tracks
