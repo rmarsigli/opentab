@@ -2,7 +2,7 @@ const MUSICXML_OPEN: &[u8] = b"<encoding-date>";
 const MUSICXML_CLOSE: &[u8] = b"</encoding-date>";
 const MUSICXML_EPOCH: &[u8] = b"1970-01-01";
 const PDF_DATE_KEYS: [&[u8]; 2] = [b"/CreationDate", b"/ModDate"];
-const PDF_EPOCH: &[u8] = b"(D:19700101000000Z)";
+const PDF_EPOCH_TEXT: &[u8] = b"D:19700101000000Z";
 
 pub fn normalize_musicxml(input: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(input.len());
@@ -96,6 +96,31 @@ fn pdf_value_end(input: &[u8], start: usize) -> Option<usize> {
     }
 }
 
+fn fit(text: &[u8], len: usize) -> Vec<u8> {
+    let mut fitted = text[..text.len().min(len)].to_vec();
+    fitted.resize(len, b' ');
+    fitted
+}
+
+fn hex_digits(text: &[u8]) -> Vec<u8> {
+    let mut digits = Vec::with_capacity(text.len() * 2);
+    for byte in text {
+        digits.extend_from_slice(format!("{byte:02X}").as_bytes());
+    }
+    digits
+}
+
+fn push_epoch_value(out: &mut Vec<u8>, value: &[u8]) {
+    let inner = value.len().saturating_sub(2);
+    out.push(value[0]);
+    if value[0] == b'(' {
+        out.extend_from_slice(&fit(PDF_EPOCH_TEXT, inner));
+    } else {
+        out.extend_from_slice(&fit(&hex_digits(PDF_EPOCH_TEXT), inner));
+    }
+    out.push(value[value.len() - 1]);
+}
+
 fn replace_pdf_date(input: &[u8], key: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(input.len());
     let mut pos = 0;
@@ -119,11 +144,7 @@ fn replace_pdf_date(input: &[u8], key: &[u8]) -> Vec<u8> {
         match value_end {
             Some(end) => {
                 out.extend_from_slice(&input[pos..value_start]);
-                out.extend_from_slice(PDF_EPOCH);
-                let old_len = end - value_start;
-                if old_len > PDF_EPOCH.len() {
-                    out.resize(out.len() + old_len - PDF_EPOCH.len(), b' ');
-                }
+                push_epoch_value(&mut out, &input[value_start..end]);
                 pos = end;
             }
             None => {
@@ -138,7 +159,7 @@ fn replace_pdf_date(input: &[u8], key: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{PDF_EPOCH, normalize_musicxml, normalize_output, normalize_pdf};
+    use super::{normalize_musicxml, normalize_output, normalize_pdf};
 
     fn pdf_with(creation: &str, modified: &str) -> Vec<u8> {
         format!(
@@ -164,36 +185,71 @@ mod tests {
         dates
     }
 
+    fn changed_positions(before: &[u8], after: &[u8]) -> Vec<usize> {
+        (0..before.len())
+            .filter(|at| before[*at] != after[*at])
+            .collect()
+    }
+
     #[test]
-    fn pdfs_differing_only_in_dates_normalise_identically() {
+    fn pdfs_with_equal_length_dates_normalise_identically() {
         let dates = date_strings();
-        let reference = normalize_pdf(&pdf_with(&dates[0], &dates[1]));
         for creation in &dates {
             for modified in &dates {
                 let original = pdf_with(creation, modified);
                 let normalised = normalize_pdf(&original);
                 assert!(!normalised.windows(4).any(|w| w == b"2026"));
-                let stripped_reference: Vec<u8> =
-                    reference.iter().copied().filter(|b| *b != b' ').collect();
-                let stripped: Vec<u8> = normalised.iter().copied().filter(|b| *b != b' ').collect();
-                assert_eq!(stripped, stripped_reference, "{creation} {modified}");
-                assert_eq!(normalize_pdf(&normalised), normalised);
+                assert_eq!(
+                    normalize_pdf(&normalised),
+                    normalised,
+                    "{creation} {modified}"
+                );
+                for other in dates.iter().filter(|d| {
+                    d.len() == creation.len() && d.as_bytes()[0] == creation.as_bytes()[0]
+                }) {
+                    let twin = normalize_pdf(&pdf_with(other, modified));
+                    assert_eq!(twin, normalised, "{creation} vs {other}");
+                }
             }
         }
     }
 
     #[test]
-    fn pdf_dates_keep_byte_offsets_when_not_shorter_than_epoch() {
-        let dates = date_strings();
-        for creation in dates.iter().filter(|d| d.len() >= PDF_EPOCH.len()) {
-            for modified in dates.iter().filter(|d| d.len() >= PDF_EPOCH.len()) {
+    fn pdf_normalisation_preserves_length_and_offsets_for_any_date_length() {
+        let mut dates = date_strings();
+        for len in 0..40usize {
+            dates.push(format!("({})", "9".repeat(len)));
+            dates.push(format!("<{}>", "A".repeat(len)));
+        }
+        for creation in &dates {
+            for modified in dates.iter().step_by(7) {
                 let original = pdf_with(creation, modified);
                 let normalised = normalize_pdf(&original);
-                assert_eq!(normalised.len(), original.len());
-                let xref_at = |bytes: &[u8]| bytes.windows(4).position(|w| w == b"xref");
-                assert_eq!(xref_at(&normalised), xref_at(&original));
+                assert_eq!(normalised.len(), original.len(), "{creation} {modified}");
+                let find = |bytes: &[u8], needle: &[u8]| {
+                    bytes.windows(needle.len()).position(|w| w == needle)
+                };
+                for marker in [&b"xref"[..], b"trailer", b"startxref", b"endobj", b"%%EOF"] {
+                    assert_eq!(find(&normalised, marker), find(&original, marker));
+                }
+                let first = original
+                    .windows(13)
+                    .position(|w| w == b"/CreationDate")
+                    .expect("key");
+                let outside = changed_positions(&original[..first], &normalised[..first]);
+                assert!(outside.is_empty(), "{creation} {modified}");
             }
         }
+    }
+
+    #[test]
+    fn short_pdf_dates_become_a_prefix_of_the_epoch_not_a_longer_value() {
+        let original = pdf_with("(D:2026)", "(x)");
+        let normalised = normalize_pdf(&original);
+        assert_eq!(normalised.len(), original.len());
+        let text = String::from_utf8(normalised).expect("ascii");
+        assert!(text.contains("/CreationDate (D:1970)"));
+        assert!(text.contains("/ModDate(D)"));
     }
 
     #[test]
@@ -203,7 +259,7 @@ mod tests {
             "(D:20261018000000Z)",
         ));
         let text = String::from_utf8(normalised).expect("ascii");
-        assert!(text.contains("/CreationDate (D:19700101000000Z)"));
+        assert!(text.contains("/CreationDate (D:19700101000000Z "));
         assert!(text.contains("/ModDate(D:19700101000000Z)"));
         assert!(!text.contains("20261017"));
         assert!(!text.contains("20261018"));
