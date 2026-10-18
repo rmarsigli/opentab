@@ -2,11 +2,13 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use opentab_gp::read_gp;
-use opentab_model::{Accent, Diagnostic, Score, diagnose, from_json, to_json};
+use opentab_model::{
+    Accent, Clef, Diagnostic, Dynamic, Score, TempoUnit, diagnose, from_json, to_json,
+};
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
-const EXPECTED_TOTALS: [(&str, usize); 14] = [
+const EXPECTED_TOTALS: [(&str, usize); 20] = [
     ("tracks", 64),
     ("master_bars", 1260),
     ("bars", 2392),
@@ -21,6 +23,12 @@ const EXPECTED_TOTALS: [(&str, usize); 14] = [
     ("accent_normal", 216),
     ("accent_heavy", 206),
     ("hopo_destination_payloads", 964),
+    ("harmonics", 117),
+    ("chord_names", 654),
+    ("grace_beats", 69),
+    ("dynamics_not_mf", 4998),
+    ("clefs_not_treble", 618),
+    ("tempo_units_not_quarter", 2),
 ];
 const EXPECTED_DIAGNOSTICS: [(&str, usize); 2] = [("BarWithoutVoices", 59), ("IncompleteBar", 14)];
 
@@ -40,23 +48,39 @@ fn count(totals: &mut BTreeMap<String, usize>, name: &str, amount: usize) {
 fn tally(score: &Score, totals: &mut BTreeMap<String, usize>) {
     count(totals, "tracks", score.tracks.len());
     count(totals, "master_bars", score.master_bars.len());
+    for master_bar in &score.master_bars {
+        let units = master_bar
+            .tempo_changes
+            .iter()
+            .filter(|change| change.unit != TempoUnit::Quarter)
+            .count();
+        count(totals, "tempo_units_not_quarter", units);
+    }
     for track in &score.tracks {
         for staff in &track.staves {
             count(totals, "bars", staff.bars.len());
             for bar in &staff.bars {
                 count(totals, "voices", bar.voices.len());
+                count(
+                    totals,
+                    "clefs_not_treble",
+                    usize::from(bar.clef != Clef::Treble),
+                );
                 for voice in &bar.voices {
                     count(totals, "beats", voice.beats.len());
                     for beat in &voice.beats {
-                        count(
-                            totals,
-                            "strokes",
-                            usize::from(beat.effects.stroke.is_some()),
-                        );
+                        let effects = &beat.effects;
+                        let chord = effects.chord_name.is_some();
+                        count(totals, "strokes", usize::from(effects.stroke.is_some()));
+                        count(totals, "chord_names", usize::from(chord));
+                        count(totals, "grace_beats", usize::from(effects.grace.is_some()));
+                        let loud = effects.dynamic != Dynamic::Mf;
+                        count(totals, "dynamics_not_mf", usize::from(loud));
                         count(totals, "notes", beat.notes.len());
                         for note in &beat.notes {
                             let effects = &note.effects;
                             count(totals, "bends", usize::from(effects.bend.is_some()));
+                            count(totals, "harmonics", usize::from(effects.harmonic.is_some()));
                             count(totals, "slides", usize::from(effects.slide.is_some()));
                             count(totals, "tie_origins", usize::from(effects.tie_origin));
                             count(totals, "staccato", usize::from(effects.staccato));
