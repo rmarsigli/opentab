@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use opentab_render::Ratio;
+use opentab_render::{BarSpan, Ratio, parse_bars, parse_scale};
 
-use crate::render::{BarSpan, ImageFormat, StaffChoice, parse_bars, parse_scale};
+use crate::render::{ImageFormat, StaffChoice};
 
 const ABOUT: &str = "OpenTab command line";
 

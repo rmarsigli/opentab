@@ -1,18 +1,18 @@
 use std::ffi::OsString;
 use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 
-use opentab_layout::marks::{DroppedMark, MarkKind};
-use opentab_layout::{BarRange, DisplayList, LayoutError, LayoutOptions, StaffMode, layout};
+use opentab_layout::{LayoutError, LayoutOptions, StaffMode, layout};
 use opentab_model::Score;
-use opentab_render::{Ratio, RenderError, to_png, to_svg};
+use opentab_render::{
+    BarSpan, Ratio, RenderError, ScoreSelection, SelectionError, Summary, layout_options,
+    page_number, to_png, to_svg,
+};
 use serde::Serialize;
 
 use crate::error::CliError;
 use crate::files::{self, Format};
 use crate::output::Rendered;
 use crate::text::escape_controls;
-
-const MAX_SCALE_DIGITS: usize = 9;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
 pub enum ImageFormat {
@@ -53,51 +53,11 @@ impl StaffChoice {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct BarSpan {
-    pub first: u32,
-    pub last: u32,
-}
-
 #[derive(Serialize)]
 pub struct RenderedPages {
-    pages: usize,
-    systems: usize,
-    bars: usize,
-    staff_space: i64,
-    crowded: Vec<usize>,
-    dropped: Vec<DroppedEntry>,
-    title_page: bool,
-    unrendered: Vec<&'static str>,
+    #[serde(flatten)]
+    summary: Summary,
     files: Vec<String>,
-}
-
-#[derive(Serialize)]
-pub struct DroppedEntry {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bar: Option<usize>,
-    kind: &'static str,
-}
-
-fn kind_name(kind: MarkKind) -> &'static str {
-    match kind {
-        MarkKind::Title => "title",
-        MarkKind::Tempo => "tempo",
-        MarkKind::Section => "section",
-        MarkKind::Chord => "chord",
-        MarkKind::Text => "text",
-        MarkKind::Dynamic => "dynamic",
-    }
-}
-
-fn dropped_entries(dropped: &[DroppedMark]) -> Vec<DroppedEntry> {
-    dropped
-        .iter()
-        .map(|mark| DroppedEntry {
-            bar: mark.bar.map(|bar| bar + 1),
-            kind: kind_name(mark.kind),
-        })
-        .collect()
 }
 
 pub struct RenderRequest<'a> {
@@ -112,55 +72,18 @@ pub struct RenderRequest<'a> {
 }
 
 fn options(request: &RenderRequest<'_>, score: &Score) -> Result<LayoutOptions, CliError> {
-    let track_count = score.tracks.len();
-    let mut tracks = Vec::with_capacity(request.tracks.len());
-    for number in &request.tracks {
-        let index = usize::try_from(*number)
-            .ok()
-            .and_then(|number| number.checked_sub(1))
-            .filter(|index| *index < track_count)
-            .ok_or_else(|| CliError::InvalidInput {
-                message: format!(
-                    "--track {number}: the score has {track_count} track(s), numbered from 1"
-                ),
-            })?;
-        tracks.push(index);
-    }
-    let bar_count = score.master_bars.len();
-    let bars = match request.bars {
-        Some(span) => {
-            let index = |number: u32| usize::try_from(number).ok().and_then(|n| n.checked_sub(1));
-            match (index(span.first), index(span.last)) {
-                (Some(first), Some(last)) if first <= last && last < bar_count => {
-                    Some(BarRange { first, last })
-                }
-                _ => {
-                    return Err(CliError::InvalidInput {
-                        message: format!(
-                            "--bars {}-{}: the score has {bar_count} bar(s), numbered from 1",
-                            span.first, span.last
-                        ),
-                    });
-                }
-            }
-        }
-        None => None,
+    let selection = ScoreSelection {
+        tracks: request.tracks.clone(),
+        bars: request.bars,
+        staff: request.staff.map(StaffChoice::mode),
     };
-    Ok(LayoutOptions {
-        tracks: (!tracks.is_empty()).then_some(tracks),
-        bars,
-        staff_mode: request.staff.map(StaffChoice::mode),
-        ..LayoutOptions::default()
-    })
+    layout_options(score, &selection).map_err(selection_failure)
 }
 
-fn bar_count(list: &DisplayList) -> usize {
-    list.pages
-        .iter()
-        .flat_map(|page| &page.systems)
-        .filter_map(|system| system.staves.first())
-        .map(|staff| staff.bars.len())
-        .sum()
+fn selection_failure(error: SelectionError) -> CliError {
+    CliError::InvalidInput {
+        message: format!("--{error}"),
+    }
 }
 
 pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliError> {
@@ -177,20 +100,11 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
     let score = files::read_score(request.path)?;
     let options = options(request, &score)?;
     let list = layout(&score, &options).map_err(layout_failure)?;
-    let staff_space = list.staff_space.micrometres().0;
-    let crowded: Vec<usize> = list.crowded.iter().map(|index| index + 1).collect();
-    let dropped = dropped_entries(&list.dropped);
-    let title_page = list.title_page;
-    let unrendered: Vec<&'static str> = list
-        .unrendered
-        .iter()
-        .map(|feature| feature.name())
-        .collect();
-    let count = list.pages.len();
-    let systems = list.pages.iter().map(|page| page.systems.len()).sum();
-    let bars = bar_count(&list);
+    let summary = Summary::of(&list);
+    let count = summary.pages;
+    let staff_space = summary.staff_space;
     let chosen: Vec<usize> = match request.page {
-        Some(number) => vec![page_index(number, count)?],
+        Some(number) => vec![page_number(number, count).map_err(selection_failure)?],
         None => (1..=count).collect(),
     };
     let targets: Vec<PathBuf> = chosen
@@ -241,15 +155,16 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
             options.staff_space.0
         ));
     }
-    if !crowded.is_empty() {
-        let numbers: Vec<String> = crowded.iter().map(ToString::to_string).collect();
+    if !summary.crowded.is_empty() {
+        let numbers: Vec<String> = summary.crowded.iter().map(ToString::to_string).collect();
         lines.push(format!(
             "crowded bars (notes may touch): {}",
             numbers.join(", ")
         ));
     }
-    if !dropped.is_empty() {
-        let marks: Vec<String> = dropped
+    if !summary.dropped.is_empty() {
+        let marks: Vec<String> = summary
+            .dropped
             .iter()
             .map(|mark| match mark.bar {
                 Some(bar) => format!("{} in bar {bar}", mark.kind),
@@ -261,13 +176,13 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
             marks.join(", ")
         ));
     }
-    if title_page {
+    if summary.title_page {
         lines.push("the title block fills page 1; the music starts on page 2".to_string());
     }
-    if !unrendered.is_empty() {
+    if !summary.unrendered.is_empty() {
         lines.push(format!(
             "not drawn yet (outside the renderer's scope): {}",
-            unrendered.join(", ")
+            summary.unrendered.join(", ")
         ));
     }
     lines.extend(
@@ -277,14 +192,7 @@ pub fn run(request: &RenderRequest<'_>) -> Result<Rendered<RenderedPages>, CliEr
     );
     Ok(Rendered {
         wire: RenderedPages {
-            pages: count,
-            systems,
-            bars,
-            staff_space,
-            crowded,
-            dropped,
-            title_page,
-            unrendered,
+            summary,
             files: written,
         },
         human: lines.join("\n"),
@@ -306,15 +214,6 @@ fn render_failure(error: RenderError) -> CliError {
     CliError::InvalidInput {
         message: error.to_string(),
     }
-}
-
-fn page_index(number: u32, count: usize) -> Result<usize, CliError> {
-    usize::try_from(number)
-        .ok()
-        .filter(|number| (1..=count).contains(number))
-        .ok_or_else(|| CliError::InvalidInput {
-            message: format!("--page {number}: the score has {count} page(s), numbered from 1"),
-        })
 }
 
 fn names_a_directory(out: &Path) -> bool {
@@ -421,110 +320,9 @@ fn input_stem(input: &Path, format: Format) -> OsString {
         .unwrap_or_default()
 }
 
-pub fn parse_bars(text: &str) -> Result<BarSpan, String> {
-    let invalid = || format!("invalid bars {text:?}: use A-B or A, counted from 1");
-    let (first, last) = text.split_once('-').unwrap_or((text, text));
-    let number = |part: &str| whole(part).filter(|value| *value > 0);
-    let first = number(first).ok_or_else(invalid)?;
-    let last = number(last).ok_or_else(invalid)?;
-    if first > last {
-        return Err(invalid());
-    }
-    Ok(BarSpan { first, last })
-}
-
-pub fn parse_scale(text: &str) -> Result<Ratio<u32>, String> {
-    let invalid = || format!("invalid scale {text:?}: use a positive number such as 2, 1.5 or 3/2");
-    let ratio = match text.split_once('/') {
-        Some((numerator, denominator)) => {
-            let numerator = whole(numerator).ok_or_else(invalid)?;
-            let denominator = whole(denominator).ok_or_else(invalid)?;
-            if denominator == 0 {
-                return Err(invalid());
-            }
-            Ratio::new(numerator, denominator)
-        }
-        None => decimal(text).ok_or_else(invalid)?,
-    };
-    if *ratio.numer() == 0 {
-        return Err("the scale must be greater than zero".to_string());
-    }
-    Ok(ratio)
-}
-
-fn whole(text: &str) -> Option<u32> {
-    if text.is_empty() || text.len() > MAX_SCALE_DIGITS || !text.bytes().all(|b| b.is_ascii_digit())
-    {
-        return None;
-    }
-    text.parse().ok()
-}
-
-fn decimal(text: &str) -> Option<Ratio<u32>> {
-    let (integer, fraction) = text.split_once('.').unwrap_or((text, ""));
-    if text.ends_with('.') || integer.len() + fraction.len() > MAX_SCALE_DIGITS {
-        return None;
-    }
-    let numerator = whole(&format!("{integer}{fraction}"))?;
-    let denominator = 10_u32.checked_pow(u32::try_from(fraction.len()).ok()?)?;
-    if integer.is_empty() {
-        return None;
-    }
-    Some(Ratio::new(numerator, denominator))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn scales_parse_as_exact_ratios() {
-        assert_eq!(parse_scale("1"), Ok(Ratio::from_integer(1)));
-        assert_eq!(parse_scale("2"), Ok(Ratio::from_integer(2)));
-        assert_eq!(parse_scale("1.5"), Ok(Ratio::new(3, 2)));
-        assert_eq!(parse_scale("0.25"), Ok(Ratio::new(1, 4)));
-        assert_eq!(parse_scale("3/2"), Ok(Ratio::new(3, 2)));
-        assert_eq!(parse_scale("6/4"), Ok(Ratio::new(3, 2)));
-        assert_eq!(parse_scale("2.50"), Ok(Ratio::new(5, 2)));
-    }
-
-    #[test]
-    fn bar_spans_parse_from_one_or_two_numbers() {
-        assert_eq!(parse_bars("3-7"), Ok(BarSpan { first: 3, last: 7 }));
-        assert_eq!(parse_bars("4"), Ok(BarSpan { first: 4, last: 4 }));
-        assert_eq!(parse_bars("2-2"), Ok(BarSpan { first: 2, last: 2 }));
-        for text in [
-            "", "0", "0-3", "5-4", "a", "1-", "-2", "1-2-3", " 1", "1.5", "+1",
-        ] {
-            assert!(parse_bars(text).is_err(), "{text}");
-        }
-    }
-
-    #[test]
-    fn bad_scales_are_refused() {
-        for text in [
-            "",
-            "0",
-            "0.0",
-            "0/5",
-            "-1",
-            "+1",
-            "1/0",
-            "1.",
-            ".5",
-            "1.2.3",
-            "a",
-            "1e3",
-            "1/",
-            "/2",
-            "1/2/3",
-            " 1",
-            "1234567890",
-            "0.0000000001",
-        ] {
-            assert!(parse_scale(text).is_err(), "{text}");
-        }
-    }
 
     #[test]
     fn page_names_follow_the_out_path_or_the_input_stem() {
