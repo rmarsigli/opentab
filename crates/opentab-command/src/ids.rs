@@ -26,7 +26,7 @@ pub(crate) fn bar_ids(bar: &Bar) -> impl Iterator<Item = ElementId> + '_ {
     once(bar.id.0).chain(bar.voices.iter().flat_map(voice_ids))
 }
 
-fn voice_ids(voice: &Voice) -> impl Iterator<Item = ElementId> + '_ {
+pub(crate) fn voice_ids(voice: &Voice) -> impl Iterator<Item = ElementId> + '_ {
     once(voice.id.0).chain(voice.beats.iter().flat_map(beat_ids))
 }
 

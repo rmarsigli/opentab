@@ -30,7 +30,7 @@ const EXPECTED_TOTALS: [(&str, usize); 20] = [
     ("clefs_not_treble", 618),
     ("tempo_units_not_quarter", 2),
 ];
-const EXPECTED_DIAGNOSTICS: [(&str, usize); 2] = [("BarWithoutVoices", 59), ("IncompleteBar", 14)];
+const EXPECTED_DIAGNOSTICS: [(&str, usize); 1] = [("IncompleteBar", 14)];
 
 fn diagnostic_kind(diagnostic: &Diagnostic) -> String {
     let debug = format!("{diagnostic:?}");

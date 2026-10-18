@@ -108,7 +108,7 @@ pub fn write_fixtures(out: &Path) -> Result<Vec<PathBuf>, FixtureError> {
 mod tests {
     use super::{families, render, write_fixtures};
     use opentab_gp::read_gp;
-    use opentab_model::{Diagnostic, diagnose};
+    use opentab_model::diagnose;
     use std::path::Path;
 
     #[test]
@@ -159,18 +159,7 @@ mod tests {
             let bytes = opentab_gp::write_gp(&family.score).expect("write");
             let again = opentab_gp::write_gp(&read_gp(&bytes).expect("read")).expect("rewrite");
             assert!(again == bytes, "{}", family.file);
-            let diagnostics = diagnose(&family.score);
-            if family.file == "multi-voice.gp" {
-                assert!(
-                    matches!(
-                        diagnostics.as_slice(),
-                        [Diagnostic::BarWithoutVoices { .. }]
-                    ),
-                    "{diagnostics:?}"
-                );
-            } else {
-                assert_eq!(diagnostics, Vec::new(), "{}", family.file);
-            }
+            assert_eq!(diagnose(&family.score), Vec::new(), "{}", family.file);
         }
     }
 

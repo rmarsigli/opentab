@@ -60,12 +60,6 @@ pub(crate) fn check_beat(track: &Track, beat: &Beat) -> Result<(), CommandError>
 }
 
 pub(crate) fn check_bar(track: &Track, bar: &Bar) -> Result<(), CommandError> {
-    if bar.voices.is_empty() {
-        return Err(CommandError::invalid(format!(
-            "bar {} has no voices; every bar needs at least one",
-            bar.id.0.0
-        )));
-    }
     let ordered = bar.voices.windows(2).all(|pair| match pair {
         [first, second] => first.slot < second.slot,
         _ => true,

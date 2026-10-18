@@ -41,7 +41,8 @@ fn ids_of_other_kinds_are_not_found() {
     let cases = [
         (
             Command::InsertBeat {
-                voice: VoiceId(beat_raw),
+                voice: Some(VoiceId(beat_raw)),
+                bar: None,
                 index: 0,
                 duration: duration(NoteValue::Quarter),
             },
@@ -89,7 +90,8 @@ fn every_forward_command() -> Vec<Command> {
     vec![
         Command::RemoveMasterBar { index: 0 },
         Command::InsertBeat {
-            voice: VoiceId(id),
+            voice: Some(VoiceId(id)),
+            bar: None,
             index: 0,
             duration: duration(NoteValue::Quarter),
         },

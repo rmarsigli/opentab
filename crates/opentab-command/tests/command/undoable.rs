@@ -64,13 +64,10 @@ fn set_tempo_on_a_bar_with_a_tempo_change_outside_it_is_rejected() {
 }
 
 #[test]
-fn remove_master_bar_with_a_bar_without_voices_is_rejected() {
+fn remove_master_bar_accepts_a_bar_without_voices() {
     let mut fx = fixture();
     fx.score.tracks[1].staves[0].bars[1].voices.clear();
-    invalid(
-        rejected(&mut fx.score, &Command::RemoveMasterBar { index: 1 }),
-        "no voices",
-    );
+    round_trip(&mut fx.score, &Command::RemoveMasterBar { index: 1 });
 }
 
 #[test]
@@ -151,11 +148,10 @@ const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 256;
 const MAX_COMMANDS_PER_CASE: usize = 48;
 const RUN_DIAGNOSE: &str = "run diagnose";
-const GUARDS: [&str; 9] = [
+const GUARDS: [&str; 8] = [
     RUN_DIAGNOSE,
     "is not unique",
     "outside the bar",
-    "no voices",
     "already has a note on string",
     "percussion note",
     "out of range",
@@ -190,9 +186,17 @@ fn every_command(score: &Score) -> Vec<Command> {
                 });
             }
             for bar in &staff.bars {
+                commands.push(Command::InsertBeat {
+                    voice: None,
+                    bar: Some(bar.id),
+                    index: 0,
+                    duration: crate::support::duration(opentab_model::NoteValue::Eighth),
+                });
                 for voice in &bar.voices {
+                    commands.push(Command::RemoveVoice { voice: voice.id });
                     commands.push(Command::InsertBeat {
-                        voice: voice.id,
+                        voice: Some(voice.id),
+                        bar: None,
                         index: 0,
                         duration: crate::support::duration(opentab_model::NoteValue::Eighth),
                     });

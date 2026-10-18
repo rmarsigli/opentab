@@ -37,7 +37,8 @@ fn forward_commands_have_the_documented_json_shape() {
     );
     shape(
         &Command::InsertBeat {
-            voice: VoiceId(id),
+            voice: Some(VoiceId(id)),
+            bar: None,
             index: 1,
             duration: opentab_model::Duration::new(
                 NoteValue::Eighth,
@@ -50,8 +51,22 @@ fn forward_commands_have_the_documented_json_shape() {
                "duration": {"value": "eighth", "dots": 1, "tuplet": {"num": 3, "den": 2}}}),
     );
     shape(
+        &Command::InsertBeat {
+            voice: None,
+            bar: Some(opentab_model::BarId(id)),
+            index: 0,
+            duration: duration(NoteValue::Half),
+        },
+        json!({"op": "insert_beat", "bar": 7, "index": 0,
+               "duration": {"value": "half", "dots": 0, "tuplet": null}}),
+    );
+    shape(
         &Command::RemoveBeat { beat: BeatId(id) },
         json!({"op": "remove_beat", "beat": 7}),
+    );
+    shape(
+        &Command::RemoveVoice { voice: VoiceId(id) },
+        json!({"op": "remove_voice", "voice": 7}),
     );
     shape(
         &Command::SetBeatDuration {

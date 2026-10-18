@@ -14,7 +14,8 @@ fn inserts_refuse_an_allocator_behind_existing_ids() {
     fx.score.ids = allocator(3);
     let commands = [
         Command::InsertBeat {
-            voice: fx.voice,
+            voice: Some(fx.voice),
+            bar: None,
             index: 0,
             duration: duration(NoteValue::Quarter),
         },
@@ -41,7 +42,8 @@ fn inserts_refuse_an_exhausted_id_space() {
     let mut fx = fixture();
     fx.score.ids = allocator(u64::MAX);
     let command = Command::InsertBeat {
-        voice: fx.voice,
+        voice: Some(fx.voice),
+        bar: None,
         index: 0,
         duration: duration(NoteValue::Quarter),
     };
@@ -90,7 +92,8 @@ fn inserts_still_work(fx: &mut crate::support::Fixture) {
     apply(
         &mut fx.score,
         &Command::InsertBeat {
-            voice,
+            voice: Some(voice),
+            bar: None,
             index: 0,
             duration: duration(NoteValue::Quarter),
         },

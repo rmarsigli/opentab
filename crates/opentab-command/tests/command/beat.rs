@@ -10,7 +10,8 @@ fn insert_beat_adds_a_rest_with_a_fresh_id() {
     let fresh = BeatId(fx.score.ids.peek());
     let triplet = Duration::new(NoteValue::Eighth, 1, Some(Tuplet::new(3, 2).unwrap())).unwrap();
     let command = Command::InsertBeat {
-        voice: fx.voice,
+        voice: Some(fx.voice),
+        bar: None,
         index: 2,
         duration: triplet,
     };
@@ -31,7 +32,8 @@ fn insert_beat_adds_a_rest_with_a_fresh_id() {
 fn insert_beat_at_the_end_and_into_an_empty_voice() {
     let mut fx = fixture();
     let end = Command::InsertBeat {
-        voice: fx.voice,
+        voice: Some(fx.voice),
+        bar: None,
         index: 4,
         duration: duration(NoteValue::Half),
     };
@@ -47,7 +49,8 @@ fn insert_beat_at_the_end_and_into_an_empty_voice() {
     .unwrap();
     let empty = guitar_voice(&fx.score, 1).id;
     let command = Command::InsertBeat {
-        voice: empty,
+        voice: Some(empty),
+        bar: None,
         index: 0,
         duration: duration(NoteValue::Whole),
     };
@@ -58,7 +61,8 @@ fn insert_beat_at_the_end_and_into_an_empty_voice() {
 fn insert_beat_past_the_end_is_out_of_range() {
     let mut fx = fixture();
     let command = Command::InsertBeat {
-        voice: fx.voice,
+        voice: Some(fx.voice),
+        bar: None,
         index: 5,
         duration: duration(NoteValue::Quarter),
     };
@@ -76,7 +80,8 @@ fn insert_beat_past_the_end_is_out_of_range() {
 fn insert_beat_into_an_unknown_voice_is_not_found() {
     let mut fx = fixture();
     let command = Command::InsertBeat {
-        voice: VoiceId(ElementId(9999)),
+        voice: Some(VoiceId(ElementId(9999))),
+        bar: None,
         index: 0,
         duration: duration(NoteValue::Quarter),
     };

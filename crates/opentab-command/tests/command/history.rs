@@ -81,7 +81,8 @@ fn redo_reuses_the_ids_of_the_first_execution() {
     let mut fx = fixture();
     let mut history = History::new();
     let insert = Command::InsertBeat {
-        voice: fx.voice,
+        voice: Some(fx.voice),
+        bar: None,
         index: 1,
         duration: duration(NoteValue::Eighth),
     };
@@ -114,7 +115,8 @@ fn undone_ids_are_never_handed_out_again() {
         .execute(
             &mut fx.score,
             Command::InsertBeat {
-                voice: fx.voice,
+                voice: Some(fx.voice),
+                bar: None,
                 index: 0,
                 duration: duration(NoteValue::Eighth),
             },
@@ -149,7 +151,8 @@ fn undone_ids_are_never_handed_out_again() {
         .execute(
             &mut fx.score,
             Command::InsertBeat {
-                voice: fx.voice,
+                voice: Some(fx.voice),
+                bar: None,
                 index: 0,
                 duration: duration(NoteValue::Quarter),
             },
