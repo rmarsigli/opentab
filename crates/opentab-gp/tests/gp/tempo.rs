@@ -124,3 +124,42 @@ fn invalid_tempo_values_are_rejected() {
         "/GPIF/MasterTrack/Automations/Automation/Position"
     );
 }
+
+#[test]
+fn set_tempo_keeps_the_extras_of_a_later_tempo_change_in_the_bar() {
+    let later = concat!(
+        "<Automation><Type>Tempo</Type><Linear>true</Linear><Bar>0</Bar>",
+        "<Position>0.5</Position><Visible>true</Visible>",
+        "<Text><![CDATA[ramp]]></Text><Value>90 2</Value></Automation>"
+    );
+    let mut score = with_automations(later, "4/4").read();
+    let set = opentab_command::Command::SetTempo {
+        master_bar: 0,
+        bpm: 140.0,
+    };
+    opentab_command::apply(&mut score, &set).expect("set_tempo applies");
+    let changes = &master_bar(&score).tempo_changes;
+    assert_eq!(changes.len(), 2);
+    assert_eq!(changes[0].position, Fraction::from_integer(0));
+    assert_eq!(changes[1].position, Fraction::new(1, 2));
+    let bytes = opentab_gp::write_gp(&score).expect("write");
+    let again = opentab_gp::read_gp(&bytes).expect("read");
+    let carried: Vec<String> = payloads(&again, master_bar(&again).id.0);
+    assert!(
+        carried
+            .iter()
+            .any(|data| data.contains("*Tempo#1") && data.contains("<Linear>true</Linear>")),
+        "{carried:?}"
+    );
+    assert!(
+        carried
+            .iter()
+            .any(|data| data.contains("*Tempo#1") && data.contains("ramp")),
+        "{carried:?}"
+    );
+    assert!(
+        !carried.iter().any(|data| data.contains("*Tempo#0")),
+        "{carried:?}"
+    );
+    assert_eq!(again.master_bars[0].tempo_changes, *changes);
+}

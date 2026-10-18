@@ -6,6 +6,7 @@ use crate::canon::{self, GP_REVISION, GP_VERSION};
 use crate::codes::{MINOR, TEMPO_UNITS};
 use crate::dom::{Element, Node};
 use crate::error::Refusal;
+use crate::guard;
 use crate::limits::MAX_XML_DEPTH;
 use crate::read::POOLS;
 use crate::write::beat::{BarSite, Builder, patch_rhythms, write_bar};
@@ -87,6 +88,24 @@ fn alternate_endings(mask: u8) -> String {
         .join(" ")
 }
 
+fn tempo_target(items: &[Item], ordinal: usize, master: &MasterBar, claimed: &[bool]) -> usize {
+    let Some(wanted) = items.iter().find_map(|item| item.guard.as_deref()) else {
+        return ordinal;
+    };
+    let fits = |index: &usize| {
+        !claimed.get(*index).copied().unwrap_or(true)
+            && master.tempo_changes.get(*index).is_some_and(|change| {
+                guard::tempo_position(change.position, master.time_signature) == wanted
+            })
+    };
+    if fits(&ordinal) {
+        return ordinal;
+    }
+    (0..master.tempo_changes.len())
+        .find(fits)
+        .unwrap_or(ordinal)
+}
+
 struct MasterOutput {
     element: Element,
     tempos: Vec<Element>,
@@ -106,12 +125,15 @@ fn master_bar(
     }
     let own = payload::surviving(split.own, &Env::MasterBar(master))?;
     let mut tempo_items: BTreeMap<usize, Vec<Item>> = BTreeMap::new();
+    let mut claimed = vec![false; master.tempo_changes.len()];
     for (ordinal, items) in split.tempo {
-        if let Some(change) = master.tempo_changes.get(ordinal) {
-            tempo_items.insert(
-                ordinal,
-                payload::surviving(items, &Env::Tempo(change, master.time_signature))?,
-            );
+        let target = tempo_target(&items, ordinal, master, &claimed);
+        if let Some(change) = master.tempo_changes.get(target) {
+            if let Some(flag) = claimed.get_mut(target) {
+                *flag = true;
+            }
+            let kept = payload::surviving(items, &Env::Tempo(change, master.time_signature))?;
+            tempo_items.entry(target).or_default().extend(kept);
         }
     }
     let key = master.key_signature;
