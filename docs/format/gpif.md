@@ -34,7 +34,7 @@ How GP writes the archive:
 - The DOS date and time fields are zero. Most tools display that as 1980-00-00, which is not a valid calendar date. There are no extra fields and no comments.
 - The "made by" field says Unix.
 
-GP also accepts other ways of writing the archive. We rebuilt an example with stored entries, with no data descriptors, with timestamps of 1980-01-01, without the directory entries and with the entries in a different order. GP opened every variant.
+GP also accepts other ways of writing the archive. We rebuilt an example with stored entries, with no data descriptors, with timestamps of 1980-01-01, without the directory entries and with the entries in a different order. GP opened every variant [b-rebuilt, b-rebuilt-stored, e2-order-stored].
 
 ### 1.1 Minimal container
 
@@ -43,7 +43,7 @@ We found the minimal set by deleting one entry at a time from an example, then b
 | Removed | Result |
 |---|---|
 | `VERSION` | GP refuses the file with an error notice |
-| `Content/PartConfiguration` | GP **crashes** after showing the document (seen twice) |
+| `Content/PartConfiguration` | GP **crashes** after showing the document (seen twice) [d3-drop, c-gpif-version] |
 | any other single entry | accepted |
 
 The minimal container has three entries, in any order:
@@ -52,7 +52,7 @@ The minimal container has three entries, in any order:
 - `VERSION`, containing `7.0`;
 - `Content/PartConfiguration`.
 
-An archive with exactly these three entries was accepted. That held when `PartConfiguration` was a copy from an example, an 8-byte "zero parts" record, or **zero bytes long**. The empty form carries no vendor-authored content, so a writer that generates a container from scratch should use it. On re-save, GP writes every other entry again with its defaults. It also writes a real `PartConfiguration`.
+An archive with exactly these three entries was accepted. That held when `PartConfiguration` was a copy from an example, an 8-byte "zero parts" record, or **zero bytes long** [e1-min3, e3-pc0, e4-pcempty]. The empty form carries no vendor-authored content, so a writer that generates a container from scratch should use it. On re-save, GP writes every other entry again with its defaults. It also writes a real `PartConfiguration`.
 
 `PartConfiguration`, as far as we decoded it, is laid out as follows. We never need to write a non-empty one.
 
@@ -81,7 +81,7 @@ GP writes free-text values as a single CDATA section:
 - the chord reference of a beat;
 - asset paths.
 
-**GP reads these values only from the first CDATA section.** We tested this by changing the title of an example to escaped plain text. GP showed an empty title and saved it empty. A value split across two CDATA sections came back as only the first chunk. Chord references written as plain text were dropped, together with the chord diagrams they pointed to.
+**GP reads these values only from the first CDATA section.** We tested this by changing the title of an example to escaped plain text. GP showed an empty title and saved it empty [u3-plain-title]. A value split across two CDATA sections came back as only the first chunk. Chord references written as plain text were dropped, together with the chord diagrams they pointed to.
 
 Consequences for a writer:
 
@@ -126,7 +126,7 @@ Elements of three kinds are shared, and elements of three are not:
 | Notes | Shared across beats: 6 690 note references point at 3 619 notes. This includes 143 notes that carry a tie. |
 | Bars, voices, tracks | Never shared. |
 
-GP rebuilds the sharing whenever it saves. We wrote an example with every reference made unique: 352 beats and 424 notes, instead of 133 of each. GP accepted it. On re-save it produced exactly the same `score.gpif` as for the shared version.
+GP rebuilds the sharing whenever it saves. We wrote an example with every reference made unique: 352 beats and 424 notes, instead of 133 of each. GP accepted it. On re-save it produced exactly the same `score.gpif` as for the shared version [u2-blues-unshared].
 
 So a reader must treat a shared beat or note as a value. It copies the element once for each place that references it, and each copy is a separate model element. A writer may share or not; GP accepts either.
 
@@ -146,13 +146,13 @@ The `NoteValue` names are `Whole`, `Half`, `Quarter`, `Eighth`, `16th`, `32nd`, 
 
 `PrimaryTuplet num="N" den="M"` means N notes in the time of M. Its length is the plain length multiplied by M/N. GP's MusicXML export of `num=3 den=2` gives `actual-notes 3` and `normal-notes 2`. The corpus has 3:2 and 4:3. A `SecondaryTuplet` (a nested tuplet) never occurred.
 
-**Grace notes do not take time.** A beat with a `GraceNotes` child (`BeforeBeat` or `OnBeat`) still has a rhythm, but the bar is filled without it. Of the 52 voices that contain grace beats, every one is exactly full when the grace beats are left out, and overfull when they are counted.
+**Grace notes do not take time.** A beat with a `GraceNotes` child (`BeforeBeat` or `OnBeat`) still has a rhythm, but the bar is filled without it. Of the 52 voices that contain grace beats, every one is exactly full when the grace beats are left out, and overfull when they are counted. A voice whose beats are all grace beats is treated like an empty voice.
 
 ## 5. Master track and tempo
 
 ```
 <MasterTrack>
-  <Anacrusis/>                      optional: first bar is a pickup
+  <Anacrusis/>                      optional: the first bar is a pickup (it may be shorter than the time signature)
   <Tracks>t t t</Tracks>
   <Automations>
     <Automation>
@@ -209,7 +209,8 @@ The other master automation type seen is `SyncPoint`. It aligns bars with a back
 - `AccidentalCount` runs from -7 to 7. Negative counts are flats.
 - `Repeat` combines a start flag, an end flag and a play count (`count`). The count is 2 on repeat ends and usually 0 on starts. Three starts carry 2.
 - `AlternateEndings` lists the ending numbers that cover this bar. The corpus only has single values (1 or 2).
-- `Section` is a rehearsal mark: a letter and a text. Either may be empty.
+- `Section` is a rehearsal mark: a letter and a text. Either may be empty. The letter is the mark shown beside the text.
+- `DoubleBar` marks a double bar line at the end of the bar.
 - `Directions` holds segno and coda targets and jumps such as `DaCoda`, `DaSegno` and `DaSegnoAlCoda`.
 
 ## 7. Tracks and staves
@@ -272,8 +273,8 @@ The other master automation type seen is `SyncPoint`. It aligns bars with a back
 ```
 
 - **Clef** is stored per bar: `G2` is treble, `F4` is bass, and `Neutral` is percussion. 618 bars (bass and percussion staves) are not treble.
-- **Voices** always has four slots. A used slot can follow an empty one: 6 bars in 3 files use only the second voice. 59 bars have no voice at all.
-- **Dynamic** is on every beat. The default is `MF`, and 1 629 beats in 16 files have another value. GP's MusicXML export shows a dynamic mark at each change.
+- **Voices** always has four slots, and the slot number matters: stem direction and rest placement depend on it. A used slot can follow an empty one: 6 bars in 3 files use only the second voice. 59 bars have no voice at all. Slots in a bar are strictly increasing in the order the voices are kept, and the numbers run from 0 to 3.
+- **Dynamic** is on every beat and takes `PPP`, `PP`, `P`, `MP`, `MF`, `F`, `FF` or `FFF`. The default is `MF`, which GP also fills in when the element is missing. 1 629 beats in 16 files have another value. GP's MusicXML export shows a dynamic mark at each change.
 - **Chord** is the id of an item in the same staff's `DiagramCollection`. The item's `name` attribute is the chord name shown above the staff.
 - Beat child order, as GP writes it:
   1. `GraceNotes`, `Dynamic`, `Rhythm`;
@@ -327,7 +328,7 @@ Effects that never occurred in the corpus. We applied each one through GP's Effe
 - **Fret** is the fret number. For drum notes, `InstrumentArticulation` is an index into the track's articulation table. For pitched notes it is 0.
 - **Midi** is the sounding MIDI number. **ConcertPitch** and **TransposedPitch** spell that note as step, accidental (`#`, `b` or empty) and octave. Here octave is the MIDI number divided by 12, so MIDI 48 is octave 4. TransposedPitch applies the track's `Transpose`.
 - These three properties are derived data, but they must be **written consistently with string, fret, tuning and transpose.** Two experiments show this:
-  - A bare score, with an InstrumentSet that has only a type and no transpose, had notes with only string and fret. GP filled in all three.
+  - A bare score, whose track has no `Transpose`, had notes with only string and fret. GP filled in all three [min-all].
   - Real examples behaved differently. Removing ConcertPitch and TransposedPitch, or all three properties, made GP **silently lose the notes**: 133 notes collapsed to 6 on re-save. Removing only `Midi` changed three notes [t3]. Removing only the stem orientations changed 11 bytes of the re-saved file [t1]. The losses are in [t4], [t5-ex1] and [t6].
 - **Accent** is a bit set. We read the meaning of each bit from GP's MusicXML export:
 
@@ -341,7 +342,7 @@ Effects that never occurred in the corpus. We applied each one through GP's Effe
 
   The corpus has 1, 4, 8, 1+8 and 1+4.
 - **AntiAccent `Normal`** is a ghost note; MusicXML shows it as a parenthesised notehead.
-- **Fingering** values are `Open`, `P`, `I`, `M`, `A` and `C`. GP's export maps the left hand to T, 1, 2, 3, 4 and the right hand to p, i, m, a, c.
+- **Fingering** values are `Open`, `P`, `I`, `M`, `A` and `C`: open string, thumb, index, middle, ring and little finger. GP's export maps the left hand to T, 1, 2, 3, 4 and the right hand to p, i, m, a, c. `LeftFingering` takes all six values and `RightFingering` takes the last five.
 - **Tie**: the `origin` attribute starts a tie and `destination` ends one. The same note can do both.
 
 Effect properties on notes:
@@ -355,6 +356,7 @@ Effect properties on notes:
 | `Slide` | `Flags` | Bit set: 1 shift slide, 2 legato slide, 4 slide out downwards, 8 slide out upwards, 16 slide in from below, 32 slide in from above. Bit 64 is accepted but has no visible export. The corpus only has single bits. |
 | `Harmonic`, `HarmonicType`, `HarmonicFret` | `Enable`, `HType`, `HFret` | `HType` is `Natural`, `Artificial`, `Pinch`, `Tap`, `Semi` or `Feedback`. `HFret` is a float such as `12.000000` or `7.000000`. |
 | `Bended` + `Bend{Origin,Middle,Destination}{Offset,Value}` | floats | See below. |
+| `Tapped`, `LeftHandTapped` | `Enable` | Tapping with the right or the left hand. Tapping is a note property, not a beat property. |
 | `ShowStringNumber` | `Enable` | Display only. |
 
 **Bends** have a fixed shape of four points:
@@ -364,7 +366,7 @@ Effect properties on notes:
 3. middle 2: offset 2 and the shared middle value;
 4. destination: an offset and a value.
 
-Offsets run from 0 to 100 across the note. **A value of 100 is a full tone**: GP exports 100 as `bend-alter 2` and 150 as `bend-alter 3`. So 25 units are one quarter tone.
+Offsets run from 0 to 100 across the note. **A value of 100 is a full tone**: GP exports 100 as `bend-alter 2` and 150 as `bend-alter 3`. So 25 units are one quarter tone, and the unit is one hundredth of a semitone (a cent). Observed values are 0, 12, 25, 37.5, 50, 75, 100 and 150. All observed offsets are whole numbers.
 
 ## 10. Mapping GPIF ↔ OpenTab model
 
@@ -390,7 +392,10 @@ Notation used in this table:
 | `Score.meta.notices` | `Score/Notices` | CDATA |
 | `Score.master_bars` | `MasterBars/MasterBar`, in order | — |
 | `Score.tracks` | `Tracks/Track`, in `MasterTrack/Tracks` order | — |
+| `Score.anacrusis` | `MasterTrack/Anacrusis` present | — |
 | `Score.extensions` | opaque GPIF keyed by owner id | — |
+| `Score.document_extensions` | opaque root-level GPIF: `GPVersion`, `GPRevision`, `Encoding`, `BackingTrack`, `Assets`, `ScoreViews` and similar | Not tied to any element. |
+| `Score.container` | every archive entry except `Content/score.gpif`, in archive order, with its exact bytes | Stored as base64 text in the JSON form. |
 | `Score.ids` | — | The model allocator; not stored in GPIF. |
 
 ### Master bars
@@ -404,9 +409,12 @@ Notation used in this table:
 | `repeat_start` | `Repeat/@start` | — |
 | `repeat_end` | `Repeat/@end` = true → `Some(@count)` | A count on a start-only repeat → opaque. |
 | `alternate_endings` (bitmask) | `AlternateEndings`: ending k sets bit k-1 | — |
-| `marker.text` | `Section/Text` | `Section/Letter` → opaque. |
+| `marker.text` | `Section/Text` | — |
+| `marker.letter` | `Section/Letter` | — |
+| `double_bar` | `DoubleBar` present | — |
 | `tempo_changes[].position` | `Automation[Type=Tempo][Bar=index]/Position` × bar length | Position is a 6-digit float; see §5. |
-| `tempo_changes[].bpm` | first number of `Value` | Unit code, `Linear`, `Visible` and `Text` → opaque. |
+| `tempo_changes[].bpm` | first number of `Value` | The number printed on the mark, not converted to quarter notes. `Linear`, `Visible` and `Text` → opaque. |
+| `tempo_changes[].unit` | second number of `Value`: 1 eighth, 2 quarter, 3 dotted quarter, 4 half, 5 dotted half | Code 0 reads as quarter and is written as 2. Playback converts the mark to quarter notes. |
 
 ### Tracks and staves
 
@@ -419,6 +427,7 @@ Notation used in this table:
 | `instrument.midi_program` | first `Sounds/Sound/MIDI/Program` | — |
 | `tuning.strings` | `Staff/Properties/Property[Tuning]/Pitches`, **reversed** | Model index 0 is the highest string. |
 | `capo` | `Property[CapoFret]/Fret` | — |
+| `transpose.chromatic`, `.octave` | `Track/Transpose/Chromatic`, `Octave` | Chromatic runs from -12 to 12 and octave from -3 to 3. Observed: chromatic -11 to 0, octave -1 to 0. Guitars and basses carry octave -1. |
 | `Track.staves` | `Staves/Staff` | — |
 | `Staff.id` | — | The staff has no GPIF id. |
 | `Staff.bars` | for master bar i, entry s of `MasterBar[i]/Bars` | s is the staff's global position. |
@@ -428,20 +437,23 @@ Notation used in this table:
 | Model field | GPIF source | Notes |
 |---|---|---|
 | `Bar.id` | `Bar/@id` | id |
-| `Bar.voices` | the used slots of `Bar/Voices` | The slot number is not modelled yet; see findings. |
+| `Bar.clef` | `Bar/Clef`: `G2` Treble, `F4` Bass, `Neutral` Neutral | Any other clef → opaque. |
+| `Bar.voices` | the used slots of `Bar/Voices` | Slots holding `-1` are skipped. The writer puts each voice in its slot and fills the other slots with `-1`. |
 | `Voice.id` | `Voice/@id` | id |
+| `Voice.slot` | the position (0 to 3) of the voice in `Bar/Voices` | Strictly increasing within a bar. |
 | `Voice.beats` | `Voice/Beats` | Shared beats are copied. |
 | `Beat.id` | `Beat/@id` | id; one model beat per reference. |
 | `Beat.duration.value` | `Rhythm/NoteValue` | — |
 | `Beat.duration.dots` | `Rhythm/AugmentationDot/@count` | — |
 | `Beat.duration.tuplet` | `Rhythm/PrimaryTuplet` (num, den) | — |
 | `Beat.notes` | `Beat/Notes` | Shared notes are copied. |
-| `BeatEffects.tremolo_picking` | `Beat/Tremolo`: `1/2` Eighth, `1/4` Sixteenth, `1/8` ThirtySecond | Any other note value cannot be written: the writer refuses it with an "unsupported" error. |
-| `BeatEffects.stroke` | `Property Brush/Direction`, with the duration in XProperty 687935489 (ticks, 480 per quarter) | Duration ticks 30, 60, 120, 240 and 480 map to SixtyFourth, ThirtySecond, Sixteenth, Eighth and Quarter. The reader keeps any other tick value, and the start-time XProperty, as opaque data on the beat. In that case it does not set `stroke`. The writer refuses durations outside SixtyFourth..Quarter. |
+| `BeatEffects.tremolo_picking` | `Beat/Tremolo`: `1/2` Eighth, `1/4` Sixteenth, `1/8` ThirtySecond | These are the only three values; the model rejects any other note value. |
+| `BeatEffects.stroke` | `Property Brush/Direction`, with the duration in XProperty 687935489 | The duration is kept in ticks, 480 per quarter note, from 30 to 480. The start-time XProperty stays opaque and is written back while the stroke is unchanged. |
 | `BeatEffects.chord_name` | `Beat/Chord` → `DiagramCollection/Item/@name` | — |
 | `BeatEffects.text` | `Beat/FreeText` | CDATA |
 | `BeatEffects.fade_in` | `Beat/Fadding` = `FadeIn` | Other values (fade out, volume swell) → opaque. |
-| `BeatEffects.tap` | none at beat level | GPIF stores tapping per note (`Property Tapped`). The reader keeps note-level tapping as opaque data on the note. The writer refuses `tap = true` with an "unsupported" error until tapping is modelled per note. |
+| `BeatEffects.grace` | `Beat/GraceNotes`: `BeforeBeat` or `OnBeat` | A grace beat has a rhythm but takes no time in the bar. |
+| `BeatEffects.dynamic` | `Beat/Dynamic` | `PPP`, `PP`, `P`, `MP`, `MF`, `F`, `FF`, `FFF`. A missing element reads as `MF`. |
 | `BeatEffects.slap` | `Property Slapped` | — |
 | `BeatEffects.pop` | `Property Popped` | — |
 
@@ -466,9 +478,10 @@ Notation used in this table:
 | `slide` | `Property Slide/Flags`, one bit | Shift 1, Legato 2, OutDownwards 4, OutUpwards 8, IntoFromBelow 16, IntoFromAbove 32. |
 | `harmonic.kind` | `HarmonicType/HType` | — |
 | `harmonic.fret` | `HarmonicFret/HFret` (float) | — |
-| `bend.points` | the four bend points | offset as is; value ÷ 25 = quarter tones |
-| `left_hand_finger` | `LeftFingering` | `Open` = open string, `P` thumb, `I` index, `M` middle, `A` ring, `C` little; the numeric encoding is left to the model. |
-| `right_hand_finger` | `RightFingering` | `P` thumb, `I` index, `M` middle, `A` ring, `C` little. |
+| `bend` | `Bended` and the `Bend…` properties | Four points: origin, middle start, middle end and destination. The two middle points share one value. Offsets run from 0 to 100 and values are in cents (hundredths of a semitone), from -1200 to 1200. |
+| `tap` | `Property Tapped` → Right, `Property LeftHandTapped` → Left | — |
+| `left_hand_finger` | `LeftFingering` | `Open`, `P` Thumb, `I` Index, `M` Middle, `A` Ring, `C` Little. |
+| `right_hand_finger` | `RightFingering` | `P` Thumb, `I` Index, `M` Middle, `A` Ring, `C` Little. |
 
 ## 11. GPIF parts not modelled (opaque)
 
@@ -477,17 +490,17 @@ These stay as opaque payloads of their owner, or of the score:
 - **Root level:** `GPVersion`, `GPRevision` (mandatory, see §12), `Encoding`, `BackingTrack`, `Assets`, `ScoreViews`.
 - **Score:** `WordsAndMusic`, the page header and footer templates, and the system layout and zoom settings.
 - **MasterTrack:**
-  - `Anacrusis`, `RSE`;
+  - `RSE`;
   - the `SyncPoint` automations;
-  - the tempo automation's unit, `Linear`, `Visible` and `Text`.
+  - the tempo automation's `Linear`, `Visible` and `Text`, and the original text of its `Position`.
 - **MasterBar:**
-  - `Key/TransposeAs`, `Fermatas`, `TripletFeel`, `Section/Letter`;
-  - `Directions`, `DoubleBar`, `XProperties`;
+  - `Key/TransposeAs`, `Fermatas`, `TripletFeel`;
+  - `Directions`, `XProperties`;
   - a repeat count on a start-only repeat.
 - **Track:**
   - colour, layout, playing style and icon;
   - the `InstrumentSet` body (the type is mapped);
-  - `NotationPatch`, `Transpose`, `RSE`, `ForcedSound`;
+  - `NotationPatch`, `RSE`, `ForcedSound`;
   - all but the first sound's program;
   - `MidiConnection`, playback and engine state, `Lyrics`;
   - track automations and `LetRingThroughout`.
@@ -496,21 +509,21 @@ These stay as opaque payloads of their owner, or of the score:
   - the tuning extras (`Flat`, `Instrument`, `Label`, `LabelVisible`) and `TuningFlat`;
   - the chord and diagram collections and working sets;
   - the tuning name.
-- **Bar:** `Clef`, `SimileMark`, `XProperties`, and the slot position of each voice.
+- **Bar:** `SimileMark`, `XProperties`, and any clef other than `G2`, `F4` and `Neutral`.
 - **Beat:**
-  - `GraceNotes`, `Dynamic`, the stem orientation elements;
+  - the stem orientation elements;
   - `Whammy`, `Variation`, `Wah`, `Golpe`, `Slashed`, `Hairpin`, `Legato`, `Arpeggio`, `Lyrics`;
   - the pickup properties, `PickStroke`, the barre properties, `Rasgueado`, `VibratoWTremBar`;
-  - the brush start time, brush durations off the note grid, and the remaining `XProperties`;
+  - the brush start time and the remaining `XProperties`;
   - `Fadding` values other than `FadeIn`.
 - **Note:**
   - `Ornament`;
   - Accent bits 2 and 16;
-  - `ShowStringNumber`, `HopoDestination`, `Tapped`, `LeftHandTapped`;
-  - `Midi`, `ConcertPitch` and `TransposedPitch`. These are derived, but must be written back (§9).
+  - `ShowStringNumber`, `HopoDestination`;
+  - slide and accent bit combinations that a single model value cannot hold;
+  - the pseudo string and fret of a drum note;
+  - `Midi`, `ConcertPitch` and `TransposedPitch`. These are derived, but must be written back (§9). A writer replays the original values while string, fret, tuning and transpose are unchanged, and computes them otherwise.
   - The note's `InstrumentArticulation` on pitched tracks.
-
-Rendering standard notation needs several of these: clef, transpose, dynamic, grace notes, voice slot and tempo unit. They are candidates for model fields.
 
 ## 12. Minimal GPIF
 
@@ -545,8 +558,8 @@ We wrote a one-track, one-bar score from scratch and removed parts one at a time
 
 What each part does:
 
-- **`GPRevision` is mandatory.** Without it, GP neither opens the file nor shows any message: the open is silently ignored.
-- **`InstrumentSet` is mandatory.** A score without it crashed GP. A set with only `Type` is enough; GP fills in the rest on save.
+- **`GPRevision` is mandatory.** Without it, GP neither opens the file nor shows any message: the open is silently ignored [m2].
+- **`InstrumentSet` is mandatory.** A score without it crashed GP [m1]; the same score with a revision and a set opened [m3]. A set with only `Type` is enough; GP fills in the rest on save [i-iset-type-only].
 - **Everything else is optional:**
   - `GPVersion`, `Encoding`;
   - the other `Score` fields;
