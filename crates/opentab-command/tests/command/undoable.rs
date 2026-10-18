@@ -130,7 +130,7 @@ fn removing_a_subtree_with_a_shared_or_unallocated_id_is_rejected() {
     fx.score.tracks[0].staves[0].bars[0].voices[0].beats[1].id = fx.beats[2];
     invalid(
         rejected(&mut fx.score, &Command::RemoveBeat { beat: fx.beats[2] }),
-        "already exists in the score",
+        "appears more than once in the score",
     );
     let mut fx = fixture();
     let above = NoteId(ElementId(fx.score.ids.peek().0 + 3));
@@ -148,14 +148,16 @@ fn removing_a_subtree_with_a_shared_or_unallocated_id_is_rejected() {
 const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 256;
 const MAX_COMMANDS_PER_CASE: usize = 48;
-const GUARDS: [&str; 8] = [
+const RUN_DIAGNOSE: &str = "run diagnose";
+const GUARDS: [&str; 9] = [
+    RUN_DIAGNOSE,
     "is not unique",
     "outside the bar",
     "no voices",
     "already has a note on string",
     "percussion note",
     "out of range",
-    "already exists in the score",
+    "appears more than once in the score",
     "allocator",
 ];
 
@@ -245,6 +247,10 @@ fn check_undoable(
         Err(error) => {
             prop_assert_eq!(&edited, score);
             if let CommandError::InvalidValue { message } = &error {
+                prop_assert!(
+                    !message.contains(RUN_DIAGNOSE) || !diagnose(score).is_empty(),
+                    "{command:?} refused with {message:?} but diagnose reports nothing"
+                );
                 for guard in GUARDS {
                     if message.contains(guard) {
                         *guards.entry(guard).or_default() += 1;
@@ -322,5 +328,24 @@ fn removals_whose_parent_id_is_shared_are_rejected() {
     invalid(
         rejected(&mut fx.score, &Command::RemoveBeat { beat }),
         "is not unique",
+    );
+}
+
+#[test]
+fn a_duplicate_string_refusal_points_to_a_diagnostic() {
+    let mut fx = fixture();
+    let id: NoteId = fx.score.alloc().unwrap();
+    let beat = &mut fx.score.tracks[0].staves[0].bars[0].voices[0].beats[3];
+    let mut copy = beat.notes[0].clone();
+    copy.id = id;
+    beat.notes.push(copy);
+    let command = Command::RemoveBeat { beat: fx.beats[3] };
+    invalid(rejected(&mut fx.score, &command), RUN_DIAGNOSE);
+    assert_eq!(
+        diagnose(&fx.score),
+        vec![opentab_model::Diagnostic::DuplicateString {
+            beat: fx.beats[3],
+            string: 4
+        }]
     );
 }

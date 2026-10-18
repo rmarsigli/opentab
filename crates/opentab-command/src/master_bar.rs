@@ -5,7 +5,7 @@ use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature};
 use crate::ids::{
     bar_ids, check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
 };
-use crate::rules::{check_bar, check_tempo_changes, empty_bar};
+use crate::rules::{already_broken, check_bar, check_tempo_changes, empty_bar};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const WHAT: &str = "master bar";
@@ -114,7 +114,7 @@ pub(crate) fn remove(score: &mut Score, index: usize) -> Result<Command, Command
             .flat_map(|track| &track.staves)
             .filter_map(move |staff| staff.bars.get(index))
     };
-    check_contents(score, current, bars())?;
+    check_contents(score, current, bars()).map_err(already_broken)?;
     check_removable(score, once(current.id.0).chain(bars().flat_map(bar_ids)))?;
     let master_bar = score.master_bars.remove(index);
     let bars: Vec<Bar> = score

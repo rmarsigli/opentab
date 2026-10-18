@@ -86,16 +86,25 @@ where
     let mut order = Vec::new();
     for id in ids {
         if id >= next {
-            return Err(CommandError::invalid(format!(
-                "element id {} is not below the id allocator ({}); restored ids must have been allocated",
-                id.0, next.0
-            )));
+            return Err(CommandError::invalid(match subtree {
+                Subtree::Restored => format!(
+                    "element id {} is not below the id allocator ({}); restored ids must have been allocated",
+                    id.0, next.0
+                ),
+                Subtree::Removed => format!(
+                    "element id {} is not below the id allocator ({}); run diagnose",
+                    id.0, next.0
+                ),
+            }));
         }
         if counts.insert(id, 0).is_some() {
-            return Err(CommandError::invalid(format!(
-                "element id {} appears twice in the subtree",
-                id.0
-            )));
+            return Err(CommandError::invalid(match subtree {
+                Subtree::Restored => format!("element id {} appears twice in the subtree", id.0),
+                Subtree::Removed => format!(
+                    "element id {} appears twice in the subtree; run diagnose",
+                    id.0
+                ),
+            }));
         }
         order.push(id);
     }
@@ -109,10 +118,13 @@ where
         .iter()
         .find(|id| counts.get(id).is_some_and(|count| *count != expected))
     {
-        return Err(CommandError::invalid(format!(
-            "element id {} already exists in the score; run diagnose",
-            id.0
-        )));
+        return Err(CommandError::invalid(match subtree {
+            Subtree::Restored => format!("element id {} already exists in the score", id.0),
+            Subtree::Removed => format!(
+                "element id {} appears more than once in the score; run diagnose",
+                id.0
+            ),
+        }));
     }
     Ok(order)
 }

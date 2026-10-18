@@ -201,8 +201,16 @@ proptest! {
         for step in &case.steps {
             let command = resolve(step, &score);
             let before = score.clone();
-            if apply(&mut score, &command).is_err() {
+            if let Err(error) = apply(&mut score, &command) {
                 prop_assert_eq!(&score, &before);
+                if let CommandError::InvalidValue { message } = &error
+                    && message.contains("run diagnose")
+                {
+                    prop_assert!(
+                        !opentab_model::diagnose(&before).is_empty(),
+                        "{command:?} refused with {message:?} but diagnose reports nothing"
+                    );
+                }
             }
         }
     }
