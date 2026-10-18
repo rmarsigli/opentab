@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use opentab_layout::rhythm::CUE_SIZE;
@@ -5,9 +6,12 @@ use opentab_layout::{
     DisplayList, GroupId, PathSegment, PathStyle, Primitive, STAFF_SPACE, StaffKind, StaffMode,
     Units, layout,
 };
-use opentab_model::{Grace, HarmonicKind, InstrumentKind, NoteKind, NoteValue, Pitch, Score};
+use opentab_model::{
+    Fraction, Grace, HarmonicKind, InstrumentKind, NoteKind, NoteValue, Pitch, Score,
+};
 use opentab_testkit::arb_score;
 use proptest::prelude::*;
+use proptest::test_runner::TestRunner;
 
 use crate::music::{
     Event, beat_id, build, glyphs, group_in, half_spaces, head_of, is_notehead, marks, measure,
@@ -31,6 +35,9 @@ const D7: (u8, u8) = (0, 22);
 const G2: (u8, u8) = (5, 3);
 const LOW_STRING: Pitch = Pitch(28);
 const CASES: u32 = 256;
+const MIN_MULTI_VOICE_ONSETS: usize = 80;
+const MIN_STACKED_ACCIDENTAL_ONSETS: usize = 10;
+const MIN_POSITIONED_HEADS: usize = 3_000;
 
 fn quarters(notes: &[(u8, u8)]) -> Vec<Event> {
     notes
@@ -637,7 +644,51 @@ fn expected_notes(
     out
 }
 
-fn check_notation(score: &Score, list: &DisplayList) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Timed {
+    voice: usize,
+    onset: Fraction,
+    grace: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct Tally {
+    multi_voice_onsets: usize,
+    stacked_accidental_onsets: usize,
+    positioned_heads: usize,
+}
+
+fn timing(score: &Score) -> BTreeMap<u64, Timed> {
+    let mut out = BTreeMap::new();
+    for track in &score.tracks {
+        for staff in &track.staves {
+            for bar in &staff.bars {
+                for (voice, content) in bar.voices.iter().enumerate() {
+                    let mut onset = Fraction::new(0, 1);
+                    for beat in &content.beats {
+                        let grace = beat.effects.grace.is_some();
+                        out.insert(
+                            beat.id.0.0,
+                            Timed {
+                                voice,
+                                onset,
+                                grace,
+                            },
+                        );
+                        if !grace {
+                            onset += beat.duration.length();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+fn check_notation(score: &Score, list: &DisplayList) -> Tally {
+    let timed = timing(score);
+    let mut tally = Tally::default();
     for (_, _, row) in standard_rows(list) {
         for (bar, group) in row.staff.bars.iter().zip(&row.bars) {
             let expected = expected_notes(score, row.staff.track, row.staff.staff, bar.index);
@@ -659,21 +710,41 @@ fn check_notation(score: &Score, list: &DisplayList) {
                 "stray noteheads in bar {}",
                 bar.index
             );
-            for (id, written) in expected
-                .iter()
-                .filter_map(|(id, written)| Some((id, (*written)?)))
-            {
-                let head = glyphs(&group_in(list, GroupId(*id)).items)
-                    .into_iter()
-                    .find(is_notehead)
-                    .unwrap();
-                let position = half_spaces(head.origin.y, row.staff.top);
-                let step = top_step(bar.clef) - position;
-                assert!(
-                    (written - natural_midi(step)).abs() <= 1,
-                    "note {id} written {written} drawn at step {step}"
-                );
+            let mut voices_at: BTreeMap<Fraction, Vec<usize>> = BTreeMap::new();
+            let mut accidentals_at: BTreeMap<Fraction, Vec<i64>> = BTreeMap::new();
+            for mark in &found {
+                let Some(when) = timed.get(&mark.beat.0).filter(|when| !when.grace) else {
+                    continue;
+                };
+                if mark.head {
+                    voices_at.entry(when.onset).or_default().push(when.voice);
+                } else {
+                    accidentals_at
+                        .entry(when.onset)
+                        .or_default()
+                        .push(mark.rect.max.x.0);
+                }
             }
+            let distinct = |mut values: Vec<i64>| {
+                values.sort_unstable();
+                values.dedup();
+                values.len()
+            };
+            tally.multi_voice_onsets += voices_at
+                .into_values()
+                .filter(|voices| {
+                    distinct(
+                        voices
+                            .iter()
+                            .map(|voice| i64::try_from(*voice).unwrap())
+                            .collect(),
+                    ) >= 2
+                })
+                .count();
+            tally.stacked_accidental_onsets += accidentals_at
+                .into_values()
+                .filter(|columns| distinct(columns.clone()) >= 2)
+                .count();
             if list.crowded.contains(&bar.index) {
                 continue;
             }
@@ -689,6 +760,33 @@ fn check_notation(score: &Score, list: &DisplayList) {
             }
         }
     }
+    tally
+}
+
+fn check_steps_against_written_pitch(score: &Score, list: &DisplayList) -> usize {
+    let mut checked = 0;
+    for (_, _, row) in standard_rows(list) {
+        for bar in &row.staff.bars {
+            let expected = expected_notes(score, row.staff.track, row.staff.staff, bar.index);
+            for (id, written) in expected
+                .iter()
+                .filter_map(|(id, written)| Some((id, (*written)?)))
+            {
+                let head = glyphs(&group_in(list, GroupId(*id)).items)
+                    .into_iter()
+                    .find(is_notehead)
+                    .unwrap();
+                let position = half_spaces(head.origin.y, row.staff.top);
+                let step = top_step(bar.clef) - position;
+                assert!(
+                    (written - natural_midi(step)).abs() <= 1,
+                    "note {id} written {written} drawn at step {step}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    checked
 }
 
 fn arb_mode() -> impl Strategy<Value = Option<StaffMode>> {
@@ -698,19 +796,56 @@ fn arb_mode() -> impl Strategy<Value = Option<StaffMode>> {
     ])
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(CASES))]
+fn run_cases(each: impl Fn(&Score, &DisplayList) -> Tally) -> Tally {
+    let mut runner = TestRunner::new(ProptestConfig {
+        cases: CASES,
+        failure_persistence: None,
+        ..ProptestConfig::default()
+    });
+    let total = RefCell::new(Tally::default());
+    runner
+        .run(&(arb_score(), arb_mode()), |(score, mode)| {
+            let options = tall(mode);
+            match layout(&score, &options) {
+                Ok(list) => {
+                    crate::support::check(&score, &options, &list);
+                    let tally = each(&score, &list);
+                    let mut sum = total.borrow_mut();
+                    sum.multi_voice_onsets += tally.multi_voice_onsets;
+                    sum.stacked_accidental_onsets += tally.stacked_accidental_onsets;
+                    sum.positioned_heads += tally.positioned_heads;
+                }
+                Err(_) => prop_assert!(
+                    score.master_bars.is_empty()
+                        || score.tracks.iter().all(|track| track.staves.is_empty())
+                ),
+            }
+            Ok(())
+        })
+        .unwrap();
+    total.into_inner()
+}
 
-    #[test]
-    fn every_note_has_one_notehead_and_nothing_overlaps(score in arb_score(), mode in arb_mode()) {
-        let options = tall(mode);
-        if let Ok(list) = layout(&score, &options) {
-            crate::support::check(&score, &options, &list);
-            check_notation(&score, &list);
-        } else {
-            prop_assert!(score.master_bars.is_empty() || score.tracks.iter().all(|track| track.staves.is_empty()));
-        }
-    }
+#[test]
+fn every_note_has_one_notehead_and_nothing_overlaps() {
+    let tally = run_cases(check_notation);
+    assert!(
+        tally.multi_voice_onsets >= MIN_MULTI_VOICE_ONSETS,
+        "{tally:?}"
+    );
+    assert!(
+        tally.stacked_accidental_onsets >= MIN_STACKED_ACCIDENTAL_ONSETS,
+        "{tally:?}"
+    );
+}
+
+#[test]
+fn notehead_steps_are_consistent_with_the_written_pitch_within_one_alteration() {
+    let tally = run_cases(|score, list| Tally {
+        positioned_heads: check_steps_against_written_pitch(score, list),
+        ..Tally::default()
+    });
+    assert!(tally.positioned_heads >= MIN_POSITIONED_HEADS, "{tally:?}");
 }
 
 #[test]
@@ -724,4 +859,117 @@ fn every_drawn_staff_row_is_standard_or_tab() {
         .collect();
     assert_eq!(kinds, vec![StaffKind::Standard, StaffKind::Tab]);
     assert_eq!(standard_rows(&list).len(), 1);
+}
+
+#[test]
+fn a_grace_between_tied_notes_keeps_the_tie() {
+    let mut score = build(&[measure(
+        (4, 4),
+        0,
+        vec![(
+            0,
+            vec![
+                play(NoteValue::Quarter, &[G4]),
+                Event::Grace(Grace::BeforeBeat, NoteValue::Eighth, vec![A4]),
+                play(NoteValue::Quarter, &[G4]),
+                play(NoteValue::Quarter, &[A4]),
+                play(NoteValue::Quarter, &[B4]),
+            ],
+        )],
+    )]);
+    note_at(&mut score, 0, 0, 0, 0).effects.tie_origin = true;
+    note_at(&mut score, 0, 0, 2, 0).effects.tie_destination = true;
+    let list = render(&score, &options(StaffMode::Standard));
+    let bar = group_in(&list, GroupId(score.tracks[0].staves[0].bars[0].id.0.0));
+    let ties = tie_shapes(&bar.items);
+    assert_eq!(ties.len(), 1);
+    let from = head_of(&list, note_id(&score, 0, 0, 0, 0));
+    let to = head_of(&list, note_id(&score, 0, 0, 2, 0));
+    assert!(ties[0].0 > from.origin.x.0 && ties[0].1 < to.origin.x.0);
+}
+
+#[test]
+fn a_grace_opening_a_system_keeps_the_incoming_half_tie() {
+    let bars: Vec<_> = (0..24)
+        .map(|_| {
+            measure(
+                (4, 4),
+                0,
+                vec![(
+                    0,
+                    vec![
+                        Event::Grace(Grace::BeforeBeat, NoteValue::Eighth, vec![A4]),
+                        play(NoteValue::Quarter, &[G4]),
+                        play(NoteValue::Quarter, &[A4]),
+                        play(NoteValue::Quarter, &[B4]),
+                        play(NoteValue::Quarter, &[G4]),
+                    ],
+                )],
+            )
+        })
+        .collect();
+    let mut score = build(&bars);
+    let plain_list = render(&score, &options(StaffMode::Standard));
+    let last = systems(&plain_list)[0].staves[0].bars.last().unwrap().index;
+    note_at(&mut score, last, 0, 4, 0).effects.tie_origin = true;
+    note_at(&mut score, last + 1, 0, 1, 0)
+        .effects
+        .tie_destination = true;
+    let list = render(&score, &options(StaffMode::Standard));
+    let next = &systems(&list)[1].staves[0].bars[0];
+    assert_eq!(next.index, last + 1);
+    let items = &group_in(
+        &list,
+        GroupId(score.tracks[0].staves[0].bars[last + 1].id.0.0),
+    )
+    .items;
+    let incoming = tie_shapes(items);
+    assert_eq!(incoming.len(), 1);
+    assert_eq!(incoming[0].0, next.content.0);
+    let outgoing =
+        tie_shapes(&group_in(&list, GroupId(score.tracks[0].staves[0].bars[last].id.0.0)).items);
+    assert_eq!(outgoing.len(), 1);
+}
+
+#[test]
+fn the_staff_space_is_the_largest_at_which_the_real_systems_fit() {
+    let mut measures = vec![measure((4, 4), 0, vec![(0, quarters(&[D7, D7, D7, D7]))])];
+    measures.extend((0..30).map(|_| measure((4, 4), 0, vec![(0, quarters(&[G4, A4, B4, G4]))])));
+    measures.push(measure((4, 4), 0, vec![(0, quarters(&[G2, G2, G2, G2]))]));
+    let mut score = build(&measures);
+    score.tracks[0].tuning.strings[5] = LOW_STRING;
+    for _ in 0..5 {
+        duplicate_first_track(&mut score);
+    }
+    let options = options(StaffMode::Both);
+    let list = render(&score, &options);
+    let chosen = list.staff_space.micrometres();
+    assert!(chosen < options.staff_space, "{chosen:?}");
+    let larger = opentab_layout::LayoutOptions {
+        staff_space: opentab_layout::Micrometres(chosen.0 + 1),
+        ..options.clone()
+    };
+    let again = layout(&score, &larger).unwrap();
+    assert_eq!(again.staff_space.micrometres(), chosen);
+}
+
+fn duplicate_first_track(score: &mut Score) {
+    let mut copy = score.tracks[0].clone();
+    copy.id = score.alloc().unwrap();
+    for staff in &mut copy.staves {
+        staff.id = score.alloc().unwrap();
+        for bar in &mut staff.bars {
+            bar.id = score.alloc().unwrap();
+            for voice in &mut bar.voices {
+                voice.id = score.alloc().unwrap();
+                for beat in &mut voice.beats {
+                    beat.id = score.alloc().unwrap();
+                    for note in &mut beat.notes {
+                        note.id = score.alloc().unwrap();
+                    }
+                }
+            }
+        }
+    }
+    score.tracks.push(copy);
 }
