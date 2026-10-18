@@ -132,3 +132,33 @@ pub(crate) fn slide_bits(slide: Slide) -> u32 {
         .map(|(bits, _)| *bits)
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_slide_has_its_own_bit() {
+        let expected = [
+            (Slide::Shift, 1),
+            (Slide::Legato, 2),
+            (Slide::OutDownwards, 4),
+            (Slide::OutUpwards, 8),
+            (Slide::IntoFromBelow, 16),
+            (Slide::IntoFromAbove, 32),
+        ];
+        for (slide, bits) in expected {
+            assert_eq!(slide_bits(slide), bits, "{slide:?}");
+        }
+    }
+
+    #[test]
+    fn accent_and_staccato_bits_combine() {
+        assert_eq!(accent_bits(None, false), 0);
+        assert_eq!(accent_bits(None, true), 1);
+        assert_eq!(accent_bits(Some(Accent::Normal), false), 8);
+        assert_eq!(accent_bits(Some(Accent::Normal), true), 9);
+        assert_eq!(accent_bits(Some(Accent::Heavy), false), 4);
+        assert_eq!(accent_bits(Some(Accent::Heavy), true), 5);
+    }
+}
