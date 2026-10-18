@@ -6,4 +6,6 @@ mod properties;
 mod snapshots;
 mod support;
 mod tab;
+mod tab_effects;
+mod tab_rhythm;
 mod voices;
