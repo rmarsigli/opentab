@@ -1,0 +1,4 @@
+timeout_multiplier = 5.0
+build_timeout_multiplier = 5.0
+minimum_test_timeout = 30.0
+cap_lints = true

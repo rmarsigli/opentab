@@ -18,6 +18,19 @@ cargo run -p opentab-cli -- --version
 
 The repository ships a `.cargo/config.toml` that limits build parallelism to two jobs and reduces debug information, so the workspace builds on machines with 8 GB of RAM.
 
+## Mutation testing
+
+`cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model` and `opentab-command` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.
+
+```
+cargo install cargo-mutants --version 27.1.0 --locked
+cargo xtask mutants
+```
+
+The run takes about 15 minutes and uses most of the memory of an 8 GB machine, so do not start other builds or test runs while it works. It exits with 0 when no mutant was missed and none timed out, with 1 when any was, and with 2 when cargo-mutants is not installed or could not start. The missed and timed-out mutants are printed at the end.
+
+It is not part of continuous integration: the run is too slow and too heavy for a shared runner, and its result depends on timing and on the machine. Run it before closing a milestone and whenever the model or command crates change.
+
 ## Platforms
 
 Linux and Windows are the primary targets. macOS is verified by continuous integration only; nobody on the team runs it day to day.
