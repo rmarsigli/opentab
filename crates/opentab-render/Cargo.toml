@@ -1,0 +1,19 @@
+[package]
+name = "opentab-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+opentab-layout = { path = "../opentab-layout" }
+num-rational.workspace = true
+resvg.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints]
+workspace = true
