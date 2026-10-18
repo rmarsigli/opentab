@@ -2,9 +2,12 @@ use std::collections::HashSet;
 
 use opentab_model::{
     Bar, Beat, BeatEffects, ContainerEntry, Duration, ElementId, Extensions, Instrument,
-    InstrumentKind, Marker, MasterBar, Note, NoteKind, Score, Staff, TempoChange, TimeSignature,
-    Track, Tuning, Voice, VoiceSlot,
+    InstrumentKind, Marker, MasterBar, Note, NoteKind, OpaquePayload, Score, Staff, TempoChange,
+    TimeSignature, Track, Tuning, Voice, VoiceSlot,
 };
+
+const EXTRA_FORMAT: &str = "gpif";
+const EXTRA_ELEMENT: &str = "OpenTabExtra";
 
 use crate::fill::FillTable;
 use crate::seed::{
@@ -230,6 +233,39 @@ fn tempo_change(seed: TempoChangeSeed, time_signature: TimeSignature) -> TempoCh
     }
 }
 
+fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for character in text.chars() {
+        match character {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '\r' => out.push_str("&#13;"),
+            _ => out.push(character),
+        }
+    }
+    out
+}
+
+fn extra_payload(index: usize, text: &str) -> OpaquePayload {
+    let element = if text.is_empty() {
+        format!("<{EXTRA_ELEMENT}/>")
+    } else {
+        format!("<{EXTRA_ELEMENT}>{}</{EXTRA_ELEMENT}>", escape(text))
+    };
+    OpaquePayload {
+        format: EXTRA_FORMAT.to_string(),
+        data: format!("<Keep parent=\"\" index=\"{index}\">{element}</Keep>"),
+    }
+}
+
+fn push_extras(payloads: &mut Vec<OpaquePayload>, extras: &[String]) {
+    for text in extras {
+        let index = payloads.len();
+        payloads.push(extra_payload(index, text));
+    }
+}
+
 pub fn build_score(seed: ScoreSeed, beat_cap: usize) -> Score {
     let mut builder = Builder {
         score: Score::new(),
@@ -255,14 +291,16 @@ pub fn build_score(seed: ScoreSeed, beat_cap: usize) -> Score {
         let Some(target) = builder.allocated.get(index) else {
             continue;
         };
-        extensions
-            .0
-            .entry(*target)
-            .or_default()
-            .extend(extension.payloads);
+        let payloads = extensions.0.entry(*target).or_default();
+        payloads.extend(extension.payloads);
+        push_extras(payloads, &extension.extras);
     }
     builder.score.extensions = extensions;
     builder.score.document_extensions = seed.document_extensions;
+    push_extras(
+        &mut builder.score.document_extensions,
+        &seed.document_extras,
+    );
     builder.score.container = seed.container;
     if let Some(entry) = seed.score_entry {
         let len = builder.score.container.len();

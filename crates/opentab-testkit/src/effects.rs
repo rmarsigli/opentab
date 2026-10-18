@@ -7,11 +7,12 @@ use proptest::option;
 use proptest::prelude::*;
 use proptest::sample::select;
 
-use crate::text::arb_text;
+use crate::text::arb_text_for;
 
 const MAX_BEND_VALUE: i16 = 1200;
 const MIN_STROKE_TICKS: u16 = 30;
 const MAX_STROKE_TICKS: u16 = 480;
+const TERMINATING_DENOMINATORS: [i64; 6] = [1, 2, 4, 5, 8, 10];
 
 pub fn arb_dynamic() -> impl Strategy<Value = Dynamic> {
     select(vec![
@@ -46,12 +47,20 @@ fn arb_tremolo() -> impl Strategy<Value = TremoloPicking> {
     .prop_map(|value| TremoloPicking::new(value).expect("value is a tremolo value"))
 }
 
-pub fn arb_beat_effects() -> impl Strategy<Value = BeatEffects> {
+fn arb_chord_name(gp_writable: bool) -> BoxedStrategy<Option<String>> {
+    if gp_writable {
+        Just(None).boxed()
+    } else {
+        option::of(arb_text_for(12, false)).boxed()
+    }
+}
+
+pub fn arb_beat_effects(gp_writable: bool) -> impl Strategy<Value = BeatEffects> {
     (
         option::of(arb_tremolo()),
         option::of(arb_stroke()),
-        option::of(arb_text(12)),
-        option::of(arb_text(24)),
+        arb_chord_name(gp_writable),
+        option::of(arb_text_for(24, gp_writable)),
         (any::<bool>(), any::<bool>(), any::<bool>()),
         arb_dynamic(),
     )
@@ -72,7 +81,15 @@ pub fn arb_beat_effects() -> impl Strategy<Value = BeatEffects> {
         )
 }
 
-fn arb_harmonic() -> impl Strategy<Value = Harmonic> {
+fn arb_harmonic_denominator(gp_writable: bool) -> BoxedStrategy<i64> {
+    if gp_writable {
+        select(TERMINATING_DENOMINATORS.to_vec()).boxed()
+    } else {
+        (1i64..=12).boxed()
+    }
+}
+
+fn arb_harmonic(gp_writable: bool) -> impl Strategy<Value = Harmonic> {
     (
         select(vec![
             HarmonicKind::Natural,
@@ -83,7 +100,7 @@ fn arb_harmonic() -> impl Strategy<Value = Harmonic> {
             HarmonicKind::Feedback,
         ]),
         0i64..=48,
-        1i64..=12,
+        arb_harmonic_denominator(gp_writable),
     )
         .prop_map(|(kind, numer, denom)| Harmonic {
             kind,
@@ -123,6 +140,21 @@ fn arb_finger() -> impl Strategy<Value = Finger> {
     ])
 }
 
+fn arb_right_finger(gp_writable: bool) -> BoxedStrategy<Finger> {
+    if gp_writable {
+        select(vec![
+            Finger::Thumb,
+            Finger::Index,
+            Finger::Middle,
+            Finger::Ring,
+            Finger::Little,
+        ])
+        .boxed()
+    } else {
+        arb_finger().boxed()
+    }
+}
+
 #[derive(Debug, Clone)]
 struct NoteFlags {
     tie_origin: bool,
@@ -157,7 +189,7 @@ fn arb_note_flags() -> impl Strategy<Value = NoteFlags> {
         )
 }
 
-pub fn arb_note_effects() -> impl Strategy<Value = NoteEffects> {
+pub fn arb_note_effects(gp_writable: bool) -> impl Strategy<Value = NoteEffects> {
     (
         arb_note_flags(),
         (
@@ -173,10 +205,13 @@ pub fn arb_note_effects() -> impl Strategy<Value = NoteEffects> {
             ])),
         ),
         (
-            option::of(arb_harmonic()),
+            option::of(arb_harmonic(gp_writable)),
             option::of(arb_bend()),
             option::of(select(vec![Tap::Right, Tap::Left])),
-            (option::of(arb_finger()), option::of(arb_finger())),
+            (
+                option::of(arb_finger()),
+                option::of(arb_right_finger(gp_writable)),
+            ),
         ),
     )
         .prop_map(

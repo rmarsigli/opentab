@@ -158,6 +158,7 @@ proptest! {
             max_master_bars: 2,
             max_beats_per_voice: 1,
             max_notes_per_beat: 1,
+            gp_writable: false,
         })
     ) {
         prop_assert_eq!(diagnose(&score), Vec::new());
