@@ -1,7 +1,12 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-pub const CRATES: [&str; 3] = ["opentab-model", "opentab-command", "opentab-gp"];
+pub const CRATES: [&str; 4] = [
+    "opentab-model",
+    "opentab-command",
+    "opentab-gp",
+    "opentab-layout",
+];
 pub const JOBS: u32 = 1;
 pub const TIMEOUT_SECS: u32 = 120;
 pub const OUTPUT_DIR: &str = "target/mutants";
