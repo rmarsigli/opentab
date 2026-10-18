@@ -237,6 +237,8 @@ fn look_alikes_of_each_feature_are_not_reported() {
             note.kind = NoteKind::Percussion { articulation: 38 };
         }
     }
+    let kit = known.tracks[drums].id.0;
+    keep(&mut known, kit, &crate::percussion::general_kit());
     assert!(found(&quiet, &both).is_empty());
     assert!(found(&known, &both).is_empty());
 }

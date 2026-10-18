@@ -1,6 +1,6 @@
 use opentab_layout::{
-    BarLayout, ClefSign, DRUM_TABLE, DisplayList, DrumHead, DrumKit, GroupId, LayoutOptions,
-    StaffKind, StaffMode, drum_entry,
+    BarLayout, ClefSign, DEFAULT_DRUM, DRUM_TABLE, DisplayList, DrumHead, DrumKit, GroupId,
+    LayoutOptions, StaffKind, StaffMode, drum_entry,
 };
 use opentab_model::{
     InstrumentKind, KeySignature, NoteKind, NoteValue, OpaquePayload, Score, Tuning,
@@ -12,18 +12,33 @@ use crate::music::{
 };
 use crate::support::{glyph_name, systems};
 
-fn drum_score(keys: &[u16], voices: usize) -> Score {
-    let events = |count: usize| -> Vec<Event> {
+pub fn general_kit() -> String {
+    let articulations: String = (0..=127)
+        .map(|key| {
+            format!("<Articulation><OutputMidiNumber>{key}</OutputMidiNumber></Articulation>")
+        })
+        .collect();
+    format!(
+        "<Keep parent=\"InstrumentSet\" index=\"3\"><Elements><Element><Articulations>{articulations}</Articulations></Element></Elements></Keep>"
+    )
+}
+
+pub fn drums(chords: &[Vec<u16>], voices: usize, kit: bool) -> Score {
+    let events = |count: usize, notes: usize| -> Vec<Event> {
+        let frets: Vec<(u8, u8)> = (0..notes)
+            .map(|string| (u8::try_from(string).unwrap(), 0))
+            .collect();
         (0..count)
-            .map(|_| play(NoteValue::Eighth, &[(0, 0)]))
+            .map(|_| play(NoteValue::Eighth, &frets))
             .collect()
     };
-    let bars = keys.len().div_ceil(8);
+    let width = chords.iter().map(Vec::len).max().unwrap_or(1);
+    let bars = chords.len().div_ceil(8);
     let measures: Vec<_> = (0..bars)
         .map(|_| {
-            let mut parts = vec![(0, events(8))];
+            let mut parts = vec![(0, events(8, width))];
             if voices > 1 {
-                parts.push((1, events(8)));
+                parts.push((1, events(8, width)));
             }
             measure((4, 4), 3, parts)
         })
@@ -38,9 +53,11 @@ fn drum_score(keys: &[u16], voices: usize) -> Score {
     for bar in &mut track.staves[0].bars {
         for voice in &mut bar.voices {
             for beat in &mut voice.beats {
-                for note in &mut beat.notes {
+                let chord = &chords[index % chords.len()];
+                beat.notes.truncate(chord.len());
+                for (note, articulation) in beat.notes.iter_mut().zip(chord) {
                     note.kind = NoteKind::Percussion {
-                        articulation: keys[index % keys.len()],
+                        articulation: *articulation,
                     };
                 }
                 index += 1;
@@ -50,7 +67,22 @@ fn drum_score(keys: &[u16], voices: usize) -> Score {
     for master in &mut score.master_bars {
         master.key_signature = KeySignature::new(3, false).unwrap();
     }
+    if kit {
+        let id = score.tracks[0].id.0;
+        score.extensions.0.insert(
+            id,
+            vec![OpaquePayload {
+                format: "gpif".to_string(),
+                data: general_kit(),
+            }],
+        );
+    }
     score
+}
+
+fn drum_score(keys: &[u16], voices: usize) -> Score {
+    let chords: Vec<Vec<u16>> = keys.iter().map(|key| vec![*key]).collect();
+    drums(&chords, voices, true)
 }
 
 fn head_position(score: &Score, list: &DisplayList, bar: usize, beat: usize) -> i64 {
@@ -224,4 +256,52 @@ pub fn check_drum_positions(
         checked += 1;
     }
     checked
+}
+
+#[test]
+fn drum_unisons_on_one_line_show_both_heads_side_by_side() {
+    let score = drums(
+        &[vec![42, 46], vec![38, 37], vec![51, 53], vec![36]],
+        1,
+        true,
+    );
+    let list = render(&score, &options(StaffMode::Both));
+    for (beat, line, names) in [
+        (0, -1, ["noteheadXBlack", "noteheadXBlack"]),
+        (1, 3, ["noteheadBlack", "noteheadXBlack"]),
+        (2, 0, ["noteheadXBlack", "noteheadXBlack"]),
+    ] {
+        let first = head_of(&list, note_id(&score, 0, 0, beat, 0));
+        let second = head_of(&list, note_id(&score, 0, 0, beat, 1));
+        assert_eq!(head_position(&score, &list, 0, beat), line);
+        assert_eq!(first.origin.y, second.origin.y, "beat {beat}");
+        assert_ne!(
+            first.origin.x, second.origin.x,
+            "beat {beat} heads are displaced"
+        );
+        let mut found = [glyph_name(first.codepoint), glyph_name(second.codepoint)];
+        found.sort_unstable();
+        let mut wanted = names;
+        wanted.sort_unstable();
+        assert_eq!(found, wanted, "beat {beat}");
+    }
+}
+
+#[test]
+fn without_a_kit_every_articulation_is_unknown_and_reported() {
+    let score = drums(&[vec![38], vec![42], vec![36]], 1, false);
+    let list = render(&score, &options(StaffMode::Both));
+    for beat in 0..3 {
+        assert_eq!(head_position(&score, &list, 0, beat), DEFAULT_DRUM.position);
+    }
+    assert!(
+        list.unrendered
+            .contains(&opentab_layout::Unrendered::PercussionArticulations)
+    );
+    let known = drums(&[vec![38], vec![42], vec![36]], 1, true);
+    assert!(
+        render(&known, &options(StaffMode::Both))
+            .unrendered
+            .is_empty()
+    );
 }
