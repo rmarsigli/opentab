@@ -40,7 +40,7 @@ pub(crate) fn read_master_bars(
             Node::Element(child) if child.name == "MasterBar" => {
                 frames.push(read_master_bar(ctx, child, &location.child(index))?);
             }
-            _ => ctx.keep(&scope, index, node, None),
+            _ => ctx.keep(&scope, index, node, None)?,
         }
     }
     Ok(frames)
@@ -59,7 +59,7 @@ fn read_master_bar(
 ) -> Result<MasterFrame, Fault> {
     let id: MasterBarId = ctx.alloc(location)?;
     let scope = Scope::new(Owner::Element(id.0), ParentPath::owner(), location.clone());
-    ctx.keep_attributes(&scope, element, &[]);
+    ctx.keep_attributes(&scope, element, &[])?;
     let mut time = None;
     let mut key = KeySignature::default();
     let mut repeat = Repeat::default();
@@ -230,7 +230,7 @@ fn read_automations(ctx: &mut Context, scope: &Scope, element: &Element) -> Resu
             Node::Element(child) if is_tempo(child) => {
                 read_tempo(ctx, child, &scope.location.child(index))?;
             }
-            _ => ctx.keep(scope, index, node, None),
+            _ => ctx.keep(scope, index, node, None)?,
         }
     }
     Ok(())
@@ -243,9 +243,26 @@ fn is_tempo(element: &Element) -> bool {
             .is_some_and(|(_, kind)| kind.text().trim() == "Tempo")
 }
 
-struct TempoFields {
-    position: Fraction,
-    value: Option<(Tempo, TempoUnit)>,
+fn tempo_position(
+    automation: &Element,
+    location: &Location,
+    numerator: i64,
+    denominator: i64,
+) -> Result<Fraction, Fault> {
+    let Some((index, element)) = automation.child("Position") else {
+        return Ok(Fraction::from_integer(0));
+    };
+    let text = element.text();
+    Decimal::parse(&text)
+        .and_then(|decimal| decimal.round_to_grid(numerator, denominator, TEMPO_POSITION_GRID))
+        .ok_or_else(|| {
+            Fault::at(
+                &location.child(index),
+                GpifProblem::InvalidNumber {
+                    text: text.trim().to_string(),
+                },
+            )
+        })
 }
 
 fn read_tempo(ctx: &mut Context, element: &Element, location: &Location) -> Result<(), Fault> {
@@ -274,38 +291,22 @@ fn read_tempo(ctx: &mut Context, element: &Element, location: &Location) -> Resu
     let denominator = i64::from(master.time_signature.denominator());
     let ordinal = master.tempo_changes.len();
     let scope = Scope::new(owner, ParentPath::tempo(ordinal), location.clone());
-    ctx.keep_attributes(&scope, element, &[]);
-    let mut fields = TempoFields {
-        position: Fraction::from_integer(0),
-        value: None,
-    };
+    ctx.keep_attributes(&scope, element, &[])?;
+    let position = tempo_position(element, location, numerator, denominator)?;
+    let position_guard = guard::tempo_position(position);
+    let mut value = None;
     ctx.visit(&scope, element, |_, visit| match visit.key.as_str() {
         "Type" | "Bar" => Ok(Handled::Mapped(&[])),
-        "Position" => {
-            let text = visit.text();
-            let invalid = || {
-                visit.fault(GpifProblem::InvalidNumber {
-                    text: text.trim().to_string(),
-                })
-            };
-            let decimal = Decimal::parse(&text).ok_or_else(invalid)?;
-            fields.position = decimal
-                .round_to_grid(numerator, denominator, TEMPO_POSITION_GRID)
-                .ok_or_else(invalid)?;
-            Ok(Handled::Replayed(guard::tempo_position(fields.position)))
-        }
         "Value" => {
-            fields.value = Some(read_tempo_value(visit)?);
+            value = Some(read_tempo_value(visit)?);
             Ok(Handled::Mapped(&[]))
         }
-        _ => Ok(Handled::Unknown),
+        _ => Ok(Handled::Replayed(position_guard.clone())),
     })?;
-    let (bpm, unit) = fields
-        .value
-        .ok_or_else(|| Fault::at(location, missing_element("Value")))?;
+    let (bpm, unit) = value.ok_or_else(|| Fault::at(location, missing_element("Value")))?;
     if let Some(master) = ctx.score.master_bars.get_mut(bar) {
         master.tempo_changes.push(TempoChange {
-            position: fields.position,
+            position,
             bpm,
             unit,
         });

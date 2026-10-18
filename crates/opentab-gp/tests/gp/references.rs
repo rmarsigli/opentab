@@ -1,7 +1,7 @@
 use opentab_gp::{GpError, GpifProblem, PoolKind};
 use opentab_model::ModelError;
 
-use crate::support::{Doc, read_gpif_error};
+use crate::support::{Doc, document_payloads, read_gpif, read_gpif_error};
 
 fn failure(gpif: &str) -> (String, GpifProblem) {
     match read_gpif_error(gpif) {
@@ -142,24 +142,42 @@ fn malformed_reference_lists_are_rejected() {
 }
 
 #[test]
-fn unreferenced_elements_are_rejected() {
-    let gpif = base().replace(
-        "</Beat></Beats>",
-        "</Beat><Beat id=\"1\"><Rhythm ref=\"0\"/></Beat></Beats>",
-    );
-    assert_eq!(
-        failure(&gpif),
-        (
-            "/GPIF/Beats/Beat[2]".to_string(),
-            GpifProblem::Unreferenced {
-                kind: PoolKind::Beat
-            }
+fn unreferenced_elements_are_kept_as_document_payloads() {
+    let gpif = base()
+        .replace(
+            "</Beat></Beats>",
+            "</Beat><Beat id=\"1\"><Rhythm ref=\"1\"/><Notes>1</Notes></Beat></Beats>",
         )
+        .replace(
+            "</Note></Notes>",
+            "</Note><Note id=\"1\"><Properties/></Note></Notes>",
+        )
+        .replace(
+            "</Rhythm></Rhythms>",
+            "</Rhythm><Rhythm id=\"1\"><NoteValue>Half</NoteValue></Rhythm></Rhythms>",
+        );
+    let score = read_gpif(&gpif);
+    assert_eq!(score.tracks[0].staves[0].bars[0].voices[0].beats.len(), 1);
+    let payloads = document_payloads(&score);
+    let tail: Vec<&str> = payloads
+        .iter()
+        .rev()
+        .take(3)
+        .rev()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        tail,
+        vec![
+            "<Keep parent=\"Beats\" index=\"1\"><Beat id=\"1\"><Rhythm ref=\"1\"/><Notes>1</Notes></Beat></Keep>",
+            "<Keep parent=\"Notes\" index=\"1\"><Note id=\"1\"><Properties/></Note></Keep>",
+            "<Keep parent=\"Rhythms\" index=\"1\"><Rhythm id=\"1\"><NoteValue>Half</NoteValue></Rhythm></Keep>",
+        ]
     );
 }
 
 #[test]
-fn track_lists_must_be_complete_and_unique() {
+fn track_lists_must_be_unique_and_unlisted_tracks_follow() {
     let gpif = base().replace("<Tracks>0</Tracks>", "<Tracks>0 0</Tracks>");
     assert_eq!(
         failure(&gpif),
@@ -169,15 +187,9 @@ fn track_lists_must_be_complete_and_unique() {
         )
     );
     let gpif = base().replace("<Tracks>0</Tracks>", "<Tracks></Tracks>");
-    assert_eq!(
-        failure(&gpif),
-        (
-            "/GPIF/Tracks/Track".to_string(),
-            GpifProblem::Unreferenced {
-                kind: PoolKind::Track
-            }
-        )
-    );
+    let score = read_gpif(&gpif);
+    assert_eq!(score.tracks.len(), 1);
+    assert_eq!(score.tracks[0].name, "Guitar");
 }
 
 #[test]

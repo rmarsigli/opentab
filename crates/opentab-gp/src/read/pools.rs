@@ -1,4 +1,4 @@
-use crate::dom::Element;
+use crate::dom::{Element, Node};
 use crate::error::{GpifProblem, PoolKind};
 use crate::location::Location;
 use crate::number;
@@ -18,6 +18,8 @@ pub(crate) struct Pool<'e> {
     pub kind: PoolKind,
     pub location: Location,
     pub items: Vec<(&'e Element, Location)>,
+    nodes: Vec<(&'e Node, usize)>,
+    scope: Option<Scope>,
     referenced: Vec<bool>,
 }
 
@@ -27,15 +29,15 @@ impl<'e> Pool<'e> {
             kind,
             location: Location::root(),
             items: Vec::new(),
+            nodes: Vec::new(),
+            scope: None,
             referenced: Vec::new(),
         }
     }
 
     pub fn fetch(&mut self, token: &str, at: &Location) -> Result<(&'e Element, Location), Fault> {
         let index = self.resolve(token, at)?;
-        if let Some(flag) = self.referenced.get_mut(index) {
-            *flag = true;
-        }
+        self.mark(index);
         match self.items.get(index) {
             Some((element, location)) => Ok((*element, location.clone())),
             None => Err(Fault::at(
@@ -73,13 +75,19 @@ impl<'e> Pool<'e> {
         Ok(index)
     }
 
-    pub fn check_referenced(&self) -> Result<(), Fault> {
-        for ((_, location), referenced) in self.items.iter().zip(&self.referenced) {
+    pub fn mark(&mut self, index: usize) {
+        if let Some(flag) = self.referenced.get_mut(index) {
+            *flag = true;
+        }
+    }
+
+    fn keep_unreferenced(&self, ctx: &mut Context) -> Result<(), Fault> {
+        let Some(scope) = &self.scope else {
+            return Ok(());
+        };
+        for ((node, index), referenced) in self.nodes.iter().zip(&self.referenced) {
             if !referenced {
-                return Err(Fault::at(
-                    location,
-                    GpifProblem::Unreferenced { kind: self.kind },
-                ));
+                ctx.keep(scope, *index, node, None)?;
             }
         }
         Ok(())
@@ -118,12 +126,12 @@ impl<'e> Pools<'e> {
         }
     }
 
-    pub fn check_referenced(&self) -> Result<(), Fault> {
-        self.tracks.check_referenced()?;
-        self.bars.check_referenced()?;
-        self.voices.check_referenced()?;
-        self.beats.check_referenced()?;
-        self.notes.check_referenced()
+    pub fn keep_unreferenced(&self, ctx: &mut Context) -> Result<(), Fault> {
+        self.bars.keep_unreferenced(ctx)?;
+        self.voices.keep_unreferenced(ctx)?;
+        self.beats.keep_unreferenced(ctx)?;
+        self.notes.keep_unreferenced(ctx)?;
+        self.rhythms.keep_unreferenced(ctx)
     }
 }
 
@@ -142,12 +150,13 @@ pub(crate) fn index_pool<'e>(
     );
     let mut pool = Pool::empty(kind);
     pool.location = location.clone();
+    pool.scope = Some(scope.clone());
     for (index, node) in container.children.iter().enumerate() {
         let at = location.child(index);
         let element = match node {
-            crate::dom::Node::Element(element) if element.name == item_name => element,
+            Node::Element(element) if element.name == item_name => element,
             _ => {
-                ctx.keep(&scope, index, node, None);
+                ctx.keep(&scope, index, node, None)?;
                 continue;
             }
         };
@@ -171,6 +180,7 @@ pub(crate) fn index_pool<'e>(
             ));
         }
         pool.items.push((element, at));
+        pool.nodes.push((node, index));
         pool.referenced.push(false);
     }
     *pools.pool_mut(kind) = pool;

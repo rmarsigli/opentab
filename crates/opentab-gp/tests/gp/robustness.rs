@@ -1,4 +1,5 @@
 use opentab_gp::{GpError, GpifProblem, read_gp};
+use opentab_model::{from_json, to_json};
 
 use crate::support::{Doc, SCORE_ENTRY, archive, gp, read_gpif_error};
 
@@ -38,8 +39,11 @@ fn rich_document() -> String {
 fn truncated_documents_never_panic() {
     let gpif = rich_document();
     for end in 0..gpif.len() {
-        if gpif.is_char_boundary(end) {
-            let _ = read_gp(&gp(&gpif[..end]));
+        if gpif.is_char_boundary(end)
+            && let Ok(score) = read_gp(&gp(&gpif[..end]))
+        {
+            let json = to_json(&score).expect("valid model");
+            assert_eq!(from_json(&json).expect("json back"), score);
         }
     }
 }
@@ -48,6 +52,7 @@ fn truncated_documents_never_panic() {
 fn mutated_documents_never_panic() {
     let gpif = rich_document().into_bytes();
     let mut random = Lcg(0x5eed);
+    let mut accepted = 0usize;
     for _ in 0..MUTATION_ROUNDS {
         let mut mutated = gpif.clone();
         for _ in 0..=random.below(3) {
@@ -65,8 +70,13 @@ fn mutated_documents_never_panic() {
                 }
             }
         }
-        let _ = read_gp(&archive(&[(SCORE_ENTRY, &mutated)]));
+        if let Ok(score) = read_gp(&archive(&[(SCORE_ENTRY, &mutated)])) {
+            accepted += 1;
+            let json = to_json(&score).expect("valid model");
+            assert_eq!(from_json(&json).expect("json back"), score);
+        }
     }
+    assert!(accepted > 0);
 }
 
 #[test]
@@ -126,6 +136,26 @@ fn reference_expansion_is_bounded() {
         read_gpif_error(&gpif),
         GpError::Gpif {
             problem: GpifProblem::ExpansionLimit { limit: 1_000_000 },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn opaque_copies_of_shared_elements_are_bounded() {
+    let large = "x".repeat(1024 * 1024);
+    let references = vec!["0"; 10_000].join(" ");
+    let doc = Doc {
+        note: format!("<Ornament>{large}</Ornament>"),
+        ..Doc::default()
+    };
+    let gpif = doc
+        .render()
+        .replace("<Notes>0</Notes>", &format!("<Notes>{references}</Notes>"));
+    assert!(matches!(
+        read_gpif_error(&gpif),
+        GpError::Gpif {
+            problem: GpifProblem::OpaqueLimit { limit: 67_108_864 },
             ..
         }
     ));

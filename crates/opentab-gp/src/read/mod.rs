@@ -27,7 +27,8 @@ pub(crate) fn read_gpif(bytes: &[u8]) -> Result<Score, GpError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| gpif_error("/".to_string(), GpifProblem::NotUtf8))?;
     let root = dom::parse(text).map_err(|failure| gpif_error(failure.path, failure.problem))?;
-    document::read(&root).map_err(|fault| gpif_error(fault.location.render(&root), fault.problem))
+    document::read(&root, bytes.len())
+        .map_err(|fault| gpif_error(fault.location.render(&root), fault.problem))
 }
 
 fn gpif_error(path: String, problem: GpifProblem) -> GpError {

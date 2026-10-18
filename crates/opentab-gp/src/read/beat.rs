@@ -58,7 +58,7 @@ pub(crate) fn read_bar(
     let (element, location) = pools.bars.fetch(token, at)?;
     let id: BarId = ctx.alloc(&location)?;
     let scope = Scope::new(Owner::Element(id.0), ParentPath::owner(), location.clone());
-    ctx.keep_attributes(&scope, element, &["id"]);
+    ctx.keep_attributes(&scope, element, &["id"])?;
     let mut clef = Clef::Treble;
     let mut voices = None;
     ctx.visit(&scope, element, |_, visit| match visit.key.as_str() {
@@ -115,7 +115,7 @@ fn read_voice(
     let (element, location) = pools.voices.fetch(token, at)?;
     let id: VoiceId = ctx.alloc(&location)?;
     let scope = Scope::new(Owner::Element(id.0), ParentPath::owner(), location.clone());
-    ctx.keep_attributes(&scope, element, &["id"]);
+    ctx.keep_attributes(&scope, element, &["id"])?;
     let mut beats = None;
     ctx.visit(&scope, element, |_, visit| match visit.key.as_str() {
         "Beats" => {
@@ -158,7 +158,7 @@ fn read_beat(
     let (element, location) = pools.beats.fetch(token, at)?;
     let id: BeatId = ctx.alloc(&location)?;
     let scope = Scope::new(Owner::Element(id.0), ParentPath::owner(), location.clone());
-    ctx.keep_attributes(&scope, element, &["id"]);
+    ctx.keep_attributes(&scope, element, &["id"])?;
     let brush = brush_state(element);
     let mut fields = BeatFields {
         effects: BeatEffects {
@@ -330,7 +330,7 @@ fn read_rhythm(
 ) -> Result<Duration, Fault> {
     let (element, location) = pools.rhythms.fetch(&reference.text, &reference.location)?;
     let scope = Scope::new(beat.owner, ParentPath::rhythm(), location.clone());
-    ctx.keep_attributes(&scope, element, &["id"]);
+    ctx.keep_attributes(&scope, element, &["id"])?;
     let mut fields = RhythmFields {
         value: None,
         dots: 0,

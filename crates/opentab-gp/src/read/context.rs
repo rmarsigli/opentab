@@ -2,7 +2,9 @@ use opentab_model::{ElementId, ModelError, Score};
 
 use crate::dom::{Element, Node};
 use crate::error::GpifProblem;
-use crate::limits::MAX_MODEL_ELEMENTS;
+use crate::limits::{
+    MAX_MODEL_ELEMENTS, MIN_OPAQUE_BUDGET, OPAQUE_BUDGET_FACTOR, PAYLOAD_OVERHEAD,
+};
 use crate::location::Location;
 use crate::number;
 use crate::opaque::{OpaqueContent, OpaqueItem, ParentPath};
@@ -97,12 +99,19 @@ pub(crate) enum Handled {
 
 pub(crate) struct Context {
     pub score: Score,
+    opaque_bytes: u64,
+    opaque_budget: u64,
 }
 
 impl Context {
-    pub fn new() -> Context {
+    pub fn new(source_size: usize) -> Context {
+        let scaled = u64::try_from(source_size)
+            .unwrap_or(u64::MAX)
+            .saturating_mul(OPAQUE_BUDGET_FACTOR);
         Context {
             score: Score::new(),
+            opaque_bytes: 0,
+            opaque_budget: scaled.max(MIN_OPAQUE_BUDGET),
         }
     }
 
@@ -120,41 +129,62 @@ impl Context {
             .ok_or_else(|| Fault::at(location, GpifProblem::IdsExhausted))
     }
 
-    pub fn keep(&mut self, scope: &Scope, index: usize, node: &Node, guard: Option<String>) {
-        self.push(
-            scope.owner,
-            OpaqueItem {
-                parent: scope.parent.clone(),
-                index,
-                guard,
-                content: OpaqueContent::Node(node.clone()),
-            },
-        );
+    pub fn keep(
+        &mut self,
+        scope: &Scope,
+        index: usize,
+        node: &Node,
+        guard: Option<String>,
+    ) -> Result<(), Fault> {
+        let item = OpaqueItem {
+            parent: &scope.parent,
+            index,
+            guard: guard.as_deref(),
+            content: OpaqueContent::Node(node),
+        };
+        self.push(scope, item)
     }
 
-    pub fn keep_attributes(&mut self, scope: &Scope, element: &Element, known: &[&str]) {
+    pub fn keep_attributes(
+        &mut self,
+        scope: &Scope,
+        element: &Element,
+        known: &[&str],
+    ) -> Result<(), Fault> {
         for (index, attribute) in element.attributes.iter().enumerate() {
             if known.contains(&attribute.name.as_str()) {
                 continue;
             }
-            self.push(
-                scope.owner,
-                OpaqueItem {
-                    parent: scope.parent.clone(),
-                    index,
-                    guard: None,
-                    content: OpaqueContent::Attribute(attribute.clone()),
-                },
-            );
+            let item = OpaqueItem {
+                parent: &scope.parent,
+                index,
+                guard: None,
+                content: OpaqueContent::Attribute(attribute),
+            };
+            self.push(scope, item)?;
         }
+        Ok(())
     }
 
-    fn push(&mut self, owner: Owner, item: OpaqueItem) {
+    fn push(&mut self, scope: &Scope, item: OpaqueItem<'_>) -> Result<(), Fault> {
         let payload = item.encode();
-        match owner {
+        let size = u64::try_from(payload.data.len())
+            .unwrap_or(u64::MAX)
+            .saturating_add(PAYLOAD_OVERHEAD);
+        self.opaque_bytes = self.opaque_bytes.saturating_add(size);
+        if self.opaque_bytes > self.opaque_budget {
+            return Err(Fault::at(
+                &scope.location,
+                GpifProblem::OpaqueLimit {
+                    limit: self.opaque_budget,
+                },
+            ));
+        }
+        match scope.owner {
             Owner::Document => self.score.document_extensions.push(payload),
             Owner::Element(id) => self.score.extensions.0.entry(id).or_default().push(payload),
         }
+        Ok(())
     }
 
     pub fn visit<'e, F>(
@@ -169,7 +199,7 @@ impl Context {
         let mut seen: Vec<String> = Vec::new();
         for (index, node) in element.children.iter().enumerate() {
             let Node::Element(child) = node else {
-                self.keep(scope, index, node, None);
+                self.keep(scope, index, node, None)?;
                 continue;
             };
             let visit = Visit {
@@ -187,12 +217,12 @@ impl Context {
                 seen.push(visit.key.clone());
             }
             match handled {
-                Handled::Unknown => self.keep(scope, index, node, None),
+                Handled::Unknown => self.keep(scope, index, node, None)?,
                 Handled::Mapped(known) => {
                     let inner = scope.enter(&visit);
-                    self.keep_attributes(&inner, child, known);
+                    self.keep_attributes(&inner, child, known)?;
                 }
-                Handled::Replayed(guard) => self.keep(scope, index, node, Some(guard)),
+                Handled::Replayed(guard) => self.keep(scope, index, node, Some(guard))?,
                 Handled::Custom => {}
             }
         }

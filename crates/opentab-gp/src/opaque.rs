@@ -41,21 +41,21 @@ impl ParentPath {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum OpaqueContent {
-    Node(Node),
-    Attribute(Attribute),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OpaqueContent<'a> {
+    Node(&'a Node),
+    Attribute(&'a Attribute),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OpaqueItem {
-    pub parent: ParentPath,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OpaqueItem<'a> {
+    pub parent: &'a ParentPath,
     pub index: usize,
-    pub guard: Option<String>,
-    pub content: OpaqueContent,
+    pub guard: Option<&'a str>,
+    pub content: OpaqueContent<'a>,
 }
 
-impl OpaqueItem {
+impl OpaqueItem<'_> {
     pub fn encode(&self) -> OpaquePayload {
         let mut data = String::new();
         let name = match self.content {
@@ -66,10 +66,10 @@ impl OpaqueItem {
         data.push_str(name);
         push_attribute(&mut data, "parent", self.parent.as_str());
         push_attribute(&mut data, "index", &self.index.to_string());
-        if let Some(guard) = &self.guard {
+        if let Some(guard) = self.guard {
             push_attribute(&mut data, "guard", guard);
         }
-        match &self.content {
+        match self.content {
             OpaqueContent::Node(node) => {
                 data.push('>');
                 write_node(node, &mut data);

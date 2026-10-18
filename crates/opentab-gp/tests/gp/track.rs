@@ -122,3 +122,65 @@ fn tracks_follow_the_master_track_order() {
     assert!(score.tracks[0].staves.is_empty());
     assert_eq!(score.tracks[1].staves[0].bars.len(), 1);
 }
+
+fn two_staff_document(second_staff_properties: &str) -> String {
+    let second_staff = format!("<Staff><Properties>{second_staff_properties}</Properties></Staff>");
+    Doc::default()
+        .render()
+        .replace("</Staff></Staves>", &format!("</Staff>{second_staff}</Staves>"))
+        .replace("<Bars>0</Bars>", "<Bars>0 1</Bars>")
+        .replace(
+            "</Bar></Bars>",
+            "</Bar><Bar id=\"1\"><Clef>F4</Clef><Voices>1 -1 -1 -1</Voices></Bar></Bars>",
+        )
+        .replace(
+            "</Voice></Voices>",
+            "</Voice><Voice id=\"1\"><Beats>1</Beats></Voice></Voices>",
+        )
+        .replace(
+            "</Beat></Beats>",
+            "</Beat><Beat id=\"1\"><Rhythm ref=\"0\"/><Notes>1</Notes></Beat></Beats>",
+        )
+        .replace(
+            "</Note></Notes>",
+            "</Note><Note id=\"1\"><Properties><Property name=\"String\"><String>0</String></Property><Property name=\"Fret\"><Fret>2</Fret></Property><Property name=\"Midi\"><Number>30</Number></Property></Properties></Note></Notes>",
+        )
+}
+
+#[test]
+fn a_second_staff_maps_its_notes_with_its_own_tuning_and_keeps_it() {
+    let gpif = two_staff_document(concat!(
+        "<Property name=\"Tuning\"><Pitches>28 33 38 43</Pitches></Property>",
+        "<Property name=\"CapoFret\"><Fret>3</Fret></Property>"
+    ));
+    let score = read_gpif(&gpif);
+    let track = track(&score);
+    assert_eq!(track.tuning.strings.len(), 6);
+    assert_eq!(track.capo, 0);
+    let staff = &track.staves[1];
+    let note = &staff.bars[0].voices[0].beats[0].notes[0];
+    assert_eq!(note.kind, NoteKind::Fretted { string: 3, fret: 2 });
+    let staff_payloads = payloads(&score, staff.id.0);
+    assert_eq!(
+        staff_payloads,
+        vec![
+            "<Keep parent=\"Properties\" index=\"0\"><Property name=\"Tuning\"><Pitches>28 33 38 43</Pitches></Property></Keep>".to_string(),
+            "<Keep parent=\"Properties\" index=\"1\"><Property name=\"CapoFret\"><Fret>3</Fret></Property></Keep>".to_string(),
+        ]
+    );
+    assert_eq!(
+        payloads(&score, note.id.0),
+        vec![
+            "<Keep parent=\"Properties\" index=\"2\" guard=\"pitch:fretted 3 2;tuning 43 38 33 28;capo 3;transpose 0 0\"><Property name=\"Midi\"><Number>30</Number></Property></Keep>".to_string()
+        ]
+    );
+}
+
+#[test]
+fn a_second_staff_without_its_own_tuning_uses_the_first() {
+    let score = read_gpif(&two_staff_document(""));
+    let staff = &track(&score).staves[1];
+    let note = &staff.bars[0].voices[0].beats[0].notes[0];
+    assert_eq!(note.kind, NoteKind::Fretted { string: 5, fret: 2 });
+    assert!(payloads(&score, note.id.0)[0].contains("tuning 64 59 55 50 45 40;capo 0;"));
+}

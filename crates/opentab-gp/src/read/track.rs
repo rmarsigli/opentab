@@ -27,8 +27,8 @@ pub(crate) struct ChordItem {
     pub name: String,
 }
 
-struct BarColumn {
-    tokens: Vec<String>,
+struct BarColumn<'f> {
+    tokens: Vec<&'f str>,
     location: Location,
 }
 
@@ -65,42 +65,49 @@ pub(crate) fn read_tracks(
             .bars
             .as_ref()
             .ok_or_else(|| Fault::at(&frame.location, missing_element("Bars")))?;
-        let tokens: Vec<String> = text.split_whitespace().map(str::to_string).collect();
-        if tokens.len() != total {
+        let found = text.split_whitespace().count();
+        if found != total {
             return Err(Fault::at(
                 location,
                 GpifProblem::StaffCountMismatch {
                     expected: total,
-                    found: tokens.len(),
+                    found,
                 },
             ));
         }
         columns.push(BarColumn {
-            tokens,
+            tokens: text.split_whitespace().collect(),
             location: location.clone(),
         });
     }
-    let tokens: Vec<(String, Location)> = match &order {
-        Some(order) => order
-            .text
-            .split_whitespace()
-            .map(|token| (token.to_string(), order.location.clone()))
-            .collect(),
-        None => (0..pools.tracks.items.len())
-            .map(|index| (index.to_string(), pools.tracks.location.clone()))
-            .collect(),
-    };
-    let mut listed = Vec::with_capacity(tokens.len());
-    for (token, location) in &tokens {
-        let index = pools.tracks.resolve(token, location)?;
-        if listed.contains(&index) {
-            return Err(Fault::at(
-                location,
-                GpifProblem::DuplicateTrackReference { id: index },
-            ));
+    let mut listed = vec![false; pools.tracks.items.len()];
+    let mut sequence = Vec::with_capacity(listed.len());
+    if let Some(order) = &order {
+        for token in order.text.split_whitespace() {
+            let index = pools.tracks.resolve(token, &order.location)?;
+            match listed.get_mut(index) {
+                Some(seen) if *seen => {
+                    return Err(Fault::at(
+                        &order.location,
+                        GpifProblem::DuplicateTrackReference { id: index },
+                    ));
+                }
+                Some(seen) => *seen = true,
+                None => {}
+            }
+            sequence.push(index);
         }
-        listed.push(index);
-        let (element, track_location) = pools.tracks.fetch(token, location)?;
+    }
+    for (index, seen) in listed.iter().enumerate() {
+        if !seen {
+            sequence.push(index);
+        }
+    }
+    for index in sequence {
+        let Some((element, track_location)) = pools.tracks.items.get(index).cloned() else {
+            continue;
+        };
+        pools.tracks.mark(index);
         let offset = offsets.get(index).copied().unwrap_or_default();
         let track = read_track(ctx, pools, element, &track_location, offset, &columns)?;
         ctx.score.tracks.push(track);
@@ -123,11 +130,11 @@ fn read_track(
     element: &Element,
     location: &Location,
     offset: usize,
-    columns: &[BarColumn],
+    columns: &[BarColumn<'_>],
 ) -> Result<Track, Fault> {
     let id: TrackId = ctx.alloc(location)?;
     let scope = Scope::new(Owner::Element(id.0), ParentPath::owner(), location.clone());
-    ctx.keep_attributes(&scope, element, &["id"]);
+    ctx.keep_attributes(&scope, element, &["id"])?;
     let mut fields = TrackFields {
         name: String::new(),
         short_name: String::new(),
@@ -193,7 +200,7 @@ fn read_track(
                     track.staves.push(staff);
                     ordinal += 1;
                 }
-                _ => ctx.keep(&staves_scope, index, node, None),
+                _ => ctx.keep(&staves_scope, index, node, None)?,
             }
         }
     }
@@ -249,7 +256,7 @@ fn read_sounds(ctx: &mut Context, scope: &Scope, element: &Element) -> Result<Op
             scope.parent.nth("Sound", 0),
             visit.location.clone(),
         );
-        ctx.keep_attributes(&sound, visit.element, &[]);
+        ctx.keep_attributes(&sound, visit.element, &[])?;
         ctx.visit(&sound, visit.element, |ctx, child| {
             match child.key.as_str() {
                 "MIDI" => {
@@ -278,11 +285,11 @@ fn read_staff(
     element: &Element,
     location: &Location,
     global: usize,
-    columns: &[BarColumn],
+    columns: &[BarColumn<'_>],
 ) -> Result<Staff, Fault> {
     let id: StaffId = ctx.alloc(location)?;
     let scope = Scope::new(Owner::Element(id.0), ParentPath::owner(), location.clone());
-    ctx.keep_attributes(&scope, element, &[]);
+    ctx.keep_attributes(&scope, element, &[])?;
     let first = track.staves.is_empty();
     let mut head = StaffHead {
         tuning: None,
@@ -296,22 +303,27 @@ fn read_staff(
         }
         _ => Ok(Handled::Unknown),
     })?;
-    if let Some(tuning) = head.tuning {
-        track.tuning.strings = tuning;
-    }
-    if let Some(capo) = head.capo {
-        track.capo = capo;
-    }
+    let own_tuning = if first {
+        if let Some(tuning) = head.tuning.take() {
+            track.tuning.strings = tuning;
+        }
+        if let Some(capo) = head.capo {
+            track.capo = capo;
+        }
+        None
+    } else {
+        head.tuning.take()
+    };
     let frame = StaffFrame {
         kind: track.instrument.kind,
-        tuning: &track.tuning.strings,
-        capo: track.capo,
+        tuning: own_tuning.as_deref().unwrap_or(&track.tuning.strings),
+        capo: head.capo.unwrap_or(track.capo),
         transpose: track.transpose,
         chords: &head.chords,
     };
     let mut bars = Vec::with_capacity(columns.len());
     for column in columns {
-        let token = column.tokens.get(global).map_or("", String::as_str);
+        let token = column.tokens.get(global).copied().unwrap_or_default();
         bars.push(read_bar(ctx, pools, &frame, token, &column.location)?);
     }
     Ok(Staff { id, bars })
@@ -325,22 +337,30 @@ fn read_staff_properties(
     head: &mut StaffHead,
 ) -> Result<(), Fault> {
     ctx.visit(scope, element, |ctx, visit| match visit.key.as_str() {
-        "Property@Tuning" if first => {
+        "Property@Tuning" => {
+            if !first {
+                head.tuning = own_value(visit, "Pitches", read_pitches)?;
+                return Ok(Handled::Unknown);
+            }
             let inner = scope.enter(visit);
             ctx.visit(&inner, visit.element, |_, field| match field.key.as_str() {
                 "Pitches" => {
-                    head.tuning = Some(read_pitches(field)?);
+                    head.tuning = Some(read_pitches(field.element, &field.location)?);
                     Ok(Handled::Mapped(&[]))
                 }
                 _ => Ok(Handled::Unknown),
             })?;
             Ok(Handled::Mapped(&["name"]))
         }
-        "Property@CapoFret" if first => {
+        "Property@CapoFret" => {
+            if !first {
+                head.capo = own_value(visit, "Fret", read_fret)?;
+                return Ok(Handled::Unknown);
+            }
             let inner = scope.enter(visit);
             ctx.visit(&inner, visit.element, |_, field| match field.key.as_str() {
                 "Fret" => {
-                    head.capo = Some(field.integer()?);
+                    head.capo = Some(read_fret(field.element, &field.location)?);
                     Ok(Handled::Mapped(&[]))
                 }
                 _ => Ok(Handled::Unknown),
@@ -355,15 +375,36 @@ fn read_staff_properties(
     })
 }
 
-fn read_pitches(visit: &Visit<'_>) -> Result<Vec<Pitch>, Fault> {
-    let text = visit.text();
+fn own_value<T>(
+    visit: &Visit<'_>,
+    name: &str,
+    read: fn(&Element, &Location) -> Result<T, Fault>,
+) -> Result<Option<T>, Fault> {
+    match visit.element.child(name) {
+        Some((index, child)) => read(child, &visit.location.child(index)).map(Some),
+        None => Ok(None),
+    }
+}
+
+fn invalid_number(location: &Location, text: &str) -> Fault {
+    Fault::at(
+        location,
+        GpifProblem::InvalidNumber {
+            text: text.trim().to_string(),
+        },
+    )
+}
+
+fn read_fret(element: &Element, location: &Location) -> Result<u8, Fault> {
+    let text = element.text();
+    number::integer(&text).ok_or_else(|| invalid_number(location, &text))
+}
+
+fn read_pitches(element: &Element, location: &Location) -> Result<Vec<Pitch>, Fault> {
+    let text = element.text();
     let mut pitches = Vec::new();
     for token in text.split_whitespace() {
-        let pitch = number::integer::<u8>(token).ok_or_else(|| {
-            visit.fault(GpifProblem::InvalidNumber {
-                text: token.to_string(),
-            })
-        })?;
+        let pitch = number::integer::<u8>(token).ok_or_else(|| invalid_number(location, token))?;
         pitches.push(Pitch(pitch));
     }
     pitches.reverse();
