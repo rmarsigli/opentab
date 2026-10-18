@@ -128,6 +128,20 @@ impl Element {
     }
 }
 
+const CDATA_END: &str = "]]>";
+
+pub(crate) fn cdata_nodes(value: &str) -> Vec<Node> {
+    let mut nodes = Vec::new();
+    let mut rest = value;
+    while let Some(at) = rest.find(CDATA_END) {
+        let (head, tail) = rest.split_at(at + 2);
+        nodes.push(Node::CData(head.to_string()));
+        rest = tail;
+    }
+    nodes.push(Node::CData(rest.to_string()));
+    nodes
+}
+
 pub(crate) fn parse(text: &str) -> Result<Element, ParseFailure> {
     let mut parser = Parser {
         reader: Reader::from_str(text),

@@ -7,7 +7,8 @@ use crate::codes::{
 };
 use crate::dom::{Element, Node};
 use crate::error::Refusal;
-use crate::write::note::write_note;
+use crate::guard;
+use crate::write::note::{NoteSite, write_note};
 use crate::write::payload::{self, Env, Item};
 use crate::write::state::{Layouts, Owners, Pools, StaffContext};
 use crate::write::track::apply_own;
@@ -27,11 +28,16 @@ fn id_list(ids: impl Iterator<Item = usize>) -> String {
     ids.map(|id| id.to_string()).collect::<Vec<_>>().join(" ")
 }
 
+pub(crate) struct BarSite<'s> {
+    pub staff: &'s StaffContext,
+    pub key: KeySignature,
+    pub previous_bar: Option<&'s Bar>,
+}
+
 pub(crate) fn write_bar(
     build: &mut Builder<'_, '_>,
-    staff: &StaffContext,
+    site: &BarSite<'_>,
     bar: &Bar,
-    key: KeySignature,
 ) -> Result<(), Fail> {
     let items = payload::surviving(build.owners.items(bar.id.0)?, &Env::Bar(bar))?;
     let generated = build.pools.bars.len();
@@ -58,17 +64,18 @@ pub(crate) fn write_bar(
     apply_own(&mut element, items)?;
     build.pools.bars.push(element);
     for (index, (voice, voice_id)) in bar.voices.iter().zip(voice_ids).enumerate() {
-        write_voice(build, staff, voice, voice_id, key).within(|| format!("voices[{index}]"))?;
+        let carried = guard::carried(site.previous_bar, voice.slot);
+        write_voice(build, site, voice, voice_id, carried).within(|| format!("voices[{index}]"))?;
     }
     Ok(())
 }
 
 fn write_voice(
     build: &mut Builder<'_, '_>,
-    staff: &StaffContext,
+    site: &BarSite<'_>,
     voice: &Voice,
     id: usize,
-    key: KeySignature,
+    carried: Option<&Beat>,
 ) -> Result<(), Fail> {
     let items = payload::surviving(build.owners.items(voice.id.0)?, &Env::Plain)?;
     let first = build.pools.beats.len();
@@ -78,8 +85,10 @@ fn write_voice(
     element.push(Element::leaf("Beats", &id_list(beat_ids)));
     apply_own(&mut element, items)?;
     build.pools.voices.push(element);
+    let mut previous = carried;
     for (index, beat) in voice.beats.iter().enumerate() {
-        write_beat(build, staff, beat, key).within(|| format!("beats[{index}]"))?;
+        write_beat(build, site, beat, previous).within(|| format!("beats[{index}]"))?;
+        previous = Some(beat);
     }
     Ok(())
 }
@@ -130,24 +139,16 @@ fn has_guarded(items: &[Item], parent: &str, key: &str) -> bool {
     })
 }
 
-fn chord(
-    effects: &BeatEffects,
-    staff: &StaffContext,
-    items: &[Item],
-) -> Result<Option<Element>, Refusal> {
-    let Some(name) = &effects.chord_name else {
-        return Ok(None);
-    };
+fn chord(effects: &BeatEffects, staff: &StaffContext, items: &[Item]) -> Option<Element> {
+    let name = effects.chord_name.as_ref()?;
     if has_guarded(items, "", "Chord") {
-        return Ok(None);
+        return None;
     }
-    xml::check_text(name)?;
     staff
         .chords
         .iter()
         .find(|item| item.name == *name)
-        .map(|item| Some(canon::chord(&item.id)))
-        .ok_or_else(|| Refusal::ChordWithoutDiagram { name: name.clone() })
+        .map(|item| canon::chord(&item.id))
 }
 
 fn beat_properties(effects: &BeatEffects) -> (Element, Element) {
@@ -178,10 +179,11 @@ fn beat_properties(effects: &BeatEffects) -> (Element, Element) {
 
 fn write_beat(
     build: &mut Builder<'_, '_>,
-    staff: &StaffContext,
+    site: &BarSite<'_>,
     beat: &Beat,
-    key: KeySignature,
+    previous: Option<&Beat>,
 ) -> Result<(), Fail> {
+    let staff = site.staff;
     let items = payload::surviving(build.owners.items(beat.id.0)?, &Env::Beat(&beat.effects))?;
     let split = payload::split(items)?;
     if !split.tempo.is_empty() {
@@ -207,9 +209,9 @@ fn write_beat(
         element.push(Element::leaf("Fadding", FADE_IN));
     }
     if let Some(text) = &effects.text {
-        element.push(xml::text("FreeText", text)?);
+        element.push(xml::text("FreeText", text).within(|| "effects.text".to_string())?);
     }
-    if let Some(chord) = chord(effects, staff, &split.own)? {
+    if let Some(chord) = chord(effects, staff, &split.own) {
         element.push(chord);
     }
     let first_note = build.pools.notes.len();
@@ -230,7 +232,12 @@ fn write_beat(
     build.pools.beat_rhythms.push(rhythm);
     for (index, note) in beat.notes.iter().enumerate() {
         let note_id = Layouts::id(&build.layouts.notes, first_note + index);
-        let note = write_note(build.owners, staff, note, note_id, key)
+        let note_site = NoteSite {
+            staff,
+            key: site.key,
+            previous,
+        };
+        let note = write_note(build.owners, &note_site, note, note_id)
             .within(|| format!("notes[{index}]"))?;
         build.pools.notes.push(note);
     }

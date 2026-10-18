@@ -46,9 +46,9 @@ fn position_is_rounded_and_every_extra_guarded_by_it() {
     assert_eq!(
         payloads(&score, bar.id.0),
         vec![
-            "<Keep parent=\"*Tempo#0\" index=\"1\" guard=\"tempo-position:1/4\"><Linear>false</Linear></Keep>".to_string(),
-            "<Keep parent=\"*Tempo#0\" index=\"3\" guard=\"tempo-position:1/4\"><Position>0.33333</Position></Keep>".to_string(),
-            "<Keep parent=\"*Tempo#0\" index=\"4\" guard=\"tempo-position:1/4\"><Visible>true</Visible></Keep>".to_string(),
+            "<Keep parent=\"*Tempo#0\" index=\"1\" guard=\"tempo-position:1/4;time 3/4\"><Linear>false</Linear></Keep>".to_string(),
+            "<Keep parent=\"*Tempo#0\" index=\"3\" guard=\"tempo-position:1/4;time 3/4\"><Position>0.33333</Position></Keep>".to_string(),
+            "<Keep parent=\"*Tempo#0\" index=\"4\" guard=\"tempo-position:1/4;time 3/4\"><Visible>true</Visible></Keep>".to_string(),
         ]
     );
 }

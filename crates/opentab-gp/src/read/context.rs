@@ -95,6 +95,7 @@ pub(crate) enum Handled {
     Mapped(&'static [&'static str]),
     Replayed(String),
     Custom,
+    Substitute(Node),
 }
 
 pub(crate) struct Context {
@@ -213,7 +214,7 @@ impl Context {
                 location: scope.location.child(index),
             };
             let handled = handle(self, &visit)?;
-            if !matches!(handled, Handled::Unknown) {
+            if !matches!(handled, Handled::Unknown | Handled::Substitute(_)) {
                 if seen.contains(&visit.key) {
                     return Err(visit.fault(GpifProblem::DuplicateElement {
                         name: visit.key.clone(),
@@ -229,6 +230,7 @@ impl Context {
                 }
                 Handled::Replayed(guard) => self.keep(scope, index, node, Some(guard))?,
                 Handled::Custom => {}
+                Handled::Substitute(replacement) => self.keep(scope, index, &replacement, None)?,
             }
         }
         Ok(())

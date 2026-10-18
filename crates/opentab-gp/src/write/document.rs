@@ -7,7 +7,7 @@ use crate::codes::{MINOR, TEMPO_UNITS};
 use crate::dom::{Element, Node};
 use crate::error::Refusal;
 use crate::read::POOLS;
-use crate::write::beat::{Builder, patch_rhythms, write_bar};
+use crate::write::beat::{BarSite, Builder, patch_rhythms, write_bar};
 use crate::write::payload::{self, Env, Item, layout, renumber};
 use crate::write::state::{Layouts, Owners, Pools, StaffContext};
 use crate::write::track::{staff_contexts, tracks_pool};
@@ -18,20 +18,20 @@ const MAX_ALTERNATE_ENDINGS: u8 = 8;
 fn meta(score: &Score) -> Result<Element, Fail> {
     let meta = &score.meta;
     let fields = [
-        ("Title", &meta.title),
-        ("SubTitle", &meta.subtitle),
-        ("Artist", &meta.artist),
-        ("Album", &meta.album),
-        ("Words", &meta.words),
-        ("Music", &meta.music),
-        ("Copyright", &meta.copyright),
-        ("Tabber", &meta.tab_author),
-        ("Instructions", &meta.instructions),
-        ("Notices", &meta.notices),
+        ("Title", "title", &meta.title),
+        ("SubTitle", "subtitle", &meta.subtitle),
+        ("Artist", "artist", &meta.artist),
+        ("Album", "album", &meta.album),
+        ("Words", "words", &meta.words),
+        ("Music", "music", &meta.music),
+        ("Copyright", "copyright", &meta.copyright),
+        ("Tabber", "tab_author", &meta.tab_author),
+        ("Instructions", "instructions", &meta.instructions),
+        ("Notices", "notices", &meta.notices),
     ];
     let mut element = Element::new("Score");
-    for (name, value) in fields {
-        element.push(xml::text(name, value).within(|| format!("meta.{name}"))?);
+    for (name, field, value) in fields {
+        element.push(xml::text(name, value).within(|| format!("meta.{field}"))?);
     }
     Ok(element)
 }
@@ -49,7 +49,7 @@ fn tempo_element(
     master: &MasterBar,
     change: &TempoChange,
     items: Vec<Item>,
-) -> Result<Element, Refusal> {
+) -> Result<Element, Fail> {
     let replayed = items.iter().any(|item| {
         item.guard.is_some()
             && item.parent.is_empty()
@@ -61,12 +61,13 @@ fn tempo_element(
     element.push(Element::leaf("Type", "Tempo"));
     element.push(Element::leaf("Bar", &bar.to_string()));
     if !replayed {
-        let position = canon::tempo_position(change.position, master.time_signature).ok_or(
-            Refusal::TempoPosition {
+        let position = canon::tempo_position(change.position, master.time_signature)
+            .ok_or(Refusal::TempoPosition {
                 numer: *change.position.numer(),
                 denom: *change.position.denom(),
-            },
-        )?;
+            })
+            .map_err(Fail::new)
+            .within(|| "position".to_string())?;
         element.push(Element::leaf("Position", &position));
     }
     element.push(Element::leaf(
@@ -106,7 +107,10 @@ fn master_bar(
     let mut tempo_items: BTreeMap<usize, Vec<Item>> = BTreeMap::new();
     for (ordinal, items) in split.tempo {
         if let Some(change) = master.tempo_changes.get(ordinal) {
-            tempo_items.insert(ordinal, payload::surviving(items, &Env::Tempo(change))?);
+            tempo_items.insert(
+                ordinal,
+                payload::surviving(items, &Env::Tempo(change, master.time_signature))?,
+            );
         }
     }
     let key = master.key_signature;
@@ -136,8 +140,10 @@ fn master_bar(
     if let Some(marker) = &master.marker {
         element.push(
             Element::new("Section")
-                .with_child(xml::text("Letter", &marker.letter).within(|| "marker".to_string())?)
-                .with_child(xml::text("Text", &marker.text).within(|| "marker".to_string())?),
+                .with_child(
+                    xml::text("Letter", &marker.letter).within(|| "marker.letter".to_string())?,
+                )
+                .with_child(xml::text("Text", &marker.text).within(|| "marker.text".to_string())?),
         );
     }
     if master.alternate_endings != 0 {
@@ -220,15 +226,24 @@ fn write_pools(
     };
     for (bar_index, master) in score.master_bars.iter().enumerate() {
         for staff in staves {
-            let Some(bar) = score
+            let Some(model) = score
                 .tracks
                 .get(staff.track)
                 .and_then(|track| track.staves.get(staff.staff))
-                .and_then(|model| model.bars.get(bar_index))
             else {
                 continue;
             };
-            write_bar(&mut build, staff, bar, master.key_signature).within(|| {
+            let Some(bar) = model.bars.get(bar_index) else {
+                continue;
+            };
+            let site = BarSite {
+                staff,
+                key: master.key_signature,
+                previous_bar: bar_index
+                    .checked_sub(1)
+                    .and_then(|previous| model.bars.get(previous)),
+            };
+            write_bar(&mut build, &site, bar).within(|| {
                 format!(
                     "tracks[{}].staves[{}].bars[{bar_index}]",
                     staff.track, staff.staff
@@ -296,7 +311,7 @@ pub(crate) fn write_gpif(score: &Score) -> Result<String, Fail> {
     if automations.has_elements() {
         master_track.push(automations);
     }
-    let tracks = tracks_pool(score, &layouts, &mut owners)?;
+    let tracks = tracks_pool(score, &layouts, &staves, &mut owners)?;
     if let Some(id) = owners.dangling() {
         return Err(Fail::new(Refusal::DanglingExtension { id: id.0 }));
     }

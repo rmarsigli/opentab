@@ -341,7 +341,8 @@ fn read_staff(
     for column in columns {
         frame.key = column.key;
         let token = column.tokens.get(global).copied().unwrap_or_default();
-        bars.push(read_bar(ctx, pools, &frame, token, &column.location)?);
+        let bar = read_bar(ctx, pools, &frame, token, &column.location, bars.last())?;
+        bars.push(bar);
     }
     Ok(Staff { id, bars })
 }
@@ -386,7 +387,7 @@ fn read_staff_properties(
         }
         "Property@DiagramCollection" => {
             head.chords = chord_items(visit.element);
-            Ok(Handled::Unknown)
+            Ok(canon::strip_name_only(visit.element))
         }
         _ => Ok(Handled::Unknown),
     })

@@ -45,6 +45,7 @@ pub(crate) struct StaffContext {
     pub capo: u8,
     pub transpose: Transpose,
     pub chords: Vec<ChordItem>,
+    pub generated_chords: Vec<ChordItem>,
 }
 
 pub(crate) struct Layouts {

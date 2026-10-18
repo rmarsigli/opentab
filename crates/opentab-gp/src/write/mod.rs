@@ -11,12 +11,15 @@ use std::io::{Cursor, Write};
 
 use opentab_model::{ContainerEntry, Score};
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
+use zip::{CompressionMethod, DateTime, System, ZipArchive, ZipWriter};
 
 use crate::archive::{SCORE_ENTRY, minimal_container};
 use crate::error::{GpError, Refusal};
 
 const DIRECTORY_SUFFIX: char = '/';
+const ARCHIVE_SYSTEM: System = System::Unix;
+const FILE_PERMISSIONS: u32 = 0o644;
+const DIRECTORY_PERMISSIONS: u32 = 0o755;
 
 pub fn write_gp(score: &Score) -> Result<Vec<u8>, GpError> {
     let entries = container(score)?;
@@ -100,10 +103,14 @@ fn write_archive(entries: &[ContainerEntry], gpif: &[u8]) -> Result<Vec<u8>, GpE
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     let deflated = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
-        .last_modified_time(DateTime::default());
+        .last_modified_time(DateTime::default())
+        .system(ARCHIVE_SYSTEM)
+        .unix_permissions(FILE_PERMISSIONS);
     let stored = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Stored)
-        .last_modified_time(DateTime::default());
+        .last_modified_time(DateTime::default())
+        .system(ARCHIVE_SYSTEM)
+        .unix_permissions(DIRECTORY_PERMISSIONS);
     for (index, entry) in entries.iter().enumerate() {
         let name = entry.name();
         let rejected = |_| {
