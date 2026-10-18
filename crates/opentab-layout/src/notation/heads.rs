@@ -5,12 +5,13 @@ use super::{
     LedgerPlan, PARENTHESIS_GAP, RowInput, offset_rect,
 };
 use crate::accidentals::Carry;
+use crate::drums::drum_glyph;
 use crate::glyphs::{
     Anchor, Glyph, Metrics, NOTEHEAD_BLACK, NOTEHEAD_DIAMOND_BLACK, NOTEHEAD_DIAMOND_HALF,
     NOTEHEAD_DIAMOND_WHOLE, NOTEHEAD_HALF, NOTEHEAD_PARENTHESIS_LEFT, NOTEHEAD_PARENTHESIS_RIGHT,
     NOTEHEAD_WHOLE, NOTEHEAD_X_BLACK, NOTEHEAD_X_HALF, NOTEHEAD_X_WHOLE,
 };
-use crate::pitch::{position, spell, written_midi};
+use crate::pitch::{Spelling, position, spell, top_step, written_midi};
 use crate::rhythm::{
     CUE_SIZE, Extremes, RhythmEvent, RhythmPlan, RhythmStaff, StemAnchor, StemDirection, anchor,
     glyph_box, scale,
@@ -58,10 +59,25 @@ fn head(
     input: &RowInput<'_>,
     size: Units,
 ) -> Option<HeadPlan> {
-    let midi = written_midi(track, note)?;
-    let spelling = spell(midi, input.key);
-    let position = position(input.clef, spelling.step);
-    let glyph = head_glyph(value, note);
+    let (spelling, position, glyph) = match (note.kind, input.kit) {
+        (NoteKind::Percussion { articulation }, Some(kit)) => {
+            let drum = kit.entry(articulation);
+            let spelling = Spelling {
+                step: top_step(input.clef) - drum.position,
+                alter: 0,
+            };
+            (spelling, drum.position, drum_glyph(drum.head, value, note))
+        }
+        _ => {
+            let midi = written_midi(track, note)?;
+            let spelling = spell(midi, input.key);
+            (
+                spelling,
+                position(input.clef, spelling.step),
+                head_glyph(value, note),
+            )
+        }
+    };
     let string = match note.kind {
         NoteKind::Fretted { string, .. } => Some(string),
         NoteKind::Percussion { .. } => None,

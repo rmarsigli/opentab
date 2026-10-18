@@ -38,6 +38,7 @@ const CASES: u32 = 256;
 const MIN_MULTI_VOICE_ONSETS: usize = 80;
 const MIN_STACKED_ACCIDENTAL_ONSETS: usize = 10;
 const MIN_POSITIONED_HEADS: usize = 3_000;
+const MIN_DRUM_HEADS: usize = 5_000;
 
 fn quarters(notes: &[(u8, u8)]) -> Vec<Event> {
     notes
@@ -612,12 +613,22 @@ fn expected_notes(
 ) -> BTreeMap<u64, Option<i64>> {
     let track = &score.tracks[track];
     let mut out = BTreeMap::new();
-    if track.instrument.kind != InstrumentKind::Fretted {
-        return out;
-    }
     let Some(model) = track.staves[staff].bars.get(bar) else {
         return out;
     };
+    if track.instrument.kind == InstrumentKind::Percussion {
+        for note in model
+            .voices
+            .iter()
+            .flat_map(|voice| &voice.beats)
+            .flat_map(|beat| &beat.notes)
+        {
+            if matches!(note.kind, NoteKind::Percussion { .. }) {
+                out.insert(note.id.0.0, None);
+            }
+        }
+        return out;
+    }
     for voice in &model.voices {
         for beat in &voice.beats {
             for note in &beat.notes {
@@ -656,6 +667,7 @@ struct Tally {
     multi_voice_onsets: usize,
     stacked_accidental_onsets: usize,
     positioned_heads: usize,
+    drum_heads: usize,
 }
 
 fn timing(score: &Score) -> BTreeMap<u64, Timed> {
@@ -814,6 +826,7 @@ fn run_cases(each: impl Fn(&Score, &DisplayList) -> Tally) -> Tally {
                     sum.multi_voice_onsets += tally.multi_voice_onsets;
                     sum.stacked_accidental_onsets += tally.stacked_accidental_onsets;
                     sum.positioned_heads += tally.positioned_heads;
+                    sum.drum_heads += tally.drum_heads;
                 }
                 Err(_) => prop_assert!(
                     score.master_bars.is_empty()
@@ -843,9 +856,11 @@ fn every_note_has_one_notehead_and_nothing_overlaps() {
 fn notehead_steps_are_consistent_with_the_written_pitch_within_one_alteration() {
     let tally = run_cases(|score, list| Tally {
         positioned_heads: check_steps_against_written_pitch(score, list),
+        drum_heads: crate::percussion::drum_heads(score, list),
         ..Tally::default()
     });
     assert!(tally.positioned_heads >= MIN_POSITIONED_HEADS, "{tally:?}");
+    assert!(tally.drum_heads >= MIN_DRUM_HEADS, "{tally:?}");
 }
 
 #[test]

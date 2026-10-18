@@ -348,6 +348,9 @@ pub fn staff_keys(
         .map(|spec| match spec.kind {
             StaffKind::Tab => None,
             StaffKind::Standard => {
+                if selection.kits.get(spec.track).is_some_and(Option::is_some) {
+                    return None;
+                }
                 let chromatic = score
                     .tracks
                     .get(spec.track)
@@ -386,6 +389,7 @@ pub fn notation(
                 clef: *clef,
                 key: key.unwrap_or(master.key_signature),
                 time: master.time_signature,
+                kit: selection.kits.get(spec.track).and_then(Option::as_ref),
             })
         })
         .collect()

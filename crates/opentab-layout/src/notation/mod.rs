@@ -10,6 +10,7 @@ use opentab_model::{
 pub use guitar::{finger_rect, guitar_rects};
 pub use heads::{head_glyph, notehead_glyphs, parenthesis_origins};
 
+use crate::drums::DrumKit;
 use crate::glyphs::Glyph;
 use crate::grid::GridColumn;
 use crate::pitch::Spelling;
@@ -172,6 +173,7 @@ pub struct RowInput<'a> {
     pub clef: ClefSign,
     pub key: KeySignature,
     pub time: TimeSignature,
+    pub kit: Option<&'a DrumKit>,
 }
 
 pub fn staff_geometry(size: Units, policy: StemPolicy) -> RhythmStaff {
@@ -227,7 +229,7 @@ fn widen(reach: &mut Extremes, top: Units, bottom: Units) {
 }
 
 pub fn analyse(input: &RowInput<'_>) -> Option<StaffNotation> {
-    if !drawable(input.track) {
+    if !drawable(input.track) && input.kit.is_none() {
         return None;
     }
     let bar = input.bar?;
@@ -247,7 +249,9 @@ pub fn analyse(input: &RowInput<'_>) -> Option<StaffNotation> {
         lengths.push(beat.duration);
         tremolos.push(beat.effects.tremolo_picking);
     }
-    heads::mark_accidentals(&mut beats, input.key);
+    if input.kit.is_none() {
+        heads::mark_accidentals(&mut beats, input.key);
+    }
     let with_notes = voices_with(&beats, |beat| !beat.heads.is_empty());
     let with_content = voices_with(&beats, |_| true);
     let staff = staff_geometry(STAFF_SPACE, StemPolicy::AwayFromReference);
@@ -273,6 +277,8 @@ pub fn analyse(input: &RowInput<'_>) -> Option<StaffNotation> {
         };
         beat.direction = if timed && shared {
             voice_direction(beat.voice_slot)
+        } else if input.kit.is_some() {
+            StemDirection::Up
         } else {
             direction
         };

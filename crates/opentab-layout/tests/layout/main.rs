@@ -5,6 +5,7 @@ mod marks_beats;
 mod music;
 mod musicxml;
 mod notation;
+mod percussion;
 mod properties;
 mod snapshots;
 mod support;
