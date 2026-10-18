@@ -278,17 +278,33 @@ fn derived_pitch_is_replayed_while_its_inputs_are_unchanged() {
     let doc = Doc {
         track: "<Transpose><Chromatic>0</Chromatic><Octave>-1</Octave></Transpose>".to_string(),
         staff: "<Property name=\"CapoFret\"><Fret>1</Fret></Property>".to_string(),
-        note_properties: "<Property name=\"Midi\"><Number>44</Number></Property>".to_string(),
+        note_properties: "<Property name=\"Midi\"><Number>45</Number></Property>".to_string(),
         ..Doc::default()
     };
     let score = doc.read();
     assert_eq!(
         note_payloads(&score),
         vec![
-            "<Keep parent=\"Properties\" index=\"2\" guard=\"pitch:fretted 5 3;tuning 64 59 55 50 45 40;capo 1;transpose 0 -1\"><Property name=\"Midi\"><Number>44</Number></Property></Keep>"
+            "<Keep parent=\"Properties\" index=\"2\" guard=\"pitch:fretted 5 3;tuning 64 59 55 50 45 40;capo 1;transpose 0 -1\"><Property name=\"Midi\"><Number>45</Number></Property></Keep>"
                 .to_string()
         ]
     );
+}
+
+#[test]
+fn derived_pitch_equal_to_the_computed_one_is_mapped() {
+    let doc = Doc {
+        track: "<Transpose><Chromatic>0</Chromatic><Octave>-1</Octave></Transpose>".to_string(),
+        staff: "<Property name=\"CapoFret\"><Fret>1</Fret></Property>".to_string(),
+        note_properties: concat!(
+            "<Property name=\"Midi\"><Number>44</Number></Property>",
+            "<Property name=\"ConcertPitch\"><Pitch><Step>G</Step><Accidental>#</Accidental><Octave>3</Octave></Pitch></Property>",
+            "<Property name=\"TransposedPitch\"><Pitch><Step>G</Step><Accidental>#</Accidental><Octave>4</Octave></Pitch></Property>"
+        )
+        .to_string(),
+        ..Doc::default()
+    };
+    assert_eq!(note_payloads(&doc.read()), Vec::<String>::new());
 }
 
 #[test]

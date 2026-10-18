@@ -34,6 +34,45 @@ pub(crate) struct ParseFailure {
 }
 
 impl Element {
+    pub fn new(name: &str) -> Element {
+        Element {
+            name: name.to_string(),
+            attributes: Vec::new(),
+            children: Vec::new(),
+        }
+    }
+
+    pub fn leaf(name: &str, text: &str) -> Element {
+        let mut element = Element::new(name);
+        if !text.is_empty() {
+            element.children.push(Node::Text(text.to_string()));
+        }
+        element
+    }
+
+    pub fn property(name: &str, child: Element) -> Element {
+        Element::new("Property")
+            .with_attribute("name", name)
+            .with_child(child)
+    }
+
+    pub fn with_attribute(mut self, name: &str, value: &str) -> Element {
+        self.attributes.push(Attribute {
+            name: name.to_string(),
+            value: value.to_string(),
+        });
+        self
+    }
+
+    pub fn with_child(mut self, child: Element) -> Element {
+        self.children.push(Node::Element(child));
+        self
+    }
+
+    pub fn push(&mut self, child: Element) {
+        self.children.push(Node::Element(child));
+    }
+
     pub fn attribute(&self, name: &str) -> Option<&str> {
         self.attributes
             .iter()

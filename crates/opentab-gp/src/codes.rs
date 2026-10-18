@@ -1,6 +1,6 @@
 use opentab_model::{
-    Clef, Dynamic, Finger, Grace, HarmonicKind, NoteValue, Slide, StrokeDirection, TempoUnit,
-    Vibrato,
+    Accent, Clef, Dynamic, Finger, Grace, HarmonicKind, NoteValue, Slide, StrokeDirection,
+    TempoUnit, Vibrato,
 };
 
 pub(crate) type Table<T> = [(&'static str, T)];
@@ -95,6 +95,19 @@ pub(crate) const MINOR: &str = "Minor";
 pub(crate) const BRUSH_DURATION: &str = "687935489";
 pub(crate) const BRUSH_START_TIME: &str = "687935490";
 pub(crate) const TEMPO_POSITION_GRID: i64 = 3840;
+
+pub(crate) fn accent_bits(accent: Option<Accent>, staccato: bool) -> u32 {
+    let accent = match accent {
+        Some(Accent::Normal) => ACCENT_BIT,
+        Some(Accent::Heavy) => HEAVY_ACCENT_BIT,
+        None => 0,
+    };
+    if staccato {
+        accent | STACCATO_BIT
+    } else {
+        accent
+    }
+}
 
 pub(crate) fn lookup<T: Copy>(table: &Table<T>, text: &str) -> Option<T> {
     let text = text.trim();

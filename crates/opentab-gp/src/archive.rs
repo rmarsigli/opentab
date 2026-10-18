@@ -7,6 +7,25 @@ use crate::error::{GpError, LimitProblem};
 use crate::limits::{MAX_COMPRESSION_RATIO, MAX_ENTRY_SIZE, MAX_TOTAL_SIZE};
 
 pub(crate) const SCORE_ENTRY: &str = "Content/score.gpif";
+const PART_CONFIGURATION: &str = "Content/PartConfiguration";
+const VERSION_ENTRY: &str = "VERSION";
+const VERSION: &[u8] = b"7.0";
+
+pub(crate) fn minimal_container() -> Vec<ContainerEntry> {
+    vec![
+        ContainerEntry::File {
+            name: PART_CONFIGURATION.to_string(),
+            data: Base64Bytes(Vec::new()),
+        },
+        ContainerEntry::Score {
+            name: SCORE_ENTRY.to_string(),
+        },
+        ContainerEntry::File {
+            name: VERSION_ENTRY.to_string(),
+            data: Base64Bytes(VERSION.to_vec()),
+        },
+    ]
+}
 
 pub(crate) struct Archive {
     pub entries: Vec<ContainerEntry>,

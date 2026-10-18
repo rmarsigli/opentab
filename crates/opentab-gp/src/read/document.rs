@@ -1,5 +1,6 @@
 use opentab_model::Score;
 
+use crate::canon::{self, GP_REVISION};
 use crate::dom::Element;
 use crate::error::GpifProblem;
 use crate::location::Location;
@@ -45,6 +46,9 @@ pub(crate) fn read(root: &Element, source_size: usize) -> Result<Score, Fault> {
         "MasterBars" => {
             deferred.master_bars = Some((visit.element, visit.location.clone()));
             Ok(Handled::Mapped(&[]))
+        }
+        GP_REVISION if *visit.element == canon::gp_revision() => {
+            Ok(Handled::Mapped(&["required", "recommended"]))
         }
         name if POOLS.iter().any(|(pool, _, _)| *pool == name) => {
             deferred.pools.push((visit.element, visit.location.clone()));
