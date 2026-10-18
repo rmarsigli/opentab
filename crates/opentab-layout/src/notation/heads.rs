@@ -113,6 +113,8 @@ pub fn new_beat(input: &RowInput<'_>, slot: &BeatSlot, voice_slot: u8, beat: &Be
         dot_ys: Vec::new(),
         ledgers: Vec::new(),
         articulations: Vec::new(),
+        tremolo: None,
+        fingers: Vec::new(),
         ink: None,
     }
 }

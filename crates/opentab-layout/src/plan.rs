@@ -11,12 +11,14 @@ use crate::geometry::{
 };
 use crate::glyphs::{Metrics, NOTEHEAD_BLACK};
 use crate::grid::{Grid, grid};
+use crate::lanes::Band;
 use crate::notation::{ColumnNeed, RowInput, StaffNotation, analyse};
 use crate::options::LayoutError;
 use crate::pitch::written_key;
 use crate::select::{Selection, StaffSpec, model_bar, standard_clef};
 use crate::spacing::{Piece, duration_width, minimum_width, natural_width};
 use crate::structure::{ClefSign, GRACE_ADVANCE, StaffKind};
+use crate::tab::{TabInput, TabNotation, analyse_tab};
 use crate::units::{STAFF_SPACE, Units};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +47,7 @@ pub struct VerticalNeeds {
     pub above_staff: Vec<Units>,
     pub below_staff: Vec<Units>,
     pub below_system: Units,
+    pub bands: Vec<Band>,
 }
 
 pub struct BarInput<'a> {
@@ -57,6 +60,7 @@ pub struct BarInput<'a> {
     pub key: KeySignature,
     pub grid: &'a Grid,
     pub notation: &'a [Option<StaffNotation>],
+    pub tab: &'a [Option<TabNotation>],
 }
 
 pub struct BarPlan {
@@ -76,6 +80,7 @@ pub struct BarPlan {
     pub groups: Vec<GroupId>,
     pub vertical: VerticalNeeds,
     pub notation: Vec<Option<StaffNotation>>,
+    pub tab: Vec<Option<TabNotation>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,8 +250,14 @@ pub fn extents(input: &BarInput<'_>) -> Vec<Extent> {
                 ..ColumnNeed::default()
             };
             let mut graced = false;
-            for staff in input.notation.iter().flatten() {
-                if let Some(found) = staff.columns.get(index) {
+            for staff in input
+                .notation
+                .iter()
+                .flatten()
+                .map(|staff| &staff.columns)
+                .chain(input.tab.iter().flatten().map(|tab| &tab.columns))
+            {
+                if let Some(found) = staff.get(index) {
                     need.lead = need.lead.max(found.lead);
                     need.right = need.right.max(found.right);
                     need.grace_lead = need.grace_lead.max(found.grace_lead);
@@ -271,7 +282,7 @@ pub fn extents(input: &BarInput<'_>) -> Vec<Extent> {
         .collect()
 }
 
-fn gap_between(specs: &[StaffSpec], upper: usize) -> Option<Units> {
+pub fn gap_between(specs: &[StaffSpec], upper: usize) -> Option<Units> {
     let first = specs.get(upper)?;
     let second = specs.get(upper + 1)?;
     Some(if first.source == second.source {
@@ -281,6 +292,17 @@ fn gap_between(specs: &[StaffSpec], upper: usize) -> Option<Units> {
     })
 }
 
+pub fn above_share(specs: &[StaffSpec], row: usize) -> Units {
+    match row.checked_sub(1) {
+        Some(upper) => gap_between(specs, upper).unwrap_or(GROUP_GAP).half(),
+        None => HEADROOM,
+    }
+}
+
+pub fn below_share(specs: &[StaffSpec], row: usize) -> Units {
+    gap_between(specs, row).map_or(FOOTROOM, Units::half)
+}
+
 pub fn vertical_needs(input: &BarInput<'_>) -> VerticalNeeds {
     let specs = &input.selection.specs;
     let mut needs = VerticalNeeds {
@@ -288,16 +310,19 @@ pub fn vertical_needs(input: &BarInput<'_>) -> VerticalNeeds {
         above_staff: vec![Units::ZERO; specs.len()],
         below_staff: vec![Units::ZERO; specs.len()],
         below_system: Units::ZERO,
+        bands: vec![Band::default(); specs.len()],
     };
     for (row, spec) in specs.iter().enumerate() {
+        if let Some(Some(tab)) = input.tab.get(row) {
+            needs.bands[row] = tab.band;
+            let below = tab.bottom - spec.shape.height() + NOTATION_CLEARANCE;
+            needs.below_staff[row] = (below - below_share(specs, row)).max(Units::ZERO);
+        }
         let Some(Some(notation)) = input.notation.get(row) else {
             continue;
         };
-        let above_share = match row.checked_sub(1) {
-            Some(upper) => gap_between(specs, upper).unwrap_or(GROUP_GAP).half(),
-            None => HEADROOM,
-        };
-        let below_share = gap_between(specs, row).map_or(FOOTROOM, Units::half);
+        let above_share = above_share(specs, row);
+        let below_share = below_share(specs, row);
         let above = -notation.top + NOTATION_CLEARANCE;
         let below = notation.bottom - spec.shape.height() + NOTATION_CLEARANCE;
         needs.above_staff[row] = (above - above_share).max(Units::ZERO);
@@ -355,6 +380,43 @@ pub fn notation(
                 clef: *clef,
                 key: key.unwrap_or(master.key_signature),
                 time: master.time_signature,
+            })
+        })
+        .collect()
+}
+
+pub fn tab_notation(
+    score: &Score,
+    selection: &Selection,
+    master: &MasterBar,
+    index: usize,
+    bars: &[Option<&Bar>],
+    grid: &Grid,
+) -> Vec<Option<TabNotation>> {
+    selection
+        .specs
+        .iter()
+        .map(|spec| {
+            if spec.kind != StaffKind::Tab {
+                return None;
+            }
+            let track = score.tracks.get(spec.track)?;
+            let source = selection.sources.get(spec.source).copied()?;
+            let alone = !selection
+                .specs
+                .iter()
+                .any(|other| other.source == spec.source && other.kind == StaffKind::Standard);
+            analyse_tab(&TabInput {
+                track,
+                bar: bars.get(spec.source).copied().flatten(),
+                next: model_bar(score, source, index + 1),
+                slots: grid.slots.get(spec.source).map_or(&[], Vec::as_slice),
+                columns: &grid.columns,
+                per_whole: grid.per_whole,
+                time: master.time_signature,
+                lines: spec.shape.lines,
+                spacing: spec.shape.spacing,
+                alone,
             })
         })
         .collect()
@@ -518,6 +580,7 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
             }
         };
         let notation = notation(score, selection, master, &bars, &clefs, &keys, &grid);
+        let tab = tab_notation(score, selection, master, index, &bars, &grid);
         let input = BarInput {
             score,
             selection,
@@ -528,6 +591,7 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
             key: master.key_signature,
             grid: &grid,
             notation: &notation,
+            tab: &tab,
         };
         let extents = extents(&input);
         let vertical = vertical_needs(&input);
@@ -563,6 +627,7 @@ pub fn plan_bars(score: &Score, selection: &Selection) -> Result<Vec<BarPlan>, L
             groups,
             vertical,
             notation,
+            tab,
         });
     }
     Ok(plans)

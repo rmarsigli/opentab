@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
-use crate::display::{Group, GroupId, Line, Primitive};
+use crate::display::{Font, Group, GroupId, Line, Primitive, TextAnchor, TextRun};
 use crate::glyphs::{Metrics, NOTEHEAD_PARENTHESIS_LEFT, NOTEHEAD_PARENTHESIS_RIGHT};
 use crate::notation::{BeatPlan, StaffNotation, parenthesis_origins, staff_geometry};
 use crate::rhythm::{RhythmCanvas, RhythmStaff, StemPolicy, draw_rhythm, glyph};
 use crate::structure::{BarLayout, StaffLayout};
+use crate::tab::FINGER_EM;
 use crate::ties::TieAnchor;
 use crate::units::{Point, STAFF_SPACE, Units};
 
@@ -84,6 +85,28 @@ fn beat_items(beat: &BeatPlan, x: Units, top: Units, geometry: &RhythmStaff) -> 
     }
     if let Some(rest) = &beat.rest {
         items.push(glyph(rest.glyph, Point { x, y: top + rest.y }, beat.size));
+    }
+    if let Some(tremolo) = &beat.tremolo {
+        items.push(glyph(
+            tremolo.glyph,
+            Point {
+                x: x + tremolo.dx,
+                y: top + tremolo.y,
+            },
+            beat.size,
+        ));
+    }
+    for finger in &beat.fingers {
+        items.push(Primitive::Text(TextRun {
+            origin: Point {
+                x: x + finger.right,
+                y: top + finger.baseline,
+            },
+            text: finger.text.to_string(),
+            font: Font::Text,
+            em: FINGER_EM,
+            anchor: TextAnchor::End,
+        }));
     }
     items
 }

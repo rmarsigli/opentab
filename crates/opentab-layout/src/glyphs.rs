@@ -221,6 +221,34 @@ pub const ARTIC_MARCATO_BELOW: Glyph = Glyph {
     name: "articMarcatoBelow",
     codepoint: '\u{E4AD}',
 };
+pub const TREMOLO_1: Glyph = Glyph {
+    name: "tremolo1",
+    codepoint: '\u{E220}',
+};
+pub const TREMOLO_2: Glyph = Glyph {
+    name: "tremolo2",
+    codepoint: '\u{E221}',
+};
+pub const TREMOLO_3: Glyph = Glyph {
+    name: "tremolo3",
+    codepoint: '\u{E222}',
+};
+pub const ARROWHEAD_BLACK_UP: Glyph = Glyph {
+    name: "arrowheadBlackUp",
+    codepoint: '\u{EB78}',
+};
+pub const ARROWHEAD_BLACK_DOWN: Glyph = Glyph {
+    name: "arrowheadBlackDown",
+    codepoint: '\u{EB7C}',
+};
+pub const WIGGLE_VIBRATO: Glyph = Glyph {
+    name: "wiggleVibrato",
+    codepoint: '\u{EAB0}',
+};
+pub const WIGGLE_VIBRATO_WIDE: Glyph = Glyph {
+    name: "wiggleVibratoWide",
+    codepoint: '\u{EAB1}',
+};
 pub const TIME_SIG_0: Glyph = Glyph {
     name: "timeSig0",
     codepoint: '\u{E080}',
@@ -265,7 +293,7 @@ pub const TIME_SIG_DIGITS: [Glyph; 10] = [
     },
 ];
 
-pub const NAMED: [Glyph; 51] = [
+pub const NAMED: [Glyph; 58] = [
     G_CLEF,
     G_CLEF_8VB,
     F_CLEF,
@@ -317,6 +345,13 @@ pub const NAMED: [Glyph; 51] = [
     ARTIC_STACCATO_BELOW,
     ARTIC_MARCATO_ABOVE,
     ARTIC_MARCATO_BELOW,
+    TREMOLO_1,
+    TREMOLO_2,
+    TREMOLO_3,
+    ARROWHEAD_BLACK_UP,
+    ARROWHEAD_BLACK_DOWN,
+    WIGGLE_VIBRATO,
+    WIGGLE_VIBRATO_WIDE,
 ];
 
 pub const TUPLET_DIGITS: [Glyph; 10] = [

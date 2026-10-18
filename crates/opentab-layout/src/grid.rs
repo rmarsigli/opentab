@@ -43,7 +43,7 @@ fn lcm(a: i128, b: i128) -> Option<i128> {
     (a / divisor).checked_mul(b)
 }
 
-fn ticks(length: Fraction, per_whole: i128) -> Option<i128> {
+pub fn ticks(length: Fraction, per_whole: i128) -> Option<i128> {
     let denominator = i128::from(*length.denom());
     if denominator <= 0 {
         return None;

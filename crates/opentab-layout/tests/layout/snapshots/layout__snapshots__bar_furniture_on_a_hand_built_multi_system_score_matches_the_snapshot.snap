@@ -216,22 +216,114 @@ group 5
     glyph U+E06D 13658,29291 size 1016
     glyph U+E084 17484,28267 size 1024
     glyph U+E084 17484,30315 size 1024
+    group 32
+      group 31
+        rect 21526,27862 22596,29184 White
+        text "0" 22061,29013 em 1536 Middle Text
   group 43
     line 26629,25451 26629,33131 thick 512
     line 27377,25451 27377,33131 thick 164
     glyph U+E044 27623,27755 size 1024
     glyph U+E044 27623,30827 size 1024
     line 48147,25451 48147,33131 thick 164
+    group 36
+      group 35
+        rect 29126,27862 30196,29184 White
+        text "0" 29661,29013 em 1536 Middle Text
+    group 38
+      group 37
+        rect 33878,27862 34948,29184 White
+        text "0" 34413,29013 em 1536 Middle Text
+    group 40
+      group 39
+        rect 38630,27862 39700,29184 White
+        text "0" 39165,29013 em 1536 Middle Text
+    group 42
+      group 41
+        rect 43382,27862 44452,29184 White
+        text "0" 43917,29013 em 1536 Middle Text
   group 76
     line 92021,25451 92021,33131 thick 512
     line 91273,25451 91273,33131 thick 164
     glyph U+E044 90617,27755 size 1024
     glyph U+E044 90617,30827 size 1024
+    group 46
+      group 45
+        rect 49256,28014 50096,29032 White
+        text "0" 49676,28865 em 1074 Middle Text
+    group 48
+      group 47
+        rect 51256,27862 52326,29184 White
+        text "0" 51791,29013 em 1536 Middle Text
+    group 50
+      group 49
+        rect 70971,27862 72041,29184 White
+        text "0" 71506,29013 em 1536 Middle Text
+    group 53
+      group 52
+        rect 52530,27862 53600,29184 White
+        text "0" 53065,29013 em 1536 Middle Text
+    group 55
+      group 54
+        rect 54635,27862 55705,29184 White
+        text "0" 55170,29013 em 1536 Middle Text
+    group 57
+      group 56
+        rect 57903,27862 58973,29184 White
+        text "0" 58438,29013 em 1536 Middle Text
+    group 59
+      group 58
+        rect 61170,27862 62240,29184 White
+        text "0" 61705,29013 em 1536 Middle Text
+    group 61
+      group 60
+        rect 64437,27862 65507,29184 White
+        text "0" 64972,29013 em 1536 Middle Text
+    group 63
+      group 62
+        rect 67704,27862 68774,29184 White
+        text "0" 68239,29013 em 1536 Middle Text
+    group 65
+      group 64
+        rect 72245,27862 73315,29184 White
+        text "0" 72780,29013 em 1536 Middle Text
+    group 67
+      group 66
+        rect 74350,27862 75420,29184 White
+        text "0" 74885,29013 em 1536 Middle Text
+    group 69
+      group 68
+        rect 77617,27862 78687,29184 White
+        text "0" 78152,29013 em 1536 Middle Text
+    group 71
+      group 70
+        rect 80884,27862 81954,29184 White
+        text "0" 81419,29013 em 1536 Middle Text
+    group 73
+      group 72
+        rect 84152,27862 85222,29184 White
+        text "0" 84687,29013 em 1536 Middle Text
+    group 75
+      group 74
+        rect 87419,27862 88489,29184 White
+        text "0" 87954,29013 em 1536 Middle Text
   group 77
     line 97685,25451 97685,33131 thick 164
     line 97111,25451 97111,33131 thick 164
   group 85
     line 114021,25451 114021,33131 thick 164
+    group 80
+      group 79
+        rect 98860,27862 99930,29184 White
+        text "0" 99395,29013 em 1536 Middle Text
+    group 82
+      group 81
+        rect 104206,27862 105276,29184 White
+        text "0" 104741,29013 em 1536 Middle Text
+    group 84
+      group 83
+        rect 108067,27862 109137,29184 White
+        text "0" 108602,29013 em 1536 Middle Text
 group 310
   line 13146,40299 114103,40299 thick 133
   line 13146,41323 114103,41323 thick 133
@@ -480,12 +572,100 @@ group 5
   group 95
     glyph U+E06D 10313,90201 size 1016
     line 39779,86361 39779,94041 thick 164
+    group 88
+      group 87
+        rect 20472,88772 21542,90094 White
+        text "0" 21007,89923 em 1536 Middle Text
+    group 90
+      group 89
+        rect 25295,88772 26365,90094 White
+        text "0" 25830,89923 em 1536 Middle Text
+    group 92
+      group 91
+        rect 30119,88772 31189,90094 White
+        text "0" 30654,89923 em 1536 Middle Text
+    group 94
+      group 93
+        rect 34943,88772 36013,90094 White
+        text "0" 35478,89923 em 1536 Middle Text
   group 128
     line 82921,86361 82921,94041 thick 164
+    group 98
+      group 97
+        rect 40888,88924 41728,89942 White
+        text "0" 41308,89775 em 1074 Middle Text
+    group 100
+      group 99
+        rect 42888,88772 43958,90094 White
+        text "0" 43423,89923 em 1536 Middle Text
+    group 102
+      group 101
+        rect 62898,88772 63968,90094 White
+        text "0" 63433,89923 em 1536 Middle Text
+    group 105
+      group 104
+        rect 44162,88772 45232,90094 White
+        text "0" 44697,89923 em 1536 Middle Text
+    group 107
+      group 106
+        rect 46317,88772 47387,90094 White
+        text "0" 46852,89923 em 1536 Middle Text
+    group 109
+      group 108
+        rect 49633,88772 50703,90094 White
+        text "0" 50168,89923 em 1536 Middle Text
+    group 111
+      group 110
+        rect 52949,88772 54019,90094 White
+        text "0" 53484,89923 em 1536 Middle Text
+    group 113
+      group 112
+        rect 56266,88772 57336,90094 White
+        text "0" 56801,89923 em 1536 Middle Text
+    group 115
+      group 114
+        rect 59582,88772 60652,90094 White
+        text "0" 60117,89923 em 1536 Middle Text
+    group 117
+      group 116
+        rect 64172,88772 65242,90094 White
+        text "0" 64707,89923 em 1536 Middle Text
+    group 119
+      group 118
+        rect 66327,88772 67397,90094 White
+        text "0" 66862,89923 em 1536 Middle Text
+    group 121
+      group 120
+        rect 69643,88772 70713,90094 White
+        text "0" 70178,89923 em 1536 Middle Text
+    group 123
+      group 122
+        rect 72959,88772 74029,90094 White
+        text "0" 73494,89923 em 1536 Middle Text
+    group 125
+      group 124
+        rect 76276,88772 77346,90094 White
+        text "0" 76811,89923 em 1536 Middle Text
+    group 127
+      group 126
+        rect 79592,88772 80662,90094 White
+        text "0" 80127,89923 em 1536 Middle Text
   group 129
     line 92709,86361 92709,94041 thick 164
   group 137
     line 114021,86361 114021,94041 thick 164
+    group 132
+      group 131
+        rect 98632,88772 99702,90094 White
+        text "0" 99167,89923 em 1536 Middle Text
+    group 134
+      group 133
+        rect 104059,88772 105129,90094 White
+        text "0" 104594,89923 em 1536 Middle Text
+    group 136
+      group 135
+        rect 107978,88772 109048,90094 White
+        text "0" 108513,89923 em 1536 Middle Text
 group 310
   line 9801,101209 114103,101209 thick 133
   line 9801,102233 114103,102233 thick 133
@@ -703,22 +883,74 @@ group 5
     glyph U+E083 14240,25929 size 1024
     glyph U+E084 14139,27977 size 1024
     line 29217,23113 29217,30793 thick 164
+    group 140
+      group 139
+        rect 18181,25524 19251,26846 White
+        text "0" 18716,26675 em 1536 Middle Text
+    group 142
+      group 141
+        rect 24305,25524 25375,26846 White
+        text "0" 24840,26675 em 1536 Middle Text
   group 153
     glyph U+E081 29811,25929 size 1024
     glyph U+E082 31179,25929 size 1024
     glyph U+E088 30516,27977 size 1024
     line 57184,23113 57184,30793 thick 164
+    group 146
+      group 145
+        rect 35123,25524 36193,26846 White
+        text "0" 35658,26675 em 1536 Middle Text
+    group 148
+      group 147
+        rect 40635,25524 41705,26846 White
+        text "0" 41170,26675 em 1536 Middle Text
+    group 150
+      group 149
+        rect 46147,25524 47217,26846 White
+        text "0" 46682,26675 em 1536 Middle Text
+    group 152
+      group 151
+        rect 51659,25524 52729,26846 White
+        text "0" 52194,26675 em 1536 Middle Text
   group 154
     glyph U+E084 57778,25929 size 1024
     glyph U+E084 57778,27977 size 1024
     line 65709,23113 65709,30793 thick 164
   group 162
+    group 157
+      group 156
+        rect 75052,25524 76122,26846 White
+        text "0" 75587,26675 em 1536 Middle Text
+    group 159
+      group 158
+        rect 80564,25524 81634,26846 White
+        text "0" 81099,26675 em 1536 Middle Text
+    group 161
+      group 160
+        rect 84545,25524 85615,26846 White
+        text "0" 85080,26675 em 1536 Middle Text
   group 172
     line 91020,23113 91020,30793 thick 512
     line 91768,23113 91768,30793 thick 164
     glyph U+E044 92014,25417 size 1024
     glyph U+E044 92014,28489 size 1024
     line 114021,23113 114021,30793 thick 164
+    group 165
+      group 164
+        rect 94409,25524 95479,26846 White
+        text "0" 94944,26675 em 1536 Middle Text
+    group 167
+      group 166
+        rect 99309,25524 100379,26846 White
+        text "0" 99844,26675 em 1536 Middle Text
+    group 169
+      group 168
+        rect 104208,25524 105278,26846 White
+        text "0" 104743,26675 em 1536 Middle Text
+    group 171
+      group 170
+        rect 109108,25524 110178,26846 White
+        text "0" 109643,26675 em 1536 Middle Text
 group 310
   line 9801,37961 114103,37961 thick 133
   line 9801,38985 114103,38985 thick 133
@@ -965,6 +1197,66 @@ group 5
     line 66652,83819 66652,91499 thick 164
     glyph U+E044 65996,86123 size 1024
     glyph U+E044 65996,89195 size 1024
+    group 175
+      group 174
+        rect 22554,86382 23394,87400 White
+        text "0" 22974,87233 em 1074 Middle Text
+    group 177
+      group 176
+        rect 24554,86230 25624,87552 White
+        text "0" 25089,87381 em 1536 Middle Text
+    group 179
+      group 178
+        rect 45309,86230 46379,87552 White
+        text "0" 45844,87381 em 1536 Middle Text
+    group 182
+      group 181
+        rect 25828,86230 26898,87552 White
+        text "0" 26363,87381 em 1536 Middle Text
+    group 184
+      group 183
+        rect 28106,86230 29176,87552 White
+        text "0" 28641,87381 em 1536 Middle Text
+    group 186
+      group 185
+        rect 31547,86230 32617,87552 White
+        text "0" 32082,87381 em 1536 Middle Text
+    group 188
+      group 187
+        rect 34987,86230 36057,87552 White
+        text "0" 35522,87381 em 1536 Middle Text
+    group 190
+      group 189
+        rect 38428,86230 39498,87552 White
+        text "0" 38963,87381 em 1536 Middle Text
+    group 192
+      group 191
+        rect 41869,86230 42939,87552 White
+        text "0" 42404,87381 em 1536 Middle Text
+    group 194
+      group 193
+        rect 46583,86230 47653,87552 White
+        text "0" 47118,87381 em 1536 Middle Text
+    group 196
+      group 195
+        rect 48862,86230 49932,87552 White
+        text "0" 49397,87381 em 1536 Middle Text
+    group 198
+      group 197
+        rect 52302,86230 53372,87552 White
+        text "0" 52837,87381 em 1536 Middle Text
+    group 200
+      group 199
+        rect 55743,86230 56813,87552 White
+        text "0" 56278,87381 em 1536 Middle Text
+    group 202
+      group 201
+        rect 59184,86230 60254,87552 White
+        text "0" 59719,87381 em 1536 Middle Text
+    group 204
+      group 203
+        rect 62624,86230 63694,87552 White
+        text "0" 63159,87381 em 1536 Middle Text
   group 206
     line 68148,83819 68148,91499 thick 164
     glyph U+E044 68394,86123 size 1024
@@ -972,8 +1264,36 @@ group 5
     line 73890,83819 73890,91499 thick 164
   group 214
     line 91922,83819 91922,91499 thick 164
+    group 209
+      group 208
+        rect 75957,86230 77027,87552 White
+        text "0" 76492,87381 em 1536 Middle Text
+    group 211
+      group 210
+        rect 81588,86230 82658,87552 White
+        text "0" 82123,87381 em 1536 Middle Text
+    group 213
+      group 212
+        rect 85654,86230 86724,87552 White
+        text "0" 86189,87381 em 1536 Middle Text
   group 224
     line 114021,83819 114021,91499 thick 164
+    group 217
+      group 216
+        rect 93989,86230 95059,87552 White
+        text "0" 94524,87381 em 1536 Middle Text
+    group 219
+      group 218
+        rect 98994,86230 100064,87552 White
+        text "0" 99529,87381 em 1536 Middle Text
+    group 221
+      group 220
+        rect 103998,86230 105068,87552 White
+        text "0" 104533,87381 em 1536 Middle Text
+    group 223
+      group 222
+        rect 109003,86230 110073,87552 White
+        text "0" 109538,87381 em 1536 Middle Text
 group 310
   line 9801,98667 114103,98667 thick 133
   line 9801,99691 114103,99691 thick 133
@@ -1231,12 +1551,100 @@ group 5
   group 257
     glyph U+E06D 10313,29291 size 1016
     line 67405,25451 67405,33131 thick 164
+    group 227
+      group 226
+        rect 22554,28014 23394,29032 White
+        text "0" 22974,28865 em 1074 Middle Text
+    group 229
+      group 228
+        rect 24554,27862 25624,29184 White
+        text "0" 25089,29013 em 1536 Middle Text
+    group 231
+      group 230
+        rect 45973,27862 47043,29184 White
+        text "0" 46508,29013 em 1536 Middle Text
+    group 234
+      group 233
+        rect 25828,27862 26898,29184 White
+        text "0" 26363,29013 em 1536 Middle Text
+    group 236
+      group 235
+        rect 28217,27862 29287,29184 White
+        text "0" 28752,29013 em 1536 Middle Text
+    group 238
+      group 237
+        rect 31768,27862 32838,29184 White
+        text "0" 32303,29013 em 1536 Middle Text
+    group 240
+      group 239
+        rect 35319,27862 36389,29184 White
+        text "0" 35854,29013 em 1536 Middle Text
+    group 242
+      group 241
+        rect 38870,27862 39940,29184 White
+        text "0" 39405,29013 em 1536 Middle Text
+    group 244
+      group 243
+        rect 42422,27862 43492,29184 White
+        text "0" 42957,29013 em 1536 Middle Text
+    group 246
+      group 245
+        rect 47247,27862 48317,29184 White
+        text "0" 47782,29013 em 1536 Middle Text
+    group 248
+      group 247
+        rect 49636,27862 50706,29184 White
+        text "0" 50171,29013 em 1536 Middle Text
+    group 250
+      group 249
+        rect 53187,27862 54257,29184 White
+        text "0" 53722,29013 em 1536 Middle Text
+    group 252
+      group 251
+        rect 56738,27862 57808,29184 White
+        text "0" 57273,29013 em 1536 Middle Text
+    group 254
+      group 253
+        rect 60290,27862 61360,29184 White
+        text "0" 60825,29013 em 1536 Middle Text
+    group 256
+      group 255
+        rect 63841,27862 64911,29184 White
+        text "0" 64376,29013 em 1536 Middle Text
   group 258
     line 72734,25451 72734,33131 thick 164
   group 266
     line 91279,25451 91279,33131 thick 164
+    group 261
+      group 260
+        rect 74801,27862 75871,29184 White
+        text "0" 75336,29013 em 1536 Middle Text
+    group 263
+      group 262
+        rect 80612,27862 81682,29184 White
+        text "0" 81147,29013 em 1536 Middle Text
+    group 265
+      group 264
+        rect 84809,27862 85879,29184 White
+        text "0" 85344,29013 em 1536 Middle Text
   group 276
     line 114021,25451 114021,33131 thick 164
+    group 269
+      group 268
+        rect 93346,27862 94416,29184 White
+        text "0" 93881,29013 em 1536 Middle Text
+    group 271
+      group 270
+        rect 98511,27862 99581,29184 White
+        text "0" 99046,29013 em 1536 Middle Text
+    group 273
+      group 272
+        rect 103677,27862 104747,29184 White
+        text "0" 104212,29013 em 1536 Middle Text
+    group 275
+      group 274
+        rect 108842,27862 109912,29184 White
+        text "0" 109377,29013 em 1536 Middle Text
 group 310
   line 9801,40299 114103,40299 thick 133
   line 9801,41323 114103,41323 thick 133
@@ -1402,6 +1810,66 @@ group 5
     glyph U+E06D 10313,89997 size 1016
     line 84224,86157 84224,93837 thick 512
     line 83476,86157 83476,93837 thick 164
+    group 279
+      group 278
+        rect 22554,88720 23394,89738 White
+        text "0" 22974,89571 em 1074 Middle Text
+    group 281
+      group 280
+        rect 24554,88568 25624,89890 White
+        text "0" 25089,89719 em 1536 Middle Text
+    group 283
+      group 282
+        rect 54008,88568 55078,89890 White
+        text "0" 54543,89719 em 1536 Middle Text
+    group 286
+      group 285
+        rect 25828,88568 26898,89890 White
+        text "0" 26363,89719 em 1536 Middle Text
+    group 288
+      group 287
+        rect 29556,88568 30626,89890 White
+        text "0" 30091,89719 em 1536 Middle Text
+    group 290
+      group 289
+        rect 34446,88568 35516,89890 White
+        text "0" 34981,89719 em 1536 Middle Text
+    group 292
+      group 291
+        rect 39337,88568 40407,89890 White
+        text "0" 39872,89719 em 1536 Middle Text
+    group 294
+      group 293
+        rect 44227,88568 45297,89890 White
+        text "0" 44762,89719 em 1536 Middle Text
+    group 296
+      group 295
+        rect 49118,88568 50188,89890 White
+        text "0" 49653,89719 em 1536 Middle Text
+    group 298
+      group 297
+        rect 55282,88568 56352,89890 White
+        text "0" 55817,89719 em 1536 Middle Text
+    group 300
+      group 299
+        rect 59010,88568 60080,89890 White
+        text "0" 59545,89719 em 1536 Middle Text
+    group 302
+      group 301
+        rect 63901,88568 64971,89890 White
+        text "0" 64436,89719 em 1536 Middle Text
+    group 304
+      group 303
+        rect 68791,88568 69861,89890 White
+        text "0" 69326,89719 em 1536 Middle Text
+    group 306
+      group 305
+        rect 73682,88568 74752,89890 White
+        text "0" 74217,89719 em 1536 Middle Text
+    group 308
+      group 307
+        rect 78572,88568 79642,89890 White
+        text "0" 79107,89719 em 1536 Middle Text
 group 310
   line 9801,101005 84480,101005 thick 133
   line 9801,102029 84480,102029 thick 133

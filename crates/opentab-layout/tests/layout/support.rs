@@ -174,6 +174,16 @@ pub fn texts(page: &Page) -> Vec<String> {
         .collect()
 }
 
+pub fn system_texts(page: &Page) -> Vec<String> {
+    page.items
+        .iter()
+        .filter_map(|item| match item {
+            Primitive::Text(run) => Some(run.text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 pub fn content(page: &Page) -> Rect {
     let margin = page.units(MARGIN);
     Rect::new(

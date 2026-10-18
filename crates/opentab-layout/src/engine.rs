@@ -6,11 +6,12 @@ use crate::display::{DisplayList, Page, PageSize, StaffSpace};
 use crate::draw::{Context, draw_system, labels};
 use crate::geometry::{
     BRACKET_GAP, FIT_ATTEMPTS, FOOTROOM, GROUP_GAP, HEADROOM, MARGIN, MIN_STAFF_SPACE, NAME_EM,
-    NAME_GAP, STAFF_GAP,
+    NAME_GAP, NOTATION_CLEARANCE, STAFF_GAP,
 };
 use crate::glyphs::Metrics;
+use crate::lanes::{Band, BandLayout};
 use crate::options::{LayoutError, LayoutOptions};
-use crate::plan::{BarPlan, SystemPlan, VerticalNeeds, break_systems, plan_bars};
+use crate::plan::{BarPlan, SystemPlan, VerticalNeeds, above_share, break_systems, plan_bars};
 use crate::select::{StaffSpec, select};
 use crate::text::text_font;
 use crate::units::{Micrometres, STAFF_SPACE, Units};
@@ -19,6 +20,7 @@ use crate::units::{Micrometres, STAFF_SPACE, Units};
 pub struct Stack {
     pub tops: Vec<Units>,
     pub height: Units,
+    pub bands: Vec<BandLayout>,
 }
 
 pub struct Frame {
@@ -235,6 +237,7 @@ pub fn stack<'a>(specs: &[StaffSpec], needs: impl Iterator<Item = &'a VerticalNe
     let mut below_system = Units::ZERO;
     let mut above_staff = vec![Units::ZERO; specs.len()];
     let mut below_staff = vec![Units::ZERO; specs.len()];
+    let mut bands = vec![Band::default(); specs.len()];
     for need in needs {
         above_system = above_system.max(need.above_system);
         below_system = below_system.max(need.below_system);
@@ -243,6 +246,16 @@ pub fn stack<'a>(specs: &[StaffSpec], needs: impl Iterator<Item = &'a VerticalNe
         }
         for (slot, extra) in below_staff.iter_mut().zip(&need.below_staff) {
             *slot = (*slot).max(*extra);
+        }
+        for (slot, band) in bands.iter_mut().zip(&need.bands) {
+            *slot = slot.merge(*band);
+        }
+    }
+    let bands: Vec<BandLayout> = bands.into_iter().map(BandLayout::of).collect();
+    for (row, (slot, band)) in above_staff.iter_mut().zip(&bands).enumerate() {
+        if band.reach > Units::ZERO {
+            let extra = band.reach + NOTATION_CLEARANCE - above_share(specs, row);
+            *slot = (*slot).max(extra);
         }
     }
     let mut tops = Vec::with_capacity(specs.len());
@@ -264,6 +277,7 @@ pub fn stack<'a>(specs: &[StaffSpec], needs: impl Iterator<Item = &'a VerticalNe
     Stack {
         tops,
         height: cursor + FOOTROOM + below_system,
+        bands,
     }
 }
 
@@ -354,12 +368,14 @@ mod tests {
                 above_staff: vec![Units(0), Units(500), Units(0)],
                 below_staff: vec![Units(0), Units(0), Units(0)],
                 below_system: Units(0),
+                bands: Vec::new(),
             },
             VerticalNeeds {
                 above_system: Units(300),
                 above_staff: vec![Units(0), Units(200), Units(50)],
                 below_staff: vec![Units(0), Units(300), Units(100)],
                 below_system: Units(700),
+                bands: Vec::new(),
             },
         ];
         let grown = stack(&specs, needs.iter());

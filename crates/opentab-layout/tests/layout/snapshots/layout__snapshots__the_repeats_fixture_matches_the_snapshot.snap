@@ -109,27 +109,55 @@ group 9
     glyph U+E044 17260,25417 size 1024
     glyph U+E044 17260,28489 size 1024
     line 28127,23113 28127,30793 thick 164
+    group 13
+      group 14
+        rect 18763,25524 19833,26846 White
+        text "0" 19298,26675 em 1536 Middle Text
   group 15
     line 41213,23113 41213,30793 thick 512
     line 40465,23113 40465,30793 thick 164
     glyph U+E044 39809,25417 size 1024
     glyph U+E044 39809,28489 size 1024
+    group 17
+      group 18
+        rect 30526,25524 31596,26846 White
+        text "1" 31061,26675 em 1536 Middle Text
   group 19
     line 41961,23113 41961,30793 thick 164
     glyph U+E044 42207,25417 size 1024
     glyph U+E044 42207,28489 size 1024
     line 53074,23113 53074,30793 thick 164
+    group 21
+      group 22
+        rect 43710,25524 44780,26846 White
+        text "2" 44245,26675 em 1536 Middle Text
   group 23
     line 66160,23113 66160,30793 thick 512
     line 65412,23113 65412,30793 thick 164
     glyph U+E044 64756,25417 size 1024
     glyph U+E044 64756,28489 size 1024
+    group 25
+      group 26
+        rect 55473,25524 56543,26846 White
+        text "3" 56008,26675 em 1536 Middle Text
   group 27
     line 77448,23113 77448,30793 thick 164
     line 76874,23113 76874,30793 thick 164
+    group 29
+      group 30
+        rect 67509,25524 68579,26846 White
+        text "4" 68044,26675 em 1536 Middle Text
   group 31
     line 87987,23113 87987,30793 thick 164
+    group 33
+      group 34
+        rect 78623,25524 79693,26846 White
+        text "5" 79158,26675 em 1536 Middle Text
   group 35
+    group 37
+      group 38
+        rect 90386,25524 91456,26846 White
+        text "6" 90921,26675 em 1536 Middle Text
   group 39
     line 100663,23113 100663,30793 thick 512
     line 101411,23113 101411,30793 thick 164
@@ -139,6 +167,10 @@ group 9
     line 113099,23113 113099,30793 thick 164
     glyph U+E044 112443,25417 size 1024
     glyph U+E044 112443,28489 size 1024
+    group 41
+      group 42
+        rect 103160,25524 104230,26846 White
+        text "7" 103695,26675 em 1536 Middle Text
 line 8859,12873 8859,30793 thick 164
 line 53156,9801 66160,9801 thick 164
 line 53156,9801 53156,11337 thick 164
