@@ -1,6 +1,5 @@
 ---
 source: crates/opentab-layout/tests/layout/marks_beats.rs
-assertion_line: 399
 expression: dump(&list)
 ---
 page 0 staff space 1750 um
@@ -104,6 +103,8 @@ group 5
         rect 65905,27251 66975,28573 White
         text "5" 66440,28402 em 1536 Middle Text
 line 8859,12873 8859,32520 thick 164
+glyph U+ECA5 16010,11803 size 614
+text "= 120" 17185,12150 em 1433 Start Text
 glyph U+E520 17071,20580 size 1024
 glyph U+E522 30785,20580 size 1024
 glyph U+E52D 51201,20580 size 1024

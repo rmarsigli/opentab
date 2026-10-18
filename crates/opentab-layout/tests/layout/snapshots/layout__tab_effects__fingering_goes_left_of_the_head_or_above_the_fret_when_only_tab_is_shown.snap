@@ -91,3 +91,5 @@ group 5
       rect 64849,15012 65500,15792 White
       text "T" 65398,15792 em 1024 End Text
       line 66035,21577 66035,25161 thick 123
+glyph U+ECA5 14920,11142 size 614
+text "= 120" 16095,11489 em 1433 Start Text

@@ -10,8 +10,8 @@ use opentab_model::{Bar, Beat, Dynamic, Marker, MasterBar};
 pub use draw::{MarkOutput, Request, Slot, SystemMarks, draw_marks, place};
 pub use fit::{ELLIPSIS, Fitted, ascent, clean, descent, fit_line, ink, line_height, wrap};
 pub use tempo::{
-    MarkAnchor, Moment, PendingTempo, TempoMark, bpm_text, nearest_column, plan_tempos, resolve,
-    unit_glyph,
+    DEFAULT_BPM, MarkAnchor, Moment, PendingTempo, TempoMark, bpm_text, default_tempo,
+    nearest_column, plan_tempos, resolve, unit_glyph,
 };
 pub use title::{
     ALBUM_EM, ARTIST_EM, BLOCK_GAP, CREDIT_EM, Frame, SUBTITLE_EM, SUBTITLE_LINES, TITLE_EM,

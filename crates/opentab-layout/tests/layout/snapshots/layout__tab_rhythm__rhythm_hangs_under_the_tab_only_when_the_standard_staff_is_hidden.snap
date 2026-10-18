@@ -44,3 +44,5 @@ group 5
       group 19
         rect 44411,13748 45481,15070 White
         text "0" 44946,14899 em 1536 Middle Text
+glyph U+ECA5 14920,11803 size 614
+text "= 120" 16095,12150 em 1433 Start Text

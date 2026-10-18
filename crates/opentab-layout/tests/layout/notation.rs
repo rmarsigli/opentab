@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use opentab_layout::marks::tempo_lane_height;
 use opentab_layout::rhythm::CUE_SIZE;
 use opentab_layout::{
     DisplayList, GroupId, PathSegment, PathStyle, Primitive, STAFF_SPACE, StaffKind, StaffMode,
@@ -447,7 +448,7 @@ fn notes_six_ledger_lines_out_get_their_lines_and_push_the_system_open() {
     let near_gap = near_system.staves[1].top - near_system.staves[0].bottom();
     assert!(gap > near_gap + Units(STAFF_SPACE.0 * 2));
     assert!(high.origin.y - Units(STAFF_SPACE.0 / 2) > far_system.rect.min.y);
-    assert!(lift <= near_lift + Units(STAFF_SPACE.0 * 4));
+    assert!(lift <= near_lift + Units(STAFF_SPACE.0 * 4) + tempo_lane_height());
 }
 
 fn focused(score: &Score) -> String {
