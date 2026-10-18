@@ -7,7 +7,6 @@ use crate::support::{duration, fixture, guitar_voice, payload};
 #[test]
 fn insert_beat_adds_a_rest_with_a_fresh_id() {
     let mut fx = fixture();
-    let before_ids = fx.score.ids.clone();
     let fresh = BeatId(fx.score.ids.peek());
     let triplet = Duration::new(NoteValue::Eighth, 1, Some(Tuplet { num: 3, den: 2 })).unwrap();
     let command = Command::InsertBeat {
@@ -16,13 +15,7 @@ fn insert_beat_adds_a_rest_with_a_fresh_id() {
         duration: triplet,
     };
     let inverse = round_trip(&mut fx.score, &command);
-    assert_eq!(
-        inverse,
-        Command::RestoreIds {
-            ids: before_ids,
-            then: Box::new(Command::RemoveBeat { beat: fresh }),
-        }
-    );
+    assert_eq!(inverse, Command::RemoveBeat { beat: fresh });
     apply(&mut fx.score, &command).unwrap();
     let voice = guitar_voice(&fx.score, 0);
     assert_eq!(voice.beats.len(), 5);

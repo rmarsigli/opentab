@@ -67,7 +67,6 @@ pub(crate) fn insert(
         .and_then(|ids| ids.checked_add(1))
         .ok_or_else(|| CommandError::invalid("too many staves to allocate ids for"))?;
     reserve(score, needed)?;
-    let before = score.ids.clone();
     let key_signature = index
         .checked_sub(1)
         .and_then(|previous| score.master_bars.get(previous))
@@ -94,10 +93,7 @@ pub(crate) fn insert(
         };
         staff.bars.insert(index, bar);
     }
-    Ok(Command::RestoreIds {
-        ids: before,
-        then: Box::new(Command::RemoveMasterBar { index }),
-    })
+    Ok(Command::RemoveMasterBar { index })
 }
 
 pub(crate) fn remove(score: &mut Score, index: usize) -> Result<Command, CommandError> {

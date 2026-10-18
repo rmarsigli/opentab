@@ -119,11 +119,7 @@ fn restore_commands_have_the_documented_json_shape() {
     )
     .unwrap();
     let fresh = ids.peek().0;
-    shape(
-        &inverse,
-        json!({"op": "restore_ids", "ids": {"next": fresh},
-               "then": {"op": "remove_note", "note": fresh}}),
-    );
+    shape(&inverse, json!({"op": "remove_note", "note": fresh}));
     let tempo = apply(
         &mut fx.score,
         &Command::SetTempo {

@@ -42,7 +42,6 @@ pub(crate) fn insert(
     reserve(score, 1)?;
     let Score { tracks, ids, .. } = score;
     let target = voice_in(tracks, path).ok_or(not_found(VOICE, voice))?;
-    let before = ids.clone();
     let id = BeatId(ids.next());
     target.beats.insert(
         index,
@@ -53,10 +52,7 @@ pub(crate) fn insert(
             effects: BeatEffects::default(),
         },
     );
-    Ok(Command::RestoreIds {
-        ids: before,
-        then: Box::new(Command::RemoveBeat { beat: id }),
-    })
+    Ok(Command::RemoveBeat { beat: id })
 }
 
 pub(crate) fn remove(score: &mut Score, beat: BeatId) -> Result<Command, CommandError> {

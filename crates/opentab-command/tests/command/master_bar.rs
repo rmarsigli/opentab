@@ -12,19 +12,12 @@ fn three_four() -> TimeSignature {
 fn insert_master_bar_adds_an_empty_bar_to_every_staff() {
     let mut fx = fixture();
     let first_id = fx.score.ids.peek().0;
-    let before_ids = fx.score.ids.clone();
     let command = Command::InsertMasterBar {
         index: 1,
         time_signature: three_four(),
     };
     let inverse = round_trip(&mut fx.score, &command);
-    assert_eq!(
-        inverse,
-        Command::RestoreIds {
-            ids: before_ids,
-            then: Box::new(Command::RemoveMasterBar { index: 1 }),
-        }
-    );
+    assert_eq!(inverse, Command::RemoveMasterBar { index: 1 });
     apply(&mut fx.score, &command).unwrap();
     let inserted = &fx.score.master_bars[1];
     assert_eq!(inserted.id.0, ElementId(first_id));

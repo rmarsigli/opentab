@@ -1,7 +1,7 @@
-use opentab_command::{Command, History, MetaField};
+use opentab_command::{Command, CommandError, History, MetaField};
 use opentab_model::{BeatId, ElementId, NoteValue};
 
-use crate::support::{duration, fixture, guitar_voice};
+use crate::support::{duration, fixture, four_four, guitar_voice};
 
 fn title(value: &str) -> Command {
     Command::SetMeta {
@@ -107,17 +107,95 @@ fn redo_reuses_the_ids_of_the_first_execution() {
 }
 
 #[test]
-fn an_undone_insert_frees_its_ids_for_the_next_edit() {
+fn undone_ids_are_never_handed_out_again() {
     let mut fx = fixture();
     let mut history = History::new();
-    let insert = Command::InsertBeat {
-        voice: fx.voice,
-        index: 0,
-        duration: duration(NoteValue::Eighth),
-    };
-    history.execute(&mut fx.score, insert.clone()).unwrap();
-    let first = guitar_voice(&fx.score, 0).beats[0].id;
+    history
+        .execute(
+            &mut fx.score,
+            Command::InsertBeat {
+                voice: fx.voice,
+                index: 0,
+                duration: duration(NoteValue::Eighth),
+            },
+        )
+        .unwrap();
+    let undone = guitar_voice(&fx.score, 0).beats[0].id;
+    history
+        .execute(
+            &mut fx.score,
+            Command::AddNote {
+                beat: undone,
+                string: 1,
+                fret: 2,
+            },
+        )
+        .unwrap();
+    let undone_note = guitar_voice(&fx.score, 0).beats[0].notes[0].id;
+    let undone_ids = [ElementId::from(undone), ElementId::from(undone_note)];
     history.undo(&mut fx.score).unwrap();
-    history.execute(&mut fx.score, insert).unwrap();
-    assert_eq!(guitar_voice(&fx.score, 0).beats[0].id, first);
+    history.undo(&mut fx.score).unwrap();
+    let existing: Vec<ElementId> = all_ids(&fx.score);
+    history
+        .execute(
+            &mut fx.score,
+            Command::InsertMasterBar {
+                index: 0,
+                time_signature: four_four(),
+            },
+        )
+        .unwrap();
+    history
+        .execute(
+            &mut fx.score,
+            Command::InsertBeat {
+                voice: fx.voice,
+                index: 0,
+                duration: duration(NoteValue::Quarter),
+            },
+        )
+        .unwrap();
+    let created: Vec<ElementId> = all_ids(&fx.score)
+        .into_iter()
+        .filter(|id| !existing.contains(id))
+        .collect();
+    assert_eq!(created.len(), 6);
+    for id in &undone_ids {
+        assert!(!created.contains(id), "undone id {id:?} was reused");
+    }
+    assert_eq!(
+        history.execute(&mut fx.score, Command::RemoveBeat { beat: undone }),
+        Err(CommandError::NotFound {
+            what: "beat",
+            id: undone.0.0
+        })
+    );
+    assert_eq!(
+        history.execute(&mut fx.score, Command::RemoveNote { note: undone_note }),
+        Err(CommandError::NotFound {
+            what: "note",
+            id: undone_note.0.0
+        })
+    );
+}
+
+fn all_ids(score: &opentab_model::Score) -> Vec<ElementId> {
+    let mut ids: Vec<ElementId> = score.master_bars.iter().map(|m| m.id.0).collect();
+    for track in &score.tracks {
+        ids.push(track.id.0);
+        for staff in &track.staves {
+            ids.push(staff.id.0);
+            for bar in &staff.bars {
+                ids.push(bar.id.0);
+                for voice in &bar.voices {
+                    ids.push(voice.id.0);
+                    for beat in &voice.beats {
+                        ids.push(beat.id.0);
+                        ids.extend(beat.notes.iter().map(|note| note.id.0));
+                    }
+                }
+            }
+        }
+    }
+    ids
 }

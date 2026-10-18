@@ -51,14 +51,5 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
             master_bar,
             tempo_changes,
         } => tempo::restore(score, *master_bar, tempo_changes),
-        Command::RestoreIds { ids, then } => {
-            let before = score.ids.clone();
-            let inverse = apply(score, then)?;
-            score.ids = ids.clone();
-            Ok(Command::RestoreIds {
-                ids: before,
-                then: Box::new(inverse),
-            })
-        }
     }
 }

@@ -7,7 +7,6 @@ use crate::support::{fixture, guitar_voice, payload};
 #[test]
 fn add_note_appends_a_fretted_note_with_a_fresh_id() {
     let mut fx = fixture();
-    let before_ids = fx.score.ids.clone();
     let fresh = NoteId(fx.score.ids.peek());
     let command = Command::AddNote {
         beat: fx.beats[1],
@@ -15,13 +14,7 @@ fn add_note_appends_a_fretted_note_with_a_fresh_id() {
         fret: 9,
     };
     let inverse = round_trip(&mut fx.score, &command);
-    assert_eq!(
-        inverse,
-        Command::RestoreIds {
-            ids: before_ids,
-            then: Box::new(Command::RemoveNote { note: fresh }),
-        }
-    );
+    assert_eq!(inverse, Command::RemoveNote { note: fresh });
     apply(&mut fx.score, &command).unwrap();
     let beat = &guitar_voice(&fx.score, 0).beats[1];
     assert_eq!(beat.notes.len(), 1);

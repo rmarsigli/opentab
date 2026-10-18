@@ -1,6 +1,6 @@
 use opentab_model::{
-    Bar, Beat, BeatId, Duration, ElementId, IdAllocator, MasterBar, Note, NoteId, OpaquePayload,
-    TempoChange, TimeSignature, VoiceId,
+    Bar, Beat, BeatId, Duration, ElementId, MasterBar, Note, NoteId, OpaquePayload, TempoChange,
+    TimeSignature, VoiceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -89,9 +89,5 @@ pub enum Command {
     RestoreTempoChanges {
         master_bar: usize,
         tempo_changes: Vec<TempoChange>,
-    },
-    RestoreIds {
-        ids: IdAllocator,
-        then: Box<Command>,
     },
 }

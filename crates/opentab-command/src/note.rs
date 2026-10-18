@@ -42,17 +42,13 @@ pub(crate) fn add(
     reserve(score, 1)?;
     let Score { tracks, ids, .. } = score;
     let target = beat_in(tracks, path).ok_or(not_found(BEAT, beat))?;
-    let before = ids.clone();
     let id = NoteId(ids.next());
     target.notes.push(Note {
         id,
         kind: NoteKind::Fretted { string, fret },
         effects: NoteEffects::default(),
     });
-    Ok(Command::RestoreIds {
-        ids: before,
-        then: Box::new(Command::RemoveNote { note: id }),
-    })
+    Ok(Command::RemoveNote { note: id })
 }
 
 pub(crate) fn remove(score: &mut Score, note: NoteId) -> Result<Command, CommandError> {

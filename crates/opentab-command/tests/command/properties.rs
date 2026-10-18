@@ -5,6 +5,7 @@ use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 
+use crate::checks::without_ids;
 use crate::generator::{Case, arb_case, resolve};
 
 const CASES: u32 = 256;
@@ -56,7 +57,8 @@ proptest! {
             undone += 1;
         }
         prop_assert_eq!(undone, executed);
-        prop_assert_eq!(&score, &case.score);
+        prop_assert_eq!(without_ids(&score), without_ids(&case.score));
+        prop_assert!(score.ids.peek() >= case.score.ids.peek());
     }
 
     #[test]
@@ -72,7 +74,8 @@ proptest! {
         for inverse in inverses.iter().rev() {
             apply(&mut score, inverse).expect("inverse applies");
         }
-        prop_assert_eq!(&score, &case.score);
+        prop_assert_eq!(without_ids(&score), without_ids(&case.score));
+        prop_assert!(score.ids.peek() >= case.score.ids.peek());
     }
 
     #[test]
