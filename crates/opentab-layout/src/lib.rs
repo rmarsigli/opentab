@@ -40,11 +40,11 @@ pub use geometry::{
 };
 pub use grid::{Grid, GridColumn};
 pub use notation::{
-    AccidentalMark, ArticulationPlan, BeamPlan, BeatPlan, ColumnNeed, HeadPlan, Ink, LedgerPlan,
-    RestPlan, RowInput, StaffNotation, StemPlan, TupletPlan, analyse, head_glyph, notehead_glyphs,
+    AccidentalMark, ArticulationPlan, BeatPlan, ColumnNeed, HeadPlan, Ink, LedgerPlan, RestPlan,
+    RowInput, StaffNotation, analyse, head_glyph, notehead_glyphs,
 };
 pub use options::{BarRange, LayoutError, LayoutOptions, StaffMode};
-pub use pitch::{Spelling, key_alter, position, spell, written_midi};
+pub use pitch::{Spelling, key_alter, position, spell, written_key, written_midi};
 pub use plan::{BarInput, Extent, VerticalNeeds};
 pub use select::{Selection, StaffSpec};
 pub use spacing::{DURATION_WIDTHS, WIDTH_PER_DOUBLING_BEYOND_WHOLE, duration_width};

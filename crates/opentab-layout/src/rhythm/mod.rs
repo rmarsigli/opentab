@@ -1,3 +1,5 @@
+mod assemble;
+
 use std::num::{NonZeroI64, NonZeroI128};
 
 use opentab_model::{Duration, NoteValue, TimeSignature, Tuplet};
@@ -23,6 +25,12 @@ pub const DOT_GAP: Units = Units(STAFF_SPACE.0 * 2 / 5);
 pub const DOT_STEP: Units = Units(STAFF_SPACE.0 * 3 / 5);
 pub const PLAIN_BEAMS: u8 = 2;
 pub const WRITTEN_WHOLE: i64 = 1024;
+
+pub use assemble::{
+    FittedBeam, FittedStem, FittedTuplet, RhythmCanvas, RhythmEvent, RhythmGroups, RhythmPlan,
+    SLOPE_SHARE, StemAnchor, TupletGroup, clamp_slope, directions, draw_rhythm, fit_stems, group,
+    slash,
+};
 
 const SPACE_DIVISOR: NonZeroI64 = NonZeroI64::new(STAFF_SPACE.0).unwrap();
 

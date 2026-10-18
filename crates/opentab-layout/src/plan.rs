@@ -136,6 +136,37 @@ impl BarPlan {
         pieces
     }
 
+    pub fn contained_pieces(&self, at_start: bool, strokes: Strokes) -> Vec<Piece> {
+        let mut pieces = self.pieces(at_start, strokes);
+        if self.extents.is_empty() {
+            return pieces;
+        }
+        let slots = self.slots(at_start);
+        let widest_left = self
+            .extents
+            .iter()
+            .map(|extent| extent.left)
+            .max()
+            .unwrap_or_default();
+        let widest_right = self
+            .extents
+            .iter()
+            .map(|extent| extent.right)
+            .max()
+            .unwrap_or_default();
+        if let Some(lead) = pieces.get_mut(slots.lead) {
+            *lead = Piece::Fixed(BAR_LEAD + widest_left);
+        }
+        if let Some(tail) = slots
+            .end
+            .checked_sub(1)
+            .and_then(|index| pieces.get_mut(index))
+        {
+            *tail = Piece::Fixed(widest_right + MIN_COLUMN_GAP);
+        }
+        pieces
+    }
+
     pub fn natural(&self, at_start: bool, strokes: Strokes) -> Units {
         natural_width(&self.pieces(at_start, strokes))
     }
