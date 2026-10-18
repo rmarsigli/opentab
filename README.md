@@ -64,7 +64,18 @@ cargo install cargo-mutants --version 27.1.0 --locked
 cargo xtask mutants
 ```
 
-The run takes about 15 minutes and uses most of the memory of an 8 GB machine, so do not start other builds or test runs while it works. It exits with 0 when no mutant was missed and none timed out, with 1 when any was, and with 2 when cargo-mutants is not installed or could not start. The missed and timed-out mutants are printed at the end.
+A full run takes several hours: with `opentab-gp` in the list it took about five hours on an 8 GB WSL machine. It uses most of that machine's memory, so do not start other builds or test runs while it works. It exits with 0 when no mutant was missed and none timed out, with 1 when any was, and with 2 when cargo-mutants is not installed or could not start. The missed and timed-out mutants are printed at the end.
+
+To spread the work over several sittings, run one shard at a time. `--shard K/N` is passed to cargo-mutants, which splits the list of mutants of all three crates into N parts and tests only part K, counting from 0. The four runs below together cover every mutant:
+
+```
+cargo xtask mutants --shard 0/4
+cargo xtask mutants --shard 1/4
+cargo xtask mutants --shard 2/4
+cargo xtask mutants --shard 3/4
+```
+
+Each run replaces `target/mutants/mutants.out/` (cargo-mutants keeps the previous one as `mutants.out.old`), so read or copy a shard's results before you start the next one. The M1 milestone gate ran `opentab-model` and `opentab-command` in full but only shard 0/4 of the `opentab-gp` mutants; the other three `opentab-gp` shards have not run yet.
 
 It is not part of continuous integration: the run is too slow and too heavy for a shared runner, and its result depends on timing and on the machine. Run it before closing a milestone and whenever the model, command or gp crates change.
 

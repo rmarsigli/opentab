@@ -1,13 +1,13 @@
 use std::path::Path;
 
 use xtask::mutants::{
-    CRATES, INSTALL_HINT, MutantsReport, lines_of, mutants_args, output_dir, verdict,
+    CRATES, INSTALL_HINT, MutantsReport, Shard, lines_of, mutants_args, output_dir, verdict,
 };
 
 #[test]
 fn arguments_select_the_three_crates_serially_with_a_timeout_and_target_output() {
     let output = output_dir(Path::new("/work"));
-    let args = mutants_args(&output);
+    let args = mutants_args(&output, None);
     assert_eq!(
         args,
         [
@@ -100,10 +100,31 @@ fn mutants_config_keeps_only_settings_the_arguments_do_not_override() {
     let table: toml::Table = text.parse().expect("mutants.toml parses");
     let keys: Vec<&str> = table.keys().map(String::as_str).collect();
     assert_eq!(keys, ["build_timeout_multiplier", "cap_lints"]);
-    let args = mutants_args(&output_dir(Path::new("/work")));
+    let args = mutants_args(&output_dir(Path::new("/work")), None);
     for overridden in ["timeout_multiplier", "minimum_test_timeout", "jobs"] {
         assert!(!table.contains_key(overridden), "{overridden}");
     }
     assert!(args.iter().any(|arg| arg == "--timeout"));
     assert!(!args.iter().any(|arg| arg.starts_with("--build-timeout")));
+}
+
+#[test]
+fn a_shard_is_passed_through_to_cargo_mutants() {
+    let shard = Shard::parse("1/4").expect("valid shard");
+    assert_eq!(shard, Shard { index: 1, count: 4 });
+    let args = mutants_args(&output_dir(Path::new("/work")), Some(shard));
+    assert_eq!(args[args.len() - 2..], ["--shard", "1/4"]);
+    assert_eq!(
+        mutants_args(&output_dir(Path::new("/work")), None).len() + 2,
+        args.len()
+    );
+}
+
+#[test]
+fn malformed_shards_are_rejected() {
+    for text in ["4/4", "5/4", "0/0", "1", "a/4", "1/b", "-1/4", "1/4/2", ""] {
+        let error = Shard::parse(text).expect_err(text);
+        assert!(error.contains("K/N"), "{text}: {error}");
+    }
+    assert_eq!(Shard::parse("0/1"), Ok(Shard { index: 0, count: 1 }));
 }
