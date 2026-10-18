@@ -64,6 +64,38 @@ fn is_text_char(character: char) -> bool {
         '\t' | '\n' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..)
 }
 
+fn is_name_start(character: char) -> bool {
+    matches!(character,
+        ':' | 'A'..='Z' | '_' | 'a'..='z'
+        | '\u{C0}'..='\u{D6}' | '\u{D8}'..='\u{F6}' | '\u{F8}'..='\u{2FF}'
+        | '\u{370}'..='\u{37D}' | '\u{37F}'..='\u{1FFF}' | '\u{200C}'..='\u{200D}'
+        | '\u{2070}'..='\u{218F}' | '\u{2C00}'..='\u{2FEF}' | '\u{3001}'..='\u{D7FF}'
+        | '\u{F900}'..='\u{FDCF}' | '\u{FDF0}'..='\u{FFFD}' | '\u{10000}'..='\u{EFFFF}')
+}
+
+fn is_name_char(character: char) -> bool {
+    is_name_start(character)
+        || matches!(character,
+            '-' | '.' | '0'..='9' | '\u{B7}' | '\u{300}'..='\u{36F}' | '\u{203F}'..='\u{2040}')
+}
+
+pub(crate) fn is_name(text: &str) -> bool {
+    let mut characters = text.chars();
+    characters.next().is_some_and(is_name_start) && characters.all(is_name_char)
+}
+
+pub(crate) fn depth(root: &Element) -> usize {
+    let mut deepest = 0usize;
+    let mut pending = vec![(root, 1usize)];
+    while let Some((element, level)) = pending.pop() {
+        deepest = deepest.max(level);
+        for (_, child) in element.elements() {
+            pending.push((child, level.saturating_add(1)));
+        }
+    }
+    deepest
+}
+
 pub(crate) fn check_escaped(text: &str) -> Result<(), Refusal> {
     match text
         .chars()

@@ -6,6 +6,7 @@ use crate::canon::{self, GP_REVISION, GP_VERSION};
 use crate::codes::{MINOR, TEMPO_UNITS};
 use crate::dom::{Element, Node};
 use crate::error::Refusal;
+use crate::limits::MAX_XML_DEPTH;
 use crate::read::POOLS;
 use crate::write::beat::{BarSite, Builder, patch_rhythms, write_bar};
 use crate::write::payload::{self, Env, Item, layout, renumber};
@@ -337,6 +338,12 @@ pub(crate) fn write_gpif(score: &Score) -> Result<String, Fail> {
     root.push(pool("Notes", pools.notes));
     root.push(pool("Rhythms", pools.rhythms));
     payload::apply(&mut root, document).within(|| "document_extensions".to_string())?;
+    if xml::depth(&root) > MAX_XML_DEPTH {
+        return Err(Fail::new(Refusal::MalformedPayload {
+            problem: format!("opaque data nests deeper than {MAX_XML_DEPTH} levels"),
+        }))
+        .within(|| "extensions".to_string());
+    }
     for (pool_name, item_name, _) in POOLS {
         if let Some(Node::Element(container)) = root
             .children
