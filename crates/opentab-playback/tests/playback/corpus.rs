@@ -5,11 +5,11 @@ use std::path::PathBuf;
 use opentab_gp::read_gp;
 use opentab_playback::{
     MidiMessage, PlaybackOptions, Profile, RampGrid, ScoreTime, Speed, TempoMap, beat_grid,
-    export_midi, perform, play_order,
+    export_midi, perform, play_order, write_smf,
 };
 use zip::ZipArchive;
 
-use crate::smf_writer::{pair_notes, reparse};
+use crate::smf_writer::{expected_tracks, note_ons, pair_notes, reparse};
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const SCORE_ENTRY: &str = "Content/score.gpif";
@@ -185,13 +185,28 @@ fn every_corpus_example_exports_reparses_and_pairs_every_note() {
             let bytes = std::fs::read(path).expect("corpus file");
             let score =
                 read_gp(&bytes).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            let performance = perform(&score, &PlaybackOptions { profile })
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
             let file = export_midi(&score, profile)
                 .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            assert_eq!(
+                file,
+                write_smf(&performance, profile.ppq()),
+                "{}",
+                path.display()
+            );
             let reparsed = reparse(&file);
             assert_eq!(reparsed.division, profile.ppq().get(), "{}", path.display());
             let pairing = pair_notes(&reparsed)
                 .unwrap_or_else(|error| panic!("{} {profile:?}: {error}", path.display()));
             assert!(pairing.notes > 0, "{}", path.display());
+            assert_eq!(pairing.notes, note_ons(&performance), "{}", path.display());
+            assert_eq!(
+                reparsed.tracks.len(),
+                expected_tracks(&performance),
+                "{}",
+                path.display()
+            );
             notes += pairing.notes;
             shortest = shortest.min(pairing.shortest.unwrap_or(u64::MAX));
             bytes_written += file.len();

@@ -5,6 +5,8 @@ mod floats;
 mod gp9;
 mod gp_oracle;
 mod gp_orders;
+mod oracle_allowances;
+mod oracle_side;
 mod orders;
 mod perform;
 mod perform_properties;

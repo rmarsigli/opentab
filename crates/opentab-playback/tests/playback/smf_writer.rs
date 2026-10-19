@@ -199,14 +199,14 @@ pub fn pair_notes(reparsed: &Reparsed) -> Result<Pairing, String> {
     }
 }
 
-fn expected_tracks(performance: &Performance) -> usize {
+pub fn expected_tracks(performance: &Performance) -> usize {
     1 + match performance.profile.track_layout() {
         TrackLayout::PerTrack => performance.tracks.len(),
         TrackLayout::PerStaff => performance.tracks.iter().map(|track| track.staves).sum(),
     }
 }
 
-fn note_ons(performance: &Performance) -> usize {
+pub fn note_ons(performance: &Performance) -> usize {
     performance
         .events
         .iter()

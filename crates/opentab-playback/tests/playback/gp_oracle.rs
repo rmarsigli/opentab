@@ -8,164 +8,13 @@ use opentab_playback::{
     perform, to_ticks,
 };
 
-use crate::smf::{SmfKind, read_smf};
+use crate::oracle_allowances::{
+    ALLOWED_DIFFERENCES, Rule, TempoAt, bend_ticks, explains, named, off_grid_ticks,
+};
+use crate::oracle_side::{CONDUCTOR_TRACK, Note, Onset, Selection, Side, Slot, TrackValue, side};
 
 const GOLDEN_FIXTURES: usize = 31;
-const CONDUCTOR_TRACK: usize = 0;
-const DATA_ENTRY: u8 = 6;
-const RPN_MSB: u8 = 101;
-const RPN_LSB: u8 = 100;
-const PITCH_BEND_RANGE: u16 = 0;
-const SEVEN_BITS: u32 = 7;
 const TICKS_PER_QUARTER_TIMES: i64 = 4;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TempoDefect {
-    MicrosFloored,
-    DottedQuarterAsFiveQuarters,
-    TickBeforeThePosition,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TempoAt {
-    pub tick: u64,
-    pub micros: u32,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Rule {
-    TempoEvent {
-        file: &'static str,
-        gp: TempoAt,
-        ours: TempoAt,
-        defects: &'static [TempoDefect],
-    },
-    OffGridLength {
-        ticks: u64,
-    },
-    BendTickFloored {
-        ticks: u64,
-    },
-    OrderWithinTick,
-    TrillAuxiliaryReleasedOnThePrincipal,
-    CodaNeverReached,
-    TripletFeel,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Allowance {
-    name: &'static str,
-    reason: &'static str,
-    rule: Rule,
-}
-
-const fn tempo_at(tick: u64, micros: u32) -> TempoAt {
-    TempoAt { tick, micros }
-}
-
-const fn tempo_event(
-    name: &'static str,
-    file: &'static str,
-    gp: TempoAt,
-    ours: TempoAt,
-    defects: &'static [TempoDefect],
-) -> Allowance {
-    Allowance {
-        name,
-        reason: "GP floors microseconds per quarter, writes a dotted-quarter tempo as five quarters (factor 1.25, not 1.5), or places a 3/4 quarter one tick early; we export the exact value (M3-D5)",
-        rule: Rule::TempoEvent {
-            file,
-            gp,
-            ours,
-            defects,
-        },
-    }
-}
-
-const ALLOWED_DIFFERENCES: [Allowance; 13] = [
-    tempo_event(
-        "tempo-1920-floor",
-        "tempo.gp",
-        tempo_at(1920, 1_325_966),
-        tempo_at(1920, 1_325_967),
-        &[TempoDefect::MicrosFloored],
-    ),
-    tempo_event(
-        "tempo-2880-dotted",
-        "tempo.gp",
-        tempo_at(2880, 480_000),
-        tempo_at(2880, 400_000),
-        &[TempoDefect::DottedQuarterAsFiveQuarters],
-    ),
-    tempo_event(
-        "tempo-4320-early-floor",
-        "tempo.gp",
-        tempo_at(4319, 277_777),
-        tempo_at(4320, 277_778),
-        &[
-            TempoDefect::TickBeforeThePosition,
-            TempoDefect::MicrosFloored,
-        ],
-    ),
-    tempo_event(
-        "tempo-5280-dotted",
-        "tempo.gp",
-        tempo_at(5280, 360_225),
-        tempo_at(5280, 300_188),
-        &[TempoDefect::DottedQuarterAsFiveQuarters],
-    ),
-    tempo_event(
-        "tempo-8160-floor",
-        "tempo.gp",
-        tempo_at(8160, 2_666_666),
-        tempo_at(8160, 2_666_667),
-        &[TempoDefect::MicrosFloored],
-    ),
-    tempo_event(
-        "tempo-ramp-6720-floor",
-        "tempo-ramp.gp",
-        tempo_at(6720, 666_666),
-        tempo_at(6720, 666_667),
-        &[TempoDefect::MicrosFloored],
-    ),
-    tempo_event(
-        "tempo-ramp-7680-dotted",
-        "tempo-ramp.gp",
-        tempo_at(7680, 600_000),
-        tempo_at(7680, 500_000),
-        &[TempoDefect::DottedQuarterAsFiveQuarters],
-    ),
-    Allowance {
-        name: "off-grid-length",
-        reason: "a tuplet note whose exact start or end falls between ticks: GP rounds each length on its own (69 for 68.57), we round both ends half up from the absolute position (M3-D4)",
-        rule: Rule::OffGridLength { ticks: 1 },
-    },
-    Allowance {
-        name: "bend-tick-floored",
-        reason: "GP floors bend knot and step ticks per note and its float can land one tick under an exact tick (1919 for 1920); we round half up, so ours is GP's tick or one later",
-        rule: Rule::BendTickFloored { ticks: 1 },
-    },
-    Allowance {
-        name: "order-within-one-tick",
-        reason: "GP writes a note-on before the track's program and RPN at tick 0; notes, programs and ranges are compared as multisets, bends keep their order per channel",
-        rule: Rule::OrderWithinTick,
-    },
-    Allowance {
-        name: "trill-auxiliary-release",
-        reason: "GP releases a trill's auxiliary note with a note-off on the principal key, leaving the auxiliary sounding; we pair it on its own key",
-        rule: Rule::TrillAuxiliaryReleasedOnThePrincipal,
-    },
-    Allowance {
-        name: "coda-never-reached",
-        reason: "when a To Coda lies on no played path, GP's export holds only the bars from the Coda on (gpif.md 5.1 rule 12, a GP defect); we play the whole order; no golden triggers it",
-        rule: Rule::CodaNeverReached,
-    },
-    Allowance {
-        name: "triplet-feel",
-        reason: "GP swings eighths under triplet feel; the model keeps triplet feel opaque until M3-T11, so note times of such scores are not compared; no golden carries it",
-        rule: Rule::TripletFeel,
-    },
-];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Aspect {
@@ -194,62 +43,6 @@ pub struct Difference {
 pub struct Verdict {
     pub differences: Vec<Difference>,
     pub used: BTreeSet<&'static str>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Onset {
-    pub track: usize,
-    pub channel: u8,
-    pub key: u8,
-    pub velocity: u8,
-    pub tick: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Note {
-    pub onset: Onset,
-    pub length: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct BendAt {
-    pub tick: u64,
-    pub value: u16,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TrackValue {
-    pub track: usize,
-    pub channel: u8,
-    pub value: u8,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Signature {
-    Time { numerator: u8, denominator: u8 },
-    Key { accidentals: i8, minor: bool },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SignatureAt {
-    pub tick: u64,
-    pub signature: Signature,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Side {
-    pub division: u16,
-    pub tracks: usize,
-    pub notes: Vec<Note>,
-    pub unreleased: Vec<Onset>,
-    pub stray_offs: Vec<Onset>,
-    pub bends: BTreeMap<u8, Vec<BendAt>>,
-    pub programs: BTreeSet<TrackValue>,
-    pub ranges: BTreeSet<TrackValue>,
-    pub controllers: Vec<String>,
-    pub tempi: Vec<TempoAt>,
-    pub times: Vec<SignatureAt>,
-    pub keys: BTreeMap<usize, Vec<SignatureAt>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -286,19 +79,6 @@ impl GridKey {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Slot {
-    track: usize,
-    channel: u8,
-    key: u8,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Selection {
-    track: usize,
-    channel: u8,
-}
-
 pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -324,171 +104,6 @@ pub fn golden_names() -> Vec<String> {
         .collect();
     names.sort();
     names
-}
-
-fn tolerance(pick: fn(Rule) -> Option<u64>) -> u64 {
-    ALLOWED_DIFFERENCES
-        .iter()
-        .find_map(|allowance| pick(allowance.rule))
-        .unwrap_or(0)
-}
-
-fn off_grid_ticks() -> u64 {
-    tolerance(|rule| match rule {
-        Rule::OffGridLength { ticks } => Some(ticks),
-        _ => None,
-    })
-}
-
-fn bend_ticks() -> u64 {
-    tolerance(|rule| match rule {
-        Rule::BendTickFloored { ticks } => Some(ticks),
-        _ => None,
-    })
-}
-
-fn named(rule: fn(&Rule) -> bool) -> &'static str {
-    ALLOWED_DIFFERENCES
-        .iter()
-        .find(|allowance| rule(&allowance.rule))
-        .map_or("missing", |allowance| allowance.name)
-}
-
-pub fn side(bytes: &[u8]) -> Side {
-    let smf = read_smf(bytes);
-    let mut side = Side {
-        division: smf.division,
-        tracks: smf
-            .events
-            .iter()
-            .map(|event| event.track + 1)
-            .max()
-            .unwrap_or(0),
-        ..Side::default()
-    };
-    let mut open: BTreeMap<Slot, Vec<Onset>> = BTreeMap::new();
-    let mut selects: BTreeMap<Selection, Vec<(u8, u8)>> = BTreeMap::new();
-    let mut events = smf.events.clone();
-    events.sort_by_key(|event| (event.track, event.tick));
-    for event in events {
-        let track = event.track;
-        let channel = event.channel;
-        let tick = event.tick;
-        match event.kind {
-            SmfKind::NoteOn { key, velocity } => {
-                open.entry(Slot {
-                    track,
-                    channel,
-                    key,
-                })
-                .or_default()
-                .push(Onset {
-                    track,
-                    channel,
-                    key,
-                    velocity,
-                    tick,
-                });
-            }
-            SmfKind::NoteOff { key } => {
-                let slot = Slot {
-                    track,
-                    channel,
-                    key,
-                };
-                let started = open
-                    .get_mut(&slot)
-                    .filter(|starts| !starts.is_empty())
-                    .map(|starts| starts.remove(0));
-                match started {
-                    Some(onset) => side.notes.push(Note {
-                        onset,
-                        length: tick.saturating_sub(onset.tick),
-                    }),
-                    None => side.stray_offs.push(Onset {
-                        track,
-                        channel,
-                        key,
-                        velocity: 0,
-                        tick,
-                    }),
-                }
-            }
-            SmfKind::PitchBend { value } => side
-                .bends
-                .entry(channel)
-                .or_default()
-                .push(BendAt { tick, value }),
-            SmfKind::Program { program } => {
-                side.programs.insert(TrackValue {
-                    track,
-                    channel,
-                    value: program,
-                });
-            }
-            SmfKind::Control { controller, value } => {
-                let selection = Selection { track, channel };
-                if controller == RPN_MSB || controller == RPN_LSB {
-                    selects
-                        .entry(selection)
-                        .or_default()
-                        .push((controller, value));
-                } else if controller == DATA_ENTRY {
-                    let selected = selects.remove(&selection).unwrap_or_default();
-                    let parameter = match selected.as_slice() {
-                        [(RPN_MSB, msb), (RPN_LSB, lsb)] => {
-                            Some((u16::from(*msb) << SEVEN_BITS) | u16::from(*lsb))
-                        }
-                        _ => None,
-                    };
-                    if parameter == Some(PITCH_BEND_RANGE) {
-                        side.ranges.insert(TrackValue {
-                            track,
-                            channel,
-                            value,
-                        });
-                    } else {
-                        side.controllers
-                            .push(format!("data entry after {selected:?} at {tick}"));
-                    }
-                } else {
-                    side.controllers
-                        .push(format!("controller {controller} = {value} at {tick}"));
-                }
-            }
-            SmfKind::Tempo { micros } => side.tempi.push(TempoAt { tick, micros }),
-            SmfKind::TimeSignature {
-                numerator,
-                denominator,
-            } if track == CONDUCTOR_TRACK => side.times.push(SignatureAt {
-                tick,
-                signature: Signature::Time {
-                    numerator,
-                    denominator,
-                },
-            }),
-            SmfKind::KeySignature { accidentals, minor } if track != CONDUCTOR_TRACK => {
-                side.keys.entry(track).or_default().push(SignatureAt {
-                    tick,
-                    signature: Signature::Key { accidentals, minor },
-                });
-            }
-            SmfKind::TimeSignature { .. } | SmfKind::KeySignature { .. } => side
-                .controllers
-                .push(format!("a signature on track {track} at {tick}")),
-            SmfKind::Other => {}
-        }
-    }
-    side.unreleased = open.into_values().flatten().collect();
-    side.unreleased.sort();
-    side.stray_offs.sort();
-    side.tempi.sort();
-    for (selection, selected) in selects {
-        side.controllers.push(format!(
-            "an RPN selection without data entry: {selection:?} {selected:?}"
-        ));
-    }
-    side
 }
 
 fn lanes(performance: &Performance) -> Vec<usize> {
@@ -631,15 +246,24 @@ fn compare_notes(context: &Context, ours: &Side, gp: &Side, verdict: &mut Verdic
         );
     }
     let mut auxiliaries = gp.unreleased.clone();
+    let mut releases = gp.stray_offs.clone();
     let mut mine = Vec::with_capacity(ours.notes.len());
     let mut excused = 0;
     for note in &ours.notes {
-        match auxiliaries.iter().position(|onset| *onset == note.onset) {
-            Some(index) => {
-                auxiliaries.remove(index);
+        let held = auxiliaries.iter().position(|onset| *onset == note.onset);
+        let released = releases.iter().position(|off| {
+            off.track == note.onset.track
+                && off.channel == note.onset.channel
+                && off.key != note.onset.key
+                && off.tick == note.onset.tick + note.length
+        });
+        match (held, released) {
+            (Some(held), Some(released)) => {
+                auxiliaries.remove(held);
+                releases.remove(released);
                 excused += 1;
             }
-            None => mine.push(*note),
+            _ => mine.push(*note),
         }
     }
     if excused > 0 {
@@ -647,14 +271,12 @@ fn compare_notes(context: &Context, ours: &Side, gp: &Side, verdict: &mut Verdic
             matches!(rule, Rule::TrillAuxiliaryReleasedOnThePrincipal)
         }));
     }
-    if !auxiliaries.is_empty() || gp.stray_offs.len() != excused {
+    if !auxiliaries.is_empty() || !releases.is_empty() {
         differ(
             verdict,
             Aspect::Unreleased,
             format!(
-                "GP leaves {:?} unmatched and releases {} on another key, against {excused} auxiliaries of ours",
-                auxiliaries,
-                gp.stray_offs.len()
+                "GP leaves {auxiliaries:?} sounding and releases {releases:?} on another key, beyond our {excused} auxiliaries"
             ),
         );
     }
@@ -737,19 +359,15 @@ fn compare_notes(context: &Context, ours: &Side, gp: &Side, verdict: &mut Verdic
 
 fn compare_bends(ours: &Side, gp: &Side, verdict: &mut Verdict) {
     let allowed = bend_ticks();
-    let channels: BTreeSet<u8> = ours.bends.keys().chain(gp.bends.keys()).copied().collect();
-    for channel in channels {
+    let lanes: BTreeSet<Selection> = ours.bends.keys().chain(gp.bends.keys()).copied().collect();
+    for channel in lanes {
         let mine = ours.bends.get(&channel).cloned().unwrap_or_default();
         let theirs = gp.bends.get(&channel).cloned().unwrap_or_default();
         if mine.len() != theirs.len() {
             differ(
                 verdict,
                 Aspect::Bends,
-                format!(
-                    "channel {channel}: {} bends against {}",
-                    mine.len(),
-                    theirs.len()
-                ),
+                format!("{channel:?}: {} bends against {}", mine.len(), theirs.len()),
             );
             continue;
         }
@@ -765,7 +383,7 @@ fn compare_bends(ours: &Side, gp: &Side, verdict: &mut Verdict) {
                 _ => differ(
                     verdict,
                     Aspect::Bends,
-                    format!("channel {channel}: {left:?} against {right:?}"),
+                    format!("{channel:?}: {left:?} against {right:?}"),
                 ),
             }
         }
@@ -774,9 +392,11 @@ fn compare_bends(ours: &Side, gp: &Side, verdict: &mut Verdict) {
 
 pub fn compare(context: &Context, ours: &Side, gp: &Side) -> Verdict {
     let mut verdict = Verdict::default();
-    verdict
-        .used
-        .insert(named(|rule| matches!(rule, Rule::OrderWithinTick)));
+    if ours.sequence != gp.sequence {
+        verdict
+            .used
+            .insert(named(|rule| matches!(rule, Rule::OrderWithinTick)));
+    }
     if ours.division != gp.division {
         differ(
             &mut verdict,
@@ -895,8 +515,19 @@ fn profile_gp_exports_what_guitar_pro_exports_for_every_golden() {
             "{}: used by the goldens exactly when it is not a declared-only allowance",
             allowance.name
         );
-        if let Rule::TempoEvent { file, .. } = allowance.rule {
+        if let Rule::TempoEvent {
+            file,
+            gp,
+            ours,
+            defects,
+        } = allowance.rule
+        {
             assert!(names.iter().any(|name| name == file));
+            assert!(
+                explains(defects, gp, ours),
+                "{}: the named defects turn our event into GP's",
+                allowance.name
+            );
         }
     }
     let unique: BTreeSet<&str> = ALLOWED_DIFFERENCES
@@ -990,13 +621,28 @@ fn the_comparator_rejects_every_difference_no_allowance_covers() {
     missing.notes.pop();
     rejects(&effects, &missing, Aspect::Onsets);
     let mut program = effects.ours.clone();
-    let first = *program.programs.iter().next().expect("a program");
-    program.programs.remove(&first);
-    program.programs.insert(TrackValue {
-        value: first.value + 1,
-        ..first
-    });
+    program.programs[0].value += 1;
     rejects(&effects, &program, Aspect::Programs);
+    let mut late_program = effects.ours.clone();
+    late_program.programs[0].tick += 1;
+    rejects(&effects, &late_program, Aspect::Programs);
+    let mut twice = effects.ours.clone();
+    let first: TrackValue = twice.programs[0];
+    twice.programs.insert(0, first);
+    rejects(&effects, &twice, Aspect::Programs);
+    let mut range = effects.ours.clone();
+    range.ranges[0].tick += 1;
+    rejects(&effects, &range, Aspect::Ranges);
+    let mut elsewhere = effects.ours.clone();
+    let bent = elsewhere.bends.remove(&channel).expect("bends");
+    elsewhere.bends.insert(
+        Selection {
+            track: channel.track + 1,
+            ..channel
+        },
+        bent,
+    );
+    rejects(&effects, &elsewhere, Aspect::Bends);
     let mut controller = effects.ours.clone();
     controller.controllers.push("controller 7".to_string());
     rejects(&effects, &controller, Aspect::Controllers);
@@ -1035,4 +681,11 @@ fn the_comparator_rejects_every_difference_no_allowance_covers() {
     };
     gp_paired.gp.stray_offs.pop();
     rejects(&gp_paired, &trill.ours, Aspect::Unreleased);
+    let mut shifted = Case {
+        context: trill.context.clone(),
+        ours: trill.ours.clone(),
+        gp: trill.gp.clone(),
+    };
+    shifted.gp.stray_offs[0].tick += 1;
+    rejects(&shifted, &trill.ours, Aspect::Unreleased);
 }
