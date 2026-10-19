@@ -1,5 +1,7 @@
 use opentab_audio::{BankError, BankShape, Sf2Bank, Sf2Limits, UnsafeBank};
-use opentab_testkit::banks::{layered_sf2, padded_sf2, zone_bomb};
+use opentab_testkit::banks::{
+    BypassRoute, bypass_bank, layered_sf2, padded_sf2, tiny_definition, write_sf2, zone_bomb,
+};
 
 use crate::sf2::{chunk_header, pdta_chunk};
 use crate::support::tiny_bytes;
@@ -11,6 +13,7 @@ const INSTRUMENT_BAG: usize = 20;
 const BAG_RECORD: usize = 4;
 const BAG_MODULATOR: usize = 2;
 const SMALL_BOMB: u16 = 64;
+const HOSTILE_RECORDS: usize = 4096;
 
 fn passes(bytes: &[u8], limits: &Sf2Limits) -> BankShape {
     match Sf2Bank::check(bytes, limits) {
@@ -68,7 +71,10 @@ fn a_file_above_the_size_limit_is_refused() {
         file_bytes: length - 1,
         ..Sf2Limits::DEFAULT
     };
-    assert_eq!(refused(tiny_bytes(), &tight), UnsafeBank::FileTooLarge);
+    assert_eq!(
+        refused(tiny_bytes(), &tight),
+        UnsafeBank::FileTooLarge { limit_mib: 0 }
+    );
     passes(
         tiny_bytes(),
         &Sf2Limits {
@@ -175,16 +181,120 @@ fn modulator_numbers_that_run_backwards_or_past_the_end_are_refused() {
 #[test]
 fn a_bank_whose_loader_would_exceed_the_memory_budget_is_refused() {
     let needed = passes(tiny_bytes(), &Sf2Limits::DEFAULT).loader_bytes;
-    let tight = Sf2Limits {
-        loader_bytes: needed - 1,
+    let budget = |slack: u64| Sf2Limits {
+        loader_file_factor: 0,
+        loader_slack_bytes: slack,
         ..Sf2Limits::DEFAULT
     };
-    assert_eq!(refused(tiny_bytes(), &tight), UnsafeBank::LoaderBudget);
+    assert_eq!(
+        refused(tiny_bytes(), &budget(needed - 1)),
+        UnsafeBank::LoaderBudget
+    );
+    passes(tiny_bytes(), &budget(needed));
+    let file = |slack: u64| Sf2Limits {
+        loader_file_factor: 2,
+        loader_slack_bytes: slack,
+        ..Sf2Limits::DEFAULT
+    };
+    for route in [BypassRoute::HugePresetBags, BypassRoute::HugeSampleHeaders] {
+        let bytes = bypass_bank(route, HOSTILE_RECORDS);
+        assert_eq!(
+            refused(&bytes, &file(0)),
+            UnsafeBank::LoaderBudget,
+            "{route:?}"
+        );
+        passes(&bytes, &Sf2Limits::DEFAULT);
+    }
+    let overflowing = Sf2Limits {
+        loader_file_factor: u64::MAX,
+        ..Sf2Limits::DEFAULT
+    };
+    assert_eq!(
+        refused(tiny_bytes(), &overflowing),
+        UnsafeBank::LoaderBudget
+    );
+}
+
+#[test]
+fn the_loader_estimate_counts_the_sample_data_and_every_header() {
+    let padded = padded_sf2(100_000);
+    let shape = passes(&padded, &Sf2Limits::DEFAULT);
+    assert!(
+        shape.loader_bytes >= 200_000 + 256 * 1024,
+        "{}",
+        shape.loader_bytes
+    );
+    let small = passes(
+        &bypass_bank(BypassRoute::HugeSampleHeaders, 1),
+        &Sf2Limits::DEFAULT,
+    );
+    let large = passes(
+        &bypass_bank(BypassRoute::HugeSampleHeaders, HOSTILE_RECORDS),
+        &Sf2Limits::DEFAULT,
+    );
+    assert!(large.loader_bytes - small.loader_bytes >= 46 * (HOSTILE_RECORDS as u64 - 1));
+}
+
+#[test]
+fn a_missing_table_or_sample_chunk_is_refused() {
+    assert_eq!(
+        refused_by_default(&bypass_bank(BypassRoute::MissingInstrumentGenerators, 4)),
+        UnsafeBank::MissingChunk
+    );
+    let mut no_samples = tiny_bytes().to_vec();
+    let smpl = chunk_header(&no_samples, b"smpl");
+    no_samples[smpl..smpl + 4].copy_from_slice(b"sm24");
+    assert_eq!(refused_by_default(&no_samples), UnsafeBank::MissingChunk);
+    let mut swapped = tiny_bytes().to_vec();
+    let info = chunk_header(&swapped, b"INFO");
+    swapped[info..info + 4].copy_from_slice(b"sdta");
+    assert_eq!(refused_by_default(&swapped), UnsafeBank::MissingChunk);
+}
+
+#[test]
+fn a_duplicated_table_is_refused() {
+    assert_eq!(
+        refused_by_default(&bypass_bank(BypassRoute::DuplicateInstrumentBags, 4)),
+        UnsafeBank::DuplicateChunk
+    );
+}
+
+#[test]
+fn an_unknown_section_is_refused() {
+    for (old, new) in [(b"ISFT", b"IXXX"), (b"pmod", b"pmox")] {
+        let mut bytes = tiny_bytes().to_vec();
+        let at = chunk_header(&bytes, old);
+        bytes[at..at + 4].copy_from_slice(new);
+        assert_eq!(refused_by_default(&bytes), UnsafeBank::UnknownChunk);
+    }
+}
+
+#[test]
+fn a_table_with_a_broken_size_is_refused() {
+    let mut definition = tiny_definition(None);
+    definition.instruments.clear();
+    assert_eq!(
+        refused_by_default(&write_sf2(&definition)),
+        UnsafeBank::MalformedTable
+    );
+}
+
+#[test]
+fn too_many_heavily_layered_presets_are_refused() {
+    let strict = Sf2Limits {
+        voices_per_note: 1,
+        grid_presets: 0,
+        ..Sf2Limits::DEFAULT
+    };
+    assert_eq!(
+        refused(&layered_sf2(2, 1), &strict),
+        UnsafeBank::LayeredPresets
+    );
     passes(
-        tiny_bytes(),
+        &layered_sf2(2, 1),
         &Sf2Limits {
-            loader_bytes: needed,
-            ..Sf2Limits::DEFAULT
+            grid_presets: 1,
+            ..strict
         },
     );
 }
@@ -220,5 +330,18 @@ fn every_refusal_reads_as_a_sentence_for_the_user() {
     assert_eq!(
         error.to_string(),
         "this SoundFont was not loaded because one key would start too many voices at once. The file may be damaged or built to crash programs."
+    );
+}
+
+#[test]
+fn the_size_refusal_names_the_limit() {
+    let error = BankError::Unsafe {
+        reason: UnsafeBank::FileTooLarge {
+            limit_mib: Sf2Limits::DEFAULT.file_bytes >> 20,
+        },
+    };
+    assert!(
+        error.to_string().contains("larger than 1024 MiB"),
+        "{error}"
     );
 }

@@ -9,7 +9,65 @@ const VERSION_BYTES: usize = 4;
 const SF3_MAJOR: u16 = 3;
 const OGG_MAGIC: &[u8; 4] = b"OggS";
 const MIN_SAMPLE_BYTES: usize = 4;
-const TOP_LISTS: usize = 3;
+const LISTS: [&[u8; 4]; 3] = [b"INFO", b"sdta", b"pdta"];
+const INFO_TEXTS: [&[u8; 4]; 9] = [
+    b"isng", b"INAM", b"irom", b"ICRD", b"IENG", b"IPRD", b"ICOP", b"ICMT", b"ISFT",
+];
+const MIB_SHIFT: u32 = 20;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TableSpec {
+    pub(crate) id: &'static [u8; 4],
+    pub(crate) width: usize,
+    pub(crate) minimum: usize,
+}
+
+pub(crate) const PHDR: TableSpec = TableSpec {
+    id: b"phdr",
+    width: 38,
+    minimum: 2,
+};
+pub(crate) const PBAG: TableSpec = TableSpec {
+    id: b"pbag",
+    width: 4,
+    minimum: 2,
+};
+pub(crate) const PMOD: TableSpec = TableSpec {
+    id: b"pmod",
+    width: 10,
+    minimum: 1,
+};
+pub(crate) const PGEN: TableSpec = TableSpec {
+    id: b"pgen",
+    width: 4,
+    minimum: 1,
+};
+pub(crate) const INST: TableSpec = TableSpec {
+    id: b"inst",
+    width: 22,
+    minimum: 2,
+};
+pub(crate) const IBAG: TableSpec = TableSpec {
+    id: b"ibag",
+    width: 4,
+    minimum: 2,
+};
+pub(crate) const IMOD: TableSpec = TableSpec {
+    id: b"imod",
+    width: 10,
+    minimum: 1,
+};
+pub(crate) const IGEN: TableSpec = TableSpec {
+    id: b"igen",
+    width: 4,
+    minimum: 1,
+};
+pub(crate) const SHDR: TableSpec = TableSpec {
+    id: b"shdr",
+    width: 46,
+    minimum: 1,
+};
+pub(crate) const TABLES: [TableSpec; 9] = [PHDR, PBAG, PMOD, PGEN, INST, IBAG, IMOD, IGEN, SHDR];
 
 struct ChunkHeader {
     id: [u8; 4],
@@ -17,33 +75,27 @@ struct ChunkHeader {
     size: usize,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct PdtaChunks {
-    pub(crate) phdr: Option<Range<usize>>,
-    pub(crate) pbag: Option<Range<usize>>,
-    pub(crate) pmod: Option<Range<usize>>,
-    pub(crate) pgen: Option<Range<usize>>,
-    pub(crate) inst: Option<Range<usize>>,
-    pub(crate) ibag: Option<Range<usize>>,
-    pub(crate) imod: Option<Range<usize>>,
-    pub(crate) igen: Option<Range<usize>>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Table {
+    pub(crate) range: Range<usize>,
+    pub(crate) count: usize,
 }
 
-impl PdtaChunks {
-    fn record(&mut self, id: &[u8; 4], body: Range<usize>) {
-        let slot = match id {
-            b"phdr" => &mut self.phdr,
-            b"pbag" => &mut self.pbag,
-            b"pmod" => &mut self.pmod,
-            b"pgen" => &mut self.pgen,
-            b"inst" => &mut self.inst,
-            b"ibag" => &mut self.ibag,
-            b"imod" => &mut self.imod,
-            b"igen" => &mut self.igen,
-            _ => return,
-        };
-        *slot = Some(body);
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Layout {
+    pub(crate) file_bytes: u64,
+    pub(crate) info_bytes: u64,
+    pub(crate) sample_bytes: u64,
+    pub(crate) extra_sample_bytes: u64,
+    pub(crate) tables: [Table; 9],
+}
+
+#[derive(Default)]
+struct Walk {
+    info_bytes: u64,
+    samples: Option<usize>,
+    extra_samples: Option<usize>,
+    tables: [Option<Range<usize>>; 9],
 }
 
 fn refuse(reason: UnsafeBank) -> BankError {
@@ -60,6 +112,10 @@ fn unsupported() -> BankError {
     BankError::Unsupported {
         message: SF3_UNSUPPORTED.to_owned(),
     }
+}
+
+fn widen(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 fn header(bytes: &[u8], at: usize, end: usize) -> Result<ChunkHeader, BankError> {
@@ -81,59 +137,107 @@ fn header(bytes: &[u8], at: usize, end: usize) -> Result<ChunkHeader, BankError>
     Ok(ChunkHeader { id, body, size })
 }
 
-fn check_info(bytes: &[u8], chunk: &ChunkHeader) -> Result<(), BankError> {
-    if &chunk.id != b"ifil" && &chunk.id != b"iver" {
+fn check_info(bytes: &[u8], chunk: &ChunkHeader, walk: &mut Walk) -> Result<(), BankError> {
+    if &chunk.id == b"ifil" || &chunk.id == b"iver" {
+        if chunk.size != VERSION_BYTES {
+            return Err(refuse(UnsafeBank::VersionSize));
+        }
+        let major = u16::from_le_bytes([bytes[chunk.body], bytes[chunk.body + 1]]);
+        if &chunk.id == b"ifil" && major == SF3_MAJOR {
+            return Err(unsupported());
+        }
         return Ok(());
     }
-    if chunk.size != VERSION_BYTES {
-        return Err(refuse(UnsafeBank::VersionSize));
+    if !INFO_TEXTS.contains(&&chunk.id) {
+        return Err(refuse(UnsafeBank::UnknownChunk));
     }
-    if &chunk.id == b"iver" {
-        return Ok(());
-    }
-    let major = u16::from_le_bytes([bytes[chunk.body], bytes[chunk.body + 1]]);
-    if major == SF3_MAJOR {
-        return Err(unsupported());
-    }
+    walk.info_bytes = walk.info_bytes.saturating_add(widen(chunk.size));
     Ok(())
 }
 
-fn check_samples(bytes: &[u8], chunk: &ChunkHeader) -> Result<(), BankError> {
-    if &chunk.id != b"smpl" {
-        return Ok(());
+fn once(slot: &mut Option<usize>, size: usize) -> Result<(), BankError> {
+    if slot.is_some() {
+        return Err(refuse(UnsafeBank::DuplicateChunk));
     }
-    if bytes.get(chunk.body..chunk.body + chunk.size.min(OGG_MAGIC.len())) == Some(OGG_MAGIC) {
-        return Err(unsupported());
-    }
-    if !chunk.size.is_multiple_of(2) || chunk.size < MIN_SAMPLE_BYTES {
-        return Err(refuse(UnsafeBank::OddSamples));
-    }
+    *slot = Some(size);
     Ok(())
 }
 
-fn check_list(bytes: &[u8], list: &ChunkHeader, pdta: &mut PdtaChunks) -> Result<(), BankError> {
+fn check_samples(bytes: &[u8], chunk: &ChunkHeader, walk: &mut Walk) -> Result<(), BankError> {
+    match &chunk.id {
+        b"smpl" => {
+            if bytes.get(chunk.body..chunk.body + chunk.size.min(OGG_MAGIC.len()))
+                == Some(OGG_MAGIC)
+            {
+                return Err(unsupported());
+            }
+            if !chunk.size.is_multiple_of(2) || chunk.size < MIN_SAMPLE_BYTES {
+                return Err(refuse(UnsafeBank::OddSamples));
+            }
+            once(&mut walk.samples, chunk.size)
+        }
+        b"sm24" => once(&mut walk.extra_samples, chunk.size),
+        _ => Err(refuse(UnsafeBank::UnknownChunk)),
+    }
+}
+
+fn check_table(chunk: &ChunkHeader, walk: &mut Walk) -> Result<(), BankError> {
+    let index = TABLES
+        .iter()
+        .position(|table| *table.id == chunk.id)
+        .ok_or(refuse(UnsafeBank::UnknownChunk))?;
+    let slot = &mut walk.tables[index];
+    if slot.is_some() {
+        return Err(refuse(UnsafeBank::DuplicateChunk));
+    }
+    *slot = Some(chunk.body..chunk.body + chunk.size);
+    Ok(())
+}
+
+fn check_list(
+    bytes: &[u8],
+    list: &ChunkHeader,
+    expected: &[u8; 4],
+    walk: &mut Walk,
+) -> Result<(), BankError> {
     if list.size < FORM_BYTES {
         return Err(refuse(UnsafeBank::ListType));
     }
-    let kind = &bytes[list.body..list.body + FORM_BYTES];
+    if &bytes[list.body..list.body + FORM_BYTES] != expected {
+        return Err(refuse(UnsafeBank::MissingChunk));
+    }
     let end = list.body + list.size;
     let mut at = list.body + FORM_BYTES;
     while at < end {
         let chunk = header(bytes, at, end)?;
-        match kind {
-            b"INFO" => check_info(bytes, &chunk)?,
-            b"sdta" => check_samples(bytes, &chunk)?,
-            b"pdta" => pdta.record(&chunk.id, chunk.body..chunk.body + chunk.size),
-            _ => {}
+        match expected {
+            b"INFO" => check_info(bytes, &chunk, walk)?,
+            b"sdta" => check_samples(bytes, &chunk, walk)?,
+            _ => check_table(&chunk, walk)?,
         }
         at = chunk.body + chunk.size;
     }
     Ok(())
 }
 
-pub(crate) fn check(bytes: &[u8], limits: &Sf2Limits) -> Result<PdtaChunks, BankError> {
-    if u64::try_from(bytes.len()).map_or(true, |length| length > limits.file_bytes) {
-        return Err(refuse(UnsafeBank::FileTooLarge));
+fn table(range: Option<Range<usize>>, spec: &TableSpec) -> Result<Table, BankError> {
+    let range = range.ok_or(refuse(UnsafeBank::MissingChunk))?;
+    let size = range.len();
+    if !size.is_multiple_of(spec.width) || size / spec.width < spec.minimum {
+        return Err(refuse(UnsafeBank::MalformedTable));
+    }
+    Ok(Table {
+        count: size / spec.width,
+        range,
+    })
+}
+
+pub(crate) fn check(bytes: &[u8], limits: &Sf2Limits) -> Result<Layout, BankError> {
+    let file_bytes = widen(bytes.len());
+    if file_bytes > limits.file_bytes {
+        return Err(refuse(UnsafeBank::FileTooLarge {
+            limit_mib: limits.file_bytes >> MIB_SHIFT,
+        }));
     }
     if bytes.get(..FORM_BYTES) != Some(b"RIFF")
         || bytes.get(HEADER_BYTES..HEADER_BYTES + FORM_BYTES) != Some(b"sfbk")
@@ -142,14 +246,32 @@ pub(crate) fn check(bytes: &[u8], limits: &Sf2Limits) -> Result<PdtaChunks, Bank
     }
     let end = bytes.len();
     let mut at = HEADER_BYTES + FORM_BYTES;
-    let mut pdta = PdtaChunks::default();
-    for _ in 0..TOP_LISTS {
+    let mut walk = Walk::default();
+    for expected in LISTS {
         let chunk = header(bytes, at, end)?;
         if &chunk.id != b"LIST" {
-            return Err(invalid("a SoundFont section is missing"));
+            return Err(refuse(UnsafeBank::MissingChunk));
         }
-        check_list(bytes, &chunk, &mut pdta)?;
+        check_list(bytes, &chunk, expected, &mut walk)?;
         at = chunk.body + chunk.size;
     }
-    Ok(pdta)
+    let sample_bytes = walk.samples.ok_or(refuse(UnsafeBank::MissingChunk))?;
+    let [phdr, pbag, pmod, pgen, inst, ibag, imod, igen, shdr] = walk.tables;
+    Ok(Layout {
+        file_bytes,
+        info_bytes: walk.info_bytes,
+        sample_bytes: widen(sample_bytes),
+        extra_sample_bytes: walk.extra_samples.map_or(0, widen),
+        tables: [
+            table(phdr, &PHDR)?,
+            table(pbag, &PBAG)?,
+            table(pmod, &PMOD)?,
+            table(pgen, &PGEN)?,
+            table(inst, &INST)?,
+            table(ibag, &IBAG)?,
+            table(imod, &IMOD)?,
+            table(igen, &IGEN)?,
+            table(shdr, &SHDR)?,
+        ],
+    })
 }

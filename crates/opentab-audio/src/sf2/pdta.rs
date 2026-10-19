@@ -1,19 +1,14 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use super::riff::PdtaChunks;
+use super::riff::{Layout, Table};
 use crate::{BankError, Sf2Limits, UnsafeBank};
 
-const PRESET_RECORD: usize = 38;
 const PRESET_BAG_OFFSET: usize = 24;
 const PRESET_PROGRAM_OFFSET: usize = 20;
 const PRESET_BANK_OFFSET: usize = 22;
-const INSTRUMENT_RECORD: usize = 22;
 const INSTRUMENT_BAG_OFFSET: usize = 20;
-const BAG_RECORD: usize = 4;
 const BAG_MODULATOR_OFFSET: usize = 2;
-const GENERATOR_RECORD: usize = 4;
-const MODULATOR_RECORD: usize = 10;
 
 const INSTRUMENT_GENERATOR: u16 = 41;
 const KEY_RANGE_GENERATOR: u16 = 43;
@@ -28,13 +23,15 @@ const INSTRUMENT_COST: u64 = 192;
 const ZONE_COST: u64 = 64;
 const GENERATOR_COST: u64 = 8;
 const REGION_COST: u64 = 256;
+const SAMPLE_HEADER_COST: u64 = 160;
+const INFO_COPIES: u64 = 2;
 
 pub(crate) const KEYS: usize = 128;
 const VELOCITIES: usize = 128;
 const FIRST_VELOCITY: u8 = 1;
 const TOP: u8 = 127;
 const GRID_SIDE: usize = KEYS + 1;
-const PERCUSSION_BANK: i64 = 128;
+const PERCUSSION_BANK: i32 = 128;
 const PATCH_BITS: u32 = 16;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -47,19 +44,19 @@ pub struct BankShape {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct LayerTable {
-    lookup: HashMap<i64, usize>,
+    lookup: HashMap<i32, usize>,
     default_preset: usize,
     layers: Vec<Option<[u32; KEYS]>>,
 }
 
 impl LayerTable {
     pub(crate) fn resolve(&self, bank: i32, patch: i32) -> usize {
-        let id = (i64::from(bank) << PATCH_BITS) | i64::from(patch);
+        let id = (bank << PATCH_BITS) | patch;
         if let Some(found) = self.lookup.get(&id) {
             return *found;
         }
-        let fallback = if i64::from(bank) < PERCUSSION_BANK {
-            i64::from(patch)
+        let fallback = if bank < PERCUSSION_BANK {
+            patch
         } else {
             PERCUSSION_BANK << PATCH_BITS
         };
@@ -92,18 +89,13 @@ struct Records<'a> {
 }
 
 impl<'a> Records<'a> {
-    fn new(bytes: &'a [u8], range: Option<&Range<usize>>, width: usize) -> Option<Records<'a>> {
-        let range = range?;
-        let size = range.len();
-        if size == 0 || !size.is_multiple_of(width) {
-            return None;
-        }
-        Some(Records {
+    fn new(bytes: &'a [u8], table: &Table) -> Records<'a> {
+        Records {
             bytes,
-            start: range.start,
-            count: size / width,
-            width,
-        })
+            start: table.range.start,
+            count: table.count,
+            width: table.range.len() / table.count.max(1),
+        }
     }
 
     fn word(&self, record: usize, offset: usize) -> u16 {
@@ -250,35 +242,33 @@ fn layer_grid(preset: &[Region], instruments: &[Vec<Region>], grid: &mut [i64]) 
     most
 }
 
-fn loader_bytes(counts: &[u64; 5]) -> u64 {
-    let [presets, instruments, bags, generators, regions] = *counts;
-    FIXED_COST
-        + GROWTH
-            * (presets * PRESET_COST
-                + instruments * INSTRUMENT_COST
-                + bags * ZONE_COST
-                + generators * GENERATOR_COST
-                + regions * REGION_COST)
+fn sum(parts: &[u64]) -> Option<u64> {
+    parts
+        .iter()
+        .try_fold(0u64, |total, part| total.checked_add(*part))
 }
 
-struct Tables<'a> {
-    phdr: Records<'a>,
-    pbag: Records<'a>,
-    pgen: Records<'a>,
-    inst: Records<'a>,
-    ibag: Records<'a>,
-    igen: Records<'a>,
-}
-
-fn tables<'a>(bytes: &'a [u8], chunks: &PdtaChunks) -> Option<Tables<'a>> {
-    Some(Tables {
-        phdr: Records::new(bytes, chunks.phdr.as_ref(), PRESET_RECORD)?,
-        pbag: Records::new(bytes, chunks.pbag.as_ref(), BAG_RECORD)?,
-        pgen: Records::new(bytes, chunks.pgen.as_ref(), GENERATOR_RECORD)?,
-        inst: Records::new(bytes, chunks.inst.as_ref(), INSTRUMENT_RECORD)?,
-        ibag: Records::new(bytes, chunks.ibag.as_ref(), BAG_RECORD)?,
-        igen: Records::new(bytes, chunks.igen.as_ref(), GENERATOR_RECORD)?,
-    })
+fn estimate(layout: &Layout) -> Option<u64> {
+    let [phdr, pbag, pmod, pgen, inst, ibag, imod, igen, shdr] = &layout.tables;
+    let count = |table: &Table| widen(table.count);
+    let bags = count(pbag).checked_add(count(ibag))?;
+    let generators = count(pgen).checked_add(count(igen))?;
+    let structures = sum(&[
+        count(phdr).checked_mul(PRESET_COST)?,
+        count(inst).checked_mul(INSTRUMENT_COST)?,
+        bags.checked_mul(ZONE_COST + REGION_COST)?,
+        generators.checked_mul(GENERATOR_COST)?,
+        count(shdr).checked_mul(SAMPLE_HEADER_COST)?,
+    ])?;
+    sum(&[
+        FIXED_COST,
+        layout.sample_bytes,
+        layout.extra_sample_bytes,
+        layout.info_bytes.checked_mul(INFO_COPIES)?,
+        widen(pmod.range.len()),
+        widen(imod.range.len()),
+        structures.checked_mul(GROWTH)?,
+    ])
 }
 
 fn widen(value: usize) -> u64 {
@@ -287,24 +277,25 @@ fn widen(value: usize) -> u64 {
 
 pub(crate) fn analyse(
     bytes: &[u8],
-    chunks: &PdtaChunks,
+    layout: &Layout,
     limits: &Sf2Limits,
 ) -> Result<Analysis, BankError> {
-    let Some(Tables {
-        phdr,
-        pbag,
-        pgen,
-        inst,
-        ibag,
-        igen,
-    }) = tables(bytes, chunks)
-    else {
-        return Ok(Analysis::default());
-    };
-    let modulators =
-        |range: Option<&Range<usize>>| range.map_or(0, |range| range.len() / MODULATOR_RECORD);
-    let preset_modulators = modulators(chunks.pmod.as_ref());
-    let instrument_modulators = modulators(chunks.imod.as_ref());
+    let loader = estimate(layout).ok_or(refuse(UnsafeBank::LoaderBudget))?;
+    let allowance = limits
+        .loader_allowance(layout.file_bytes)
+        .ok_or(refuse(UnsafeBank::LoaderBudget))?;
+    if loader > allowance {
+        return Err(refuse(UnsafeBank::LoaderBudget));
+    }
+    let [phdr, pbag, pmod, pgen, inst, ibag, imod, igen, _] = &layout.tables;
+    let preset_modulators = pmod.count;
+    let instrument_modulators = imod.count;
+    let phdr = Records::new(bytes, phdr);
+    let pbag = Records::new(bytes, pbag);
+    let pgen = Records::new(bytes, pgen);
+    let inst = Records::new(bytes, inst);
+    let ibag = Records::new(bytes, ibag);
+    let igen = Records::new(bytes, igen);
 
     let preset_owners = phdr.column(PRESET_BAG_OFFSET);
     let instrument_owners = inst.column(INSTRUMENT_BAG_OFFSET);
@@ -325,18 +316,6 @@ pub(crate) fn analyse(
     ) {
         return Err(refuse(UnsafeBank::ModulatorOrder));
     }
-    let bags = widen(pbag.count) + widen(ibag.count);
-    let loader = loader_bytes(&[
-        widen(phdr.count),
-        widen(inst.count),
-        bags,
-        widen(pgen.count) + widen(igen.count),
-        bags,
-    ]);
-    if loader > limits.loader_bytes {
-        return Err(refuse(UnsafeBank::LoaderBudget));
-    }
-
     let instrument_zones = zone_facts(&instrument_bags, &igen, SAMPLE_GENERATOR);
     let instruments: Vec<Vec<Region>> = spans(&instrument_owners, &instrument_zones)
         .into_iter()
@@ -374,6 +353,10 @@ pub(crate) fn analyse(
     }
 
     let watch = u64::from(limits.layers_per_note.min(limits.voices_per_note));
+    let gridded = pairs_of.iter().filter(|pairs| **pairs > watch).count();
+    if widen(gridded) > limits.grid_presets {
+        return Err(refuse(UnsafeBank::LayeredPresets));
+    }
     let mut grid: Vec<i64> = Vec::new();
     let mut table = LayerTable::default();
     for (preset, pairs) in presets.iter().zip(&pairs_of) {
@@ -396,10 +379,10 @@ pub(crate) fn analyse(
         table.layers.push(Some(most));
     }
 
-    let mut lowest = i64::MAX;
+    let mut lowest = i32::MAX;
     for index in 0..presets.len() {
-        let id = (i64::from(phdr.word(index, PRESET_BANK_OFFSET)) << PATCH_BITS)
-            | i64::from(phdr.word(index, PRESET_PROGRAM_OFFSET));
+        let id = (i32::from(phdr.word(index, PRESET_BANK_OFFSET)) << PATCH_BITS)
+            | i32::from(phdr.word(index, PRESET_PROGRAM_OFFSET));
         table.lookup.insert(id, index);
         if id < lowest {
             lowest = id;

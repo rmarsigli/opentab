@@ -1,9 +1,10 @@
 use std::alloc::System;
 
-use opentab_audio::{Bank, BankError, SampleRate, Sf2Bank, Synth, UnsafeBank};
+use opentab_audio::{Bank, BankError, SampleRate, Sf2Bank, Sf2Limits, Synth, UnsafeBank};
 use opentab_playback::{Channel, MidiMessage};
 use opentab_testkit::banks::{
-    PAD_PROGRAM, apply_structural, arb_structural_mutation, padded_sf2, tiny_sf2, zone_bomb,
+    BypassRoute, PAD_PROGRAM, apply_structural, arb_structural_mutation, bypass_bank, padded_sf2,
+    tiny_sf2, zone_bomb,
 };
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
@@ -23,6 +24,8 @@ const BOMB_BAGS: u16 = 512;
 const INPUT_FACTOR: usize = 4;
 const SLACK_BYTES: usize = 1024 * 1024;
 const MAX_MUTATIONS: usize = 5;
+const HOSTILE_RECORDS: usize = 262_144;
+const REFUSAL_BYTES: usize = 64 * 1024;
 
 fn retained(change: Stats) -> usize {
     let grown = change.bytes_allocated as isize + change.bytes_reallocated;
@@ -115,10 +118,9 @@ fn the_loader_estimate_covers_what_loading_allocates() {
         let loading = Region::new(GLOBAL);
         let bank = Sf2Bank::load(&bytes).expect("loads");
         let allocated = loading.change().bytes_allocated;
-        let structures = allocated - bank.sample_bytes();
         assert!(
-            structures as u64 <= bank.shape().loader_bytes,
-            "{structures} bytes against an estimate of {}",
+            allocated as u64 <= bank.shape().loader_bytes,
+            "{allocated} bytes against an estimate of {}",
             bank.shape().loader_bytes
         );
     }
@@ -144,10 +146,53 @@ fn structural_mutations_allocate_in_proportion_to_the_input() {
         .expect("bounded allocation");
 }
 
+fn route_limits(route: BypassRoute) -> Sf2Limits {
+    match route {
+        BypassRoute::MissingInstrumentGenerators | BypassRoute::DuplicateInstrumentBags => {
+            Sf2Limits::DEFAULT
+        }
+        BypassRoute::HugePresetBags | BypassRoute::HugeSampleHeaders => Sf2Limits {
+            loader_slack_bytes: 0,
+            ..Sf2Limits::DEFAULT
+        },
+    }
+}
+
+fn route_reason(route: BypassRoute) -> UnsafeBank {
+    match route {
+        BypassRoute::MissingInstrumentGenerators => UnsafeBank::MissingChunk,
+        BypassRoute::DuplicateInstrumentBags => UnsafeBank::DuplicateChunk,
+        BypassRoute::HugePresetBags | BypassRoute::HugeSampleHeaders => UnsafeBank::LoaderBudget,
+    }
+}
+
+fn every_bypass_route_is_refused_before_it_allocates() {
+    for route in BypassRoute::ALL {
+        let bytes = bypass_bank(route, HOSTILE_RECORDS);
+        let limits = route_limits(route);
+        let loading = Region::new(GLOBAL);
+        let result = Sf2Bank::load_with_limits(&bytes, &limits).map(|bank| bank.sample_bytes());
+        let allocated = loading.change().bytes_allocated;
+        assert_eq!(
+            result,
+            Err(BankError::Unsafe {
+                reason: route_reason(route)
+            }),
+            "{route:?}"
+        );
+        assert!(
+            allocated <= REFUSAL_BYTES,
+            "{route:?} allocated {allocated} bytes for {} input bytes",
+            bytes.len()
+        );
+    }
+}
+
 fn main() {
     twenty_tracks_of_one_multi_megabyte_sf2_add_no_copy_of_its_sample_data();
     the_zone_bomb_is_refused_before_it_allocates();
+    every_bypass_route_is_refused_before_it_allocates();
     the_loader_estimate_covers_what_loading_allocates();
     structural_mutations_allocate_in_proportion_to_the_input();
-    println!("memory: 4 checks passed");
+    println!("memory: 5 checks passed");
 }

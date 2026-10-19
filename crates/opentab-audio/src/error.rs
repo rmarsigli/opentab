@@ -33,8 +33,16 @@ pub enum BankError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Error)]
 pub enum UnsafeBank {
-    #[error("the file is larger than OpenTab accepts")]
-    FileTooLarge,
+    #[error("the file is larger than {limit_mib} MiB, the largest SoundFont OpenTab accepts")]
+    FileTooLarge { limit_mib: u64 },
+    #[error("a required section is missing or out of place")]
+    MissingChunk,
+    #[error("a section appears twice")]
+    DuplicateChunk,
+    #[error("it holds a section OpenTab does not know")]
+    UnknownChunk,
+    #[error("a table has a broken size")]
+    MalformedTable,
     #[error("a section claims more bytes than the file holds")]
     ChunkOverflow,
     #[error("a section has no type")]
@@ -55,4 +63,6 @@ pub enum UnsafeBank {
     RegionPairs,
     #[error("one key would start too many voices at once")]
     Layers,
+    #[error("too many presets stack many layers")]
+    LayeredPresets,
 }

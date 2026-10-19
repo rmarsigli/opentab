@@ -20,8 +20,8 @@ use opentab_playback::{Channel, MidiMessage};
 use rustysynth::{SoundFont, SoundFontError, Synthesizer, SynthesizerSettings};
 
 pub use limits::{
-    MAX_FILE_BYTES, MAX_LAYERS_PER_NOTE, MAX_LOADER_BYTES, MAX_PAIRS_PER_PRESET, MAX_REGION_PAIRS,
-    MAX_VOICES_PER_NOTE, Sf2Limits,
+    LOADER_FILE_FACTOR, LOADER_SLACK_BYTES, MAX_FILE_BYTES, MAX_GRID_PRESETS, MAX_LAYERS_PER_NOTE,
+    MAX_PAIRS_PER_PRESET, MAX_REGION_PAIRS, MAX_VOICES_PER_NOTE, Sf2Limits,
 };
 pub use pdta::BankShape;
 
@@ -161,8 +161,8 @@ impl fmt::Debug for Sf2Bank {
 
 impl Sf2Bank {
     pub fn check(bytes: &[u8], limits: &Sf2Limits) -> Result<BankShape, BankError> {
-        let chunks = riff::check(bytes, limits)?;
-        Ok(pdta::analyse(bytes, &chunks, limits)?.shape)
+        let layout = riff::check(bytes, limits)?;
+        Ok(pdta::analyse(bytes, &layout, limits)?.shape)
     }
 
     pub fn load(bytes: &[u8]) -> Result<Sf2Bank, BankError> {
@@ -170,8 +170,8 @@ impl Sf2Bank {
     }
 
     pub fn load_with_limits(bytes: &[u8], limits: &Sf2Limits) -> Result<Sf2Bank, BankError> {
-        let chunks = riff::check(bytes, limits)?;
-        let analysis = pdta::analyse(bytes, &chunks, limits)?;
+        let layout = riff::check(bytes, limits)?;
+        let analysis = pdta::analyse(bytes, &layout, limits)?;
         let loaded =
             catch_unwind(|| SoundFont::new(&mut Cursor::new(bytes))).map_err(|payload| {
                 BankError::Panicked {
