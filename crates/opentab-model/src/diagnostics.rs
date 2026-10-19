@@ -120,6 +120,10 @@ pub enum Diagnostic {
         master_bar: MasterBarId,
         target: DirectionTarget,
     },
+    DuplicateJump {
+        master_bar: MasterBarId,
+        jump: DirectionJump,
+    },
     CodaNotAhead {
         master_bar: MasterBarId,
         jump: DirectionJump,
@@ -246,19 +250,39 @@ impl Report {
     }
 
     fn directions(&mut self, master_bars: &[MasterBar]) {
-        let mut placed: Vec<DirectionTarget> = Vec::new();
-        for master_bar in master_bars {
-            for target in &master_bar.directions.targets {
-                if placed.contains(target) {
-                    self.diagnostics.push(Diagnostic::DuplicateTarget {
-                        master_bar: master_bar.id,
-                        target: *target,
-                    });
-                } else {
-                    placed.push(*target);
-                }
+        let targets: Vec<(MasterBarId, DirectionTarget)> = master_bars
+            .iter()
+            .flat_map(|bar| {
+                bar.directions
+                    .targets
+                    .iter()
+                    .map(|target| (bar.id, *target))
+            })
+            .collect();
+        for (index, (master_bar, target)) in targets.iter().enumerate() {
+            if targets[index + 1..]
+                .iter()
+                .any(|(_, later)| later == target)
+            {
+                self.diagnostics.push(Diagnostic::DuplicateTarget {
+                    master_bar: *master_bar,
+                    target: *target,
+                });
             }
         }
+        let jumps: Vec<(MasterBarId, DirectionJump)> = master_bars
+            .iter()
+            .flat_map(|bar| bar.directions.jumps.iter().map(|jump| (bar.id, *jump)))
+            .collect();
+        for (index, (master_bar, jump)) in jumps.iter().enumerate() {
+            if jumps[index + 1..].iter().any(|(_, later)| later == jump) {
+                self.diagnostics.push(Diagnostic::DuplicateJump {
+                    master_bar: *master_bar,
+                    jump: *jump,
+                });
+            }
+        }
+        let placed: Vec<DirectionTarget> = targets.iter().map(|(_, target)| *target).collect();
         for (index, master_bar) in master_bars.iter().enumerate() {
             for jump in &master_bar.directions.jumps {
                 for target in jump.needs() {

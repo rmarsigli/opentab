@@ -132,11 +132,12 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::Path;
 
-    const DIAGNOSED: [(&str, usize); 4] = [
+    const DIAGNOSED: [(&str, usize); 5] = [
         ("directions-dangling.gp", 3),
         ("directions-duplicates.gp", 2),
-        ("directions-coda-free.gp", 1),
+        ("directions-coda-free.gp", 2),
         ("directions-coda-endings.gp", 1),
+        ("directions-endings.gp", 1),
     ];
     const DIRECTIONS_PREFIX: &str = "directions-";
 

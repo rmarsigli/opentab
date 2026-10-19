@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
 use opentab_model::{
-    Automation, AutomationValue, Bar, Beat, BeatEffects, ContainerEntry, DirectionTarget, Duration,
-    ElementId, Extensions, Instrument, InstrumentKind, InstrumentSet, JumpDestination, Marker,
-    MasterBar, MidiBank, Note, NoteKind, OpaquePayload, Score, Sound, SoundOverride, SoundRef,
-    Staff, TempoChange, TimeSignature, Track, Tuning, Voice, VoiceSlot,
+    Automation, AutomationValue, Bar, Beat, BeatEffects, ContainerEntry, DirectionJump,
+    DirectionTarget, Duration, ElementId, Extensions, Instrument, InstrumentKind, InstrumentSet,
+    JumpDestination, Marker, MasterBar, MidiBank, Note, NoteKind, OpaquePayload, Score, Sound,
+    SoundOverride, SoundRef, Staff, TempoChange, TimeSignature, Track, Tuning, Voice, VoiceSlot,
 };
 
 const EXTRA_FORMAT: &str = "gpif";
@@ -391,6 +391,16 @@ fn resolve_directions(master_bars: &mut [MasterBar]) {
                 _ => true,
             };
             ahead && jump.needs().iter().all(|target| placed.contains(target))
+        });
+    }
+    let mut jumped: Vec<DirectionJump> = Vec::new();
+    for master_bar in master_bars.iter_mut() {
+        master_bar.directions.jumps.retain(|jump| {
+            let fresh = !jumped.contains(jump);
+            if fresh {
+                jumped.push(*jump);
+            }
+            fresh
         });
     }
 }

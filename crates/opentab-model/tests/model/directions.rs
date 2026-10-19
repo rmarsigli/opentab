@@ -224,7 +224,7 @@ fn a_to_coda_is_flagged_exactly_when_no_copy_of_its_target_lies_after_its_bar() 
                 let ids: Vec<MasterBarId> = score.master_bars.iter().map(|bar| bar.id).collect();
                 let mut expected: Vec<Diagnostic> = places
                     .iter()
-                    .skip(1)
+                    .take(places.len().saturating_sub(1))
                     .map(|place| Diagnostic::DuplicateTarget {
                         master_bar: ids[*place],
                         target,
@@ -268,7 +268,7 @@ fn a_target_in_the_jumps_own_bar_counts() {
 }
 
 #[test]
-fn every_later_copy_of_a_target_is_a_duplicate() {
+fn every_copy_of_a_target_but_the_last_is_a_duplicate() {
     let placements: [&[usize]; 5] = [&[0], &[0, 1], &[0, 0], &[1, 2], &[0, 1, 2]];
     for target in DIRECTION_TARGETS {
         for places in placements {
@@ -279,7 +279,7 @@ fn every_later_copy_of_a_target_is_a_duplicate() {
             let ids: Vec<MasterBarId> = score.master_bars.iter().map(|bar| bar.id).collect();
             let expected: Vec<Diagnostic> = places
                 .iter()
-                .skip(1)
+                .take(places.len() - 1)
                 .map(|place| Diagnostic::DuplicateTarget {
                     master_bar: ids[*place],
                     target,
@@ -361,4 +361,62 @@ fn direction_diagnostics_round_trip_through_json() {
         value,
         json!({"kind": "dangling_jump", "master_bar": at.0.0, "jump": "da_segno", "target": "segno"})
     );
+}
+
+#[test]
+fn every_copy_of_a_jump_but_the_last_is_a_duplicate() {
+    let placements: [&[usize]; 5] = [&[0], &[0, 1], &[1, 1], &[0, 2], &[0, 1, 2]];
+    for jump in DIRECTION_JUMPS {
+        for places in placements {
+            let mut score = bars(3);
+            for place in places {
+                score.master_bars[*place].directions.jumps.push(jump);
+            }
+            let ids: Vec<MasterBarId> = score.master_bars.iter().map(|bar| bar.id).collect();
+            let expected: Vec<Diagnostic> = places
+                .iter()
+                .take(places.len() - 1)
+                .map(|place| Diagnostic::DuplicateJump {
+                    master_bar: ids[*place],
+                    jump,
+                })
+                .collect();
+            let found: Vec<Diagnostic> = diagnose(&score)
+                .into_iter()
+                .filter(|diagnostic| matches!(diagnostic, Diagnostic::DuplicateJump { .. }))
+                .collect();
+            assert_eq!(found, expected, "{jump:?} at {places:?}");
+        }
+    }
+    let json = serde_json::to_string(&Diagnostic::DuplicateJump {
+        master_bar: bars(1).master_bars[0].id,
+        jump: DirectionJump::DaCapo,
+    })
+    .unwrap();
+    assert!(json.contains(r#""kind":"duplicate_jump""#), "{json}");
+    assert!(json.contains(r#""jump":"da_capo""#), "{json}");
+    assert_eq!(
+        serde_json::from_str::<Diagnostic>(&json).unwrap(),
+        Diagnostic::DuplicateJump {
+            master_bar: bars(1).master_bars[0].id,
+            jump: DirectionJump::DaCapo,
+        }
+    );
+}
+
+#[test]
+fn distinct_names_in_one_bar_are_not_duplicates() {
+    let mut score = bars(1);
+    score.master_bars[0].directions = Directions {
+        targets: vec![
+            DirectionTarget::Segno,
+            DirectionTarget::Coda,
+            DirectionTarget::Fine,
+        ],
+        jumps: vec![DirectionJump::DaSegnoAlCoda, DirectionJump::DaCoda],
+    };
+    assert!(diagnose(&score).iter().all(|diagnostic| !matches!(
+        diagnostic,
+        Diagnostic::DuplicateJump { .. } | Diagnostic::DuplicateTarget { .. }
+    )));
 }

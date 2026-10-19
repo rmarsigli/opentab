@@ -224,22 +224,44 @@ fn the_dangling_fixture_reports_each_missing_target() {
 }
 
 #[test]
-fn the_duplicates_fixture_reports_each_later_target() {
+fn the_duplicates_fixture_reports_each_copy_guitar_pro_drops() {
     let score = fixture("directions-duplicates.gp");
     let id = |bar: usize| score.master_bars[bar].id;
     assert_eq!(
         diagnose(&score),
         vec![
             Diagnostic::DuplicateTarget {
-                master_bar: id(4),
+                master_bar: id(1),
                 target: DirectionTarget::Segno,
             },
             Diagnostic::DuplicateTarget {
-                master_bar: id(5),
+                master_bar: id(2),
                 target: DirectionTarget::Fine,
             },
         ]
     );
+}
+
+#[test]
+fn fixtures_with_a_repeated_jump_report_the_copy_guitar_pro_drops() {
+    for (name, bar, jump) in [
+        ("directions-endings.gp", 1, DirectionJump::DaCapo),
+        ("directions-coda-free.gp", 1, DirectionJump::DaCoda),
+    ] {
+        let score = fixture(name);
+        let duplicates: Vec<Diagnostic> = diagnose(&score)
+            .into_iter()
+            .filter(|diagnostic| matches!(diagnostic, Diagnostic::DuplicateJump { .. }))
+            .collect();
+        assert_eq!(
+            duplicates,
+            vec![Diagnostic::DuplicateJump {
+                master_bar: score.master_bars[bar].id,
+                jump,
+            }],
+            "{name}"
+        );
+    }
 }
 
 #[test]
