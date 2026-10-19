@@ -23,10 +23,11 @@ pub use limits::{
     SFZ_MAX_AUDIO_FILE_BYTES, SFZ_MAX_BANK_TEXT_BYTES, SFZ_MAX_DECODED_BYTES, SFZ_MAX_DEFINE_BYTES,
     SFZ_MAX_DEFINE_NAME_BYTES, SFZ_MAX_DEFINES, SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_FILE_BYTES,
     SFZ_MAX_FOLDER_DEPTH, SFZ_MAX_FOLDER_ENTRIES, SFZ_MAX_INCLUDE_DEPTH, SFZ_MAX_INCLUDES,
-    SFZ_MAX_LINE_BYTES, SFZ_MAX_LISTED_ENTRIES, SFZ_MAX_LOADER_BYTES, SFZ_MAX_READ_BYTES,
-    SFZ_MAX_REGIONS, SFZ_MAX_SAMPLE_CHANNELS, SFZ_MAX_SAMPLE_FRAMES, SFZ_MAX_SAMPLE_RATE,
-    SFZ_MAX_SFZ_FILES, SFZ_MAX_SIDECAR_BYTES, SFZ_MAX_VOICES, SFZ_MAX_VOICES_PER_NOTE,
-    SFZ_MAX_VORBIS_ENTRIES, SFZ_MAX_VORBIS_SETUP_BYTES, SFZ_MIN_SAMPLE_RATE, SfzLimits,
+    SFZ_MAX_LINE_BYTES, SFZ_MAX_LISTED_ENTRIES, SFZ_MAX_LOADER_BYTES, SFZ_MAX_PATH_BYTES,
+    SFZ_MAX_PATH_LOOKUPS, SFZ_MAX_READ_BYTES, SFZ_MAX_REGIONS, SFZ_MAX_SAMPLE_CHANNELS,
+    SFZ_MAX_SAMPLE_FRAMES, SFZ_MAX_SAMPLE_RATE, SFZ_MAX_SFZ_FILES, SFZ_MAX_SIDECAR_BYTES,
+    SFZ_MAX_VOICES, SFZ_MAX_VOICES_PER_NOTE, SFZ_MAX_VORBIS_COMMENT_BYTES, SFZ_MAX_VORBIS_ENTRIES,
+    SFZ_MAX_VORBIS_SETUP_BYTES, SFZ_MIN_SAMPLE_RATE, SfzLimits,
 };
 pub use listing::{IgnoreReason, IgnoredOpcode, SfzScope};
 pub use mapping::{SIDECAR_NAME, SIDECAR_VERSION};
@@ -39,7 +40,7 @@ use limits::{KIB, MIB};
 use listing::Listing;
 use mapping::ProgramMap;
 use parse::{parse, region_cost};
-use paths::{BankFs, PathProblem, ReadProblem, read_capped};
+use paths::{BankFs, PathProblem, ReadProblem, read_capped, refusal};
 use text::{FsIncludes, MemoryIncludes, Preprocessor, decode_text};
 
 use crate::sf2::{FaultLog, SynthFault};
@@ -96,6 +97,8 @@ pub struct SfzBank {
     skipped: Vec<SkippedInstrument>,
     loader_bytes: u64,
     listed_entries: u64,
+    path_lookups: u64,
+    lookup_steps: u64,
     next_instance: AtomicU32,
 }
 
@@ -244,6 +247,7 @@ impl Loader<'_> {
         root_dir: &Path,
         text: &str,
     ) -> Result<Result<usize, IgnoreReason>, BankError> {
+        self.count_text(text.len())?;
         let key = (root_dir.to_path_buf(), text.to_owned());
         if let Some(found) = self.resolved.get(&key) {
             return Ok(*found);
@@ -260,10 +264,12 @@ impl Loader<'_> {
             }
             Err(PathProblem::Outside | PathProblem::Rejected) => Err(IgnoreReason::PathOutsideBank),
             Err(PathProblem::Missing) => Err(IgnoreReason::MissingFile),
-            Err(PathProblem::Exhausted) => {
-                return Err(refuse(UnsafeBank::ListedEntries {
-                    limit: self.limits.listed_entries,
-                }));
+            Err(problem @ (PathProblem::Exhausted | PathProblem::Lookups)) => {
+                return Err(refusal(problem, self.limits).unwrap_or(refuse(
+                    UnsafeBank::ListedEntries {
+                        limit: self.limits.listed_entries,
+                    },
+                )));
             }
         };
         self.loader_bytes = self
@@ -378,6 +384,8 @@ impl SfzBank {
         };
         let loader_bytes = loader.loader_bytes;
         let listed_entries = loader.fs.listed();
+        let path_lookups = loader.fs.lookups();
+        let lookup_steps = loader.fs.steps();
         let cache = SampleCache::new(loader.samples, *limits);
         Ok(SfzBank {
             shared: Arc::new(SfzShared {
@@ -391,6 +399,8 @@ impl SfzBank {
             skipped,
             loader_bytes,
             listed_entries,
+            path_lookups,
+            lookup_steps,
             next_instance: AtomicU32::new(0),
         })
     }
@@ -470,6 +480,14 @@ impl SfzBank {
 
     pub fn listed_entries(&self) -> u64 {
         self.listed_entries
+    }
+
+    pub fn path_lookups(&self) -> u64 {
+        self.path_lookups
+    }
+
+    pub fn lookup_steps(&self) -> u64 {
+        self.lookup_steps
     }
 
     pub fn shared_count(&self) -> usize {

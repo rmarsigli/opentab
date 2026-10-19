@@ -115,6 +115,12 @@ pub enum UnsafeBank {
     TextReadTooLarge { limit_mib: u64 },
     #[error("a line of instrument text is longer than {limit_kib} KiB")]
     LineTooLong { limit_kib: u64 },
+    #[error("a sample or include path is longer than {limit} bytes")]
+    PathTooLong { limit: u64 },
+    #[error("it asks for more than {limit} different file paths")]
+    PathLookups { limit: u64 },
+    #[error("a folder inside the bank cannot be read")]
+    UnreadableFolder,
     #[error("an Ogg Vorbis sample declares text longer than the file")]
     VorbisComments,
 }

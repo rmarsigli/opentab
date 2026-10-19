@@ -513,28 +513,40 @@ fn group_number(assign: &mut Assign<'_>, value: &str) -> Option<u32> {
         .and_then(|number| u32::try_from(number).ok())
 }
 
-fn finish(settings: Settings, default_path: &str, listing: &mut Listing) -> Option<SfzRegion> {
+fn finish(
+    settings: Settings,
+    default_path: &str,
+    path_cap: usize,
+    listing: &mut Listing,
+) -> Result<Option<SfzRegion>, BankError> {
     let Some(sample) = settings.sample.as_deref() else {
         listing.note("sample", SfzScope::Region, IgnoreReason::MissingSample);
-        return None;
+        return Ok(None);
     };
     if sample.is_empty() {
         listing.note("sample", SfzScope::Region, IgnoreReason::MissingSample);
-        return None;
+        return Ok(None);
     }
     if sample.starts_with(GENERATOR_PREFIX) {
         listing.note("sample", SfzScope::Region, IgnoreReason::Generator);
-        return None;
+        return Ok(None);
     }
     if sample.contains(VARIABLE) {
         listing.note("sample", SfzScope::Region, IgnoreReason::UnresolvedVariable);
-        return None;
+        return Ok(None);
+    }
+    if default_path.len().saturating_add(sample.len()) > path_cap {
+        return Err(BankError::Unsafe {
+            reason: UnsafeBank::PathTooLong {
+                limit: path_cap as u64,
+            },
+        });
     }
     let sample = format!("{default_path}{sample}");
     let trigger = match settings.trigger {
         Some(TriggerSetting::Release) => {
             listing.note("trigger", SfzScope::Region, IgnoreReason::ReleaseTrigger);
-            return None;
+            return Ok(None);
         }
         Some(TriggerSetting::Play(trigger)) => trigger,
         None => Trigger::Attack,
@@ -542,7 +554,7 @@ fn finish(settings: Settings, default_path: &str, listing: &mut Listing) -> Opti
     let end = match settings.end {
         Some(-1) => {
             listing.note("end", SfzScope::Region, IgnoreReason::DisabledRegion);
-            return None;
+            return Ok(None);
         }
         Some(frame) => u64::try_from(frame).ok(),
         None => None,
@@ -571,7 +583,7 @@ fn finish(settings: Settings, default_path: &str, listing: &mut Listing) -> Opti
         }
     }
     cc_ranges.sort_by_key(|range| range.controller);
-    Some(SfzRegion {
+    Ok(Some(SfzRegion {
         sample,
         lokey: settings.lokey.unwrap_or(0),
         hikey: settings.hikey.unwrap_or(MAX_NOTE as u8),
@@ -609,7 +621,7 @@ fn finish(settings: Settings, default_path: &str, listing: &mut Listing) -> Opti
         trigger,
         sw_last: settings.sw_last,
         cc_ranges,
-    })
+    }))
 }
 
 struct Scopes {
@@ -644,7 +656,12 @@ impl Scopes {
         settings.inherit(&self.group);
         settings.inherit(&self.master);
         settings.inherit(&self.global);
-        if let Some(region) = finish(settings, &parsed.control.default_path, &mut parsed.listing) {
+        if let Some(region) = finish(
+            settings,
+            &parsed.control.default_path,
+            limits.path_bytes,
+            &mut parsed.listing,
+        )? {
             if parsed.regions.len() as u64 >= limits.regions {
                 return Err(BankError::Unsafe {
                     reason: UnsafeBank::TooManyRegions {

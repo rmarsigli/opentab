@@ -16,7 +16,24 @@ pub(crate) enum PathProblem {
     Outside,
     Missing,
     Exhausted,
+    Lookups,
 }
+
+pub(crate) fn refusal(problem: PathProblem, limits: &SfzLimits) -> Option<BankError> {
+    let reason = match problem {
+        PathProblem::Exhausted => UnsafeBank::ListedEntries {
+            limit: limits.listed_entries,
+        },
+        PathProblem::Lookups => UnsafeBank::PathLookups {
+            limit: limits.path_lookups,
+        },
+        PathProblem::Rejected | PathProblem::Outside | PathProblem::Missing => return None,
+    };
+    Some(unsafe_bank(reason))
+}
+
+type FolderIndex = HashMap<String, Vec<OsString>>;
+type ResolveKey = (PathBuf, String);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReadProblem {
@@ -27,10 +44,14 @@ pub(crate) enum ReadProblem {
 #[derive(Debug)]
 pub(crate) struct BankFs {
     root: PathBuf,
-    listings: HashMap<PathBuf, Vec<OsString>>,
+    listings: HashMap<PathBuf, FolderIndex>,
+    resolved: HashMap<ResolveKey, Result<PathBuf, PathProblem>>,
     entry_cap: u64,
     listed: u64,
     listed_cap: u64,
+    lookups: u64,
+    lookup_cap: u64,
+    steps: u64,
 }
 
 fn invalid(reason: &str) -> BankError {
@@ -43,12 +64,28 @@ fn unsafe_bank(reason: UnsafeBank) -> BankError {
     BankError::Unsafe { reason }
 }
 
+#[cfg(unix)]
+fn same_file(checked: &fs::Metadata, opened: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    checked.dev() == opened.dev() && checked.ino() == opened.ino()
+}
+
+#[cfg(not(unix))]
+fn same_file(_checked: &fs::Metadata, opened: &fs::Metadata) -> bool {
+    opened.is_file()
+}
+
 pub(crate) fn read_capped(path: &Path, cap: u64) -> Result<Vec<u8>, ReadProblem> {
-    if !fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+    let checked = fs::symlink_metadata(path).map_err(|_| ReadProblem::Missing)?;
+    if !checked.is_file() {
         return Err(ReadProblem::Missing);
     }
     let file = File::open(path).map_err(|_| ReadProblem::Missing)?;
-    let declared = file.metadata().map_err(|_| ReadProblem::Missing)?.len();
+    let opened = file.metadata().map_err(|_| ReadProblem::Missing)?;
+    if !opened.is_file() || !same_file(&checked, &opened) {
+        return Err(ReadProblem::Missing);
+    }
+    let declared = opened.len();
     if declared > cap {
         return Err(ReadProblem::TooLarge);
     }
@@ -74,10 +111,6 @@ fn has_drive_prefix(text: &str) -> bool {
     )
 }
 
-fn same_name(left: &str, right: &str) -> bool {
-    left.to_lowercase() == right.to_lowercase()
-}
-
 impl BankFs {
     pub(crate) fn open(root: &Path, limits: &SfzLimits) -> Result<BankFs, BankError> {
         let root = fs::canonicalize(root).map_err(|_| invalid("the bank folder cannot be read"))?;
@@ -87,14 +120,26 @@ impl BankFs {
         Ok(BankFs {
             root,
             listings: HashMap::new(),
+            resolved: HashMap::new(),
             entry_cap: limits.folder_entries,
             listed: 0,
             listed_cap: limits.listed_entries,
+            lookups: 0,
+            lookup_cap: limits.path_lookups,
+            steps: 0,
         })
     }
 
     pub(crate) fn listed(&self) -> u64 {
         self.listed
+    }
+
+    pub(crate) fn lookups(&self) -> u64 {
+        self.lookups
+    }
+
+    pub(crate) fn steps(&self) -> u64 {
+        self.steps
     }
 
     pub(crate) fn root(&self) -> &Path {
@@ -118,19 +163,19 @@ impl BankFs {
         let mut pending: Vec<(PathBuf, u64)> = vec![(self.root.clone(), 0)];
         let mut entries: u64 = 0;
         while let Some((folder, depth)) = pending.pop() {
-            let Ok(listing) = fs::read_dir(&folder) else {
-                continue;
-            };
-            for entry in listing.flatten() {
+            let listing =
+                fs::read_dir(&folder).map_err(|_| unsafe_bank(UnsafeBank::UnreadableFolder))?;
+            for entry in listing {
+                let entry = entry.map_err(|_| unsafe_bank(UnsafeBank::UnreadableFolder))?;
                 entries += 1;
                 if entries > limits.folder_entries {
                     return Err(unsafe_bank(UnsafeBank::TooManyFiles {
                         limit: limits.folder_entries,
                     }));
                 }
-                let Ok(kind) = entry.file_type() else {
-                    continue;
-                };
+                let kind = entry
+                    .file_type()
+                    .map_err(|_| unsafe_bank(UnsafeBank::UnreadableFolder))?;
                 if kind.is_symlink() {
                     return Err(unsafe_bank(UnsafeBank::BankSymlink));
                 }
@@ -160,26 +205,31 @@ impl BankFs {
         Ok(found)
     }
 
-    fn listing(&mut self, folder: &Path) -> Result<&[OsString], PathProblem> {
+    fn listing(&mut self, folder: &Path) -> Result<&FolderIndex, PathProblem> {
         let canonical = fs::canonicalize(folder).map_err(|_| PathProblem::Missing)?;
         let canonical = self.confine(canonical)?;
         if !self.listings.contains_key(&canonical) {
-            let mut names = Vec::new();
+            let mut index = FolderIndex::new();
+            let mut count: u64 = 0;
             if let Ok(entries) = fs::read_dir(&canonical) {
                 for entry in entries.flatten() {
-                    if names.len() as u64 >= self.entry_cap {
+                    if count >= self.entry_cap {
                         break;
                     }
                     if self.listed >= self.listed_cap {
                         return Err(PathProblem::Exhausted);
                     }
                     self.listed += 1;
-                    names.push(entry.file_name());
+                    count += 1;
+                    let name = entry.file_name();
+                    let lowered = name.to_string_lossy().to_lowercase();
+                    self.steps = self.steps.saturating_add(lowered.len() as u64);
+                    index.entry(lowered).or_default().push(name);
                 }
             }
-            self.listings.insert(canonical.clone(), names);
+            self.listings.insert(canonical.clone(), index);
         }
-        Ok(self.listings.get(&canonical).map_or(&[][..], Vec::as_slice))
+        self.listings.get(&canonical).ok_or(PathProblem::Missing)
     }
 
     fn find_ignoring_case(&mut self, candidate: &Path) -> Result<PathBuf, PathProblem> {
@@ -197,22 +247,35 @@ impl BankFs {
                 current = exact;
                 continue;
             }
-            let wanted = name.to_string_lossy().into_owned();
-            let matches: Vec<OsString> = self
-                .listing(&current)?
-                .iter()
-                .filter(|entry| same_name(&entry.to_string_lossy(), &wanted))
-                .cloned()
-                .collect();
-            let [only] = matches.as_slice() else {
-                return Err(PathProblem::Missing);
+            let wanted = name.to_string_lossy().to_lowercase();
+            self.steps = self.steps.saturating_add(wanted.len() as u64);
+            let found = match self.listing(&current)?.get(&wanted).map(Vec::as_slice) {
+                Some([only]) => only.clone(),
+                _ => return Err(PathProblem::Missing),
             };
-            current = current.join(only);
+            current = current.join(found);
         }
         Ok(current)
     }
 
     pub(crate) fn resolve(&mut self, base: &Path, text: &str) -> Result<PathBuf, PathProblem> {
+        let key = (base.to_path_buf(), text.to_owned());
+        if let Some(found) = self.resolved.get(&key) {
+            return found.clone();
+        }
+        self.lookups += 1;
+        if self.lookups > self.lookup_cap {
+            return Err(PathProblem::Lookups);
+        }
+        self.steps = self.steps.saturating_add(text.len() as u64);
+        let outcome = self.resolve_uncached(base, text);
+        if !matches!(outcome, Err(PathProblem::Exhausted)) {
+            self.resolved.insert(key, outcome.clone());
+        }
+        outcome
+    }
+
+    fn resolve_uncached(&mut self, base: &Path, text: &str) -> Result<PathBuf, PathProblem> {
         let text = text.replace('\\', "/");
         if text.is_empty()
             || text.contains('\0')

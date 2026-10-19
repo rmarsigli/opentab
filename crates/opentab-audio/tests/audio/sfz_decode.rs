@@ -3,9 +3,9 @@ use opentab_audio::{
     vorbis_setup_cost,
 };
 use opentab_testkit::banks::{
-    ExtraCodebook, FlacOverrides, FlacSpec, SAMPLE_RATE, SINE_BIN, SINE_PACKETS, VorbisSpec,
-    WavOverrides, WavSpec, flac16, mono_points, samples, sine_ogg, stereo_points, wav16,
-    write_flac, write_flac_with, write_vorbis, write_wav, write_wav_with,
+    ExtraCodebook, FilledComments, FlacOverrides, FlacSpec, SAMPLE_RATE, SINE_BIN, SINE_PACKETS,
+    VorbisSpec, WavOverrides, WavSpec, flac16, mono_points, samples, sine_ogg, stereo_points,
+    wav16, write_flac, write_flac_with, write_vorbis, write_wav, write_wav_with,
 };
 
 fn expected(points: &[i32], bits: u32) -> Vec<f32> {
@@ -377,4 +377,33 @@ fn ogg_files_named_by_opentab_ogg_decode_through_the_guard() {
         );
         assert!(decoded.frames > 0 && decoded.peak() > 0.0);
     }
+}
+
+fn commented(count: u32, length: u32) -> Vec<u8> {
+    let mut spec = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
+    spec.filled_comments = Some(FilledComments { count, length });
+    write_vorbis(&spec)
+}
+
+#[test]
+fn a_vorbis_comment_count_beyond_the_comment_budget_is_refused() {
+    assert_eq!(
+        unsafe_reason(decode_audio(&commented(30_000, 0), &SfzLimits::DEFAULT)),
+        UnsafeBank::VorbisComments
+    );
+    assert!(decode_audio(&commented(1_000, 0), &SfzLimits::DEFAULT).is_ok());
+}
+
+#[test]
+fn vorbis_comment_text_beyond_the_comment_budget_is_refused() {
+    let limits = SfzLimits {
+        vorbis_comment_bytes: 64 << 10,
+        ..SfzLimits::DEFAULT
+    };
+    let long = commented(10, 8 << 10);
+    assert_eq!(
+        unsafe_reason(decode_audio(&long, &limits)),
+        UnsafeBank::VorbisComments
+    );
+    assert!(decode_audio(&long, &SfzLimits::DEFAULT).is_ok());
 }

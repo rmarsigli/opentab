@@ -562,7 +562,7 @@ fn text_read_through_includes_is_capped() {
     let parsed = text_with("#include \"m.txt\"\n", &files, &SfzLimits::DEFAULT).expect("parses");
     assert_eq!(
         parsed.read_bytes,
-        input_bytes("#include \"m.txt\"\n", &files) + 49 * 2048
+        input_bytes("#include \"m.txt\"\n", &files) + 49 * 2048 + 51 * 5
     );
     let dir = scratch_dir();
     let root = pluck_bank(
@@ -623,4 +623,136 @@ fn resolved_sample_paths_count_against_the_loader_budget() {
     let dir = scratch_dir();
     let root = pluck_bank(dir.path(), &[("a.sfz", &regions)]);
     assert_eq!(refusal(load(&root, &limits)), UnsafeBank::LoaderBudget);
+}
+
+fn bank_with_files(dir: &Path, sfz: &str, files: usize) -> std::path::PathBuf {
+    let root = pluck_bank(dir, &[("a.sfz", sfz)]);
+    for index in 0..files {
+        fs::write(root.join(format!("f{index:05}")), b"").expect("entry");
+    }
+    root
+}
+
+#[test]
+fn case_misses_over_a_large_folder_cost_one_listing_and_cached_lookups() {
+    let dir = scratch_dir();
+    let distinct: String = (0..500)
+        .map(|index| format!("#include \"MISS{index}.TXT\"\n"))
+        .collect();
+    let repeated = "#include \"../M\"\n".repeat(2000);
+    let root = bank_with_files(dir.path(), &(distinct + &repeated), 2000);
+    let bank = load(&root, &SfzLimits::DEFAULT).expect("loads");
+    assert!(
+        bank.path_lookups() <= 2 * 502,
+        "{} lookups",
+        bank.path_lookups()
+    );
+    assert!(
+        bank.listed_entries() <= 2010,
+        "{} listed",
+        bank.listed_entries()
+    );
+    let folder_bytes = 2010 * 8;
+    let lookup_bytes = 2 * 502 * 2 * 16;
+    assert!(
+        bank.lookup_steps() <= STEP_FACTOR * (folder_bytes + lookup_bytes),
+        "{} steps",
+        bank.lookup_steps()
+    );
+}
+
+#[test]
+fn distinct_path_lookups_are_capped() {
+    let limits = SfzLimits {
+        path_lookups: 50,
+        ..SfzLimits::DEFAULT
+    };
+    let dir = scratch_dir();
+    let regions: String = (0..100)
+        .map(|index| format!("<region> sample=s{index}.wav\n"))
+        .collect();
+    let root = pluck_bank(dir.path(), &[("a.sfz", &regions)]);
+    assert_eq!(
+        refusal(load(&root, &limits)),
+        UnsafeBank::PathLookups { limit: 50 }
+    );
+    assert!(load(&root, &SfzLimits::DEFAULT).is_ok());
+}
+
+#[test]
+fn an_include_path_expanding_past_its_cap_is_refused_with_bounded_work() {
+    let text = format!("#define $A {}\n#include \"$A$A$A$A\"\n", "x".repeat(600));
+    let run = measure_sfz_text(&text, &BTreeMap::new(), &SfzLimits::DEFAULT);
+    assert_eq!(
+        run.result.map(|parsed| parsed.regions.len()),
+        Err(BankError::Unsafe {
+            reason: UnsafeBank::PathTooLong { limit: 1024 }
+        })
+    );
+    assert!(
+        run.steps <= STEP_FACTOR * (1024 + text.len() as u64),
+        "{} steps",
+        run.steps
+    );
+    let dir = scratch_dir();
+    let root = pluck_bank(dir.path(), &[("a.sfz", &text)]);
+    assert_eq!(
+        refusal(load(&root, &SfzLimits::DEFAULT)),
+        UnsafeBank::PathTooLong { limit: 1024 }
+    );
+}
+
+#[test]
+fn a_sample_path_past_its_cap_is_refused() {
+    let text = format!(
+        "<control> default_path={}/\n<region> sample={}.wav\n",
+        "d".repeat(600),
+        "s".repeat(600)
+    );
+    assert_eq!(
+        refusal(text_with(&text, &[], &SfzLimits::DEFAULT)),
+        UnsafeBank::PathTooLong { limit: 1024 }
+    );
+}
+
+#[test]
+fn sample_path_text_counts_against_the_bank_text_cap() {
+    let text = format!(
+        "<control> default_path={}/\n{}",
+        "d".repeat(500),
+        "<region> sample=x.wav\n".repeat(100)
+    );
+    let limits = SfzLimits {
+        bank_text_bytes: 30 << 10,
+        ..SfzLimits::DEFAULT
+    };
+    let dir = scratch_dir();
+    let root = pluck_bank(dir.path(), &[("a.sfz", &text)]);
+    assert_eq!(
+        refusal(load(&root, &limits)),
+        UnsafeBank::BankTextTooLarge { limit_mib: 0 }
+    );
+    assert!(load(&root, &SfzLimits::DEFAULT).is_ok());
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_folder_refuses_the_bank() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch_dir();
+    let root = pluck_bank(dir.path(), &[("a.sfz", "<region> sample=pluck.wav")]);
+    let hidden = root.join("hidden");
+    fs::create_dir_all(&hidden).expect("folder");
+    fs::set_permissions(&hidden, fs::Permissions::from_mode(0o311)).expect("mode");
+    let readable = fs::read_dir(&hidden).is_ok();
+    let result = load(&root, &SfzLimits::DEFAULT).map(|bank| bank.sample_count());
+    fs::set_permissions(&hidden, fs::Permissions::from_mode(0o755)).expect("mode restored");
+    if !readable {
+        assert_eq!(
+            result,
+            Err(BankError::Unsafe {
+                reason: UnsafeBank::UnreadableFolder
+            })
+        );
+    }
 }

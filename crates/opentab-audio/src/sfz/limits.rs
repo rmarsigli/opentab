@@ -10,6 +10,9 @@ pub const SFZ_MAX_DEFINE_NAME_BYTES: usize = 64;
 pub const SFZ_MAX_LINE_BYTES: u64 = 64 << 10;
 pub const SFZ_MAX_READ_BYTES: u64 = 32 << 20;
 pub const SFZ_MAX_LISTED_ENTRIES: u64 = 1 << 20;
+pub const SFZ_MAX_PATH_BYTES: usize = 1024;
+pub const SFZ_MAX_PATH_LOOKUPS: u64 = 1 << 16;
+pub const SFZ_MAX_VORBIS_COMMENT_BYTES: u64 = 1 << 20;
 pub const SFZ_MAX_FOLDER_ENTRIES: u64 = 200_000;
 pub const SFZ_MAX_FOLDER_DEPTH: u64 = 16;
 pub const SFZ_MAX_SFZ_FILES: u64 = 8192;
@@ -40,6 +43,8 @@ pub struct SfzLimits {
     pub line_bytes: u64,
     pub read_bytes: u64,
     pub listed_entries: u64,
+    pub path_bytes: usize,
+    pub path_lookups: u64,
     pub folder_entries: u64,
     pub folder_depth: u64,
     pub sfz_files: u64,
@@ -53,6 +58,7 @@ pub struct SfzLimits {
     pub decoded_bytes: u64,
     pub vorbis_entries: u64,
     pub vorbis_setup_bytes: u64,
+    pub vorbis_comment_bytes: u64,
     pub voices: usize,
     pub voices_per_note: usize,
 }
@@ -71,6 +77,8 @@ impl SfzLimits {
         line_bytes: SFZ_MAX_LINE_BYTES,
         read_bytes: SFZ_MAX_READ_BYTES,
         listed_entries: SFZ_MAX_LISTED_ENTRIES,
+        path_bytes: SFZ_MAX_PATH_BYTES,
+        path_lookups: SFZ_MAX_PATH_LOOKUPS,
         folder_entries: SFZ_MAX_FOLDER_ENTRIES,
         folder_depth: SFZ_MAX_FOLDER_DEPTH,
         sfz_files: SFZ_MAX_SFZ_FILES,
@@ -84,6 +92,7 @@ impl SfzLimits {
         decoded_bytes: SFZ_MAX_DECODED_BYTES,
         vorbis_entries: SFZ_MAX_VORBIS_ENTRIES,
         vorbis_setup_bytes: SFZ_MAX_VORBIS_SETUP_BYTES,
+        vorbis_comment_bytes: SFZ_MAX_VORBIS_COMMENT_BYTES,
         voices: SFZ_MAX_VOICES,
         voices_per_note: SFZ_MAX_VOICES_PER_NOTE,
     };

@@ -7,6 +7,8 @@ const CODEBOOK_SYNC: u32 = 0x56_4342;
 const IDENT_CHANNELS: usize = 11;
 const IDENT_RATE: usize = 12;
 const LENGTH_FIELD_BYTES: u64 = 4;
+const COMMENT_ENTRY_BYTES: u64 = 48;
+const COMMENT_COPIES: u64 = 2;
 const BOOK_BYTES: u64 = 4096;
 const LENGTH_BYTES: u64 = 1;
 const DESC_CAPACITY_BYTES: u64 = 4;
@@ -111,7 +113,7 @@ pub(crate) fn check_ident(packet: &[u8]) -> Result<VorbisShape, BankError> {
     })
 }
 
-pub(crate) fn check_comment(packet: &[u8]) -> Result<(), BankError> {
+pub(crate) fn check_comment(packet: &[u8], limits: &SfzLimits) -> Result<(), BankError> {
     let mut at = HEADER_BYTES;
     let read_length = |at: &mut usize| -> Result<u64, BankError> {
         let bytes = packet.get(*at..*at + 4).ok_or_else(damaged)?;
@@ -130,9 +132,14 @@ pub(crate) fn check_comment(packet: &[u8]) -> Result<(), BankError> {
     if comments.saturating_mul(LENGTH_FIELD_BYTES) > total.saturating_sub(at as u64) {
         return Err(refuse(UnsafeBank::VorbisComments));
     }
+    let mut estimate = vendor.saturating_add(comments.saturating_mul(COMMENT_ENTRY_BYTES));
     for _ in 0..comments {
         let length = read_length(&mut at)?;
         if length > total.saturating_sub(at as u64) {
+            return Err(refuse(UnsafeBank::VorbisComments));
+        }
+        estimate = estimate.saturating_add(length.saturating_mul(COMMENT_COPIES));
+        if estimate > limits.vorbis_comment_bytes {
             return Err(refuse(UnsafeBank::VorbisComments));
         }
         at += length as usize;

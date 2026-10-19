@@ -7,8 +7,8 @@ use opentab_audio::{
 };
 use opentab_playback::{Channel, MidiMessage};
 use opentab_testkit::banks::{
-    ExtraCodebook, FlacOverrides, FlacSpec, SAMPLE_RATE, VorbisSpec, WavOverrides, WavSpec,
-    mono_points, samples, wav16, write_flac_with, write_vorbis, write_wav_with,
+    ExtraCodebook, FilledComments, FlacOverrides, FlacSpec, SAMPLE_RATE, VorbisSpec, WavOverrides,
+    WavSpec, mono_points, samples, wav16, write_flac_with, write_vorbis, write_wav_with,
 };
 use stats_alloc::Region;
 
@@ -23,6 +23,8 @@ const FRAGMENT_REGIONS: usize = 200;
 const HUFFMAN_BOMB_DEPTH: u8 = 17;
 const HUFFMAN_ACCEPTED_DEPTH: u8 = 14;
 const NODE_BYTES: usize = 32;
+const COMMENT_BOMB: u32 = 30_000;
+const PACKET_COPIES: usize = 2;
 const SPARSE_BYTES: u64 = 1 << 30;
 
 fn allocated(region: &Region<'_, std::alloc::System>) -> usize {
@@ -92,7 +94,7 @@ fn refused_with_little(bytes: &[u8], reason: UnsafeBank) {
     let spent = allocated(&decoding);
     assert_eq!(result, Err(BankError::Unsafe { reason }));
     assert!(
-        spent <= REFUSAL_BYTES + bytes.len(),
+        spent <= REFUSAL_BYTES + PACKET_COPIES * bytes.len(),
         "{reason:?}: {spent} bytes for {} input bytes",
         bytes.len()
     );
@@ -117,6 +119,12 @@ pub fn hostile_samples_never_allocate_what_they_declare() {
     let mut comments = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
     comments.declared_comments = Some(u32::MAX);
     refused_with_little(&write_vorbis(&comments), UnsafeBank::VorbisComments);
+    let mut many = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
+    many.filled_comments = Some(FilledComments {
+        count: COMMENT_BOMB,
+        length: 0,
+    });
+    refused_with_little(&write_vorbis(&many), UnsafeBank::VorbisComments);
     let mut vendor = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
     vendor.declared_vendor_bytes = Some(u32::MAX);
     refused_with_little(&write_vorbis(&vendor), UnsafeBank::VorbisComments);

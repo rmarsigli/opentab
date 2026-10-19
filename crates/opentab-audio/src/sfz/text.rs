@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::sfz::limits::{KIB, MIB, SfzLimits};
 use crate::sfz::listing::{IgnoreReason, Listing, SfzScope};
-use crate::sfz::paths::{BankFs, PathProblem, ReadProblem, read_capped};
+use crate::sfz::paths::{BankFs, PathProblem, ReadProblem, read_capped, refusal};
 use crate::{BankError, UnsafeBank};
 
 const BYTE_ORDER_MARK: char = '\u{feff}';
@@ -18,7 +18,7 @@ pub(crate) enum Opened {
     Missing,
     Outside,
     TooLarge,
-    Exhausted,
+    Refused(PathProblem),
 }
 
 pub(crate) trait IncludeSource {
@@ -43,7 +43,9 @@ impl IncludeSource for FsIncludes<'_> {
                 Err(ReadProblem::TooLarge) => Opened::TooLarge,
             },
             Err(PathProblem::Outside) => Opened::Outside,
-            Err(PathProblem::Exhausted) => Opened::Exhausted,
+            Err(problem @ (PathProblem::Exhausted | PathProblem::Lookups)) => {
+                Opened::Refused(problem)
+            }
             Err(PathProblem::Missing | PathProblem::Rejected) => Opened::Missing,
         }
     }
@@ -162,6 +164,7 @@ pub(crate) struct Preprocessor<'a, S: IncludeSource> {
     includes: u64,
     stack: Vec<PathBuf>,
     out: Expanded,
+    in_path: bool,
 }
 
 impl<'a, S: IncludeSource> Preprocessor<'a, S> {
@@ -180,6 +183,7 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
             includes: 0,
             stack: Vec::new(),
             out: Expanded::default(),
+            in_path: false,
         }
     }
 
@@ -211,6 +215,11 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
 
     fn reserve(&self, extra: usize) -> Result<(), BankError> {
         let total = self.out.text.len() as u64 + extra as u64;
+        if self.in_path && total > self.limits.path_bytes as u64 {
+            return Err(unsafe_bank(UnsafeBank::PathTooLong {
+                limit: self.limits.path_bytes as u64,
+            }));
+        }
         if total > self.limits.expanded_bytes {
             return Err(unsafe_bank(UnsafeBank::ExpandedTextTooLarge {
                 limit_mib: self.limits.expanded_bytes / MIB,
@@ -313,9 +322,12 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
     fn include(&mut self, spec: &str, including: &Path, depth: u64) -> Result<(), BankError> {
         let mut resolved = String::new();
         std::mem::swap(&mut resolved, &mut self.out.text);
+        self.in_path = true;
         let substituted = self.substitute(spec);
+        self.in_path = false;
         std::mem::swap(&mut resolved, &mut self.out.text);
         substituted?;
+        self.count_read(resolved.len())?;
         if resolved.contains(VARIABLE) {
             self.out
                 .listing
@@ -372,9 +384,11 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
             Opened::TooLarge => Err(unsafe_bank(UnsafeBank::SfzFileTooLarge {
                 limit_kib: self.limits.file_bytes / KIB,
             })),
-            Opened::Exhausted => Err(unsafe_bank(UnsafeBank::ListedEntries {
-                limit: self.limits.listed_entries,
-            })),
+            Opened::Refused(problem) => Err(refusal(problem, self.limits).unwrap_or(unsafe_bank(
+                UnsafeBank::ListedEntries {
+                    limit: self.limits.listed_entries,
+                },
+            ))),
         }
     }
 

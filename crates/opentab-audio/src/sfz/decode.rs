@@ -231,7 +231,7 @@ fn vorbis_headers<'a>(bytes: &'a [u8], limits: &SfzLimits) -> Result<VorbisHeade
         }
     };
     let comment = next_header()?;
-    vorbis::check_comment(&comment.data)?;
+    vorbis::check_comment(&comment.data, limits)?;
     let setup = next_header()?;
     let cost = vorbis::check_setup(&setup.data, limits)?;
     Ok(VorbisHeaders {

@@ -19,7 +19,7 @@ pub use sfz::{
 pub use structural::{
     FieldValue, PdtaField, PdtaTable, StructuralMutation, apply_structural, arb_structural_mutation,
 };
-pub use vorbis::{ExtraCodebook, VorbisSpec, reseal_ogg, write_vorbis};
+pub use vorbis::{ExtraCodebook, FilledComments, VorbisSpec, reseal_ogg, write_vorbis};
 pub use wav::{WavOverrides, WavSpec, write_wav, write_wav_with};
 
 pub const KEY_RANGE: u16 = 43;
