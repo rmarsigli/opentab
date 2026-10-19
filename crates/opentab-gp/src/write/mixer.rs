@@ -136,12 +136,6 @@ fn automation_element(site: &Site<'_>, automation: &Automation) -> Result<Elemen
         .ok_or(Refusal::AutomationBar {
             master_bar: automation.master_bar.0.0,
         })?;
-    let position = canon::automation_position(automation.position, time).ok_or(
-        Refusal::AutomationPosition {
-            numer: *automation.position.numer(),
-            denom: *automation.position.denom(),
-        },
-    )?;
     let (kind, value) = match automation.value {
         AutomationValue::Volume(level) => (
             VOLUME_AUTOMATION,
@@ -163,6 +157,13 @@ fn automation_element(site: &Site<'_>, automation: &Automation) -> Result<Elemen
             (SOUND_AUTOMATION, canon::sound_value(key))
         }
     };
+    let position =
+        canon::automation_position(automation.position, time, canon::position_unit(kind)).ok_or(
+            Refusal::AutomationPosition {
+                numer: *automation.position.numer(),
+                denom: *automation.position.denom(),
+            },
+        )?;
     Ok(canon::automation(AutomationParts {
         kind,
         linear: automation.linear,

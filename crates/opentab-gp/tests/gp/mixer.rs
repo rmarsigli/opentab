@@ -200,7 +200,7 @@ fn sound_automations_name_their_sound_by_path_name_and_role() {
             },
             Automation {
                 master_bar: score.master_bars[0].id,
-                position: Fraction::from_integer(1),
+                position: Fraction::new(1, 4),
                 linear: false,
                 visible: true,
                 value: AutomationValue::Sound(SoundRef(1)),
@@ -216,6 +216,131 @@ fn sound_automations_name_their_sound_by_path_name_and_role() {
         "{kept:?}"
     );
     round_trip(&score);
+}
+
+struct Placed {
+    time: &'static str,
+    kind: &'static str,
+    text: &'static str,
+    position: Option<Fraction>,
+}
+
+const PLACED: [Placed; 12] = [
+    Placed {
+        time: "4/4",
+        kind: "Sound",
+        text: "0.25",
+        position: Some(Fraction::new_raw(1, 16)),
+    },
+    Placed {
+        time: "4/4",
+        kind: "Sound",
+        text: "1",
+        position: Some(Fraction::new_raw(1, 4)),
+    },
+    Placed {
+        time: "4/4",
+        kind: "Sound",
+        text: "2",
+        position: Some(Fraction::new_raw(1, 2)),
+    },
+    Placed {
+        time: "4/4",
+        kind: "Sound",
+        text: "4",
+        position: Some(Fraction::new_raw(1, 1)),
+    },
+    Placed {
+        time: "4/4",
+        kind: "Sound",
+        text: "4.25",
+        position: None,
+    },
+    Placed {
+        time: "2/2",
+        kind: "Sound",
+        text: "1",
+        position: Some(Fraction::new_raw(1, 4)),
+    },
+    Placed {
+        time: "7/8",
+        kind: "Sound",
+        text: "2.75",
+        position: Some(Fraction::new_raw(11, 16)),
+    },
+    Placed {
+        time: "12/4",
+        kind: "Sound",
+        text: "10.5",
+        position: Some(Fraction::new_raw(21, 8)),
+    },
+    Placed {
+        time: "12/8",
+        kind: "Sound",
+        text: "0.333333",
+        position: Some(Fraction::new_raw(1, 12)),
+    },
+    Placed {
+        time: "7/8",
+        kind: "DSPParam_12",
+        text: "0.785714",
+        position: Some(Fraction::new_raw(11, 16)),
+    },
+    Placed {
+        time: "4/4",
+        kind: "DSPParam_11",
+        text: "0.25",
+        position: Some(Fraction::new_raw(1, 4)),
+    },
+    Placed {
+        time: "12/4",
+        kind: "DSPParam_12",
+        text: "0.875",
+        position: Some(Fraction::new_raw(21, 8)),
+    },
+];
+
+#[test]
+fn sound_positions_count_quarter_notes_and_strip_positions_bar_fractions() {
+    for placed in PLACED {
+        let value = if placed.kind == "Sound" {
+            "<![CDATA[Stringed/Clean;Clean;Factory]]>"
+        } else {
+            "0.5"
+        };
+        let lane = if placed.kind == "Sound" {
+            format!(
+                "<Sounds>{}</Sounds><Automations>{}</Automations>",
+                sound("Clean", "Stringed/Clean", 27),
+                automation(placed.kind, placed.text, value)
+            )
+        } else {
+            strip("0.5", &automation(placed.kind, placed.text, value))
+        };
+        let score = Doc {
+            track: lane,
+            time: placed.time.to_string(),
+            ..Doc::default()
+        }
+        .read();
+        let found = track(&score)
+            .automations
+            .first()
+            .map(|automation| automation.position);
+        assert_eq!(
+            found, placed.position,
+            "{} {} {}",
+            placed.time, placed.kind, placed.text
+        );
+        let text = gpif_text(&write_gp(&score).unwrap());
+        assert!(
+            text.contains(&format!("<Position>{}</Position>", placed.text)),
+            "{} {}: {text}",
+            placed.kind,
+            placed.text
+        );
+        round_trip(&score);
+    }
 }
 
 #[test]
@@ -278,7 +403,7 @@ fn a_generated_sound_follows_the_link_rule_guitar_pro_resolves() {
         text.contains("<Value><![CDATA[;Lead;User]]></Value>"),
         "{text}"
     );
-    assert!(text.contains("<Position>0.5</Position>"), "{text}");
+    assert!(text.contains("<Position>2</Position>"), "{text}");
     round_trip(&score);
 }
 

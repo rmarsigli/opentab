@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::fraction::deserialize_non_negative;
-use crate::{Directions, Fraction, MasterBarId, ModelError};
+use crate::{Directions, Fraction, MasterBarId, ModelError, WholeNotes};
 
 const MIN_BPM: f64 = 1.0;
 const MAX_BPM: f64 = 1000.0;
@@ -153,7 +153,7 @@ impl From<Tempo> for f64 {
 #[serde(deny_unknown_fields)]
 pub struct TempoChange {
     #[serde(deserialize_with = "deserialize_non_negative")]
-    pub position: Fraction,
+    pub position: WholeNotes,
     pub bpm: Tempo,
     pub unit: TempoUnit,
 }

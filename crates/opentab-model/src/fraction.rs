@@ -3,6 +3,8 @@ use serde::{Deserialize, Deserializer};
 
 pub use num_rational::Rational64 as Fraction;
 
+pub type WholeNotes = Fraction;
+
 pub(crate) fn deserialize_non_negative<'de, D>(deserializer: D) -> Result<Fraction, D::Error>
 where
     D: Deserializer<'de>,

@@ -3,7 +3,7 @@ use opentab_model::{
     Sound, SoundRef, TrackMidi, check_program,
 };
 
-use crate::canon::{self, AutomationParts};
+use crate::canon::{self, AutomationParts, PositionUnit};
 use crate::codes::{
     GENERATED_ROLE, PAN_AUTOMATION, SOUND_AUTOMATION, TEMPO_POSITION_GRID, VOLUME_AUTOMATION,
 };
@@ -362,9 +362,14 @@ fn typed(master_bars: &[MasterBar], element: &Element, lane: &Lane<'_>) -> Optio
     let bar = number::integer::<usize>(&text_of(element, "Bar")?)?;
     let master = master_bars.get(bar)?;
     let time = master.time_signature;
+    let unit = canon::position_unit(&kind);
+    let (numer, denom) = match unit {
+        PositionUnit::Bar => (i64::from(time.numerator()), i64::from(time.denominator())),
+        PositionUnit::Quarter => (1, canon::QUARTERS_PER_WHOLE),
+    };
     let position = Decimal::parse(&text_of(element, "Position")?)?.round_to_grid(
-        i64::from(time.numerator()),
-        i64::from(time.denominator()),
+        numer,
+        denom,
         TEMPO_POSITION_GRID,
     )?;
     let visible = number::boolean(&text_of(element, "Visible")?)?;
@@ -405,7 +410,7 @@ fn typed(master_bars: &[MasterBar], element: &Element, lane: &Lane<'_>) -> Optio
         kind: &kind,
         linear,
         bar,
-        position: canon::automation_position(position, time)?,
+        position: canon::automation_position(position, time, unit)?,
         visible,
         value: value_element,
     });

@@ -27,7 +27,7 @@ pub use effects::{
 };
 pub use error::ModelError;
 pub use extensions::{Extensions, OpaquePayload};
-pub use fraction::Fraction;
+pub use fraction::{Fraction, WholeNotes};
 pub use ids::{
     BarId, BeatId, ElementId, IdAllocator, MasterBarId, NoteId, StaffId, TrackId, VoiceId,
 };

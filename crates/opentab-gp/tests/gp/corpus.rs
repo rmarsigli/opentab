@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use opentab_gp::{read_gp, write_gp};
@@ -8,8 +8,8 @@ use crate::inventory::{
     first_difference as subtree_difference, inventory, master_bar_children, ordered_directions,
 };
 use opentab_model::{
-    Accent, AutomationValue, Clef, Diagnostic, Dynamic, Score, TempoUnit, diagnose, from_json,
-    to_json,
+    Accent, AutomationValue, Clef, Diagnostic, Dynamic, Fraction, Score, TempoUnit, diagnose,
+    from_json, to_json,
 };
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
@@ -302,4 +302,92 @@ fn every_corpus_example_survives_a_write() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+const POSITION_HITS: [(&str, usize, usize); 3] =
+    [("tempo", 4, 1), ("strip", 4, 2), ("sound", 1, 0)];
+const QUARTERS_PER_WHOLE: i64 = 4;
+
+fn onsets(score: &Score, index: usize) -> BTreeSet<Fraction> {
+    let mut found = BTreeSet::new();
+    for track in &score.tracks {
+        for staff in &track.staves {
+            let Some(bar) = staff.bars.get(index) else {
+                continue;
+            };
+            for voice in &bar.voices {
+                let mut onset = Fraction::from_integer(0);
+                for beat in &voice.beats {
+                    found.insert(onset);
+                    if beat.effects.grace.is_none() {
+                        onset += beat.duration.length();
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+struct Hits {
+    ours: usize,
+    other: usize,
+}
+
+fn tally_hits(hits: &mut BTreeMap<&'static str, Hits>, kind: &'static str, on: [bool; 2]) {
+    let entry = hits.entry(kind).or_insert(Hits { ours: 0, other: 0 });
+    entry.ours += usize::from(on[0]);
+    entry.other += usize::from(on[1]);
+}
+
+#[test]
+fn corpus_automations_inside_a_bar_land_on_beats_in_the_units_we_read() {
+    let Some(paths) = corpus_paths() else {
+        return;
+    };
+    let mut hits: BTreeMap<&'static str, Hits> = BTreeMap::new();
+    for path in &paths {
+        let score = read_gp(&std::fs::read(path).expect("corpus file")).expect("reads");
+        let zero = Fraction::from_integer(0);
+        for (index, master) in score.master_bars.iter().enumerate() {
+            let length = master.time_signature.bar_length();
+            let beats = onsets(&score, index);
+            for change in &master.tempo_changes {
+                if change.position > zero && change.position < length {
+                    let quarters = change.position / length / QUARTERS_PER_WHOLE;
+                    let on = [beats.contains(&change.position), beats.contains(&quarters)];
+                    tally_hits(&mut hits, "tempo", on);
+                }
+            }
+        }
+        for track in &score.tracks {
+            for automation in &track.automations {
+                let Some(index) = score.find_master_bar_index(automation.master_bar) else {
+                    continue;
+                };
+                let length = score.master_bars[index].time_signature.bar_length();
+                let position = automation.position;
+                if position <= zero || position >= length {
+                    continue;
+                }
+                let beats = onsets(&score, index);
+                let (kind, other) = match automation.value {
+                    AutomationValue::Sound(_) => ("sound", position * QUARTERS_PER_WHOLE * length),
+                    _ => ("strip", position / length / QUARTERS_PER_WHOLE),
+                };
+                tally_hits(
+                    &mut hits,
+                    kind,
+                    [beats.contains(&position), beats.contains(&other)],
+                );
+            }
+        }
+    }
+    for (kind, ours, other) in POSITION_HITS {
+        let found = hits
+            .get(kind)
+            .expect("the corpus has this kind inside a bar");
+        assert_eq!((found.ours, found.other), (ours, other), "{kind}");
+        assert!(found.ours > found.other, "{kind}");
+    }
 }

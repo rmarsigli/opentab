@@ -5,12 +5,12 @@ use opentab_model::{
 
 use crate::codes::{
     DIRECTION_JUMP, DIRECTION_JUMPS, DIRECTION_TARGET, DIRECTION_TARGETS, INSTRUMENT_SETS,
-    PAN_PARAMETER, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS, TEMPO_POSITION_GRID, VOLUME_PARAMETER,
-    name_of,
+    PAN_PARAMETER, SOUND_AUTOMATION, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS, TEMPO_POSITION_GRID,
+    VOLUME_PARAMETER, name_of,
 };
 use crate::dom::{self, Element, Node};
 use crate::guard::PitchInputs;
-use crate::number;
+use crate::number::{self, Decimal};
 use crate::read::Handled;
 
 pub(crate) const GP_REVISION: &str = "GPRevision";
@@ -24,6 +24,8 @@ const MAX_MIDI: i32 = 127;
 const SEMITONES: i32 = 12;
 const FIFTH: i32 = 7;
 const SIGNIFICANT_DIGITS: u32 = 6;
+const MAX_SIGNIFICANT_DIGITS: u32 = 12;
+pub(crate) const QUARTERS_PER_WHOLE: i64 = 4;
 const MILLIONTHS: u32 = 1_000_000;
 const MILLIONTH_DIGITS: usize = 6;
 const SCIENTIFIC_BELOW: u32 = 5;
@@ -184,16 +186,35 @@ pub(crate) fn automation(parts: AutomationParts<'_>) -> Element {
         .with_child(parts.value)
 }
 
-pub(crate) fn automation_position(position: Fraction, time: TimeSignature) -> Option<String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PositionUnit {
+    Bar,
+    Quarter,
+}
+
+pub(crate) fn position_unit(kind: &str) -> PositionUnit {
+    if kind == SOUND_AUTOMATION {
+        PositionUnit::Quarter
+    } else {
+        PositionUnit::Bar
+    }
+}
+
+pub(crate) fn automation_position(
+    position: Fraction,
+    time: TimeSignature,
+    unit: PositionUnit,
+) -> Option<String> {
     let ticks = grid_ticks(position)?;
     let bar = grid_ticks(time.bar_length())?;
     if ticks > bar {
         return None;
     }
-    Some(general_format(
-        u128::try_from(ticks).ok()?,
-        u128::try_from(bar).ok()?,
-    ))
+    let per = match unit {
+        PositionUnit::Bar => bar,
+        PositionUnit::Quarter => TEMPO_POSITION_GRID / QUARTERS_PER_WHOLE,
+    };
+    grid_text(ticks, per)
 }
 
 pub(crate) fn capo_property(capo: u8) -> Element {
@@ -230,10 +251,18 @@ pub(crate) fn tempo_position(position: Fraction, time: TimeSignature) -> Option<
     if ticks >= bar {
         return None;
     }
-    Some(general_format(
-        u128::try_from(ticks).ok()?,
-        u128::try_from(bar).ok()?,
-    ))
+    grid_text(ticks, bar)
+}
+
+fn grid_text(ticks: i64, per: i64) -> Option<String> {
+    let numer = u128::try_from(ticks).ok()?;
+    let denom = u128::try_from(per).ok()?;
+    let wanted = Fraction::from_integer(ticks);
+    (SIGNIFICANT_DIGITS..=MAX_SIGNIFICANT_DIGITS).find_map(|digits| {
+        let text = significant(numer, denom, digits)?;
+        let back = Decimal::parse(&text)?.round_to_grid(per, 1, 1)?;
+        (back == wanted).then_some(text)
+    })
 }
 
 fn decimal_shift(numer: u128, denom: u128) -> u32 {
@@ -242,38 +271,66 @@ fn decimal_shift(numer: u128, denom: u128) -> u32 {
         .unwrap_or_default()
 }
 
-fn general_format(numer: u128, denom: u128) -> String {
+fn scaled_round(numer: u128, denom: u128, places: i32) -> Option<u128> {
+    let power = 10u128.checked_pow(places.unsigned_abs())?;
+    let (top, bottom) = if places >= 0 {
+        (numer.checked_mul(power)?, denom)
+    } else {
+        (numer, denom.checked_mul(power)?)
+    };
+    top.checked_mul(2)?
+        .checked_add(bottom)?
+        .checked_div(bottom.checked_mul(2)?)
+}
+
+fn significant(numer: u128, denom: u128, digits: u32) -> Option<String> {
     if numer == 0 || denom == 0 {
-        return "0".to_string();
+        return Some("0".to_string());
     }
-    let mut shift = decimal_shift(numer, denom);
-    let scale = 10u128.pow(shift + SIGNIFICANT_DIGITS - 1);
-    let mut mantissa = (2 * numer * scale + denom) / (2 * denom);
-    if mantissa >= 10u128.pow(SIGNIFICANT_DIGITS) {
+    let whole = numer / denom;
+    let mut exponent = if whole > 0 {
+        i32::try_from(whole.to_string().len()).ok()? - 1
+    } else {
+        -i32::try_from(decimal_shift(numer, denom)).ok()?
+    };
+    let places = i32::try_from(digits).ok()? - 1 - exponent;
+    let mut mantissa = scaled_round(numer, denom, places)?;
+    if mantissa >= 10u128.checked_pow(digits)? {
         mantissa /= 10;
-        shift = shift.saturating_sub(1);
+        exponent += 1;
     }
-    let digits = mantissa.to_string();
-    if shift >= SCIENTIFIC_BELOW {
-        let (head, tail) = digits.split_at(1);
+    let text = mantissa.to_string();
+    if exponent <= -i32::try_from(SCIENTIFIC_BELOW).ok()? {
+        let (head, tail) = text.split_at(1);
         let tail = tail.trim_end_matches('0');
-        return if tail.is_empty() {
-            format!("{head}e-{shift:02}")
+        let power = exponent.unsigned_abs();
+        return Some(if tail.is_empty() {
+            format!("{head}e-{power:02}")
         } else {
-            format!("{head}.{tail}e-{shift:02}")
-        };
+            format!("{head}.{tail}e-{power:02}")
+        });
     }
-    if shift == 0 {
-        let (head, tail) = digits.split_at(1);
-        let tail = tail.trim_end_matches('0');
-        return if tail.is_empty() {
-            head.to_string()
-        } else {
-            format!("{head}.{tail}")
-        };
+    if exponent < 0 {
+        let zeros = "0".repeat(usize::try_from(-exponent - 1).ok()?);
+        return Some(format!("0.{zeros}{}", text.trim_end_matches('0')));
     }
-    let zeros = "0".repeat(usize::try_from(shift - 1).unwrap_or_default());
-    format!("0.{zeros}{}", digits.trim_end_matches('0'))
+    let integer = usize::try_from(exponent).ok()? + 1;
+    if integer >= text.len() {
+        let zeros = "0".repeat(integer - text.len());
+        return Some(format!("{text}{zeros}"));
+    }
+    let (head, tail) = text.split_at(integer);
+    let tail = tail.trim_end_matches('0');
+    Some(if tail.is_empty() {
+        head.to_string()
+    } else {
+        format!("{head}.{tail}")
+    })
+}
+
+#[cfg(test)]
+fn general_format(numer: u128, denom: u128) -> String {
+    significant(numer, denom, SIGNIFICANT_DIGITS).unwrap_or_default()
 }
 
 pub(crate) fn sounding(inputs: &PitchInputs<'_>) -> Option<i32> {
@@ -426,6 +483,43 @@ mod tests {
         assert_eq!(formatted(1, 100_000), "1e-05");
         assert_eq!(formatted(3, 200_000), "1.5e-05");
         assert_eq!(formatted(1, 3_000_000), "3.33333e-07");
+    }
+
+    #[test]
+    fn general_format_keeps_six_significant_digits_above_one() {
+        let formatted = |numer, denom| general_format(numer, denom);
+        assert_eq!(formatted(1, 1), "1");
+        assert_eq!(formatted(4, 1), "4");
+        assert_eq!(formatted(21, 2), "10.5");
+        assert_eq!(formatted(10, 1), "10");
+        assert_eq!(formatted(1000, 3), "333.333");
+        assert_eq!(formatted(1020, 1), "1020");
+        assert_eq!(formatted(9_999_996, 10), "1000000");
+        assert_eq!(formatted(123_456_789, 1), "123457000");
+    }
+
+    #[test]
+    fn grid_text_adds_digits_until_the_tick_comes_back() {
+        assert_eq!(grid_text(320, 960), Some("0.333333".to_string()));
+        assert_eq!(grid_text(960, 960), Some("1".to_string()));
+        assert_eq!(grid_text(0, 960), Some("0".to_string()));
+        let large = 1000 * 960 + 1;
+        let text = grid_text(large, 960).expect("text");
+        assert_eq!(text, "1000.001");
+        for ticks in (0..=979_200).step_by(97) {
+            let text = grid_text(ticks, 979_200).expect("bar text");
+            let back = Decimal::parse(&text)
+                .and_then(|decimal| decimal.round_to_grid(979_200, 1, 1))
+                .expect("parses");
+            assert_eq!(back, Fraction::from_integer(ticks), "{text}");
+        }
+        for ticks in (0..=979_200).step_by(89) {
+            let text = grid_text(ticks, 960).expect("quarter text");
+            let back = Decimal::parse(&text)
+                .and_then(|decimal| decimal.round_to_grid(960, 1, 1))
+                .expect("parses");
+            assert_eq!(back, Fraction::from_integer(ticks), "{text}");
+        }
     }
 
     #[test]

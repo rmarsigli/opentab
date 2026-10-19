@@ -2,7 +2,7 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::fraction::deserialize_non_negative;
-use crate::{Fraction, InstrumentKind, MasterBarId, ModelError, TrackId};
+use crate::{Fraction, InstrumentKind, MasterBarId, ModelError, TrackId, WholeNotes};
 
 const MAX_CHANNEL: u8 = 15;
 const DRUM_CHANNEL: u8 = 9;
@@ -248,7 +248,7 @@ pub enum AutomationValue {
 pub struct Automation {
     pub master_bar: MasterBarId,
     #[serde(deserialize_with = "deserialize_non_negative")]
-    pub position: Fraction,
+    pub position: WholeNotes,
     pub linear: bool,
     pub visible: bool,
     pub value: AutomationValue,
