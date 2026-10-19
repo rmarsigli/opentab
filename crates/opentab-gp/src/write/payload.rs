@@ -547,3 +547,57 @@ pub(crate) fn renumber(container: &mut Element, item_name: &str) {
         ordinal += 1;
     }
 }
+
+struct Ranked {
+    rank: usize,
+    node: Node,
+}
+
+pub(crate) fn order_children(element: &mut Element, order: &[&str]) {
+    let mut rank = 0usize;
+    let mut ranked: Vec<Ranked> = Vec::with_capacity(element.children.len());
+    for node in element.children.drain(..) {
+        if let Node::Element(child) = &node
+            && let Some(position) = order.iter().position(|name| *name == child.name)
+        {
+            rank = position + 1;
+        }
+        ranked.push(Ranked { rank, node });
+    }
+    ranked.sort_by_key(|entry| entry.rank);
+    element.children = ranked.into_iter().map(|entry| entry.node).collect();
+}
+
+pub(crate) fn merge_containers(element: &mut Element, name: &str) {
+    let mut first: Option<usize> = None;
+    let mut moved: Vec<Node> = Vec::new();
+    let mut moved_attributes: Vec<Attribute> = Vec::new();
+    let mut kept: Vec<Node> = Vec::with_capacity(element.children.len());
+    for node in element.children.drain(..) {
+        match node {
+            Node::Element(child) if child.name == name => {
+                if first.is_none() {
+                    first = Some(kept.len());
+                    kept.push(Node::Element(child));
+                } else {
+                    moved.extend(child.children);
+                    moved_attributes.extend(child.attributes);
+                }
+            }
+            other => kept.push(other),
+        }
+    }
+    if let Some(Node::Element(container)) = first.and_then(|index| kept.get_mut(index)) {
+        container.children.extend(moved);
+        for attribute in moved_attributes {
+            if !container
+                .attributes
+                .iter()
+                .any(|existing| existing.name == attribute.name)
+            {
+                container.attributes.push(attribute);
+            }
+        }
+    }
+    element.children = kept;
+}

@@ -329,3 +329,191 @@ fn the_playing_fixtures_read_back_typed_and_clean() {
         assert!(score.extensions.0.is_empty());
     }
 }
+
+fn first_note_mut(score: &mut Score) -> &mut opentab_model::Note {
+    &mut score.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0]
+}
+
+fn note_text(score: &Score, id: &str) -> String {
+    let text = written(score);
+    let start = text
+        .find(&format!("<Note id=\"{id}\">"))
+        .expect("the note is written");
+    let end = text[start..].find("</Note>").expect("the note closes") + start;
+    text[start..end].to_string()
+}
+
+#[test]
+fn a_trill_speed_set_on_a_note_with_other_xproperties_joins_their_container() {
+    let fixture = committed("trill.gp");
+    let gpif = written(&fixture);
+    let start = gpif.find("<Note id=\"0\">").expect("note 0");
+    let end = gpif[start..].find("</Note>").expect("end") + start;
+    let source = gpif[start..end].replace("<Trill>73</Trill>", "").replace(
+        "</Properties>",
+        "</Properties><XProperties><XProperty id=\"12345\"><Int>7</Int></XProperty></XProperties>",
+    );
+    let edited_text = format!("{}{source}{}", &gpif[..start], &gpif[end..]);
+    let mut score = crate::support::read_gpif(&edited_text);
+    assert_eq!(note(&score).effects.trill, None);
+    let id = note(&score).id;
+    opentab_command::apply(
+        &mut score,
+        &opentab_command::Command::SetTrill {
+            note: id,
+            trill: Some(trill(2, NoteValue::Sixteenth)),
+        },
+    )
+    .expect("set_trill applies");
+    let text = note_text(&score, "0");
+    assert_eq!(text.matches("<XProperties>").count(), 1, "{text}");
+    assert!(
+        text.contains("<XProperty id=\"12345\"><Int>7</Int></XProperty>")
+            && text.contains(&format!(
+                "<XProperty id=\"{SPEED_ID}\"><Int>120</Int></XProperty>"
+            )),
+        "{text}"
+    );
+    assert!(
+        text.starts_with("<Note id=\"0\"><Trill>68</Trill>"),
+        "{text}"
+    );
+    let again = round_trip(&score);
+    assert_eq!(
+        note(&again).effects.trill,
+        Some(trill(2, NoteValue::Sixteenth))
+    );
+}
+
+#[test]
+fn every_xproperties_container_of_a_note_is_read_and_written_as_one() {
+    let other = "<XProperty id=\"12345\"><Int>7</Int></XProperty>";
+    let two = format!(
+        "<XProperties>{other}</XProperties><XProperties><XProperty id=\"{SPEED_ID}\"><Int>240</Int></XProperty></XProperties>"
+    );
+    let score = with_speed("<Trill>45</Trill>", &two);
+    assert_eq!(
+        note(&score).effects.trill,
+        Some(trill(5, NoteValue::Eighth))
+    );
+    let text = note_text(&score, "0");
+    assert_eq!(text.matches("<XProperties>").count(), 1, "{text}");
+    assert!(
+        text.contains(other) && text.contains("<Int>240</Int>"),
+        "{text}"
+    );
+    let again = read_gp(&write_gp(&score).unwrap()).unwrap();
+    assert_eq!(
+        note(&again).effects.trill,
+        Some(trill(5, NoteValue::Eighth))
+    );
+    assert_eq!(read_gp(&write_gp(&again).unwrap()).unwrap(), again);
+    let twice = format!(
+        "<XProperties>{}</XProperties><XProperties>{}</XProperties>",
+        speed("120")
+            .replace("<XProperties>", "")
+            .replace("</XProperties>", ""),
+        speed("240")
+            .replace("<XProperties>", "")
+            .replace("</XProperties>", "")
+    );
+    let ambiguous = with_speed("<Trill>45</Trill>", &twice);
+    assert_eq!(note(&ambiguous).effects.trill, None);
+    let empty = with_speed("", "<XProperties/>");
+    let mut trilled = empty.clone();
+    first_note_mut(&mut trilled).effects.trill = Some(trill(5, NoteValue::Quarter));
+    let text = note_text(&trilled, "0");
+    assert_eq!(text.matches("<XProperties").count(), 1, "{text}");
+    assert!(text.contains("<Int>480</Int>"), "{text}");
+}
+
+#[test]
+fn a_trill_added_to_a_guitar_pro_note_is_its_first_child() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../goldens/gp/durations.gp/resave.gpif");
+    let gpif = std::fs::read_to_string(path).expect("golden resave");
+    let mut score = crate::support::read_gpif(&gpif);
+    let mut edited = 0;
+    for track in &mut score.tracks {
+        for staff in &mut track.staves {
+            for bar in &mut staff.bars {
+                for voice in &mut bar.voices {
+                    for beat in &mut voice.beats {
+                        for note in &mut beat.notes {
+                            note.effects.trill = Some(trill(1, NoteValue::Sixteenth));
+                            edited += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(edited > 0);
+    let text = gpif_text(&write_gp(&score).expect("write"));
+    let notes = crate::inventory::note_children(&text);
+    assert_eq!(notes.len(), edited);
+    for children in &notes {
+        assert_eq!(
+            children.first().map(String::as_str),
+            Some("Trill"),
+            "{children:?}"
+        );
+        assert_eq!(crate::inventory::out_of_note_order(children), None);
+    }
+    assert!(notes.iter().any(|children| {
+        children
+            == &[
+                "Trill",
+                "InstrumentArticulation",
+                "Properties",
+                "XProperties",
+            ]
+            .map(str::to_string)
+            .to_vec()
+    }));
+    let again = read_gp(&write_gp(&score).unwrap()).unwrap();
+    assert_eq!(again, read_gp(&write_gp(&again).unwrap()).unwrap());
+}
+
+#[test]
+fn a_trill_on_a_staff_with_its_own_tuning_counts_from_the_track_tuning() {
+    let gpif = crate::track::two_staff_document(concat!(
+        "<Property name=\"Tuning\"><Pitches>28 33 38 43</Pitches></Property>",
+        "<Property name=\"CapoFret\"><Fret>3</Fret></Property>"
+    ))
+    .replace(
+        "<Note id=\"1\"><Properties>",
+        "<Note id=\"1\"><Trill>55</Trill><Properties>",
+    );
+    let score = crate::support::read_gpif(&gpif);
+    let track = &score.tracks[0];
+    let second = &track.staves[1].bars[0].voices[0].beats[0].notes[0];
+    assert_eq!(
+        second.effects.trill,
+        Some(trill(5, NoteValue::ThirtySecond))
+    );
+    assert_eq!(track.trill_pitch_of(second).map(|pitch| pitch.0), Some(55));
+    assert!(written(&score).contains("<Note id=\"1\"><Trill>55</Trill>"));
+    round_trip(&score);
+    let set = |fret: u8| {
+        let mut changed = score.clone();
+        changed.tracks[0].staves[1].bars[0].voices[0].beats[0].notes[0]
+            .effects
+            .trill = Some(trill(fret, NoteValue::Eighth));
+        changed
+    };
+    assert_eq!(diagnose(&set(77)), Vec::new());
+    assert!(write_gp(&set(77)).is_ok());
+    let high = set(78);
+    assert_eq!(
+        diagnose(&high),
+        vec![Diagnostic::TrillOutOfRange { note: second.id }]
+    );
+    assert!(matches!(
+        write_gp(&high),
+        Err(GpError::Unsupported {
+            reason: Refusal::TrillPitch { fret: 78 },
+            ..
+        })
+    ));
+}

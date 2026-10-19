@@ -502,3 +502,69 @@ fn effect_references_follow_shared_beats_and_notes() {
     );
     assert!(found[2].starts_with("1: "), "{found:?}");
 }
+
+pub const NOTE_ORDER: [&str; 11] = [
+    "Trill",
+    "Vibrato",
+    "AntiAccent",
+    "LetRing",
+    "Accent",
+    "Tie",
+    "LeftFingering",
+    "RightFingering",
+    "InstrumentArticulation",
+    "Properties",
+    "XProperties",
+];
+
+pub fn note_children(gpif: &str) -> Vec<Vec<String>> {
+    let document = tree(gpif);
+    let root = document.child("GPIF").unwrap_or(&document);
+    root.child("Notes")
+        .map(|notes| {
+            notes
+                .children
+                .iter()
+                .map(|note| {
+                    note.children
+                        .iter()
+                        .map(|child| child.name.clone())
+                        .collect()
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn out_of_note_order(children: &[String]) -> Option<String> {
+    let ranks: Vec<usize> = children
+        .iter()
+        .filter_map(|name| NOTE_ORDER.iter().position(|known| known == name))
+        .collect();
+    let sorted = ranks.windows(2).all(|pair| pair[0] <= pair[1]);
+    let containers = children
+        .iter()
+        .filter(|name| *name == "XProperties")
+        .count();
+    (!sorted || containers > 1).then(|| children.join(" "))
+}
+
+#[test]
+fn note_children_are_listed_and_checked_against_the_writer_order() {
+    let gpif = "<GPIF><Notes><Note id=\"0\"><Trill>45</Trill><InstrumentArticulation>0</InstrumentArticulation><Properties/></Note><Note id=\"1\"><InstrumentArticulation>0</InstrumentArticulation><Trill>45</Trill><XProperties/><XProperties/></Note></Notes></GPIF>";
+    let found = note_children(gpif);
+    assert_eq!(
+        found[0],
+        vec!["Trill", "InstrumentArticulation", "Properties"]
+    );
+    assert_eq!(out_of_note_order(&found[0]), None);
+    assert!(out_of_note_order(&found[1]).is_some());
+    assert!(
+        out_of_note_order(&[
+            "Properties".to_string(),
+            "XProperties".to_string(),
+            "XProperties".to_string()
+        ])
+        .is_some()
+    );
+}

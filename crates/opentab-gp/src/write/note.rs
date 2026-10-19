@@ -4,7 +4,8 @@ use opentab_model::{
 
 use crate::canon::{self, CONCERT_PITCH, MIDI, TRANSPOSED_PITCH};
 use crate::codes::{
-    DEFAULT_TRILL_TICKS, FINGERS, GHOST, HARMONICS, SLIDES, VIBRATOS, accent_bits, name_of,
+    DEFAULT_TRILL_TICKS, FINGERS, GHOST, HARMONICS, NOTE_ORDER, SLIDES, VIBRATOS, accent_bits,
+    name_of,
 };
 use crate::dom::Element;
 use crate::error::Refusal;
@@ -17,6 +18,7 @@ use crate::write::xml::{Fail, Within};
 const FLOAT_DECIMALS: u32 = 6;
 const MAX_DECIMALS: u32 = 30;
 const PROPERTIES: &str = "Properties";
+const X_PROPERTIES: &str = "XProperties";
 const MAX_MIDI: u8 = 127;
 
 fn flag(name: &str) -> Element {
@@ -194,13 +196,16 @@ fn properties(
     Ok(out)
 }
 
-fn trill_pitch(inputs: &PitchInputs<'_>, trill: Trill) -> Result<u8, Fail> {
+fn trill_pitch(staff: &StaffContext, kind: NoteKind, trill: Trill) -> Result<u8, Fail> {
     let refusal = || Fail::new(Refusal::TrillPitch { fret: trill.fret });
-    let NoteKind::Fretted { string, .. } = inputs.kind else {
+    let NoteKind::Fretted { string, .. } = kind else {
         return Err(refusal());
     };
-    let open = inputs.tuning.get(usize::from(string)).ok_or_else(refusal)?;
-    let pitch = u16::from(open.0) + u16::from(inputs.capo) + u16::from(trill.fret);
+    let open = staff
+        .track_tuning
+        .get(usize::from(string))
+        .ok_or_else(refusal)?;
+    let pitch = u16::from(open.0) + u16::from(staff.track_capo) + u16::from(trill.fret);
     u8::try_from(pitch)
         .ok()
         .filter(|pitch| *pitch <= MAX_MIDI)
@@ -250,7 +255,7 @@ pub(crate) fn write_note(
     let mut element = Element::new("Note").with_attribute("id", &id.to_string());
     if let Some(trill) = effects.trill {
         element.push(canon::trill(
-            trill_pitch(inputs, trill).within(field("effects.trill"))?,
+            trill_pitch(staff, note.kind, trill).within(field("effects.trill"))?,
         ));
     }
     if let Some(vibrato) = effects.vibrato {
@@ -298,8 +303,10 @@ pub(crate) fn write_note(
         .and_then(|trill| canon::trill_ticks(trill.speed))
         .filter(|ticks| *ticks != DEFAULT_TRILL_TICKS);
     if let Some(ticks) = ticks {
-        element.push(Element::new("XProperties").with_child(canon::trill_speed(ticks)));
+        element.push(Element::new(X_PROPERTIES).with_child(canon::trill_speed(ticks)));
     }
     apply_own(&mut element, items)?;
+    payload::merge_containers(&mut element, X_PROPERTIES);
+    payload::order_children(&mut element, &NOTE_ORDER);
     Ok(element)
 }

@@ -16,7 +16,7 @@ use crate::number::{self, Decimal};
 use crate::opaque::ParentPath;
 use crate::read::context::{Context, Fault, Handled, Owner, Scope, Visit};
 use crate::read::pools::Pools;
-use crate::read::property::{find, is_flag, single_text};
+use crate::read::property::{is_flag, single_text};
 use crate::read::track::StaffFrame;
 
 const BEND_PROPERTIES: [&str; 8] = [
@@ -34,6 +34,7 @@ const TAP_PROPERTIES: [&str; 2] = ["Tapped", "LeftHandTapped"];
 const PITCH_PROPERTIES: [&str; 3] = ["Midi", "ConcertPitch", "TransposedPitch"];
 const POSITION_PROPERTIES: [&str; 2] = ["String", "Fret"];
 const MAX_BEND_OFFSET: i64 = 100;
+const X_PROPERTIES: &str = "XProperties";
 const BEND_VALUE_FACTOR: i128 = 2;
 
 enum Group<T> {
@@ -274,11 +275,13 @@ fn read_note_child(
                 return Ok(Handled::Replayed(guard::trill(trill.group.value())));
             }
         }
-        "XProperties" if holds_speed(visit.element) => {
+        "XProperties" if !visit.element.children.is_empty() => {
             let inner = scope.enter(visit);
+            ctx.keep_attributes(&inner, visit.element, &[])?;
             ctx.visit(&inner, visit.element, |_, property| {
                 Ok(trill_speed_property(property, &frame.trill))
             })?;
+            return Ok(Handled::Each);
         }
         _ => return Ok(Handled::Unknown),
     }
@@ -289,9 +292,14 @@ fn speed_key() -> String {
     format!("XProperty@{TRILL_SPEED}")
 }
 
-fn holds_speed(container: &Element) -> bool {
+fn speed_properties(note: &Element) -> Vec<&Element> {
     let key = speed_key();
-    container.elements().any(|(_, child)| child.key() == key)
+    note.elements()
+        .filter(|(_, container)| container.name == X_PROPERTIES)
+        .flat_map(|(_, container)| container.elements())
+        .filter(|(_, property)| property.key() == key)
+        .map(|(_, property)| property)
+        .collect()
 }
 
 fn trill_speed_property(property: &Visit<'_>, trill: &TrillRead) -> Handled {
@@ -315,23 +323,28 @@ fn trill_read(element: &Element, kind: NoteKind, staff: &StaffFrame<'_>) -> Tril
         ticks: DEFAULT_TRILL_TICKS,
     };
     let auxiliary = element.child("Trill").map(|(_, child)| child);
-    let speed = find(element, "XProperties", &speed_key());
+    let speeds = speed_properties(element);
     let Some(auxiliary) = auxiliary else {
-        return match speed {
-            Some(_) => unmappable,
-            None => TrillRead {
+        return if speeds.is_empty() {
+            TrillRead {
                 group: Group::Absent,
                 ..unmappable
-            },
+            }
+        } else {
+            unmappable
         };
     };
+    if speeds.len() > 1 {
+        return unmappable;
+    }
+    let speed = speeds.first().copied();
     let mapped = (|| {
         let pitch = number::integer::<u8>(&auxiliary.text())?;
         let NoteKind::Fretted { string, .. } = kind else {
             return None;
         };
-        let open = staff.tuning.get(usize::from(string))?;
-        let base = u16::from(open.0) + u16::from(staff.capo);
+        let open = staff.track_tuning.get(usize::from(string))?;
+        let base = u16::from(open.0) + u16::from(staff.track_capo);
         let fret = u8::try_from(u16::from(pitch).checked_sub(base)?).ok()?;
         let ticks = match speed {
             Some(speed) => number::integer::<u16>(&single_text(speed, "Int")?)?,

@@ -12,11 +12,11 @@ use opentab_model::{
 use proptest::collection::vec;
 use proptest::prelude::*;
 use proptest::sample::select;
-use proptest::test_runner::{Config, FileFailurePersistence, TestRunner};
+use proptest::test_runner::{Config, FileFailurePersistence, TestRng, TestRunner};
 
 use crate::anchors::{blocks, field, gpif_text, offsets};
 use crate::corpus::corpus_paths;
-use crate::inventory::{master_bar_children, out_of_order};
+use crate::inventory::{master_bar_children, note_children, out_of_note_order, out_of_order};
 use crate::rich::{
     ACCENT_MARKER, BRUSH_MARKER, FRAME_OFFSETS, HOPO_DESTINATION, INTRO_MARKER, MASTER_MARKER,
     ORNAMENT_MARKER, PITCH_MARKER, ROOT_MARKER, Rich, SECOND_SOUND, SIMILE_MARKER, SOUND_MARKER,
@@ -203,6 +203,9 @@ fn trill(value: u8) -> Option<Trill> {
 fn check_child_order(text: &str) -> Result<(), TestCaseError> {
     for children in master_bar_children(text) {
         prop_assert_eq!(out_of_order(&children), None);
+    }
+    for children in note_children(text) {
+        prop_assert_eq!(out_of_note_order(&children), None);
     }
     Ok(())
 }
@@ -601,11 +604,13 @@ fn edited_rich_documents_write_without_stale_opaque_data() {
         written: 0,
         refused: 0,
     });
-    let mut runner = TestRunner::new(Config {
+    let config = Config {
         cases: CASES,
         failure_persistence: Some(Box::new(FileFailurePersistence::Off)),
         ..Config::default()
-    });
+    };
+    let rng = TestRng::deterministic_rng(config.rng_algorithm);
+    let mut runner = TestRunner::new_with_rng(config, rng);
     let outcome = runner.run(&vec(arb_edit(), 0..=MAX_EDITS), |edits| {
         run_edits(&edits, &tally)
     });
@@ -898,6 +903,9 @@ fn corpus_examples_survive_edits_and_undo() {
         let bars = master_bar_children(&gpif_text(&bytes));
         for children in &bars {
             assert_eq!(out_of_order(children), None, "{name}");
+        }
+        for children in note_children(&gpif_text(&bytes)) {
+            assert_eq!(out_of_note_order(&children), None, "{name}");
         }
         let directed = bars.get(edited.master_bars.len() / 2);
         if directed.is_some_and(|children| {

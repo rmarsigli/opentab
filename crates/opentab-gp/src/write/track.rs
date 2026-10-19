@@ -79,6 +79,8 @@ fn staff_context(
         kind: track.instrument.kind,
         tuning,
         capo,
+        track_tuning: track.tuning.strings.clone(),
+        track_capo: track.capo,
         transpose: track.transpose,
         chords,
         generated_chords: Vec::new(),

@@ -46,6 +46,8 @@ pub(crate) struct StaffContext {
     pub kind: InstrumentKind,
     pub tuning: Vec<Pitch>,
     pub capo: u8,
+    pub track_tuning: Vec<Pitch>,
+    pub track_capo: u8,
     pub transpose: Transpose,
     pub chords: Vec<ChordItem>,
     pub generated_chords: Vec<ChordItem>,

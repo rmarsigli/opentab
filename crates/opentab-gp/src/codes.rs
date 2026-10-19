@@ -148,6 +148,20 @@ pub(crate) const MASTER_BAR_ORDER: [&str; 11] = [
     "XProperties",
 ];
 
+pub(crate) const NOTE_ORDER: [&str; 11] = [
+    "Trill",
+    "Vibrato",
+    "AntiAccent",
+    "LetRing",
+    "Accent",
+    "Tie",
+    "LeftFingering",
+    "RightFingering",
+    "InstrumentArticulation",
+    "Properties",
+    "XProperties",
+];
+
 pub(crate) const DIRECTION_TARGET: &str = "Target";
 pub(crate) const DIRECTION_JUMP: &str = "Jump";
 

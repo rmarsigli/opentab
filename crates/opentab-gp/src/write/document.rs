@@ -112,26 +112,6 @@ fn tempo_target(items: &[Item], ordinal: usize, master: &MasterBar, claimed: &[b
         .unwrap_or(ordinal)
 }
 
-struct Ranked {
-    rank: usize,
-    node: Node,
-}
-
-fn order_children(element: &mut Element) {
-    let mut rank = 0usize;
-    let mut ranked: Vec<Ranked> = Vec::with_capacity(element.children.len());
-    for node in element.children.drain(..) {
-        if let Node::Element(child) = &node
-            && let Some(position) = MASTER_BAR_ORDER.iter().position(|name| *name == child.name)
-        {
-            rank = position + 1;
-        }
-        ranked.push(Ranked { rank, node });
-    }
-    ranked.sort_by_key(|entry| entry.rank);
-    element.children = ranked.into_iter().map(|entry| entry.node).collect();
-}
-
 struct MasterOutput {
     element: Element,
     tempos: Vec<Element>,
@@ -209,7 +189,7 @@ fn master_bar(
     }
     element.push(Element::leaf("Bars", bars));
     payload::apply(&mut element, own)?;
-    order_children(&mut element);
+    payload::order_children(&mut element, &MASTER_BAR_ORDER);
     let mut tempos = Vec::with_capacity(master.tempo_changes.len());
     for (ordinal, change) in master.tempo_changes.iter().enumerate() {
         let items = tempo_items.remove(&ordinal).unwrap_or_default();
