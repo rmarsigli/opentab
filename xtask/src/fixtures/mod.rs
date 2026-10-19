@@ -127,9 +127,10 @@ mod tests {
     use opentab_model::diagnose;
     use std::path::Path;
 
-    const DIAGNOSED: [(&str, usize); 2] = [
+    const DIAGNOSED: [(&str, usize); 3] = [
         ("directions-dangling.gp", 3),
         ("directions-duplicates.gp", 2),
+        ("directions-coda-free.gp", 1),
     ];
 
     #[test]

@@ -169,6 +169,7 @@ pub struct MasterBar {
     pub alternate_endings: u8,
     pub double_bar: bool,
     pub marker: Option<Marker>,
+    #[serde(default)]
     pub directions: Directions,
     pub tempo_changes: Vec<TempoChange>,
 }

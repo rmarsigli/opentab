@@ -2,9 +2,9 @@ use std::collections::HashSet;
 
 use opentab_model::{
     Automation, AutomationValue, Bar, Beat, BeatEffects, ContainerEntry, DirectionTarget, Duration,
-    ElementId, Extensions, Instrument, InstrumentKind, InstrumentSet, Marker, MasterBar, MidiBank,
-    Note, NoteKind, OpaquePayload, Score, Sound, SoundOverride, SoundRef, Staff, TempoChange,
-    TimeSignature, Track, Tuning, Voice, VoiceSlot,
+    ElementId, Extensions, Instrument, InstrumentKind, InstrumentSet, JumpDestination, Marker,
+    MasterBar, MidiBank, Note, NoteKind, OpaquePayload, Score, Sound, SoundOverride, SoundRef,
+    Staff, TempoChange, TimeSignature, Track, Tuning, Voice, VoiceSlot,
 };
 
 const EXTRA_FORMAT: &str = "gpif";
@@ -370,11 +370,21 @@ fn resolve_directions(master_bars: &mut [MasterBar]) {
             fresh
         });
     }
-    for master_bar in master_bars.iter_mut() {
-        master_bar
-            .directions
-            .jumps
-            .retain(|jump| jump.needs().iter().all(|target| placed.contains(target)));
+    let holders: Vec<Vec<DirectionTarget>> = master_bars
+        .iter()
+        .map(|master_bar| master_bar.directions.targets.clone())
+        .collect();
+    for (index, master_bar) in master_bars.iter_mut().enumerate() {
+        master_bar.directions.jumps.retain(|jump| {
+            let ahead = match jump.destination() {
+                JumpDestination::Target(target) if !jump.is_return() => holders
+                    .iter()
+                    .skip(index + 1)
+                    .any(|targets| targets.contains(&target)),
+                _ => true,
+            };
+            ahead && jump.needs().iter().all(|target| placed.contains(target))
+        });
     }
 }
 

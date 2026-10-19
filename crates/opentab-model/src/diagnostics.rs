@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::fraction::{checked_sum, deserialize_non_negative};
 use crate::{
     AutomationValue, Bar, BarId, Beat, BeatId, DirectionJump, DirectionTarget, ElementId, Fraction,
-    InstrumentKind, MasterBar, MasterBarId, NoteId, NoteKind, Score, SoundRef, Staff, StaffId,
-    Track, TrackId, Voice, VoiceId, automations_in_order, check_program, on_automation_grid,
+    InstrumentKind, JumpDestination, MasterBar, MasterBarId, NoteId, NoteKind, Score, SoundRef,
+    Staff, StaffId, Track, TrackId, Voice, VoiceId, automations_in_order, check_program,
+    on_automation_grid,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -109,6 +110,11 @@ pub enum Diagnostic {
     },
     DuplicateTarget {
         master_bar: MasterBarId,
+        target: DirectionTarget,
+    },
+    CodaNotAhead {
+        master_bar: MasterBarId,
+        jump: DirectionJump,
         target: DirectionTarget,
     },
 }
@@ -239,7 +245,7 @@ impl Report {
                 }
             }
         }
-        for master_bar in master_bars {
+        for (index, master_bar) in master_bars.iter().enumerate() {
             for jump in &master_bar.directions.jumps {
                 for target in jump.needs() {
                     if !placed.contains(&target) {
@@ -249,6 +255,20 @@ impl Report {
                             target,
                         });
                     }
+                }
+                let JumpDestination::Target(target) = jump.destination() else {
+                    continue;
+                };
+                let ahead = master_bars
+                    .iter()
+                    .skip(index + 1)
+                    .any(|later| later.directions.holds(target));
+                if !jump.is_return() && placed.contains(&target) && !ahead {
+                    self.diagnostics.push(Diagnostic::CodaNotAhead {
+                        master_bar: master_bar.id,
+                        jump: *jump,
+                        target,
+                    });
                 }
             }
         }
