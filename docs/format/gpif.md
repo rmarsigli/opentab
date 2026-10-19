@@ -320,6 +320,8 @@ The corpus has 8 master bars with `Directions`, in 2 files: 4 `Target` (`Segno` 
 | Jump back to `SegnoSegno` | `DaSegnoSegno`, `DaSegnoSegnoAlFine`, `DaSegnoSegnoAlCoda`, `DaSegnoSegnoAlDoubleCoda` |
 | Jump forward | `DaCoda` (To Coda), `DaDoubleCoda` (To Double Coda) |
 
+OpenTab models them as `MasterBar.directions` (§10). Diagnostics flag a jump whose destination or `Al…` target is missing from the score (`dangling_jump`, one per missing target) and every later copy of a target (`duplicate_target`); GP accepts both, so the writer refuses neither.
+
 A bar may hold several targets and jumps. GP writes the targets first and orders jumps its own way: we wrote `DaCoda` before `DaSegnoAlCoda`, and the re-save has them the other way round [m3-po21]. The play order they produce is in §5.1.
 
 ## 7. Tracks and staves
@@ -540,6 +542,8 @@ Notation used in this table:
 | `marker.text` | `Section/Text` | — |
 | `marker.letter` | `Section/Letter` | — |
 | `double_bar` | `DoubleBar` present | — |
+| `directions.targets` | `Directions/Target`, in order: `Segno`, `SegnoSegno`, `Coda`, `DoubleCoda`, `Fine` (§6.1) | snake_case in JSON (`segno_segno`). |
+| `directions.jumps` | `Directions/Jump`, in order: the 14 names of §6.1 | snake_case in JSON (`da_segno_al_coda`). The writer emits the targets, then the jumps, after `DoubleBar` and before `Bars`; no element when both are empty. A `Directions` element in any other form (jumps before targets, an unknown name, an attribute, padded text, an empty element) is read for its known names and replayed whole while the directions are unchanged (§11.1). |
 | `tempo_changes[].position` | `Automation[Type=Tempo][Bar=index]/Position` × bar length | Position is a 6-digit float; see §5. |
 | `tempo_changes[].bpm` | first number of `Value` | The number printed on the mark, not converted to quarter notes. `Linear`, `Visible` and `Text` → opaque. |
 | `tempo_changes[].unit` | second number of `Value`: 1 eighth, 2 quarter, 3 dotted quarter, 4 half, 5 dotted half | Code 0 reads as quarter and is written as 2. Playback converts the mark to quarter notes. |
@@ -634,7 +638,8 @@ These stay as opaque payloads of their owner, or of the score:
   - the tempo automation's `Linear`, `Visible` and `Text`, and the original text of its `Position`.
 - **MasterBar:**
   - `Key/TransposeAs`, `Fermatas`, `TripletFeel`;
-  - `Directions`, `XProperties`;
+  - `XProperties`;
+  - a `Directions` element that is not in the writer's form, replayed whole under a guard (§10);
   - a repeat count on a start-only repeat.
 - **Track:**
   - colour, layout, playing style and icon;
@@ -672,7 +677,7 @@ Each kept node or attribute is stored with the place it came from: a parent path
 - When they match, the kept data is written back, and it replaces the element the writer would have generated in its place.
 - When they differ, the kept data is dropped and the generated value is written.
 
-A guard covers, for example, a note's derived pitches (string, fret, tuning, capo and transpose), `HopoDestination` (whether the note on the same string in the previous beat is a hammer-on origin; for the first beat of a bar, the previous beat is the last beat of the same voice slot in the previous bar), accent bits the model cannot hold (accent and staccato), the brush start time (the stroke) and the extras of a tempo automation (its position in the bar). The extras of a tempo automation follow the tempo change at the same position, so adding a tempo change at the start of a bar does not move them to another change.
+A guard covers, for example, a note's derived pitches (string, fret, tuning, capo and transpose), `HopoDestination` (whether the note on the same string in the previous beat is a hammer-on origin; for the first beat of a bar, the previous beat is the last beat of the same voice slot in the previous bar), accent bits the model cannot hold (accent and staccato), the brush start time (the stroke), a `Directions` element not in the writer's form (the bar's directions) and the extras of a tempo automation (its position in the bar). The extras of a tempo automation follow the tempo change at the same position, so adding a tempo change at the start of a bar does not move them to another change.
 
 Kept data that names a master bar by index is **anchored** to that master bar when it is read:
 
