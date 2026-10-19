@@ -151,6 +151,11 @@ fn directions_repeat_jumps() {
 }
 
 #[test]
+fn drums() {
+    check("drums", "", &default_options());
+}
+
+#[test]
 fn durations() {
     check("durations", "", &default_options());
 }
@@ -278,5 +283,5 @@ fn every_committed_fixture_has_a_snapshot_test() {
         let test = format!("fn {}() {{", name.replace('-', "_"));
         assert!(source.contains(&test), "no snapshot test for {name}");
     }
-    assert_eq!(names.len(), 30);
+    assert_eq!(names.len(), 31);
 }

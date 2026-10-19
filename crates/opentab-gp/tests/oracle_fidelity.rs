@@ -39,7 +39,13 @@ const TEMPO: &str = "tempo.gp";
 const SET_TEMPO: u8 = 0x51;
 const TICKS_PER_WHOLE: i64 = 1920;
 const TEMPO_TICK_TOLERANCE: i64 = 1;
-const AWAITING_HARVEST: [&str; 4] = [SOUND_CHANGE, "tempo-ramp.gp", "tremolo-bar.gp", "trill.gp"];
+const AWAITING_HARVEST: [&str; 5] = [
+    SOUND_CHANGE,
+    "tempo-ramp.gp",
+    "tremolo-bar.gp",
+    "trill.gp",
+    "drums.gp",
+];
 const STALE_GOLDENS: [&str; 1] = [SOUND_CHANGE];
 const NEEDED_BY_AWAITING: [(&str, &str); 1] = [(SOUND_NORMALISATION, SOUND_CHANGE)];
 

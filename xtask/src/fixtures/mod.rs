@@ -1,4 +1,5 @@
 mod directions;
+mod drums;
 mod effects;
 mod midi;
 mod music;
@@ -51,7 +52,7 @@ pub struct Family {
 
 type Builder = fn() -> Result<Score, FixtureError>;
 
-const BUILDERS: [(&str, Builder); 30] = [
+const BUILDERS: [(&str, Builder); 31] = [
     ("metadata.gp", music::metadata),
     ("signatures.gp", music::signatures),
     ("repeats.gp", music::repeats),
@@ -82,6 +83,7 @@ const BUILDERS: [(&str, Builder); 30] = [
     ("tempo-ramp.gp", playing::tempo_ramp),
     ("tremolo-bar.gp", playing::tremolo_bar),
     ("trill.gp", playing::trill),
+    ("drums.gp", drums::drums),
 ];
 
 pub const PLAY_ORDERS: &str = include_str!("play-orders.json");
