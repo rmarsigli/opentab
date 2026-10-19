@@ -120,3 +120,121 @@ fn dots(x: Units, staff: &StaffLayout, items: &mut Vec<Primitive>) {
         }));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::structure::StaffKind;
+    use crate::units::STAFF_SPACE;
+
+    const RIGHT: Units = Units(40_000);
+
+    fn staff() -> StaffLayout {
+        StaffLayout {
+            track: 0,
+            staff: 0,
+            kind: StaffKind::Standard,
+            top: Units(8192),
+            lines: 5,
+            line_spacing: STAFF_SPACE,
+            bars: Vec::new(),
+        }
+    }
+
+    fn stroke(x: Units, thickness: Units) -> Primitive {
+        Primitive::Line(Line {
+            from: Point { x, y: Units(8192) },
+            to: Point {
+                x,
+                y: Units(8192 + 4 * 1024),
+            },
+            thickness,
+            dash: None,
+        })
+    }
+
+    fn glyph_origins(items: &[Primitive]) -> Vec<Point> {
+        items
+            .iter()
+            .filter_map(|item| match item {
+                Primitive::Glyph(glyph) => Some(glyph.origin),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_normal_end_is_one_thin_stroke_flush_with_the_right_edge() {
+        let strokes = strokes();
+        let items = strokes.draw_end(EndSign::Normal, RIGHT, &staff());
+        assert_eq!(
+            items,
+            vec![stroke(RIGHT - strokes.thin.half(), strokes.thin)]
+        );
+    }
+
+    #[test]
+    fn a_double_end_is_two_thin_strokes_a_gap_apart() {
+        let strokes = strokes();
+        let items = strokes.draw_end(EndSign::Double, RIGHT, &staff());
+        let inner = RIGHT - strokes.thin - strokes.double_gap - strokes.thin.half();
+        assert_eq!(
+            items,
+            vec![
+                stroke(RIGHT - strokes.thin.half(), strokes.thin),
+                stroke(inner, strokes.thin)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_final_end_is_a_thick_stroke_after_a_thin_one() {
+        let strokes = strokes();
+        let items = strokes.draw_end(EndSign::Final, RIGHT, &staff());
+        let thin_right = RIGHT - strokes.thick - strokes.thin_thick_gap;
+        assert_eq!(
+            items,
+            vec![
+                stroke(RIGHT - strokes.thick.half(), strokes.thick),
+                stroke(thin_right - strokes.thin.half(), strokes.thin)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_repeat_end_adds_two_dots_before_the_thin_stroke() {
+        let strokes = strokes();
+        let items = strokes.draw_end(EndSign::Repeat, RIGHT, &staff());
+        let thin_right = RIGHT - strokes.thick - strokes.thin_thick_gap;
+        let dot_x = thin_right - strokes.thin - strokes.dot_gap - strokes.dot;
+        assert_eq!(items.len(), 4);
+        assert_eq!(
+            items[0],
+            stroke(RIGHT - strokes.thick.half(), strokes.thick)
+        );
+        assert_eq!(
+            items[1],
+            stroke(thin_right - strokes.thin.half(), strokes.thin)
+        );
+        let origins = glyph_origins(&items);
+        assert_eq!(origins.len(), 2);
+        assert!(origins.iter().all(|origin| origin.x == dot_x));
+    }
+
+    #[test]
+    fn a_start_repeat_is_a_thick_stroke_a_thin_one_and_two_dots() {
+        let strokes = strokes();
+        let left = Units(2048);
+        let items = strokes.draw_start_repeat(left, &staff());
+        let thin_left = left + strokes.thick + strokes.thin_thick_gap;
+        assert_eq!(items.len(), 4);
+        assert_eq!(items[0], stroke(left + strokes.thick.half(), strokes.thick));
+        assert_eq!(
+            items[1],
+            stroke(thin_left + strokes.thin.half(), strokes.thin)
+        );
+        let origins = glyph_origins(&items);
+        let dot_x = thin_left + strokes.thin + strokes.dot_gap;
+        assert!(origins.iter().all(|origin| origin.x == dot_x));
+    }
+}
