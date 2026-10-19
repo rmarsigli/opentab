@@ -54,3 +54,5 @@ m3-po58-tocoda-after-aldoublecoda | 6 | 1 DaCoda; 2 DaCapoAlDoubleCoda; 3 Coda; 
 m3-po59-tocoda-after-plain-dc | 6 | 1 DaCoda; 3 DaCapo; 4 Coda | 0 1 2 3 0 1 4 5
 m3-t4-y1-ignored-double-coda-ahead | 8 | 1 DoubleCoda; 2 DaCoda; 3 DaDoubleCoda; 4 Coda | 0 1 2 4 5 6 7
 m3-t4-y3-valid-double-coda-ahead | 8 | 1 DaCoda; 2 DaDoubleCoda; 4 Coda; 6 DoubleCoda | 0 1 2 6 7
+m3-t4-x2-earlier-twin-and-late-to-coda | 8 | 1 DaCoda; 3 Coda; 4 DaCoda | 0 1 2 3 4 5 6 7
+m3-t4-x3-two-to-codas-before-the-coda | 8 | 1 DaCoda; 2 DaCoda; 4 Coda | 0 1 2 4 5 6 7
