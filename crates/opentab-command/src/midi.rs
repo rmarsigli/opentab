@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use opentab_model::{
-    AUTOMATION_GRID, Automation, AutomationValue, Fraction, MasterBar, MasterBarId, Score,
-    SoundOverride, Track, TrackId, TrackMidi, automations_in_order, on_automation_grid,
+    AUTOMATION_GRID, Automation, AutomationValue, DrumKit, Fraction, InstrumentKind, MasterBar,
+    MasterBarId, Score, SoundOverride, Track, TrackId, TrackMidi, automations_in_order,
+    on_automation_grid,
 };
 
 use crate::rules::already_broken;
@@ -48,6 +49,33 @@ pub(crate) fn set_track_midi(
         first.bank = midi.bank;
     }
     Ok(Command::SetTrackMidi { track, midi: old })
+}
+
+fn not_percussion(track: TrackId) -> CommandError {
+    CommandError::invalid(format!(
+        "track {} is not a percussion track; a drum kit belongs only to a percussion track",
+        track.0.0
+    ))
+}
+
+pub(crate) fn set_drum_kit(
+    score: &mut Score,
+    track: TrackId,
+    drum_kit: Option<&DrumKit>,
+) -> Result<Command, CommandError> {
+    let target = track_mut(score, track)?;
+    let percussion = target.instrument.kind == InstrumentKind::Percussion;
+    if !percussion && target.drum_kit.is_some() {
+        return Err(already_broken(not_percussion(track)));
+    }
+    if !percussion && drum_kit.is_some() {
+        return Err(not_percussion(track));
+    }
+    let old = std::mem::replace(&mut target.drum_kit, drum_kit.cloned());
+    Ok(Command::SetDrumKit {
+        track,
+        drum_kit: old,
+    })
 }
 
 fn invalid_position(position: Fraction, end: Fraction) -> CommandError {

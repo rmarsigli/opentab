@@ -671,3 +671,50 @@ fn ordered_drum_kits_list_each_track_kit_in_document_order() {
         ]
     );
 }
+
+pub const INSTRUMENT_SET_ORDER: [&str; 4] = ["Name", "Type", "LineCount", "Elements"];
+
+pub fn instrument_set_children(gpif: &str) -> Vec<Vec<String>> {
+    let document = tree(gpif);
+    let root = document.child("GPIF").unwrap_or(&document);
+    root.child("Tracks")
+        .map(|tracks| {
+            tracks
+                .children
+                .iter()
+                .map(|track| {
+                    track
+                        .child("InstrumentSet")
+                        .map(|set| {
+                            set.children
+                                .iter()
+                                .map(|child| child.name.clone())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn out_of_set_order(children: &[String]) -> Option<String> {
+    let ranks: Vec<usize> = children
+        .iter()
+        .filter_map(|name| INSTRUMENT_SET_ORDER.iter().position(|known| known == name))
+        .collect();
+    let sorted = ranks.windows(2).all(|pair| pair[0] < pair[1]);
+    (!sorted).then(|| children.join(" "))
+}
+
+#[test]
+fn instrument_set_children_are_listed_per_track_and_checked() {
+    let gpif = "<GPIF><Tracks><Track><InstrumentSet><Name>K</Name><Type>drumKit</Type><LineCount>5</LineCount><Elements/></InstrumentSet></Track><Track><InstrumentSet><Elements/><Type>voice</Type></InstrumentSet></Track></Tracks></GPIF>";
+    let found = instrument_set_children(gpif);
+    assert_eq!(found[0], INSTRUMENT_SET_ORDER.to_vec());
+    assert_eq!(out_of_set_order(&found[0]), None);
+    assert_eq!(
+        out_of_set_order(&found[1]),
+        Some("Elements Type".to_string())
+    );
+}

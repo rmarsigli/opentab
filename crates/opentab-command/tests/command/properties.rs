@@ -12,7 +12,7 @@ const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 512;
 const SHIFTS: [usize; 4] = [0, 1, 2, usize::MAX];
 const MIN_SUCCESS_RATIO: f64 = 0.2;
-const FORWARD_OPS: [&str; 22] = [
+const FORWARD_OPS: [&str; 23] = [
     "set_meta",
     "set_anacrusis",
     "insert_master_bar",
@@ -32,6 +32,7 @@ const FORWARD_OPS: [&str; 22] = [
     "pad_staff_bars",
     "trim_staff_bars",
     "set_track_midi",
+    "set_drum_kit",
     "insert_automation",
     "remove_automation",
     "set_sound_override",

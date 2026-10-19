@@ -1,7 +1,7 @@
 use opentab_model::{
-    Automation, Bar, BarId, Beat, BeatId, Directions, Duration, ElementId, MasterBar, Note, NoteId,
-    OpaquePayload, SoundOverride, StaffId, TempoChange, TimeSignature, TrackId, TrackMidi,
-    TremoloBar, Trill, Voice, VoiceId,
+    Automation, Bar, BarId, Beat, BeatId, Directions, DrumKit, Duration, ElementId, MasterBar,
+    Note, NoteId, OpaquePayload, SoundOverride, StaffId, TempoChange, TimeSignature, TrackId,
+    TrackMidi, TremoloBar, Trill, Voice, VoiceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -115,6 +115,10 @@ pub enum Command {
     SetTrackMidi {
         track: TrackId,
         midi: TrackMidi,
+    },
+    SetDrumKit {
+        track: TrackId,
+        drum_kit: Option<DrumKit>,
     },
     InsertAutomation {
         track: TrackId,

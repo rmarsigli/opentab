@@ -1,10 +1,10 @@
 use opentab_command::{Command, MetaField};
 use opentab_model::{
     Automation, AutomationValue, Balance, BarId, Beat, BeatId, BeatPath, BendPoint,
-    DIRECTION_JUMPS, DIRECTION_TARGETS, Directions, Duration, ElementId, Fraction, InstrumentKind,
-    Level, MasterBarId, MidiBank, MidiChannel, Note, NoteEffects, NoteId, NoteKind, NoteValue,
-    Score, Sound, SoundRef, StaffId, Tempo, TempoChange, TempoUnit, TimeSignature, TrackId,
-    TrackMidi, TremoloBar, Trill, TrillSpeed, Tuplet, VoiceId, VoiceSlot,
+    DIRECTION_JUMPS, DIRECTION_TARGETS, Directions, DrumKit, Duration, ElementId, Fraction,
+    InstrumentKind, Level, MasterBarId, MidiBank, MidiChannel, Note, NoteEffects, NoteId, NoteKind,
+    NoteValue, Score, Sound, SoundRef, StaffId, Tempo, TempoChange, TempoUnit, TimeSignature,
+    TrackId, TrackMidi, TremoloBar, Trill, TrillSpeed, Tuplet, VoiceId, VoiceSlot, gm_drum_kit,
 };
 use opentab_testkit::arb_score;
 use proptest::collection::vec;
@@ -144,6 +144,10 @@ pub enum Step {
     SetTrackMidi {
         track: Pick,
         midi: TrackMidi,
+    },
+    SetDrumKit {
+        track: Pick,
+        kit: Option<bool>,
     },
     InsertAutomation {
         track: Pick,
@@ -635,6 +639,21 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
             track: catalog.id(*track, &catalog.tracks),
             midi: *midi,
         },
+        Step::SetDrumKit { track, kit } => Command::SetDrumKit {
+            track: catalog.id(*track, &catalog.tracks),
+            drum_kit: kit.map(|general| {
+                let kit = gm_drum_kit();
+                if general {
+                    kit
+                } else {
+                    DrumKit::new(
+                        kit.elements()[..1].to_vec(),
+                        kit.articulations()[..1].to_vec(),
+                    )
+                    .expect("a one-drum kit is valid")
+                }
+            }),
+        },
         Step::InsertAutomation {
             track,
             index,
@@ -823,6 +842,8 @@ fn arb_step() -> impl Strategy<Value = Step> {
             len
         }),
         (arb_pick(), arb_track_midi()).prop_map(|(track, midi)| Step::SetTrackMidi { track, midi }),
+        (arb_pick(), option::of(any::<bool>()))
+            .prop_map(|(track, kit)| Step::SetDrumKit { track, kit }),
         (
             (arb_pick(), arb_pick(), arb_pick()),
             arb_share(),

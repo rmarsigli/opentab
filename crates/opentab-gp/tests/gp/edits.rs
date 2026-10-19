@@ -6,8 +6,8 @@ use opentab_command::{Command, History, MetaField};
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
     BarId, Beat, BeatId, BendPoint, DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump,
-    DirectionTarget, Directions, Duration, ElementId, IdAllocator, NoteId, NoteKind, NoteValue,
-    Score, TimeSignature, TremoloBar, Trill, TrillSpeed, VoiceId,
+    DirectionTarget, Directions, Duration, ElementId, IdAllocator, InstrumentKind, NoteId,
+    NoteKind, NoteValue, Score, TimeSignature, TremoloBar, Trill, TrillSpeed, VoiceId, gm_drum_kit,
 };
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -16,7 +16,10 @@ use proptest::test_runner::{Config, FileFailurePersistence, TestRng, TestRunner}
 
 use crate::anchors::{blocks, field, gpif_text, offsets};
 use crate::corpus::corpus_paths;
-use crate::inventory::{master_bar_children, note_children, out_of_note_order, out_of_order};
+use crate::inventory::{
+    INSTRUMENT_SET_ORDER, instrument_set_children, master_bar_children, note_children,
+    out_of_note_order, out_of_order, out_of_set_order,
+};
 use crate::rich::{
     ACCENT_MARKER, BRUSH_MARKER, FRAME_OFFSETS, HOPO_DESTINATION, INTRO_MARKER, MASTER_MARKER,
     ORNAMENT_MARKER, PITCH_MARKER, ROOT_MARKER, Rich, SECOND_SOUND, SIMILE_MARKER, SOUND_MARKER,
@@ -27,6 +30,7 @@ const CASES: u32 = 256;
 const MAX_EDITS: usize = 14;
 const MAX_FRET: u8 = 24;
 const STRINGS: u8 = 6;
+const CORPUS_DRUM_TRACKS: usize = 10;
 
 static RICH: LazyLock<Rich> = LazyLock::new(rich);
 
@@ -331,6 +335,7 @@ fn op_name(command: &Command) -> String {
         Command::SetTrill { .. } => "set_trill",
         Command::PadStaffBars { .. } => "pad_staff_bars",
         Command::TrimStaffBars { .. } => "trim_staff_bars",
+        Command::SetDrumKit { .. } => "set_drum_kit",
         _ => "restore",
     };
     name.to_string()
@@ -871,6 +876,21 @@ fn corpus_edits(score: &Score, history: &mut History, edited: &mut Score) -> Vec
         edited,
         history,
     );
+    let drums = edited
+        .tracks
+        .iter()
+        .find(|track| track.instrument.kind == InstrumentKind::Percussion)
+        .map(|track| track.id);
+    if let Some(track) = drums {
+        run(
+            Command::SetDrumKit {
+                track,
+                drum_kit: Some(gm_drum_kit()),
+            },
+            edited,
+            history,
+        );
+    }
     applied
 }
 
@@ -882,6 +902,7 @@ fn corpus_examples_survive_edits_and_undo() {
     let mut applied: BTreeMap<String, usize> = BTreeMap::new();
     let mut dropped = 0usize;
     let mut ordered = 0usize;
+    let mut kits = 0usize;
     for path in &paths {
         let name = path.display().to_string();
         let score = read_gp(&std::fs::read(path).expect("corpus file")).expect("reads");
@@ -906,6 +927,18 @@ fn corpus_examples_survive_edits_and_undo() {
         }
         for children in note_children(&gpif_text(&bytes)) {
             assert_eq!(out_of_note_order(&children), None, "{name}");
+        }
+        for (track, children) in edited
+            .tracks
+            .iter()
+            .zip(instrument_set_children(&gpif_text(&bytes)))
+        {
+            assert_eq!(out_of_set_order(&children), None, "{name}");
+            if track.instrument.kind == InstrumentKind::Percussion {
+                assert_eq!(children, INSTRUMENT_SET_ORDER.to_vec(), "{name}");
+                assert_eq!(track.drum_kit, Some(gm_drum_kit()), "{name}");
+                kits += 1;
+            }
         }
         let directed = bars.get(edited.master_bars.len() / 2);
         if directed.is_some_and(|children| {
@@ -950,6 +983,7 @@ fn corpus_examples_survive_edits_and_undo() {
         "remove_note",
         "remove_master_bar",
         "set_directions",
+        "set_drum_kit",
     ] {
         assert!(
             applied.get(op).copied().unwrap_or(0) > 0,
@@ -957,6 +991,7 @@ fn corpus_examples_survive_edits_and_undo() {
         );
     }
     assert!(dropped >= 10, "only {dropped} files had a hopo destination");
+    assert_eq!(kits, CORPUS_DRUM_TRACKS);
 }
 
 #[test]

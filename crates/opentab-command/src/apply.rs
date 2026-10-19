@@ -30,6 +30,9 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
             },
         ),
         Command::SetTrackMidi { track, midi } => midi::set_track_midi(score, *track, *midi),
+        Command::SetDrumKit { track, drum_kit } => {
+            midi::set_drum_kit(score, *track, drum_kit.as_ref())
+        }
         Command::InsertAutomation {
             track,
             index,
