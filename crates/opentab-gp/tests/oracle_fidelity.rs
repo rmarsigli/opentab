@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 
 use opentab_gp::read_gp;
 use opentab_model::{
-    Automation, AutomationValue, Beat, BeatId, BendPoint, ElementId, Fraction, IdAllocator, Note,
-    NoteId, OpaquePayload, Score, Sound, SoundRef, Tempo, TempoChange, TempoUnit, Track,
-    TremoloBar, VoiceSlot, to_json,
+    Automation, AutomationValue, Beat, BeatId, BendPoint, ElementId, Fraction, IdAllocator,
+    InstrumentKind, Note, NoteId, NoteKind, OpaquePayload, Score, Sound, SoundRef, Tempo,
+    TempoChange, TempoUnit, Track, TremoloBar, VoiceSlot, to_json,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -41,7 +41,16 @@ const TEMPO: &str = "tempo.gp";
 const SET_TEMPO: u8 = 0x51;
 const TICKS_PER_WHOLE: i64 = 1920;
 const TEMPO_TICK_TOLERANCE: i64 = 1;
-const AWAITING_HARVEST: [&str; 1] = ["drums.gp"];
+const DRUMS: &str = "drums.gp";
+const DRUM_CHANNEL: u8 = 9;
+const DRUM_SPELLED_PITCH: i32 = -12;
+const NOTATION_PATCH: &str = "/NotationPatch";
+const EMPTIED_NOTATION_PATCH: &str = "<NotationPatch/>";
+const DRUM_PITCHES: [&str; 2] = ["pitch:Properties/Property@ConcertPitch", RESPELLED_PITCH];
+const DRUM_KEYS: [(&str, &str); 2] = [
+    ("pitch:Properties/Property@Fret", "Fret"),
+    ("pitch:Properties/Property@Midi", "Number"),
+];
 const TEMPO_RAMP: &str = "tempo-ramp.gp";
 const TREMOLO_BAR: &str = "tremolo-bar.gp";
 const TRILL: &str = "trill.gp";
@@ -119,7 +128,7 @@ struct Normalisation {
     apply: Normalise,
 }
 
-const NORMALISATIONS: [Normalisation; 17] = [
+const NORMALISATIONS: [Normalisation; 19] = [
     Normalisation {
         name: "gp_writes_its_own_defaults",
         apply: gp_writes_its_own_defaults,
@@ -127,6 +136,14 @@ const NORMALISATIONS: [Normalisation; 17] = [
     Normalisation {
         name: "gp_writes_the_track_tuning_on_later_staves",
         apply: gp_writes_the_track_tuning_on_later_staves,
+    },
+    Normalisation {
+        name: "gp_writes_an_emptied_notation_patch_on_drum_tracks",
+        apply: gp_writes_an_emptied_notation_patch_on_drum_tracks,
+    },
+    Normalisation {
+        name: "gp_spells_out_drum_note_pitches",
+        apply: gp_spells_out_drum_note_pitches,
     },
     Normalisation {
         name: "gp_spells_transposed_pitch_its_own_way",
@@ -317,12 +334,18 @@ fn written_midi(track: &Track, note: &Note) -> Option<i32> {
     Some(sounding - i32::from(transpose.chromatic()) - SEMITONES * i32::from(transpose.octave()))
 }
 
+fn is_drum_note(notes: &BTreeMap<ElementId, (&Track, &Note)>, id: ElementId) -> bool {
+    notes
+        .get(&id)
+        .is_some_and(|(_, note)| matches!(note.kind, NoteKind::Percussion { .. }))
+}
+
 fn respelled_pitches(golden: &Score) -> Vec<(ElementId, Option<i32>, Option<i32>)> {
     let notes = notes_with_tracks(golden);
     let mut found = Vec::new();
     for (id, payloads) in &golden.extensions.0 {
         for payload in payloads {
-            if payload_kind(&payload.data) != RESPELLED_PITCH {
+            if payload_kind(&payload.data) != RESPELLED_PITCH || is_drum_note(&notes, *id) {
                 continue;
             }
             let written = notes
@@ -332,6 +355,73 @@ fn respelled_pitches(golden: &Score) -> Vec<(ElementId, Option<i32>, Option<i32>
         }
     }
     found
+}
+
+fn drum_note_pitch(kind: &str) -> bool {
+    DRUM_PITCHES.contains(&kind) || DRUM_KEYS.iter().any(|(name, _)| *name == kind)
+}
+
+fn gp_writes_an_emptied_notation_patch_on_drum_tracks(_fixture: &mut Score, golden: &mut Score) {
+    let drum_tracks: BTreeSet<ElementId> = golden
+        .tracks
+        .iter()
+        .filter(|track| track.instrument.kind == InstrumentKind::Percussion)
+        .map(|track| track.id.0)
+        .collect();
+    retain_payloads(golden, |id, payload| {
+        if payload_kind(&payload.data) != NOTATION_PATCH {
+            return true;
+        }
+        assert!(
+            drum_tracks.contains(&id),
+            "{id:?}: a notation patch off a drum track"
+        );
+        assert!(
+            payload.data.contains(EMPTIED_NOTATION_PATCH),
+            "{id:?}: the published notation patch is not emptied"
+        );
+        false
+    });
+}
+
+fn gp_spells_out_drum_note_pitches(_fixture: &mut Score, golden: &mut Score) {
+    let notes = notes_with_tracks(golden);
+    let mut checked = BTreeSet::new();
+    for (id, payloads) in &golden.extensions.0 {
+        let Some((track, note)) = notes.get(id) else {
+            continue;
+        };
+        let NoteKind::Percussion { articulation } = note.kind else {
+            continue;
+        };
+        let key = track
+            .kit()
+            .and_then(|kit| kit.articulations().get(usize::from(articulation)))
+            .map(|found| found.output_key.to_string());
+        for payload in payloads {
+            let kind = payload_kind(&payload.data);
+            if DRUM_PITCHES.contains(&kind.as_str()) {
+                assert_eq!(
+                    spelled_midi(&payload.data),
+                    Some(DRUM_SPELLED_PITCH),
+                    "{id:?}"
+                );
+            }
+            if let Some((_, element)) = DRUM_KEYS.iter().find(|(name, _)| *name == kind) {
+                assert_eq!(
+                    element_text(&payload.data, element).map(str::to_string),
+                    key,
+                    "{id:?}"
+                );
+            }
+            if drum_note_pitch(&kind) {
+                checked.insert(*id);
+            }
+        }
+    }
+    retain_payloads(golden, |id, payload| {
+        !checked.contains(&id) || !drum_note_pitch(&payload_kind(&payload.data))
+    });
 }
 
 fn gp_spells_transposed_pitch_its_own_way(_fixture: &mut Score, golden: &mut Score) {
@@ -825,7 +915,6 @@ fn golden_path(name: &str, output: &str) -> PathBuf {
 fn pairs() -> Vec<Pair> {
     fixture_names()
         .into_iter()
-        .filter(|name| !AWAITING_HARVEST.contains(&name.as_str()))
         .map(|name| Pair {
             fixture: read(&fixture_path(&name)),
             golden: read_resave(&golden_path(&name, RESAVE)),
@@ -936,15 +1025,8 @@ fn every_fixture_has_a_golden_and_reads_without_payloads() {
         .filter(|entry| entry.path().is_dir())
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect();
-    let harvested: BTreeSet<String> = names
-        .iter()
-        .filter(|name| !AWAITING_HARVEST.contains(&name.as_str()))
-        .cloned()
-        .collect();
+    let harvested: BTreeSet<String> = names.iter().cloned().collect();
     assert_eq!(golden_dirs, harvested);
-    for name in AWAITING_HARVEST {
-        assert!(names.iter().any(|fixture| fixture == name), "{name}");
-    }
     for name in &names {
         let fixture = read(&root().join("fixtures").join("gp").join(name));
         assert!(fixture.container.is_empty(), "{name}");
@@ -972,6 +1054,8 @@ fn guitar_pro_adds_only_documented_default_payloads() {
     for pair in pairs() {
         for kind in golden_payload_kinds(&pair.golden) {
             if kind == LATER_STAFF_TUNING
+                || kind == NOTATION_PATCH
+                || drum_note_pitch(&kind)
                 || kind == RESPELLED_PITCH
                 || kind == SOUND_VARIATION
                 || kind == TRILL_REVISION
@@ -1139,6 +1223,7 @@ fn guitar_pro_marks_the_beats_after_each_sound_change_with_the_sound_index() {
 struct NoteOn {
     tick: usize,
     key: u8,
+    channel: u8,
     offset: usize,
 }
 
@@ -1230,7 +1315,12 @@ fn track_events(reader: &mut SmfReader<'_>, end: usize, found: &mut Events) {
             found.bends += 1;
         }
         if status & STATUS_KIND == NOTE_ON && velocity > 0 {
-            found.notes.push(NoteOn { tick, key, offset });
+            found.notes.push(NoteOn {
+                tick,
+                key,
+                channel: status & !STATUS_KIND,
+                offset,
+            });
         }
     }
 }
@@ -1551,6 +1641,38 @@ fn guitar_pros_export_plays_the_tremolo_bar_as_plain_notes() {
     assert_eq!(played.bends, 0);
     let heard: Vec<u8> = played.notes.iter().map(|note| note.key).collect();
     assert_eq!(heard, keys);
+}
+
+#[test]
+fn guitar_pros_export_plays_each_drum_note_at_its_kit_key_on_channel_10() {
+    let fixture = read(&fixture_path(DRUMS));
+    let track = &fixture.tracks[0];
+    let kit = track.kit().expect("a percussion track plays a kit");
+    let mut expected = Vec::new();
+    let mut onset = Fraction::from_integer(0);
+    for bar in &track.staves[0].bars {
+        for beat in &bar.voices[0].beats {
+            let tick = usize::try_from((onset * TICKS_PER_WHOLE).to_integer()).expect("tick");
+            for note in &beat.notes {
+                let NoteKind::Percussion { articulation } = note.kind else {
+                    panic!("a drum note");
+                };
+                expected.push((
+                    tick,
+                    kit.articulations()[usize::from(articulation)].output_key,
+                ));
+            }
+            onset += beat.duration.length();
+        }
+    }
+    assert_eq!(expected.len(), kit.articulations().len());
+    let smf = std::fs::read(golden_path(DRUMS, EXPORT_MID)).expect("export.mid");
+    let played = note_ons(&smf);
+    assert!(played.iter().all(|note| note.channel == DRUM_CHANNEL));
+    let mut heard: Vec<(usize, u8)> = played.iter().map(|note| (note.tick, note.key)).collect();
+    heard.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(heard, expected);
 }
 
 fn first_children_of_trilled_notes(gpif: &str) -> Vec<String> {

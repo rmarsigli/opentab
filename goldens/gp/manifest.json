@@ -406,6 +406,37 @@
       ]
     },
     {
+      "fixture": "drums.gp",
+      "sha256": "653720f866c18f6eb067950c1ea9d196b028c0d481edf4d0447d4a1d48dc6341",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "736d0d7c7b893d8789b3d8dbdd5ea7ee8c926bea9d0c9755a76d5fadaca903a8",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "95942be48723a9733a27cfb673bddb92b91da1196e0897fb4ba80a1fc105d293",
+          "byte_identical": true
+        },
+        {
+          "path": "png/drums#1.png",
+          "sha256": "6aad9f75a832a2a9d28ef661f6d29dcbb2a0e92276d68f0d055741586762bd28",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "e434513ebbe225d8a03d9c28a5f31ff5052ccd75ded1affef1308e21000ff3e7",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
       "fixture": "durations.gp",
       "sha256": "58ffb9d8670995356cf3c383634f93793836d9e1c8108eb7b4155d14bbd9e221",
       "outputs": [
