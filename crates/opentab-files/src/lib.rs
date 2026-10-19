@@ -381,22 +381,32 @@ mod tests {
         let file = dir.path().join("a.gp");
         fs::write(&file, b"x").unwrap();
         assert_eq!(require_regular_file(&file), Ok(()));
+        let error = require_regular_file(dir.path()).unwrap_err();
+        assert_eq!(error.kind(), "io");
+        assert_eq!(
+            error.to_string(),
+            format!("{}: not a regular file", dir.path().display())
+        );
+        let missing = require_regular_file(&dir.path().join("missing.gp")).unwrap_err();
+        assert_eq!(missing.kind(), "io");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_follow_to_their_target_and_devices_are_not_regular_files() {
+        let dir = dir();
+        let file = dir.path().join("a.gp");
+        fs::write(&file, b"x").unwrap();
         let link = dir.path().join("link.gp");
         std::os::unix::fs::symlink(&file, &link).unwrap();
         assert_eq!(require_regular_file(&link), Ok(()));
-        for special in [dir.path().to_path_buf(), PathBuf::from("/dev/null")] {
-            let error = require_regular_file(&special).unwrap_err();
-            assert_eq!(error.kind(), "io");
-            assert_eq!(
-                error.to_string(),
-                format!("{}: not a regular file", special.display())
-            );
-        }
+        let null = Path::new("/dev/null");
+        let error = require_regular_file(null).unwrap_err();
+        assert_eq!(error.kind(), "io");
+        assert_eq!(error.to_string(), "/dev/null: not a regular file");
         let device = dir.path().join("zero.gp");
         std::os::unix::fs::symlink("/dev/zero", &device).unwrap();
         assert!(require_regular_file(&device).is_err());
-        let missing = require_regular_file(&dir.path().join("missing.gp")).unwrap_err();
-        assert_eq!(missing.kind(), "io");
     }
 
     #[test]
