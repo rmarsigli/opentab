@@ -260,6 +260,9 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
         ("instrument", Env::Track(track)) => {
             guard::instrument(track.instrument.kind, track.instrument.set)
         }
+        ("drum-kit", Env::Track(track)) => {
+            guard::drum_kit(track.instrument.kind, track.drum_kit.is_some())
+        }
         ("midi-connection", Env::Track(track)) => guard::midi_connection(&track.midi),
         ("sound-label", Env::Track(track)) => {
             let index = guard::sound_label_index(guard)?;

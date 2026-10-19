@@ -568,3 +568,106 @@ fn note_children_are_listed_and_checked_against_the_writer_order() {
         .is_some()
     );
 }
+
+const KIT_ROOT: [&str; 5] = ["GPIF", "Tracks", "Track", "InstrumentSet", "Elements"];
+
+struct KitWalk {
+    stack: Vec<Open>,
+    tracks: Vec<Vec<String>>,
+}
+
+impl KitWalk {
+    fn inside(&self) -> bool {
+        self.stack.len() >= KIT_ROOT.len()
+            && self
+                .stack
+                .iter()
+                .zip(KIT_ROOT)
+                .all(|(open, name)| open.name == name)
+    }
+
+    fn open(&mut self, name: String) {
+        if self.stack.len() == 2 && name == "Track" {
+            self.tracks.push(Vec::new());
+        }
+        self.stack.push(Open {
+            name,
+            text: String::new(),
+        });
+    }
+
+    fn close(&mut self) {
+        let inside = self.inside();
+        let path: Vec<String> = self
+            .stack
+            .iter()
+            .skip(KIT_ROOT.len())
+            .map(|open| open.name.clone())
+            .collect();
+        if let Some(open) = self.stack.pop()
+            && inside
+            && let Some(entries) = self.tracks.last_mut()
+        {
+            entries.push(format!("{}={}", path.join("/"), open.text.trim()));
+        }
+    }
+}
+
+pub fn ordered_drum_kits(gpif: &str) -> Vec<Vec<String>> {
+    let text = gpif.trim_start_matches(BYTE_ORDER_MARK);
+    let mut reader = Reader::from_str(text);
+    let mut walk = KitWalk {
+        stack: Vec::new(),
+        tracks: Vec::new(),
+    };
+    loop {
+        match reader.read_event().expect("well-formed GPIF") {
+            Event::Start(start) => walk.open(start.name().as_ref().to_string()),
+            Event::Empty(start) => {
+                walk.open(start.name().as_ref().to_string());
+                walk.close();
+            }
+            Event::End(_) => walk.close(),
+            Event::Text(content) => {
+                if let Some(open) = walk.stack.last_mut() {
+                    open.text.push_str(&content.xml10_content());
+                }
+            }
+            Event::CData(content) => {
+                if let Some(open) = walk.stack.last_mut() {
+                    open.text.push_str(&content.into_inner());
+                }
+            }
+            Event::GeneralRef(reference) => {
+                let name = reference.into_inner().into_owned();
+                if let Some(open) = walk.stack.last_mut() {
+                    open.text.push_str(&entity(&name));
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    walk.tracks
+}
+
+#[test]
+fn ordered_drum_kits_list_each_track_kit_in_document_order() {
+    let gpif = "<GPIF><Tracks><Track><InstrumentSet><Type>drumKit</Type><Elements><Element><Name>B &amp; A</Name><Articulations><Articulation><OutputMidiNumber>9</OutputMidiNumber></Articulation><Articulation><OutputMidiNumber>3</OutputMidiNumber></Articulation></Articulations></Element></Elements></InstrumentSet></Track><Track><InstrumentSet><Type>voice</Type></InstrumentSet></Track></Tracks></GPIF>";
+    assert_eq!(
+        ordered_drum_kits(gpif),
+        vec![
+            vec![
+                "Element/Name=B & A".to_string(),
+                "Element/Articulations/Articulation/OutputMidiNumber=9".to_string(),
+                "Element/Articulations/Articulation=".to_string(),
+                "Element/Articulations/Articulation/OutputMidiNumber=3".to_string(),
+                "Element/Articulations/Articulation=".to_string(),
+                "Element/Articulations=".to_string(),
+                "Element=".to_string(),
+                "=".to_string(),
+            ],
+            Vec::new(),
+        ]
+    );
+}

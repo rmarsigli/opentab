@@ -1,13 +1,15 @@
 use opentab_model::{
-    AutomationValue, Balance, BendPoint, Directions, Fraction, InstrumentSet, KeySignature, Level,
-    MidiBank, NoteKind, Pitch, TimeSignature, TremoloBar, TrillSpeed,
+    AutomationValue, Balance, BendPoint, Directions, DrumArticulation, DrumKit, Fraction,
+    InstrumentSet, KeySignature, Level, MidiBank, NoteKind, Pitch, TimeSignature, TremoloBar,
+    TrillSpeed,
 };
 
 use crate::codes::{
-    DIRECTION_JUMP, DIRECTION_JUMPS, DIRECTION_TARGET, DIRECTION_TARGETS, INSTRUMENT_SETS,
+    DIRECTION_JUMP, DIRECTION_JUMPS, DIRECTION_TARGET, DIRECTION_TARGETS, DRUM_ARTICULATION,
+    DRUM_ARTICULATION_FIELDS, DRUM_ELEMENT, DRUM_ELEMENT_FIELDS, DRUM_ELEMENTS, INSTRUMENT_SETS,
     PAN_AUTOMATION, PAN_PARAMETER, SOUND_AUTOMATION, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS,
-    TEMPO_POSITION_GRID, TRILL_SPEED, TRILL_SPEEDS, VOLUME_AUTOMATION, VOLUME_PARAMETER,
-    WHAMMY_ATTRIBUTES, name_of,
+    TECHNIQUE_PLACEMENTS, TEMPO_POSITION_GRID, TRILL_SPEED, TRILL_SPEEDS, VOLUME_AUTOMATION,
+    VOLUME_PARAMETER, WHAMMY_ATTRIBUTES, name_of,
 };
 use crate::dom::{self, Element, Node};
 use crate::guard::PitchInputs;
@@ -144,6 +146,45 @@ pub(crate) fn tempo_linear() -> Element {
 
 pub(crate) fn instrument_type(set: InstrumentSet) -> Element {
     Element::leaf("Type", name_of(INSTRUMENT_SETS, set))
+}
+
+fn drum_articulation(articulation: &DrumArticulation) -> Element {
+    let keys: Vec<String> = articulation.input_keys.iter().map(u8::to_string).collect();
+    let values = [
+        articulation.name.clone(),
+        articulation.staff_line.to_string(),
+        articulation.noteheads.join(" "),
+        name_of(TECHNIQUE_PLACEMENTS, articulation.technique_placement).to_string(),
+        articulation.technique_symbol.clone(),
+        keys.join(" "),
+        articulation.rse_sound.clone(),
+        articulation.output_key.to_string(),
+    ];
+    let mut element = Element::new(DRUM_ARTICULATION);
+    for (field, value) in DRUM_ARTICULATION_FIELDS.iter().zip(values) {
+        element.push(Element::leaf(field, &value));
+    }
+    element
+}
+
+pub(crate) fn drum_elements(kit: &DrumKit) -> Element {
+    let [name, kind, soundbank, list] = DRUM_ELEMENT_FIELDS;
+    let mut elements = Element::new(DRUM_ELEMENTS);
+    let mut articulations = kit.articulations().iter();
+    for group in kit.elements() {
+        let mut held = Element::new(list);
+        for articulation in articulations.by_ref().take(group.count) {
+            held.push(drum_articulation(articulation));
+        }
+        elements.push(
+            Element::new(DRUM_ELEMENT)
+                .with_child(Element::leaf(name, &group.name))
+                .with_child(Element::leaf(kind, &group.kind))
+                .with_child(Element::leaf(soundbank, &group.soundbank))
+                .with_child(held),
+        );
+    }
+    elements
 }
 
 pub(crate) fn sound_midi(program: u8, bank: MidiBank, full: bool) -> Element {

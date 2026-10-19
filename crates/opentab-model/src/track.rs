@@ -1,8 +1,10 @@
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Automation, BarId, BeatEffects, BeatId, Duration, InstrumentSet, ModelError, NoteEffects,
-    NoteId, Sound, StaffId, TrackId, TrackMidi, VoiceId,
+    Automation, BarId, BeatEffects, BeatId, DrumKit, Duration, InstrumentSet, ModelError,
+    NoteEffects, NoteId, Sound, StaffId, TrackId, TrackMidi, VoiceId, gm_drum_kit,
 };
 
 const MAX_MIDI_NOTE: u8 = 127;
@@ -173,6 +175,8 @@ pub struct Track {
     pub name: String,
     pub short_name: String,
     pub instrument: Instrument,
+    #[serde(default)]
+    pub drum_kit: Option<DrumKit>,
     pub midi: TrackMidi,
     pub sounds: Vec<Sound>,
     pub tuning: Tuning,
@@ -183,6 +187,16 @@ pub struct Track {
 }
 
 impl Track {
+    pub fn kit(&self) -> Option<Cow<'_, DrumKit>> {
+        if self.instrument.kind != InstrumentKind::Percussion {
+            return None;
+        }
+        Some(match &self.drum_kit {
+            Some(kit) => Cow::Borrowed(kit),
+            None => Cow::Owned(gm_drum_kit()),
+        })
+    }
+
     pub fn trill_pitch_of(&self, note: &Note) -> Option<Pitch> {
         let trill = note.effects.trill?;
         let NoteKind::Fretted { string, .. } = note.kind else {

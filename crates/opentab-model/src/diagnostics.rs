@@ -40,6 +40,13 @@ pub enum Diagnostic {
     TrillOutOfRange {
         note: NoteId,
     },
+    ArticulationOutsideKit {
+        note: NoteId,
+        articulation: u16,
+    },
+    DrumKitOnFretted {
+        track: TrackId,
+    },
     DuplicateId {
         id: ElementId,
     },
@@ -180,6 +187,7 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
 struct Expected {
     length: Option<Fraction>,
     pickup: bool,
+    articulations: Option<usize>,
 }
 
 struct Report {
@@ -209,6 +217,7 @@ impl Report {
                 master_bars: score.master_bars.len(),
             });
         }
+        let articulations = track.kit().map(|kit| kit.articulations().len());
         for (index, bar) in staff.bars.iter().enumerate() {
             self.id(bar.id.0);
             self.bar_voices(bar);
@@ -224,6 +233,7 @@ impl Report {
                     Expected {
                         length: expected,
                         pickup,
+                        articulations,
                     },
                 );
             }
@@ -321,6 +331,10 @@ impl Report {
             self.diagnostics
                 .push(Diagnostic::InstrumentSetMismatch { track: track.id });
         }
+        if instrument.kind != InstrumentKind::Percussion && track.drum_kit.is_some() {
+            self.diagnostics
+                .push(Diagnostic::DrumKitOnFretted { track: track.id });
+        }
         let programs = std::iter::once(instrument.midi_program)
             .chain(track.sounds.iter().map(|sound| sound.program));
         if programs
@@ -400,7 +414,7 @@ impl Report {
         }
     }
 
-    fn note(&mut self, track: &Track, note: NoteId, kind: NoteKind) {
+    fn note(&mut self, track: &Track, note: NoteId, kind: NoteKind, articulations: Option<usize>) {
         match (track.instrument.kind, kind) {
             (InstrumentKind::Fretted, NoteKind::Fretted { string, .. }) => {
                 let strings = track.tuning.strings.len();
@@ -412,7 +426,12 @@ impl Report {
                     });
                 }
             }
-            (InstrumentKind::Percussion, NoteKind::Percussion { .. }) => {}
+            (InstrumentKind::Percussion, NoteKind::Percussion { articulation }) => {
+                if articulations.is_some_and(|size| usize::from(articulation) >= size) {
+                    self.diagnostics
+                        .push(Diagnostic::ArticulationOutsideKit { note, articulation });
+                }
+            }
             _ => self.diagnostics.push(Diagnostic::NoteKindMismatch {
                 note,
                 track: track.id,
@@ -442,7 +461,7 @@ impl Report {
             self.id(beat.id.0);
             for note in &beat.notes {
                 self.id(note.id.0);
-                self.note(track, note.id, note.kind);
+                self.note(track, note.id, note.kind, expected.articulations);
                 if !track.trill_fits(note) {
                     self.diagnostics
                         .push(Diagnostic::TrillOutOfRange { note: note.id });

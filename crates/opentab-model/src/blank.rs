@@ -65,6 +65,7 @@ fn guitar_track(score: &mut Score) -> Result<Track, ModelError> {
             midi_program: GUITAR_PROGRAM,
             set: Some(InstrumentSet::ElectricGuitar),
         },
+        drum_kit: None,
         midi: TrackMidi::default_for(InstrumentKind::Fretted),
         sounds: Vec::new(),
         tuning: Tuning {

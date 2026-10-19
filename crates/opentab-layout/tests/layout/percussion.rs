@@ -1,9 +1,10 @@
 use opentab_layout::{
-    BarLayout, ClefSign, DEFAULT_DRUM, DRUM_TABLE, DisplayList, DrumHead, DrumKit, GroupId,
-    LayoutOptions, StaffKind, StaffMode, drum_entry,
+    BarLayout, ClefSign, DEFAULT_DRUM, DRUM_TABLE, DisplayList, DrumHead, DrumStaffKit, GroupId,
+    LayoutOptions, StaffKind, StaffMode, Unrendered, drum_entry,
 };
 use opentab_model::{
-    InstrumentKind, KeySignature, NoteKind, NoteValue, OpaquePayload, Score, Tuning,
+    DrumArticulation, DrumElement, DrumKit, InstrumentKind, KeySignature, NoteKind, NoteValue,
+    Score, TechniquePlacement, Tuning, gm_drum_kit,
 };
 
 use crate::music::{
@@ -12,15 +13,36 @@ use crate::music::{
 };
 use crate::support::{glyph_name, systems};
 
-pub fn general_kit() -> String {
-    let articulations: String = (0..=127)
-        .map(|key| {
-            format!("<Articulation><OutputMidiNumber>{key}</OutputMidiNumber></Articulation>")
-        })
-        .collect();
-    format!(
-        "<Keep parent=\"InstrumentSet\" index=\"3\"><Elements><Element><Articulations>{articulations}</Articulations></Element></Elements></Keep>"
+fn articulation(key: u8) -> DrumArticulation {
+    DrumArticulation {
+        name: format!("key {key}"),
+        staff_line: 0,
+        noteheads: ["noteheadBlack", "noteheadHalf", "noteheadWhole"].map(str::to_string),
+        technique_placement: TechniquePlacement::Outside,
+        technique_symbol: String::new(),
+        input_keys: vec![key],
+        rse_sound: String::new(),
+        output_key: key,
+    }
+}
+
+pub fn kit_of(keys: &[u8]) -> DrumKit {
+    let element = DrumElement {
+        name: "All".to_string(),
+        kind: "unknown".to_string(),
+        soundbank: String::new(),
+        count: keys.len(),
+    };
+    DrumKit::new(
+        vec![element],
+        keys.iter().copied().map(articulation).collect(),
     )
+    .unwrap()
+}
+
+pub fn general_kit() -> DrumKit {
+    let keys: Vec<u8> = (0..=127).collect();
+    kit_of(&keys)
 }
 
 pub fn drums(chords: &[Vec<u16>], voices: usize, kit: bool) -> Score {
@@ -68,14 +90,7 @@ pub fn drums(chords: &[Vec<u16>], voices: usize, kit: bool) -> Score {
         master.key_signature = KeySignature::new(3, false).unwrap();
     }
     if kit {
-        let id = score.tracks[0].id.0;
-        score.extensions.0.insert(
-            id,
-            vec![OpaquePayload {
-                format: "gpif".to_string(),
-                data: general_kit(),
-            }],
-        );
+        score.tracks[0].drum_kit = Some(general_kit());
     }
     score
 }
@@ -172,21 +187,9 @@ fn two_drum_voices_split_their_stems_and_unknown_kits_do_not_panic() {
 }
 
 #[test]
-fn a_kit_in_the_track_payloads_maps_articulation_indices_to_drum_classes() {
+fn the_typed_kit_maps_articulation_indices_to_drum_classes() {
     let mut score = drum_score(&[0, 1, 2, 3], 1);
-    let kit = "<Keep parent=\"InstrumentSet\" index=\"3\"><Elements><Element><Articulations>\
-        <Articulation><OutputMidiNumber>36</OutputMidiNumber></Articulation>\
-        <Articulation><OutputMidiNumber>49</OutputMidiNumber></Articulation>\
-        <Articulation><OutputMidiNumber>38</OutputMidiNumber></Articulation>\
-        </Articulations></Element></Elements></Keep>";
-    let track = score.tracks[0].id.0;
-    score.extensions.0.insert(
-        track,
-        vec![OpaquePayload {
-            format: "gpif".to_string(),
-            data: kit.to_string(),
-        }],
-    );
+    score.tracks[0].drum_kit = Some(kit_of(&[36, 49, 38]));
     let list = render(&score, &options(StaffMode::Both));
     let positions: Vec<i64> = (0..4)
         .map(|beat| head_position(&score, &list, 0, beat))
@@ -229,7 +232,9 @@ pub fn check_drum_positions(
     if track.instrument.kind != InstrumentKind::Percussion {
         return 0;
     }
-    let kit = DrumKit::of(score, track);
+    let Some(kit) = track.kit().map(|kit| DrumStaffKit::of(&kit)) else {
+        return 0;
+    };
     let Some(model) = track.staves[row.staff.staff].bars.get(bar.index) else {
         return 0;
     };
@@ -288,20 +293,59 @@ fn drum_unisons_on_one_line_show_both_heads_side_by_side() {
 }
 
 #[test]
-fn without_a_kit_every_articulation_is_unknown_and_reported() {
-    let score = drums(&[vec![38], vec![42], vec![36]], 1, false);
+fn without_a_kit_the_general_midi_kit_places_the_notes() {
+    let score = drums(&[vec![3], vec![7], vec![1]], 1, false);
+    assert_eq!(score.tracks[0].drum_kit, None);
     let list = render(&score, &options(StaffMode::Both));
-    for beat in 0..3 {
-        assert_eq!(head_position(&score, &list, 0, beat), DEFAULT_DRUM.position);
+    let positions: Vec<i64> = (0..3)
+        .map(|beat| head_position(&score, &list, 0, beat))
+        .collect();
+    assert_eq!(positions, vec![3, -1, 7]);
+    assert!(list.unrendered.is_empty());
+    let beyond = drums(&[vec![47], vec![u16::MAX]], 1, false);
+    let list = render(&beyond, &options(StaffMode::Both));
+    for beat in 0..2 {
+        assert_eq!(
+            head_position(&beyond, &list, 0, beat),
+            DEFAULT_DRUM.position
+        );
     }
     assert!(
         list.unrendered
-            .contains(&opentab_layout::Unrendered::PercussionArticulations)
+            .contains(&Unrendered::PercussionArticulations)
     );
-    let known = drums(&[vec![38], vec![42], vec![36]], 1, true);
-    assert!(
-        render(&known, &options(StaffMode::Both))
-            .unrendered
-            .is_empty()
-    );
+}
+
+#[test]
+fn the_general_midi_kit_takes_its_lines_and_heads_from_the_drum_table() {
+    let heads = |head: DrumHead| match head {
+        DrumHead::Normal => ["noteheadBlack", "noteheadHalf", "noteheadWhole"],
+        DrumHead::Cross => ["noteheadXBlack", "noteheadXHalf", "noteheadXWhole"],
+    };
+    let kit = gm_drum_kit();
+    for articulation in kit.articulations() {
+        let entry = drum_entry(Some(articulation.output_key));
+        assert_eq!(
+            i64::from(articulation.staff_line),
+            entry.position,
+            "{}",
+            articulation.name
+        );
+        assert_eq!(
+            articulation.noteheads.each_ref().map(String::as_str),
+            heads(entry.head),
+            "{}",
+            articulation.name
+        );
+    }
+    let classes: Vec<_> = DRUM_TABLE
+        .iter()
+        .flat_map(|entry| entry.keys.iter())
+        .map(|key| {
+            kit.articulations()
+                .iter()
+                .any(|found| found.output_key == *key)
+        })
+        .collect();
+    assert!(classes.iter().all(|found| *found));
 }

@@ -245,6 +245,7 @@ mod tests {
                 midi_program: 0,
                 set: None,
             },
+            drum_kit: None,
             midi: TrackMidi::default_for(InstrumentKind::Fretted),
             sounds: Vec::new(),
             tuning: Tuning {

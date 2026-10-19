@@ -10,7 +10,7 @@ use opentab_model::{
 pub use guitar::{finger_rect, guitar_rects};
 pub use heads::{head_glyph, notehead_glyphs, parenthesis_origins};
 
-use crate::drums::DrumKit;
+use crate::drums::DrumStaffKit;
 use crate::glyphs::Glyph;
 use crate::grid::GridColumn;
 use crate::pitch::Spelling;
@@ -173,7 +173,7 @@ pub struct RowInput<'a> {
     pub clef: ClefSign,
     pub key: KeySignature,
     pub time: TimeSignature,
-    pub kit: Option<&'a DrumKit>,
+    pub kit: Option<&'a DrumStaffKit>,
 }
 
 pub fn staff_geometry(size: Units, policy: StemPolicy) -> RhythmStaff {

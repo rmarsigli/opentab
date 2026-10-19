@@ -219,6 +219,15 @@ pub(crate) fn instrument(kind: InstrumentKind, set: Option<InstrumentSet>) -> St
     format!("instrument:{kind} {set}")
 }
 
+pub(crate) fn drum_kit(kind: InstrumentKind, typed: bool) -> String {
+    let kind = match kind {
+        InstrumentKind::Fretted => "fretted",
+        InstrumentKind::Percussion => "percussion",
+    };
+    let typed = if typed { "typed" } else { NONE };
+    format!("drum-kit:{kind} {typed}")
+}
+
 pub(crate) fn midi_connection(midi: &TrackMidi) -> String {
     format!(
         "midi-connection:{} {} {} {}",

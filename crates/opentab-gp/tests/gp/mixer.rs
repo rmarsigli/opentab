@@ -599,7 +599,7 @@ const DEFAULT_DRUMS: &str = "<MidiConnection><Port>0</Port><PrimaryChannel>9</Pr
 fn a_midi_connection_that_was_read_is_written_even_at_its_default() {
     let drums = drum_doc(DEFAULT_DRUMS).read();
     let mut kits = drums.clone();
-    crate::support::add_drum_kits(&mut kits);
+    kits.tracks[0].drum_kit = Some(opentab_model::gm_drum_kit());
     let text = gpif_text(&write_gp(&kits).unwrap());
     assert!(
         text.contains("<MidiConnection>\n<Port>0</Port>\n<PrimaryChannel>9</PrimaryChannel>\n<SecondaryChannel>9</SecondaryChannel>\n<ForeOneChannelPerString>false</ForeOneChannelPerString>\n</MidiConnection>"),

@@ -212,6 +212,7 @@ impl Sketch {
                 midi_program: setup.program,
                 set: setup.set,
             },
+            drum_kit: None,
             midi: TrackMidi::default_for(setup.kind),
             sounds: Vec::new(),
             tuning: Tuning {

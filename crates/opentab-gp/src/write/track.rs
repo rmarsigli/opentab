@@ -1,6 +1,9 @@
-use opentab_model::{InstrumentKind, InstrumentSet, MasterBar, Pitch, Score, Staff, Track};
+use opentab_model::{
+    DrumKit, InstrumentKind, InstrumentSet, MasterBar, Pitch, Score, Staff, Track,
+};
 
 use crate::canon;
+use crate::codes::DRUM_ELEMENTS;
 use crate::dom::{Element, Node};
 use crate::error::Refusal;
 use crate::number;
@@ -227,13 +230,51 @@ pub(crate) fn apply_own(element: &mut Element, items: Vec<Item>) -> Result<(), R
     payload::apply(element, split.own)
 }
 
-fn has_drum_kit(items: &[Item]) -> bool {
-    items.iter().any(|item| {
-        item.parent == "InstrumentSet"
-            && item
-                .element()
-                .is_some_and(|element| element.name == "Elements" && element.has_elements())
-    })
+const INSTRUMENT_SET: &str = "InstrumentSet";
+
+fn kept_kit(item: &Item) -> bool {
+    item.parent == INSTRUMENT_SET
+        && item
+            .element()
+            .is_some_and(|element| element.name == DRUM_ELEMENTS)
+}
+
+fn drum_elements(track: &Track, items: &[Item]) -> Result<Option<Element>, Fail> {
+    if track.instrument.kind != InstrumentKind::Percussion {
+        if track.drum_kit.is_some() {
+            return Err(Fail::new(Refusal::DrumKitOnFretted)).within(|| "drum_kit".to_string());
+        }
+        return Ok(None);
+    }
+    if track.drum_kit.is_none() && items.iter().any(kept_kit) {
+        return Ok(None);
+    }
+    let Some(kit) = track.kit() else {
+        return Ok(None);
+    };
+    check_kit_text(&kit).within(|| "drum_kit".to_string())?;
+    Ok(Some(canon::drum_elements(&kit)))
+}
+
+fn check_kit_text(kit: &DrumKit) -> Result<(), Refusal> {
+    for element in kit.elements() {
+        for text in [&element.name, &element.kind, &element.soundbank] {
+            xml::check_escaped(text)?;
+        }
+    }
+    for articulation in kit.articulations() {
+        for text in [
+            &articulation.name,
+            &articulation.technique_symbol,
+            &articulation.rse_sound,
+        ] {
+            xml::check_escaped(text)?;
+        }
+        for name in &articulation.noteheads {
+            xml::check_escaped(name)?;
+        }
+    }
+    Ok(())
 }
 
 struct TrackSite<'s> {
@@ -250,10 +291,8 @@ fn track_element(
 ) -> Result<Element, Fail> {
     let index = site.index;
     let items = payload::surviving(owners.items(track.id.0)?, &Env::Track(track))?;
-    if track.instrument.kind == InstrumentKind::Percussion && !has_drum_kit(&items) {
-        return Err(Fail::new(Refusal::DrumKit));
-    }
     check_track(track).map_err(Fail::new)?;
+    let kit = drum_elements(track, &items)?;
     let lanes = lanes(track, site.master_bars, &items)?;
     let layouts = site.layouts;
     let contexts = site.contexts;
@@ -265,7 +304,11 @@ fn track_element(
     let set = instrument
         .set
         .unwrap_or_else(|| InstrumentSet::derived(instrument.kind, instrument.midi_program));
-    element.push(Element::new("InstrumentSet").with_child(canon::instrument_type(set)));
+    let mut instrument_set = Element::new(INSTRUMENT_SET).with_child(canon::instrument_type(set));
+    if let Some(kit) = kit {
+        instrument_set.push(kit);
+    }
+    element.push(instrument_set);
     element.push(
         Element::new("Transpose")
             .with_child(Element::leaf(

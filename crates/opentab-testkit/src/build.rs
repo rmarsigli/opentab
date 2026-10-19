@@ -2,9 +2,10 @@ use std::collections::HashSet;
 
 use opentab_model::{
     Automation, AutomationValue, Bar, Beat, BeatEffects, ContainerEntry, DirectionJump,
-    DirectionTarget, Duration, ElementId, Extensions, Instrument, InstrumentKind, InstrumentSet,
-    JumpDestination, Marker, MasterBar, MidiBank, Note, NoteKind, OpaquePayload, Score, Sound,
-    SoundOverride, SoundRef, Staff, TempoChange, TimeSignature, Track, Tuning, Voice, VoiceSlot,
+    DirectionTarget, DrumArticulation, DrumElement, DrumKit, Duration, ElementId, Extensions,
+    Instrument, InstrumentKind, InstrumentSet, JumpDestination, Marker, MasterBar, MidiBank, Note,
+    NoteKind, OpaquePayload, Score, Sound, SoundOverride, SoundRef, Staff, TempoChange,
+    TimeSignature, Track, Tuning, Voice, VoiceSlot, gm_drum_kit,
 };
 
 const EXTRA_FORMAT: &str = "gpif";
@@ -13,8 +14,8 @@ const EXTRA_ELEMENT: &str = "OpenTabExtra";
 use crate::ScoreGenConfig;
 use crate::fill::FillTable;
 use crate::seed::{
-    AutomationSeed, AutomationValueSeed, BarSeed, GraceSeed, MasterBarSeed, NoteSeed, ScoreSeed,
-    SoundSeed, StaffSeed, TempoChangeSeed, TrackSeed, VoiceSeed,
+    AutomationSeed, AutomationValueSeed, BarSeed, DrumKitSeed, GraceSeed, MasterBarSeed, NoteSeed,
+    ScoreSeed, SoundSeed, StaffSeed, TempoChangeSeed, TrackSeed, VoiceSeed,
 };
 
 struct Builder {
@@ -40,6 +41,41 @@ fn instrument_set(
         None if gp_writable => Some(fallback),
         None => None,
     }
+}
+
+fn drum_kit(seed: Option<DrumKitSeed>, kind: InstrumentKind, gp_writable: bool) -> Option<DrumKit> {
+    if kind != InstrumentKind::Percussion {
+        return None;
+    }
+    let elements = match seed {
+        None if gp_writable => return Some(gm_drum_kit()),
+        None => return None,
+        Some(DrumKitSeed::General) => return Some(gm_drum_kit()),
+        Some(DrumKitSeed::Custom(elements)) => elements,
+    };
+    let mut groups = Vec::new();
+    let mut articulations = Vec::new();
+    for element in elements {
+        groups.push(DrumElement {
+            name: element.name,
+            kind: element.kind,
+            soundbank: element.soundbank,
+            count: element.articulations.len(),
+        });
+        articulations.extend(element.articulations.into_iter().map(|articulation| {
+            DrumArticulation {
+                name: articulation.name,
+                staff_line: articulation.staff_line,
+                noteheads: articulation.noteheads,
+                technique_placement: articulation.placement,
+                technique_symbol: articulation.symbol,
+                input_keys: articulation.input_keys,
+                rse_sound: articulation.rse_sound,
+                output_key: articulation.output_key,
+            }
+        }));
+    }
+    Some(DrumKit::new(groups, articulations).expect("seeded drum kits are valid"))
 }
 
 struct FirstSound {
@@ -139,6 +175,11 @@ impl Builder {
             strings: seed.tuning.into_iter().take(strings).collect(),
         };
         let kind = seed.kind;
+        let drum_kit = drum_kit(seed.drum_kit, kind, self.gp_writable);
+        let articulations = drum_kit.as_ref().map_or_else(
+            || gm_drum_kit().articulations().len(),
+            |kit| kit.articulations().len(),
+        );
         let master_bars = self.score.master_bars.clone();
         let sounds = sounds(
             seed.sounds,
@@ -157,7 +198,15 @@ impl Builder {
         let staves = seed
             .staves
             .into_iter()
-            .map(|staff| self.staff(staff, kind, strings, &master_bars))
+            .map(|staff| {
+                let frame = Shape {
+                    kind,
+                    strings,
+                    articulations,
+                    pickup: false,
+                };
+                self.staff(staff, frame, &master_bars)
+            })
             .collect();
         let mut track = Track {
             id,
@@ -168,6 +217,7 @@ impl Builder {
                 midi_program: seed.midi_program,
                 set: instrument_set(kind, seed.set, self.gp_writable),
             },
+            drum_kit,
             midi: seed.midi,
             sounds,
             tuning,
@@ -180,13 +230,7 @@ impl Builder {
         track
     }
 
-    fn staff(
-        &mut self,
-        seed: StaffSeed,
-        kind: InstrumentKind,
-        strings: usize,
-        master_bars: &[MasterBar],
-    ) -> Staff {
+    fn staff(&mut self, seed: StaffSeed, frame: Shape, master_bars: &[MasterBar]) -> Staff {
         let id = self.id();
         let bars = seed
             .bars
@@ -195,15 +239,7 @@ impl Builder {
             .enumerate()
             .map(|(index, (bar, master_bar))| {
                 let pickup = index == 0 && self.score.anacrusis;
-                self.bar(
-                    bar,
-                    master_bar,
-                    Shape {
-                        kind,
-                        strings,
-                        pickup,
-                    },
-                )
+                self.bar(bar, master_bar, Shape { pickup, ..frame })
             })
             .collect();
         Staff { id, bars }
@@ -279,7 +315,12 @@ impl Builder {
     }
 
     fn notes(&mut self, seeds: &[NoteSeed], shape: Shape) -> Vec<Note> {
-        let Shape { kind, strings, .. } = shape;
+        let Shape {
+            kind,
+            strings,
+            articulations,
+            ..
+        } = shape;
         let mut used: HashSet<usize> = HashSet::new();
         let mut notes = Vec::new();
         for note_seed in seeds {
@@ -299,9 +340,17 @@ impl Builder {
                         fret: note_seed.fret,
                     }
                 }
-                InstrumentKind::Percussion => NoteKind::Percussion {
-                    articulation: note_seed.articulation,
-                },
+                InstrumentKind::Percussion => {
+                    let Some(index) =
+                        usize::from(note_seed.articulation).checked_rem(articulations)
+                    else {
+                        continue;
+                    };
+                    let Ok(articulation) = u16::try_from(index) else {
+                        continue;
+                    };
+                    NoteKind::Percussion { articulation }
+                }
             };
             let mut effects = note_seed.effects.clone();
             if kind == InstrumentKind::Percussion {
@@ -321,6 +370,7 @@ impl Builder {
 struct Shape {
     kind: InstrumentKind,
     strings: usize,
+    articulations: usize,
     pickup: bool,
 }
 

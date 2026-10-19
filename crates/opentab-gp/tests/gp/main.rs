@@ -4,6 +4,7 @@ mod beat;
 mod container;
 mod corpus;
 mod directions;
+mod drums;
 mod edits;
 mod envelope;
 mod fuzz;

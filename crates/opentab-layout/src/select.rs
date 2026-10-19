@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 
 use opentab_model::{Bar, Clef, InstrumentFamily, InstrumentKind, Score, Track};
 
-use crate::drums::DrumKit;
+use crate::drums::DrumStaffKit;
 use crate::furniture::StaffShape;
 use crate::geometry::{MAX_TAB_STRINGS, MIN_TAB_STRINGS, STANDARD_LINES, TAB_LINE_SPACING};
 use crate::options::{LayoutError, LayoutOptions, StaffMode};
@@ -25,7 +25,7 @@ pub struct Selection {
     pub last: usize,
     pub specs: Vec<StaffSpec>,
     pub sources: Vec<(usize, usize)>,
-    pub kits: Vec<Option<DrumKit>>,
+    pub kits: Vec<Option<DrumStaffKit>>,
 }
 
 pub const TAB_PROGRAMS: [RangeInclusive<u8>; 2] = [24..=39, 104..=107];
@@ -133,9 +133,7 @@ pub fn select(score: &Score, options: &LayoutOptions) -> Result<Selection, Layou
     let kits = score
         .tracks
         .iter()
-        .map(|track| {
-            (track.instrument.kind == InstrumentKind::Percussion).then(|| DrumKit::of(score, track))
-        })
+        .map(|track| track.kit().map(|kit| DrumStaffKit::of(&kit)))
         .collect();
     Ok(Selection {
         tracks: drawn,

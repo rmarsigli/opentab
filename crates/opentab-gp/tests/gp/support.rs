@@ -1,9 +1,7 @@
 use std::io::{Cursor, Write};
 
 use opentab_gp::{GpError, Refusal, read_gp};
-use opentab_model::{
-    Beat, ElementId, InstrumentKind, MasterBar, Note, OpaquePayload, Score, Track,
-};
+use opentab_model::{Beat, ElementId, MasterBar, Note, OpaquePayload, Score, Track};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -181,59 +179,6 @@ pub fn gpif_path(error: &GpError) -> String {
     }
 }
 
-pub const DRUM_KIT: &str =
-    "<Keep parent=\"InstrumentSet\" index=\"1\"><Elements><Element/></Elements></Keep>";
-const TRACK_CHILDREN_BEFORE_INSTRUMENT_SET: usize = 2;
-
-fn top_level_index(payload: &OpaquePayload) -> Option<usize> {
-    let rest = payload.data.strip_prefix("<Keep parent=\"\" index=\"")?;
-    let end = rest.find('"')?;
-    rest[..end].parse().ok()
-}
-
-pub fn kit_position(payloads: &[OpaquePayload]) -> usize {
-    let mut indices: Vec<usize> = payloads.iter().filter_map(top_level_index).collect();
-    indices.sort_unstable();
-    let mut instrument_set = TRACK_CHILDREN_BEFORE_INSTRUMENT_SET;
-    for index in indices {
-        if index <= instrument_set {
-            instrument_set += 1;
-        }
-    }
-    payloads
-        .iter()
-        .filter(|payload| top_level_index(payload).is_some_and(|index| index < instrument_set))
-        .count()
-}
-
-pub fn add_drum_kits(score: &mut Score) -> bool {
-    let drums: Vec<ElementId> = score
-        .tracks
-        .iter()
-        .filter(|track| track.instrument.kind == InstrumentKind::Percussion)
-        .map(|track| track.id.0)
-        .collect();
-    let mut changed = false;
-    for id in drums {
-        let payloads = score.extensions.0.entry(id).or_default();
-        if !payloads
-            .iter()
-            .any(|payload| payload.data.contains("<Elements"))
-        {
-            let at = kit_position(payloads);
-            payloads.insert(
-                at,
-                OpaquePayload {
-                    format: "gpif".to_string(),
-                    data: DRUM_KIT.to_string(),
-                },
-            );
-            changed = true;
-        }
-    }
-    changed
-}
-
 pub fn documented(reason: &Refusal) -> bool {
     matches!(
         reason,
@@ -257,7 +202,7 @@ pub fn documented(reason: &Refusal) -> bool {
             | Refusal::TempoPosition { .. }
             | Refusal::HarmonicFret { .. }
             | Refusal::RightHandOpen
-            | Refusal::DrumKit
+            | Refusal::DrumKitOnFretted
             | Refusal::InstrumentSet
             | Refusal::Program { .. }
             | Refusal::DuplicateSoundOverride { .. }

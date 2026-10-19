@@ -6,16 +6,16 @@ use opentab_gp::{read_gp, write_gp};
 use crate::anchors::gpif_text;
 use crate::inventory::{
     effect_references, first_difference as subtree_difference, inventory, master_bar_children,
-    ordered_directions,
+    ordered_directions, ordered_drum_kits,
 };
 use opentab_model::{
-    Accent, AutomationValue, Clef, Diagnostic, Dynamic, Fraction, Score, TempoUnit, diagnose,
-    from_json, to_json,
+    Accent, AutomationValue, Clef, Diagnostic, Dynamic, Fraction, InstrumentKind, Score, TempoUnit,
+    diagnose, from_json, to_json,
 };
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
-const EXPECTED_TOTALS: [(&str, usize); 40] = [
+const EXPECTED_TOTALS: [(&str, usize); 44] = [
     ("tracks", 64),
     ("master_bars", 1260),
     ("bars", 2392),
@@ -56,7 +56,12 @@ const EXPECTED_TOTALS: [(&str, usize); 40] = [
     ("jump_da_segno", 1),
     ("jump_da_segno_al_coda", 1),
     ("direction_payloads", 0),
+    ("drum_kits", 10),
+    ("drum_elements", 540),
+    ("drum_articulations", 950),
+    ("drum_kit_payloads", 0),
 ];
+const OUTPUT_KEY: &str = "/OutputMidiNumber=";
 const THOUSANDTHS: i64 = 1000;
 const CORPUS_WHAMMIES: usize = 2;
 const EXPECTED_DIAGNOSTICS: [(&str, usize); 1] = [("IncompleteBar", 14)];
@@ -123,6 +128,18 @@ fn tally(score: &Score, totals: &mut BTreeMap<String, usize>) {
         count(totals, "direction_payloads", replayed);
     }
     for track in &score.tracks {
+        if let Some(kit) = &track.drum_kit {
+            count(totals, "drum_kits", 1);
+            count(totals, "drum_elements", kit.elements().len());
+            count(totals, "drum_articulations", kit.articulations().len());
+        }
+        let kept = score.extensions.0.get(&track.id.0).map_or(0, |payloads| {
+            payloads
+                .iter()
+                .filter(|payload| payload.data.contains("guard=\"drum-kit:percussion"))
+                .count()
+        });
+        count(totals, "drum_kit_payloads", kept);
         count(totals, "sounds", track.sounds.len());
         count(
             totals,
@@ -235,6 +252,7 @@ fn every_corpus_example_reads() {
                     *diagnostics.entry(kind.clone()).or_default() += amount;
                 }
                 tally(&score, &mut totals);
+                check_kit_keys(&name, &score, &gpif_text(&bytes));
                 let json = to_json(&score).expect("json");
                 assert_eq!(from_json(&json).expect("json back"), score, "{name}");
                 println!("corpus {name}: {kinds:?}");
@@ -253,6 +271,31 @@ fn every_corpus_example_reads() {
         .map(|(name, amount)| (name.to_string(), *amount))
         .collect();
     assert_eq!(diagnostics, expected);
+}
+
+fn check_kit_keys(name: &str, score: &Score, gpif: &str) {
+    let kits = ordered_drum_kits(gpif);
+    assert_eq!(kits.len(), score.tracks.len(), "{name}");
+    for (track, entries) in score.tracks.iter().zip(&kits) {
+        let scanned: Vec<u8> = entries
+            .iter()
+            .filter_map(|entry| entry.split_once(OUTPUT_KEY))
+            .filter(|(path, _)| path.ends_with("Articulation"))
+            .map(|(_, key)| key.parse().expect("corpus output keys are numbers"))
+            .collect();
+        let typed: Vec<u8> = track
+            .drum_kit
+            .iter()
+            .flat_map(|kit| kit.articulations())
+            .map(|articulation| articulation.output_key)
+            .collect();
+        if track.instrument.kind == InstrumentKind::Percussion {
+            assert_eq!(typed, scanned, "{name}: {}", track.name);
+            assert!(!typed.is_empty(), "{name}: {}", track.name);
+        } else {
+            assert!(track.drum_kit.is_none(), "{name}: {}", track.name);
+        }
+    }
 }
 
 pub fn corpus_paths() -> Option<Vec<PathBuf>> {
@@ -312,6 +355,10 @@ fn every_corpus_example_survives_a_write() {
             continue;
         }
         let (source, rewritten) = (gpif_text(&bytes), gpif_text(&written));
+        if ordered_drum_kits(&source) != ordered_drum_kits(&rewritten) {
+            failures.push(format!("{name}: a drum kit changed or moved"));
+            continue;
+        }
         if ordered_directions(&source) != ordered_directions(&rewritten) {
             failures.push(format!("{name}: the order inside Directions changed"));
             continue;

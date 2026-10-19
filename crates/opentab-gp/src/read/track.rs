@@ -1,10 +1,10 @@
 use opentab_model::{
-    Automation, Instrument, InstrumentKind, InstrumentSet, KeySignature, Pitch, Staff, StaffId,
-    Track, TrackId, TrackMidi, Transpose, Tuning,
+    Automation, DrumKit, Instrument, InstrumentKind, InstrumentSet, KeySignature, Pitch, Staff,
+    StaffId, Track, TrackId, TrackMidi, Transpose, Tuning,
 };
 
 use crate::canon;
-use crate::codes::{INSTRUMENT_SETS, lookup};
+use crate::codes::{DRUM_ELEMENTS, INSTRUMENT_SETS, lookup};
 use crate::dom::{Element, Node};
 use crate::error::GpifProblem;
 use crate::guard;
@@ -13,6 +13,7 @@ use crate::number;
 use crate::opaque::ParentPath;
 use crate::read::beat::read_bar;
 use crate::read::context::{Context, Fault, Handled, Owner, Scope, Visit, missing_element};
+use crate::read::drums::typed_kit;
 use crate::read::master::{MasterFrame, TrackOrder};
 use crate::read::mixer::{
     Lane, MidiFields, Sounds, Strip, connection, read_lane, read_midi_connection, read_rse,
@@ -42,11 +43,16 @@ struct BarColumn<'f> {
     key: KeySignature,
 }
 
+struct InstrumentFields {
+    kind: InstrumentKind,
+    set: Option<InstrumentSet>,
+    drum_kit: Option<DrumKit>,
+}
+
 struct TrackFields<'e> {
     name: String,
     short_name: String,
-    kind: InstrumentKind,
-    set: Option<InstrumentSet>,
+    instrument: InstrumentFields,
     transpose: Transpose,
     sounds: Sounds,
     midi: MidiFields,
@@ -172,8 +178,11 @@ fn read_track(
     let mut fields = TrackFields {
         name: String::new(),
         short_name: String::new(),
-        kind: InstrumentKind::Fretted,
-        set: None,
+        instrument: InstrumentFields {
+            kind: InstrumentKind::Fretted,
+            set: None,
+            drum_kit: None,
+        },
         transpose: Transpose::default(),
         sounds: Sounds::default(),
         midi: MidiFields::default(),
@@ -192,8 +201,7 @@ fn read_track(
             "Name" => fields.name = visit.text(),
             "ShortName" => fields.short_name = visit.text(),
             "InstrumentSet" => {
-                (fields.kind, fields.set) =
-                    read_instrument_set(ctx, &scope.enter(visit), visit.element)?;
+                fields.instrument = read_instrument_set(ctx, &scope.enter(visit), visit.element)?;
             }
             "Transpose" => fields.transpose = read_transpose(ctx, &scope.enter(visit), visit)?,
             "Sounds" if !visited.sounds => {
@@ -229,7 +237,7 @@ fn read_track(
         bank: fields.sounds.bank,
         volume: fields.strip.volume,
         pan: fields.strip.pan,
-        ..connection(&fields.midi, fields.kind)
+        ..connection(&fields.midi, fields.instrument.kind)
     };
     let mut automations = fields.strip.automations;
     automations.extend(fields.automations);
@@ -238,10 +246,11 @@ fn read_track(
         name: fields.name,
         short_name: fields.short_name,
         instrument: Instrument {
-            kind: fields.kind,
+            kind: fields.instrument.kind,
             midi_program: fields.sounds.program,
-            set: fields.set,
+            set: fields.instrument.set,
         },
+        drum_kit: fields.instrument.drum_kit,
         midi,
         sounds: fields.sounds.sounds,
         tuning: Tuning {
@@ -287,13 +296,23 @@ fn read_instrument_set(
     ctx: &mut Context,
     scope: &Scope,
     element: &Element,
-) -> Result<(InstrumentKind, Option<InstrumentSet>), Fault> {
-    let mut kind = InstrumentKind::Fretted;
-    let mut set = None;
+) -> Result<InstrumentFields, Fault> {
+    let hint = element
+        .child("Type")
+        .and_then(|(_, kind)| lookup(INSTRUMENT_SETS, &kind.text()))
+        .map_or(InstrumentKind::Fretted, InstrumentSet::kind);
+    let mut fields = InstrumentFields {
+        kind: InstrumentKind::Fretted,
+        set: None,
+        drum_kit: None,
+    };
+    let mut elements_seen = false;
     ctx.visit(scope, element, |_, visit| match visit.key.as_str() {
         "Type" => {
-            set = lookup(INSTRUMENT_SETS, &visit.text());
-            kind = set.map_or(InstrumentKind::Fretted, InstrumentSet::kind);
+            let set = lookup(INSTRUMENT_SETS, &visit.text());
+            let kind = set.map_or(InstrumentKind::Fretted, InstrumentSet::kind);
+            fields.set = set;
+            fields.kind = kind;
             match set {
                 Some(known) if *visit.element == canon::instrument_type(known) => {
                     Ok(Handled::Mapped(&[]))
@@ -301,9 +320,22 @@ fn read_instrument_set(
                 _ => Ok(Handled::Replayed(guard::instrument(kind, set))),
             }
         }
+        DRUM_ELEMENTS if !elements_seen => {
+            elements_seen = true;
+            let typed = (hint == InstrumentKind::Percussion)
+                .then(|| typed_kit(visit.element))
+                .flatten();
+            match typed {
+                Some(kit) => {
+                    fields.drum_kit = Some(kit);
+                    Ok(Handled::Mapped(&[]))
+                }
+                None => Ok(Handled::Replayed(guard::drum_kit(hint, false))),
+            }
+        }
         _ => Ok(Handled::Unknown),
     })?;
-    Ok((kind, set))
+    Ok(fields)
 }
 
 fn read_transpose(

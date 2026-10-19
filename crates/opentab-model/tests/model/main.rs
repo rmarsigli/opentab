@@ -1,6 +1,7 @@
 mod blank;
 mod diagnose;
 mod directions;
+mod drums;
 mod duration;
 mod ids;
 mod json;

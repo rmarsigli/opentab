@@ -1,16 +1,7 @@
-use opentab_model::{Note, NoteValue, Score, Track};
+use opentab_model::{DrumKit, Note, NoteValue};
 
 use crate::glyphs::{Glyph, NOTEHEAD_X_BLACK, NOTEHEAD_X_HALF, NOTEHEAD_X_WHOLE};
 use crate::notation::head_glyph;
-
-pub const MAX_GENERAL_MIDI_KEY: u16 = 127;
-
-const KIT_PARENT: &str = "parent=\"InstrumentSet\"";
-const KIT_ELEMENTS: &str = "<Elements>";
-const ARTICULATION_OPEN: &str = "<Articulation";
-const ARTICULATION_CLOSE: &str = "</Articulation>";
-const OUTPUT_OPEN: &str = "<OutputMidiNumber>";
-const OUTPUT_CLOSE: &str = "</OutputMidiNumber>";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DrumClass {
@@ -103,45 +94,22 @@ pub fn drum_glyph(head: DrumHead, value: NoteValue, note: &Note) -> Glyph {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct DrumKit {
-    pub keys: Vec<Option<u8>>,
+pub struct DrumStaffKit {
+    pub keys: Vec<u8>,
 }
 
-fn output_key(articulation: &str) -> Option<u8> {
-    let (_, after) = articulation.split_once(OUTPUT_OPEN)?;
-    let (number, _) = after.split_once(OUTPUT_CLOSE)?;
-    number
-        .trim()
-        .parse::<u8>()
-        .ok()
-        .filter(|key| u16::from(*key) <= MAX_GENERAL_MIDI_KEY)
-}
-
-pub fn kit_keys(data: &str) -> Vec<Option<u8>> {
-    data.split(ARTICULATION_OPEN)
-        .skip(1)
-        .filter(|piece| piece.starts_with(['>', ' ']))
-        .map(|piece| output_key(piece.split(ARTICULATION_CLOSE).next().unwrap_or_default()))
-        .collect()
-}
-
-impl DrumKit {
-    pub fn of(score: &Score, track: &Track) -> DrumKit {
-        let keys = score
-            .extensions
-            .0
-            .get(&track.id.0)
-            .into_iter()
-            .flatten()
-            .map(|payload| payload.data.as_str())
-            .find(|data| data.contains(KIT_PARENT) && data.contains(KIT_ELEMENTS))
-            .map(kit_keys)
-            .unwrap_or_default();
-        DrumKit { keys }
+impl DrumStaffKit {
+    pub fn of(kit: &DrumKit) -> DrumStaffKit {
+        let keys = kit
+            .articulations()
+            .iter()
+            .map(|articulation| articulation.output_key)
+            .collect();
+        DrumStaffKit { keys }
     }
 
     pub fn key(&self, articulation: u16) -> Option<u8> {
-        self.keys.get(usize::from(articulation)).copied().flatten()
+        self.keys.get(usize::from(articulation)).copied()
     }
 
     pub fn entry(&self, articulation: u16) -> DrumEntry {
@@ -226,30 +194,42 @@ mod tests {
     }
 
     #[test]
-    fn a_kit_maps_articulation_indices_to_output_keys_in_document_order() {
-        let data = "<Keep parent=\"InstrumentSet\" index=\"3\"><Elements>\
-            <Element><Name>A</Name><Articulations>\
-            <Articulation><Name>a1</Name><OutputMidiNumber>38</OutputMidiNumber></Articulation>\
-            <Articulation><Name>a2</Name><OutputMidiNumber> 42 </OutputMidiNumber></Articulation>\
-            </Articulations></Element><Element><Name>B</Name><Articulations>\
-            <Articulation><Name>b1</Name></Articulation>\
-            <Articulation><Name>b2</Name><OutputMidiNumber>300</OutputMidiNumber></Articulation>\
-            <Articulation><Name>b3</Name><OutputMidiNumber>200</OutputMidiNumber></Articulation>\
-            <Articulation kind=\"x\"><OutputMidiNumber>36</OutputMidiNumber></Articulation>\
-            </Articulations></Element></Elements></Keep>";
-        let kit = DrumKit {
-            keys: kit_keys(data),
+    fn a_staff_kit_maps_articulation_indices_to_the_typed_output_keys() {
+        let named = |name: &str, key: u8| opentab_model::DrumArticulation {
+            name: name.to_string(),
+            staff_line: 0,
+            noteheads: ["a".to_string(), "b".to_string(), "c".to_string()],
+            technique_placement: opentab_model::TechniquePlacement::Outside,
+            technique_symbol: String::new(),
+            input_keys: vec![1],
+            rse_sound: String::new(),
+            output_key: key,
         };
-        assert_eq!(
-            kit.keys,
-            vec![Some(38), Some(42), None, None, None, Some(36)]
-        );
+        let element = |count: usize| opentab_model::DrumElement {
+            name: String::new(),
+            kind: String::new(),
+            soundbank: String::new(),
+            count,
+        };
+        let typed = DrumKit::new(
+            vec![element(2), element(0), element(2)],
+            vec![
+                named("a1", 38),
+                named("a2", 42),
+                named("b1", 0),
+                named("b2", 36),
+            ],
+        )
+        .unwrap();
+        let kit = DrumStaffKit::of(&typed);
+        assert_eq!(kit.keys, vec![38, 42, 0, 36]);
         assert_eq!(kit.key(1), Some(42));
-        assert_eq!(kit.key(2), None);
-        assert_eq!(kit.key(6), None);
-        assert_eq!(kit.entry(5).class, DrumClass::Kick);
+        assert_eq!(kit.key(2), Some(0));
+        assert_eq!(kit.key(4), None);
+        assert_eq!(kit.entry(3).class, DrumClass::Kick);
+        assert_eq!(kit.entry(2).class, DrumClass::Other);
         assert_eq!(kit.entry(9).class, DrumClass::Other);
-        let bare = DrumKit::default();
+        let bare = DrumStaffKit::default();
         for articulation in [0, 38, 42, 127, 128, u16::MAX] {
             assert_eq!(bare.key(articulation), None);
             assert_eq!(bare.entry(articulation), DEFAULT_DRUM);

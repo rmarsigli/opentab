@@ -4,7 +4,7 @@ use opentab_model::{
     InstrumentKind, Marker, ModelError, Note, NoteEffects, NoteKind, NoteValue, OpaquePayload,
     Pitch, Score, Slide, Staff, Stroke, StrokeDirection, StrokeTicks, Tap, Tempo, TempoChange,
     TempoUnit, Track, TrackMidi, Transpose, TremoloBar, TremoloPicking, Trill, TrillSpeed, Tuning,
-    Tuplet, Vibrato, VoiceSlot, diagnose, from_json, to_json,
+    Tuplet, Vibrato, VoiceSlot, diagnose, from_json, gm_drum_kit, to_json,
 };
 use serde_json::{Value, json};
 
@@ -121,6 +121,7 @@ fn rich_score() -> Score {
             midi_program: 0,
             set: None,
         },
+        drum_kit: Some(gm_drum_kit()),
         midi: TrackMidi::default_for(InstrumentKind::Percussion),
         sounds: Vec::new(),
         automations: Vec::new(),

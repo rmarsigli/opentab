@@ -1,8 +1,8 @@
 use opentab_model::{
     Balance, Base64Bytes, BeatEffects, Clef, ContainerEntry, DIRECTION_JUMPS, DIRECTION_TARGETS,
     Directions, Fraction, Grace, InstrumentKind, InstrumentSet, KeySignature, Level, MidiBank,
-    MidiChannel, NoteEffects, NoteValue, OpaquePayload, Pitch, ScoreMeta, Tempo, TempoUnit,
-    TimeSignature, TrackMidi, Transpose,
+    MidiChannel, NoteEffects, NoteValue, OpaquePayload, Pitch, ScoreMeta, TechniquePlacement,
+    Tempo, TempoUnit, TimeSignature, TrackMidi, Transpose,
 };
 use proptest::collection::vec;
 use proptest::option;
@@ -56,6 +56,21 @@ const INSTRUMENT_SETS: [InstrumentSet; 12] = [
     InstrumentSet::Voice,
     InstrumentSet::DrumKit,
 ];
+const NOTEHEADS: [&str; 4] = [
+    "noteheadBlack",
+    "noteheadXBlack",
+    "noteheadDiamondWhite",
+    "x",
+];
+const PLACEMENTS: [TechniquePlacement; 4] = [
+    TechniquePlacement::Outside,
+    TechniquePlacement::Inside,
+    TechniquePlacement::Above,
+    TechniquePlacement::Below,
+];
+const MAX_DRUM_ELEMENTS: usize = 3;
+const MAX_ELEMENT_ARTICULATIONS: usize = 3;
+const MAX_INPUT_KEYS: usize = 2;
 const SCORE_ENTRY: &str = "Content/score.gpif";
 const DIRECTORY_ENTRY: &str = "Content/";
 const CONTAINER_NAMES: [&str; 6] = [
@@ -159,11 +174,38 @@ pub struct OverrideSeed {
 }
 
 #[derive(Debug, Clone)]
+pub struct DrumArticulationSeed {
+    pub name: String,
+    pub staff_line: i8,
+    pub noteheads: [String; 3],
+    pub placement: TechniquePlacement,
+    pub symbol: String,
+    pub input_keys: Vec<u8>,
+    pub rse_sound: String,
+    pub output_key: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct DrumElementSeed {
+    pub name: String,
+    pub kind: String,
+    pub soundbank: String,
+    pub articulations: Vec<DrumArticulationSeed>,
+}
+
+#[derive(Debug, Clone)]
+pub enum DrumKitSeed {
+    General,
+    Custom(Vec<DrumElementSeed>),
+}
+
+#[derive(Debug, Clone)]
 pub struct TrackSeed {
     pub name: String,
     pub short_name: String,
     pub kind: InstrumentKind,
     pub set: Option<InstrumentSet>,
+    pub drum_kit: Option<DrumKitSeed>,
     pub midi: TrackMidi,
     pub sounds: Vec<SoundSeed>,
     pub automations: Vec<AutomationSeed>,
@@ -397,6 +439,69 @@ fn arb_automation_seed() -> impl Strategy<Value = AutomationSeed> {
         )
 }
 
+fn arb_noteheads() -> impl Strategy<Value = [String; 3]> {
+    (
+        select(NOTEHEADS.to_vec()),
+        select(NOTEHEADS.to_vec()),
+        select(NOTEHEADS.to_vec()),
+    )
+        .prop_map(|(black, half, whole)| [black, half, whole].map(str::to_string))
+}
+
+fn arb_drum_articulation_seed(gp_writable: bool) -> impl Strategy<Value = DrumArticulationSeed> {
+    (
+        (arb_text_for(8, gp_writable), any::<i8>(), arb_noteheads()),
+        (select(PLACEMENTS.to_vec()), arb_text_for(6, gp_writable)),
+        (
+            vec(0..=MAX_MIDI, 0..=MAX_INPUT_KEYS),
+            arb_text_for(6, gp_writable),
+            0..=MAX_MIDI,
+        ),
+    )
+        .prop_map(
+            |(
+                (name, staff_line, noteheads),
+                (placement, symbol),
+                (input_keys, rse_sound, output_key),
+            )| DrumArticulationSeed {
+                name,
+                staff_line,
+                noteheads,
+                placement,
+                symbol,
+                input_keys,
+                rse_sound,
+                output_key,
+            },
+        )
+}
+
+fn arb_drum_element_seed(gp_writable: bool) -> impl Strategy<Value = DrumElementSeed> {
+    (
+        arb_text_for(8, gp_writable),
+        arb_text_for(8, gp_writable),
+        arb_text_for(6, gp_writable),
+        vec(
+            arb_drum_articulation_seed(gp_writable),
+            0..=MAX_ELEMENT_ARTICULATIONS,
+        ),
+    )
+        .prop_map(|(name, kind, soundbank, articulations)| DrumElementSeed {
+            name,
+            kind,
+            soundbank,
+            articulations,
+        })
+}
+
+fn arb_drum_kit_seed(gp_writable: bool) -> impl Strategy<Value = Option<DrumKitSeed>> {
+    option::of(prop_oneof![
+        Just(DrumKitSeed::General),
+        vec(arb_drum_element_seed(gp_writable), 0..=MAX_DRUM_ELEMENTS)
+            .prop_map(DrumKitSeed::Custom),
+    ])
+}
+
 fn arb_track_seed(cfg: ScoreGenConfig, bars: usize) -> impl Strategy<Value = TrackSeed> {
     let highest_open = if cfg.gp_writable {
         MAX_WRITABLE_OPEN
@@ -411,6 +516,7 @@ fn arb_track_seed(cfg: ScoreGenConfig, bars: usize) -> impl Strategy<Value = Tra
         (
             select(vec![InstrumentKind::Fretted, InstrumentKind::Percussion]),
             option::of(select(INSTRUMENT_SETS.to_vec())),
+            arb_drum_kit_seed(cfg.gp_writable),
         ),
         (
             arb_track_midi(),
@@ -425,7 +531,7 @@ fn arb_track_seed(cfg: ScoreGenConfig, bars: usize) -> impl Strategy<Value = Tra
         .prop_map(
             |(
                 (name, short_name),
-                (kind, set),
+                (kind, set, drum_kit),
                 (midi, sounds, automations),
                 (midi_program, capo),
                 tuning,
@@ -437,6 +543,7 @@ fn arb_track_seed(cfg: ScoreGenConfig, bars: usize) -> impl Strategy<Value = Tra
                     short_name,
                     kind,
                     set,
+                    drum_kit,
                     midi,
                     sounds,
                     automations,

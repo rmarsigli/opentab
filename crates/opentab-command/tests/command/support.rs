@@ -113,6 +113,7 @@ pub fn track(score: &mut Score, kind: InstrumentKind, bars: Vec<Bar>) -> Track {
             midi_program: 0,
             set: None,
         },
+        drum_kit: None,
         midi: TrackMidi::default_for(kind),
         sounds: Vec::new(),
         automations: Vec::new(),

@@ -3,13 +3,14 @@ use std::collections::BTreeMap;
 
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
-    AutomationValue, Balance, InstrumentSet, Level, NoteKind, OpaquePayload, Score, TrackMidi,
+    AutomationValue, Balance, DrumArticulation, DrumElement, DrumKit, InstrumentKind,
+    InstrumentSet, Level, NoteKind, OpaquePayload, Score, TrackMidi, gm_drum_kit,
 };
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, FileFailurePersistence, TestRunner};
 
-use crate::support::{add_drum_kits, documented};
+use crate::support::documented;
 
 const CASES: u32 = 256;
 
@@ -61,6 +62,7 @@ struct Coverage {
     mixers: Cell<usize>,
     channels: Cell<usize>,
     overrides: Cell<usize>,
+    custom_kits: Cell<usize>,
 }
 
 impl Coverage {
@@ -102,6 +104,11 @@ impl Coverage {
                 usize::from(midi != &TrackMidi::default_for(track.instrument.kind)),
             );
             Coverage::add(&self.second_staves, track.staves.len().saturating_sub(1));
+            let custom = track
+                .drum_kit
+                .as_ref()
+                .is_some_and(|kit| *kit != gm_drum_kit());
+            Coverage::add(&self.custom_kits, usize::from(custom));
             for staff in &track.staves {
                 for bar in &staff.bars {
                     for voice in &bar.voices {
@@ -120,7 +127,7 @@ impl Coverage {
         }
     }
 
-    fn counts(&self) -> [(&'static str, usize); 14] {
+    fn counts(&self) -> [(&'static str, usize); 15] {
         [
             ("notes", self.notes.get()),
             ("percussion notes", self.percussion.get()),
@@ -136,6 +143,7 @@ impl Coverage {
             ("mixers", self.mixers.get()),
             ("channels", self.channels.get()),
             ("sound overrides", self.overrides.get()),
+            ("custom drum kits", self.custom_kits.get()),
         ]
     }
 }
@@ -169,14 +177,9 @@ fn run<S: Strategy<Value = Score>>(strategy: S) -> Outcome {
     }
 }
 
-fn with_drum_kits(mut score: Score) -> Score {
-    add_drum_kits(&mut score);
-    score
-}
-
 #[test]
 fn writable_scores_read_back_equal() {
-    let outcome = run(arb_score_with(writable()).prop_map(with_drum_kits));
+    let outcome = run(arb_score_with(writable()));
     println!(
         "acceptance gp-writable: {}/{} {:?}",
         outcome.accepted,
@@ -189,9 +192,8 @@ fn writable_scores_read_back_equal() {
     }
 }
 
-const GENUINE_LIMITS: [&str; 6] = [
+const GENUINE_LIMITS: [&str; 5] = [
     "Character",
-    "DrumKit",
     "HarmonicFret",
     "Pitch",
     "RightHandOpen",
@@ -250,6 +252,7 @@ fn clean_texts(score: &mut Score) -> bool {
         }
     }
     for track in &mut score.tracks {
+        changed |= clean_kit(&mut track.drum_kit);
         changed |= clean(&mut track.name);
         changed |= clean(&mut track.short_name);
         for sound in &mut track.sounds {
@@ -263,6 +266,29 @@ fn clean_texts(score: &mut Score) -> bool {
                 changed |= clean(name);
             }
         }
+    }
+    changed
+}
+
+fn clean_kit(kit: &mut Option<DrumKit>) -> bool {
+    let Some(found) = kit else {
+        return false;
+    };
+    let mut changed = false;
+    let mut elements: Vec<DrumElement> = found.elements().to_vec();
+    for element in &mut elements {
+        changed |= clean(&mut element.name);
+        changed |= clean(&mut element.kind);
+        changed |= clean(&mut element.soundbank);
+    }
+    let mut articulations: Vec<DrumArticulation> = found.articulations().to_vec();
+    for articulation in &mut articulations {
+        changed |= clean(&mut articulation.name);
+        changed |= clean(&mut articulation.technique_symbol);
+        changed |= clean(&mut articulation.rse_sound);
+    }
+    if changed {
+        *kit = Some(DrumKit::new(elements, articulations).expect("cleaning keeps the kit valid"));
     }
     changed
 }
@@ -292,7 +318,6 @@ fn clean_kind(score: &mut Score, kind: &str) -> bool {
     let mut changed = false;
     match kind {
         "Character" => changed = clean_texts(score),
-        "DrumKit" => changed = add_drum_kits(score),
         "TempoPosition" => {
             for master in &mut score.master_bars {
                 let bar = master.time_signature.bar_length();
@@ -360,9 +385,12 @@ fn clean_kind(score: &mut Score, kind: &str) -> bool {
     changed
 }
 
-fn with_derived_sets(score: &Score) -> Score {
+fn with_writer_defaults(score: &Score) -> Score {
     let mut expected = score.clone();
     for track in &mut expected.tracks {
+        if track.instrument.kind == InstrumentKind::Percussion && track.drum_kit.is_none() {
+            track.drum_kit = Some(gm_drum_kit());
+        }
         let instrument = &mut track.instrument;
         instrument.set =
             Some(instrument.set.unwrap_or_else(|| {
@@ -401,7 +429,7 @@ fn default_scores_are_refused_only_for_genuine_gp_limits() {
                 Ok(bytes) => {
                     let read =
                         read_gp(&bytes).map_err(|error| TestCaseError::fail(error.to_string()))?;
-                    prop_assert_eq!(&read, &with_derived_sets(&score));
+                    prop_assert_eq!(&read, &with_writer_defaults(&score));
                     if round == 0 {
                         accepted.set(accepted.get() + 1);
                     }

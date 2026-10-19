@@ -1,6 +1,7 @@
 mod beat;
 mod context;
 mod document;
+mod drums;
 mod master;
 mod mixer;
 mod note;

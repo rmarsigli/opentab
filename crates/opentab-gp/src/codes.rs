@@ -1,6 +1,6 @@
 use opentab_model::{
     Accent, Clef, DirectionJump, DirectionTarget, Dynamic, Finger, Grace, HarmonicKind,
-    InstrumentSet, NoteValue, Slide, StrokeDirection, TempoUnit, Vibrato,
+    InstrumentSet, NoteValue, Slide, StrokeDirection, TechniquePlacement, TempoUnit, Vibrato,
 };
 
 pub(crate) type Table<T> = [(&'static str, T)];
@@ -104,6 +104,29 @@ pub(crate) const INSTRUMENT_SETS: &Table<InstrumentSet> = &[
     ("electricOrgan", InstrumentSet::ElectricOrgan),
     ("voice", InstrumentSet::Voice),
     (DRUM_KIT, InstrumentSet::DrumKit),
+];
+
+pub(crate) const TECHNIQUE_PLACEMENTS: &Table<TechniquePlacement> = &[
+    ("outside", TechniquePlacement::Outside),
+    ("inside", TechniquePlacement::Inside),
+    ("above", TechniquePlacement::Above),
+    ("below", TechniquePlacement::Below),
+];
+
+pub(crate) const DRUM_ELEMENTS: &str = "Elements";
+pub(crate) const DRUM_ELEMENT: &str = "Element";
+pub(crate) const DRUM_ELEMENT_FIELDS: [&str; 4] =
+    ["Name", "Type", "SoundbankName", "Articulations"];
+pub(crate) const DRUM_ARTICULATION: &str = "Articulation";
+pub(crate) const DRUM_ARTICULATION_FIELDS: [&str; 8] = [
+    "Name",
+    "StaffLine",
+    "Noteheads",
+    "TechniquePlacement",
+    "TechniqueSymbol",
+    "InputMidiNumbers",
+    "OutputRSESound",
+    "OutputMidiNumber",
 ];
 
 pub(crate) const DIRECTION_TARGETS: &Table<DirectionTarget> = &[

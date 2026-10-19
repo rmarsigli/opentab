@@ -48,6 +48,12 @@ pub enum ModelError {
     InvalidBalance { millionths: u32 },
     #[error("MIDI program {program} is outside 0..=127")]
     InvalidProgram { program: u8 },
+    #[error("drum key {key} is outside 0..=127")]
+    InvalidDrumKey { key: u8 },
+    #[error("notehead name \"{name}\" is empty or holds whitespace")]
+    InvalidNotehead { name: String },
+    #[error("the drum kit's elements do not account for its {articulations} articulations")]
+    DrumKitCount { articulations: usize },
     #[error("track {track} has more than one sound override")]
     DuplicateSoundOverride { track: u64 },
     #[error("container has {scores} score entries; at most one is allowed")]

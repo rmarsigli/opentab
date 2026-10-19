@@ -86,6 +86,7 @@ pub fn guitar(score: &mut Score, bars: Vec<Vec<Duration>>) -> Track {
             midi_program: 25,
             set: None,
         },
+        drum_kit: None,
         midi: TrackMidi::default_for(InstrumentKind::Fretted),
         sounds: Vec::new(),
         automations: Vec::new(),

@@ -37,8 +37,7 @@ pub use display::{
 };
 pub use draw::ending_label;
 pub use drums::{
-    DEFAULT_DRUM, DRUM_TABLE, DrumClass, DrumEntry, DrumHead, DrumKit, drum_entry, drum_glyph,
-    kit_keys,
+    DEFAULT_DRUM, DRUM_TABLE, DrumClass, DrumEntry, DrumHead, DrumStaffKit, drum_entry, drum_glyph,
 };
 pub use engine::Stack;
 pub use engine::layout;

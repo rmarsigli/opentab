@@ -12,7 +12,7 @@ pub use payload::{
 };
 
 use crate::display::{Page, Primitive};
-use crate::drums::DrumKit;
+use crate::drums::DrumStaffKit;
 use crate::marks::clean;
 use crate::select::Selection;
 use crate::structure::StaffKind;
@@ -218,7 +218,7 @@ impl Walk<'_> {
         }
     }
 
-    fn note(&mut self, note: &Note, staves: Staves, kit: Option<&DrumKit>) {
+    fn note(&mut self, note: &Note, staves: Staves, kit: Option<&DrumStaffKit>) {
         self.element(note.id.0);
         let effects = &note.effects;
         let hidden = !staves.tab;
@@ -273,7 +273,7 @@ impl Walk<'_> {
         bar: &Bar,
         staves: Staves,
         diagrams: &HashSet<String>,
-        kit: Option<&DrumKit>,
+        kit: Option<&DrumStaffKit>,
     ) {
         self.element(bar.id.0);
         let sounding = bar
@@ -301,7 +301,7 @@ impl Walk<'_> {
         staff: &Staff,
         bars: (usize, usize),
         staves: Staves,
-        kit: Option<&DrumKit>,
+        kit: Option<&DrumStaffKit>,
     ) {
         self.element(staff.id.0);
         let score = self.score;

@@ -2,10 +2,11 @@ use std::io::{Cursor, Read};
 
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
-    Bar, Base64Bytes, Beat, BeatEffects, ContainerEntry, Directions, Duration, Finger, Fraction,
-    Harmonic, HarmonicKind, Instrument, InstrumentKind, InstrumentSet, KeySignature, Marker,
-    MasterBar, Note, NoteEffects, NoteKind, NoteValue, OpaquePayload, Pitch, Score, Staff, Tempo,
-    TempoChange, TempoUnit, TimeSignature, Track, TrackMidi, Transpose, Tuning, Voice, VoiceSlot,
+    Bar, Base64Bytes, Beat, BeatEffects, ContainerEntry, Directions, DrumKit, Duration, Finger,
+    Fraction, Harmonic, HarmonicKind, Instrument, InstrumentKind, InstrumentSet, KeySignature,
+    Marker, MasterBar, Note, NoteEffects, NoteKind, NoteValue, OpaquePayload, Pitch, Score, Staff,
+    Tempo, TempoChange, TempoUnit, TimeSignature, Track, TrackMidi, Transpose, Tuning, Voice,
+    VoiceSlot, gm_drum_kit,
 };
 use zip::{CompressionMethod, ZipArchive};
 
@@ -94,6 +95,7 @@ impl Scratch {
                     InstrumentKind::Percussion => InstrumentSet::DrumKit,
                 }),
             },
+            drum_kit: None,
             midi: TrackMidi::default_for(kind),
             sounds: Vec::new(),
             tuning: Tuning { strings: tuning },
@@ -660,20 +662,12 @@ fn every_documented_refusal_is_reachable() {
         .effects
         .right_hand_finger = Some(Finger::Open);
     assert_eq!(refusal(&open).1, Refusal::RightHandOpen);
-    let mut drums = Scratch::new(1);
-    drums.track(
-        InstrumentKind::Percussion,
-        vec![vec![(
-            NoteValue::Whole,
-            vec![NoteKind::Percussion { articulation: 3 }],
-        )]],
-    );
+    let mut kit_on_guitar = one_note();
+    kit_on_guitar.tracks[0].drum_kit = Some(gm_drum_kit());
     assert_eq!(
-        refusal(&drums.score),
-        ("tracks[0]".to_string(), Refusal::DrumKit)
+        refusal(&kit_on_guitar),
+        ("tracks[0].drum_kit".to_string(), Refusal::DrumKitOnFretted)
     );
-    assert!(crate::support::add_drum_kits(&mut drums.score));
-    assert_eq!(read_gp(&written(&drums.score)).expect("read"), drums.score);
     let mut bare = one_note();
     bare.tracks.clear();
     assert_eq!(refusal(&bare), ("tracks".to_string(), Refusal::NoTracks));
@@ -874,13 +868,12 @@ fn a_pitched_articulation_is_dropped_when_the_note_becomes_percussion() {
     let track = &mut score.tracks[0];
     track.instrument.kind = InstrumentKind::Percussion;
     track.instrument.set = Some(InstrumentSet::DrumKit);
+    track.drum_kit = Some(gm_drum_kit());
     for beat in &mut track.staves[0].bars[0].voices[0].beats {
         for note in &mut beat.notes {
             note.kind = NoteKind::Percussion { articulation: 7 };
         }
     }
-    assert_eq!(refusal(&score), ("tracks[0]".to_string(), Refusal::DrumKit));
-    assert!(crate::support::add_drum_kits(&mut score));
     let bytes = written(&score);
     let gpif = gpif_of(&bytes);
     assert_eq!(gpif.matches("<InstrumentArticulation>").count(), 2);
@@ -982,7 +975,7 @@ fn a_kept_gp_version_replaces_the_generated_one() {
 }
 
 #[test]
-fn an_empty_drum_kit_is_refused() {
+fn a_kept_kit_is_written_as_kept_and_reads_back_typed() {
     let mut drums = Scratch::new(1);
     drums.track(
         InstrumentKind::Percussion,
@@ -999,11 +992,19 @@ fn an_empty_drum_kit_is_refused() {
             data: "<Keep parent=\"InstrumentSet\" index=\"1\"><Elements/></Keep>".to_string(),
         }],
     );
+    let bytes = written(&drums.score);
+    assert_eq!(gpif_of(&bytes).matches("<Elements").count(), 1);
+    assert!(gpif_of(&bytes).contains("<Elements/>"));
+    let mut expected = drums.score.clone();
+    expected.extensions.0.clear();
+    expected.tracks[0].drum_kit = Some(DrumKit::new(Vec::new(), Vec::new()).expect("kit"));
+    let again = read_gp(&bytes).expect("read");
+    assert_eq!(again, expected);
     assert_eq!(
-        refusal(&drums.score),
-        ("tracks[0]".to_string(), Refusal::DrumKit)
+        opentab_model::diagnose(&again),
+        vec![opentab_model::Diagnostic::ArticulationOutsideKit {
+            note: again.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].id,
+            articulation: 3
+        }]
     );
-    drums.score.extensions.0.clear();
-    assert!(crate::support::add_drum_kits(&mut drums.score));
-    assert_eq!(read_gp(&written(&drums.score)).expect("read"), drums.score);
 }
