@@ -69,6 +69,7 @@ pub struct FittedTuplet {
     pub number: u8,
     pub direction: StemDirection,
     pub edge: Units,
+    pub bracket: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -355,12 +356,19 @@ impl RhythmPlan {
                 top: staff.reference,
                 bottom: staff.reference,
             });
+            let beamed = self.beams.iter().any(|beam| {
+                group
+                    .members
+                    .iter()
+                    .all(|member| beam.members.contains(member))
+            });
             tuplets.push(FittedTuplet {
                 first: *first,
                 last: *last,
                 number: group.number,
                 direction,
                 edge: staff.tuplet_edge(direction, reach),
+                bracket: !beamed,
             });
         }
         self.tuplets = tuplets;
@@ -384,6 +392,7 @@ impl RhythmPlan {
                 edge: tuplet.edge,
                 direction: tuplet.direction,
                 number: tuplet.number,
+                bracket: tuplet.bracket,
             });
             reach = Some(widen(reach, extent.top, extent.bottom));
         }
@@ -513,6 +522,7 @@ pub fn draw_rhythm(
                 edge: top + tuplet.edge,
                 direction: tuplet.direction,
                 number: tuplet.number,
+                bracket: tuplet.bracket,
             },
             canvas.shared,
         );

@@ -168,25 +168,9 @@ group 5
     shape Fill [MoveTo(Point { x: Units(70812), y: Units(21960) }), LineTo(Point { x: Units(77598), y: Units(21960) }), LineTo(Point { x: Units(77598), y: Units(21448) }), LineTo(Point { x: Units(70812), y: Units(21448) }), Close]
     shape Fill [MoveTo(Point { x: Units(80748), y: Units(21960) }), LineTo(Point { x: Units(87421), y: Units(21960) }), LineTo(Point { x: Units(87421), y: Units(21448) }), LineTo(Point { x: Units(80748), y: Units(21448) }), Close]
     glyph U+E883 54361,24298 size 1024
-    line 51053,23001 51053,23513 thick 164
-    line 51053,23513 54105,23513 thick 164
-    line 55871,23513 58922,23513 thick 164
-    line 58922,23513 58922,23001 thick 164
     glyph U+E883 64241,24298 size 1024
-    line 60989,23001 60989,23513 thick 164
-    line 60989,23513 63985,23513 thick 164
-    line 65751,23513 68746,23513 thick 164
-    line 68746,23513 68746,23001 thick 164
     glyph U+E883 74120,24298 size 1024
-    line 70812,23001 70812,23513 thick 164
-    line 70812,23513 73864,23513 thick 164
-    line 75630,23513 78682,23513 thick 164
-    line 78682,23513 78682,23001 thick 164
     glyph U+E883 84000,24298 size 1024
-    line 80748,23001 80748,23513 thick 164
-    line 80748,23513 83744,23513 thick 164
-    line 85510,23513 88505,23513 thick 164
-    line 88505,23513 88505,23001 thick 164
   group 77
     line 97651,15304 97651,19400 thick 164
     line 97077,15304 97077,19400 thick 164
@@ -510,25 +494,9 @@ group 5
     shape Fill [MoveTo(Point { x: Units(62829), y: Units(82870) }), LineTo(Point { x: Units(69698), y: Units(82870) }), LineTo(Point { x: Units(69698), y: Units(82358) }), LineTo(Point { x: Units(62829), y: Units(82358) }), Close]
     shape Fill [MoveTo(Point { x: Units(72890), y: Units(82870) }), LineTo(Point { x: Units(79647), y: Units(82870) }), LineTo(Point { x: Units(79647), y: Units(82358) }), LineTo(Point { x: Units(72890), y: Units(82358) }), Close]
     glyph U+E883 46169,85208 size 1024
-    line 42819,83911 42819,84423 thick 164
-    line 42819,84423 45913,84423 thick 164
-    line 47679,84423 50772,84423 thick 164
-    line 50772,84423 50772,83911 thick 164
     glyph U+E883 56174,85208 size 1024
-    line 52880,83911 52880,84423 thick 164
-    line 52880,84423 55918,84423 thick 164
-    line 57684,84423 60721,84423 thick 164
-    line 60721,84423 60721,83911 thick 164
     glyph U+E883 66179,85208 size 1024
-    line 62829,83911 62829,84423 thick 164
-    line 62829,84423 65923,84423 thick 164
-    line 67689,84423 70782,84423 thick 164
-    line 70782,84423 70782,83911 thick 164
     glyph U+E883 76184,85208 size 1024
-    line 72890,83911 72890,84423 thick 164
-    line 72890,84423 75928,84423 thick 164
-    line 77694,84423 80731,84423 thick 164
-    line 80731,84423 80731,83911 thick 164
   group 129
     glyph U+E261 83515,78262 size 1024
     glyph U+E261 84331,76726 size 1024
@@ -1119,25 +1087,9 @@ group 5
     shape Fill [MoveTo(Point { x: Units(45240), y: Units(77897) }), LineTo(Point { x: Units(52357), y: Units(77897) }), LineTo(Point { x: Units(52357), y: Units(77385) }), LineTo(Point { x: Units(45240), y: Units(77385) }), Close]
     shape Fill [MoveTo(Point { x: Units(55674), y: Units(77897) }), LineTo(Point { x: Units(62679), y: Units(77897) }), LineTo(Point { x: Units(62679), y: Units(77385) }), LineTo(Point { x: Units(55674), y: Units(77385) }), Close]
     glyph U+E883 27959,80235 size 1024
-    line 24485,78938 24485,79450 thick 164
-    line 24485,79450 27703,79450 thick 164
-    line 29469,79450 32686,79450 thick 164
-    line 32686,79450 32686,78938 thick 164
     glyph U+E883 38336,80235 size 1024
-    line 34918,78938 34918,79450 thick 164
-    line 34918,79450 38080,79450 thick 164
-    line 39846,79450 43008,79450 thick 164
-    line 43008,79450 43008,78938 thick 164
     glyph U+E883 48714,80235 size 1024
-    line 45240,78938 45240,79450 thick 164
-    line 45240,79450 48458,79450 thick 164
-    line 50224,79450 53441,79450 thick 164
-    line 53441,79450 53441,78938 thick 164
     glyph U+E883 59092,80235 size 1024
-    line 55674,78938 55674,79450 thick 164
-    line 55674,79450 58836,79450 thick 164
-    line 60602,79450 63763,79450 thick 164
-    line 63763,79450 63763,78938 thick 164
   group 206
     line 68148,71241 68148,75337 thick 164
     glyph U+E044 68394,72777 size 1024
@@ -1475,25 +1427,9 @@ group 5
     shape Fill [MoveTo(Point { x: Units(45904), y: Units(19529) }), LineTo(Point { x: Units(53242), y: Units(19529) }), LineTo(Point { x: Units(53242), y: Units(19017) }), LineTo(Point { x: Units(45904), y: Units(19017) }), Close]
     shape Fill [MoveTo(Point { x: Units(56669), y: Units(19529) }), LineTo(Point { x: Units(63896), y: Units(19529) }), LineTo(Point { x: Units(63896), y: Units(19017) }), LineTo(Point { x: Units(56669), y: Units(19017) }), Close]
     glyph U+E883 28069,21867 size 1024
-    line 24485,20570 24485,21082 thick 164
-    line 24485,21082 27813,21082 thick 164
-    line 29579,21082 32907,21082 thick 164
-    line 32907,21082 32907,20570 thick 164
     glyph U+E883 38779,21867 size 1024
-    line 35250,20570 35250,21082 thick 164
-    line 35250,21082 38523,21082 thick 164
-    line 40289,21082 43561,21082 thick 164
-    line 43561,21082 43561,20570 thick 164
     glyph U+E883 49488,21867 size 1024
-    line 45904,20570 45904,21082 thick 164
-    line 45904,21082 49232,21082 thick 164
-    line 50998,21082 54326,21082 thick 164
-    line 54326,21082 54326,20570 thick 164
     glyph U+E883 60198,21867 size 1024
-    line 56669,20570 56669,21082 thick 164
-    line 56669,21082 59942,21082 thick 164
-    line 61708,21082 64980,21082 thick 164
-    line 64980,21082 64980,20570 thick 164
   group 258
     line 72734,12873 72734,16969 thick 164
   group 266
@@ -1767,25 +1703,9 @@ group 5
     shape Fill [MoveTo(Point { x: Units(53939), y: Units(80235) }), LineTo(Point { x: Units(63956), y: Units(80235) }), LineTo(Point { x: Units(63956), y: Units(79723) }), LineTo(Point { x: Units(53939), y: Units(79723) }), Close]
     shape Fill [MoveTo(Point { x: Units(68722), y: Units(80235) }), LineTo(Point { x: Units(78627), y: Units(80235) }), LineTo(Point { x: Units(78627), y: Units(79723) }), LineTo(Point { x: Units(68722), y: Units(79723) }), Close]
     glyph U+E883 29408,82573 size 1024
-    line 24485,81276 24485,81788 thick 164
-    line 24485,81788 29152,81788 thick 164
-    line 30918,81788 35585,81788 thick 164
-    line 35585,81788 35585,81276 thick 164
     glyph U+E883 44136,82573 size 1024
-    line 39268,81276 39268,81788 thick 164
-    line 39268,81788 43880,81788 thick 164
-    line 45646,81788 50257,81788 thick 164
-    line 50257,81788 50257,81276 thick 164
     glyph U+E883 58863,82573 size 1024
-    line 53939,81276 53939,81788 thick 164
-    line 53939,81788 58607,81788 thick 164
-    line 60373,81788 65040,81788 thick 164
-    line 65040,81788 65040,81276 thick 164
     glyph U+E883 73590,82573 size 1024
-    line 68722,81276 68722,81788 thick 164
-    line 68722,81788 73334,81788 thick 164
-    line 75100,81788 79711,81788 thick 164
-    line 79711,81788 79711,81276 thick 164
   line 9801,86157 84480,86157 thick 133
   line 9801,87693 84480,87693 thick 133
   line 9801,89229 84480,89229 thick 133
