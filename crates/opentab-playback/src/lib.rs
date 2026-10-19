@@ -1,8 +1,12 @@
 #![deny(clippy::float_arithmetic)]
 
+mod allocate;
 mod beats;
 mod bends;
 mod channels;
+mod controls;
+mod curves;
+mod emit;
 mod error;
 mod exact;
 mod harmonics;
@@ -16,6 +20,7 @@ mod tempo;
 mod time;
 mod unplayed;
 
+pub use allocate::{ChannelAllocator, ChannelGrant, ChannelNeed};
 pub use beats::{Click, beat_grid};
 pub use channels::ChannelPool;
 pub use error::PlaybackError;

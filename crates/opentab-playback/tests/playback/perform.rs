@@ -520,7 +520,7 @@ fn a_bend_and_release_rises_holds_and_falls_by_its_middle_points() {
 }
 
 #[test]
-fn a_bend_below_the_pitch_is_not_played_and_is_listed() {
+fn a_dip_below_the_pitch_is_dropped_by_gp_and_played_by_musical() {
     let dip = Bend::new(
         BendPoint::new(0, 0).expect("point"),
         BendPoint::new(25, -100).expect("point"),
@@ -539,20 +539,18 @@ fn a_bend_below_the_pitch_is_not_played_and_is_listed() {
             vec![with(fretted(2, 2), |effects| effects.bend = Some(dip))],
         )],
     );
-    for (options, listed, absent) in [
-        (GP, UnplayedKind::DipBend, UnplayedKind::BendBelowPitch),
-        (MUSICAL, UnplayedKind::BendBelowPitch, UnplayedKind::DipBend),
-    ] {
-        let performance = perform(&builder.score, &options).expect("perform");
-        assert!(bends(&performance).is_empty());
-        let kinds: Vec<UnplayedKind> = performance
-            .unplayed
+    let gp = perform(&builder.score, &GP).expect("perform");
+    assert!(bends(&gp).is_empty());
+    assert!(
+        gp.unplayed
             .iter()
-            .map(|feature| feature.kind)
-            .collect();
-        assert!(kinds.contains(&listed), "{options:?}: {kinds:?}");
-        assert!(!kinds.contains(&absent), "{options:?}: {kinds:?}");
-    }
+            .any(|feature| feature.kind == UnplayedKind::DipBend)
+    );
+    let musical = perform(&builder.score, &MUSICAL).expect("perform");
+    let values: Vec<u16> = bends(&musical).iter().map(|(_, value)| *value).collect();
+    assert_eq!(values.iter().min().copied(), Some(BEND_CENTRE - 683));
+    assert_eq!(values.first().copied(), Some(BEND_CENTRE));
+    assert!(musical.unplayed.is_empty(), "{:?}", musical.unplayed);
 }
 
 #[test]

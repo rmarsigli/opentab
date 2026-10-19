@@ -20,7 +20,6 @@ pub enum UnplayedKind {
     HammerOnPullOff,
     Slide,
     Tap,
-    BendBelowPitch,
     DipBend,
     OffNodeHarmonic,
     TremoloBar,
@@ -111,37 +110,24 @@ impl Catalogue {
     }
 }
 
-pub(crate) fn bend_below_pitch(note: &Note) -> bool {
-    note.effects.bend.is_some_and(|bend| {
-        [
-            bend.origin(),
-            bend.middle_start(),
-            bend.middle_end(),
-            bend.destination(),
-        ]
-        .iter()
-        .any(|point| point.value() < 0)
-    })
-}
-
 fn note_kinds(note: &Note, profile: Profile) -> Vec<UnplayedKind> {
     let effects = &note.effects;
+    let gp = profile == Profile::Gp;
     let flags = [
-        (effects.ghost, UnplayedKind::Ghost),
-        (effects.accent.is_some(), UnplayedKind::Accent),
-        (effects.dead, UnplayedKind::Dead),
-        (effects.palm_mute, UnplayedKind::PalmMute),
-        (effects.let_ring, UnplayedKind::LetRing),
-        (effects.vibrato.is_some(), UnplayedKind::Vibrato),
-        (effects.hammer_on_pull_off, UnplayedKind::HammerOnPullOff),
-        (effects.slide.is_some(), UnplayedKind::Slide),
+        (gp && effects.ghost, UnplayedKind::Ghost),
+        (gp && effects.accent.is_some(), UnplayedKind::Accent),
+        (gp && effects.dead, UnplayedKind::Dead),
+        (gp && effects.palm_mute, UnplayedKind::PalmMute),
+        (gp && effects.let_ring, UnplayedKind::LetRing),
+        (gp && effects.vibrato.is_some(), UnplayedKind::Vibrato),
+        (
+            gp && effects.hammer_on_pull_off,
+            UnplayedKind::HammerOnPullOff,
+        ),
+        (gp && effects.slide.is_some(), UnplayedKind::Slide),
         (effects.tap.is_some(), UnplayedKind::Tap),
         (
-            profile == Profile::Musical && bend_below_pitch(note),
-            UnplayedKind::BendBelowPitch,
-        ),
-        (
-            profile == Profile::Gp && effects.bend.is_some_and(gp_drops),
+            gp && effects.bend.is_some_and(gp_drops),
             UnplayedKind::DipBend,
         ),
         (
@@ -157,11 +143,11 @@ fn note_kinds(note: &Note, profile: Profile) -> Vec<UnplayedKind> {
         .collect()
 }
 
-fn beat_kinds(beat: &Beat) -> Vec<UnplayedKind> {
+fn beat_kinds(beat: &Beat, profile: Profile) -> Vec<UnplayedKind> {
     let effects = &beat.effects;
     let flags = [
         (
-            effects.tremolo_bar.is_some_and(|bar| bar.moves()),
+            profile == Profile::Gp && effects.tremolo_bar.is_some_and(|bar| bar.moves()),
             UnplayedKind::TremoloBar,
         ),
         (effects.stroke.is_some(), UnplayedKind::Stroke),
@@ -195,15 +181,6 @@ fn track_kinds(score: &Score, track: &Track) -> Vec<(UnplayedKind, usize)> {
             .any(|sound| sound.bank != MidiBank::default())
     {
         found.push((UnplayedKind::Bank, 0));
-    }
-    if track.midi.per_string {
-        found.push((UnplayedKind::OneChannelPerString, 0));
-    }
-    if track.instrument.kind == InstrumentKind::Percussion
-        && track.drum_kit.is_none()
-        && score.kept_drum_kit(track.id)
-    {
-        found.push((UnplayedKind::UnreadableDrumKit, 0));
     }
     for automation in &track.automations {
         let kind = match automation.value {
@@ -239,13 +216,24 @@ pub(crate) fn catalogue(score: &Score, profile: Profile) -> Vec<UnplayedFeature>
         }
     }
     for (index, track) in score.tracks.iter().enumerate() {
-        for (kind, bar) in track_kinds(score, track) {
-            catalogue.note(Some(index), kind, bar);
+        if track.midi.per_string {
+            catalogue.note(Some(index), UnplayedKind::OneChannelPerString, 0);
+        }
+        if track.instrument.kind == InstrumentKind::Percussion
+            && track.drum_kit.is_none()
+            && score.kept_drum_kit(track.id)
+        {
+            catalogue.note(Some(index), UnplayedKind::UnreadableDrumKit, 0);
+        }
+        if profile == Profile::Gp {
+            for (kind, bar) in track_kinds(score, track) {
+                catalogue.note(Some(index), kind, bar);
+            }
         }
         for staff in &track.staves {
             for (bar_index, bar) in staff.bars.iter().enumerate() {
                 for beat in bar.voices.iter().flat_map(|voice| voice.beats.iter()) {
-                    for kind in beat_kinds(beat) {
+                    for kind in beat_kinds(beat, profile) {
                         catalogue.note(Some(index), kind, bar_index);
                     }
                     for note in &beat.notes {

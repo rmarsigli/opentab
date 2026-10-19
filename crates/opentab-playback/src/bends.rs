@@ -3,8 +3,6 @@ use opentab_model::{Bend, BendPoint, Note};
 use crate::PlaybackError;
 use crate::exact::Exact;
 use crate::midi::{BEND_CENTRE, BEND_MAX, BEND_RANGE_SEMITONES};
-use crate::perform::Profile;
-use crate::unplayed::bend_below_pitch;
 
 const CENTS_PER_UNIT: i32 = 2;
 const UNITS_PER_SEMITONE: i32 = 50;
@@ -155,31 +153,13 @@ pub(crate) fn gp_drops(bend: Bend) -> bool {
     gp_contour(bend).is_none()
 }
 
-fn musical_contour(note: &Note, bend: Bend) -> Option<Shaped> {
-    if bend_below_pitch(note) {
-        return None;
-    }
-    let origin = units_of(bend.origin().value());
-    let middle = units_of(bend.middle_value());
-    let contour = if origin == units_of(bend.destination().value()) && middle != origin {
-        Contour::Peak
-    } else {
-        Contour::Line
-    };
-    Some(Shaped { bend, contour })
-}
-
 pub(crate) fn bend_events(
     note: &Note,
     start: Exact,
     length: Exact,
-    profile: Profile,
 ) -> Result<Vec<BendEvent>, PlaybackError> {
     let window = Window { start, length };
-    let bent = note.effects.bend.and_then(|bend| match profile {
-        Profile::Gp => gp_contour(bend),
-        Profile::Musical => musical_contour(note, bend),
-    });
+    let bent = note.effects.bend.and_then(gp_contour);
     let flat = BendPoint::default();
     let shaped = match (bent, note.effects.vibrato) {
         (Some(shaped), _) => Some(shaped),

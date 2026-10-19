@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
 use opentab_model::{
-    Beat, DrumKit, Fraction, Grace, InstrumentKind, Note, NoteKind, Score, Track, Voice,
-    gm_drum_kit,
+    Accent, Beat, DrumKit, Fraction, Grace, InstrumentKind, Note, NoteKind, Score, Slide, Track,
+    Voice, gm_drum_kit,
 };
 
-use crate::bends::bend_events;
+use crate::allocate::ChannelNeed;
+use crate::bends::{BendEvent, bend_events};
+use crate::controls::is_guitar;
+use crate::curves::{CENTS_PER_SEMITONE, Curve, MUSICAL_BEND_RANGE, Shape, Window};
 use crate::exact::Exact;
 use crate::harmonics;
 use crate::midi::{Channel, MidiMessage, NOTE_OFF_VELOCITY, velocity_of};
@@ -15,6 +18,17 @@ use crate::swing::Swing;
 use crate::{PlaybackError, PlaybackWarning, ScoreTime};
 
 const MAX_KEY: u16 = 127;
+const MIN_VELOCITY: i16 = 1;
+const MAX_VELOCITY: i16 = 127;
+pub(crate) const ACCENT_VELOCITY: i16 = 16;
+pub(crate) const HEAVY_ACCENT_VELOCITY: i16 = 28;
+pub(crate) const GHOST_VELOCITY: i16 = -28;
+pub(crate) const PALM_MUTE_VELOCITY: i16 = -12;
+pub(crate) const DEAD_VELOCITY: i16 = -8;
+const PALM_MUTE_LENGTH: (i128, i128) = (3, 4);
+const STACCATO_LENGTH: (i128, i128) = (1, 2);
+const DEAD_LENGTH: Fraction = Fraction::new_raw(1, 32);
+const LET_RING_LIMIT: Fraction = Fraction::new_raw(1, 1);
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Pending {
@@ -55,12 +69,60 @@ impl Stream {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(crate) struct StrandNote {
+    pub(crate) start: Exact,
+    pub(crate) end: Exact,
+    pub(crate) key: u8,
+    pub(crate) velocity: u8,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Strand {
+    pub(crate) track: usize,
+    pub(crate) staff: usize,
+    pub(crate) muted: bool,
+    pub(crate) bends: Vec<BendEvent>,
+    pub(crate) notes: Vec<StrandNote>,
+}
+
+impl Strand {
+    pub(crate) fn need(&self) -> ChannelNeed {
+        if !self.bends.is_empty() {
+            ChannelNeed::Exclusive { muted: self.muted }
+        } else if self.muted {
+            ChannelNeed::Muted
+        } else {
+            ChannelNeed::Shared
+        }
+    }
+
+    pub(crate) fn start(&self) -> Exact {
+        self.notes
+            .iter()
+            .map(|note| note.start)
+            .min()
+            .unwrap_or(Exact::ZERO)
+    }
+
+    pub(crate) fn end(&self) -> Exact {
+        self.notes
+            .iter()
+            .map(|note| note.end)
+            .max()
+            .unwrap_or(Exact::ZERO)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 struct Sounding {
     staff: usize,
     start: Exact,
     end: Exact,
     key: u8,
     velocity: u8,
+    strand: usize,
+    string: Option<u8>,
+    let_ring: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -76,6 +138,31 @@ struct OpenTie {
     until: Exact,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct StringKey {
+    staff: usize,
+    slot: u8,
+    string: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Link {
+    Hammer,
+    LegatoSlide,
+    ShiftSlide,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OpenLink {
+    link: Link,
+    sounding: usize,
+    strand: usize,
+    until: Exact,
+    origin: Window,
+    base_key: u8,
+    cents: i64,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Place {
     staff: usize,
@@ -89,10 +176,25 @@ struct Span {
     length: Exact,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Voicing {
+    key: u8,
+    velocity: u8,
+    staff: usize,
+    strand: usize,
+    string: Option<u8>,
+    let_ring: bool,
+}
+
 #[derive(Debug, Default)]
 struct GracePlan<'a> {
     before: Vec<&'a Beat>,
     on: Vec<&'a Beat>,
+}
+
+pub(crate) struct TrackOutput {
+    pub(crate) warnings: Vec<PlaybackWarning>,
+    pub(crate) strands: Vec<Strand>,
 }
 
 pub(crate) struct TrackWriter<'a> {
@@ -103,7 +205,9 @@ pub(crate) struct TrackWriter<'a> {
     profile: Profile,
     kit: Option<DrumKit>,
     soundings: Vec<Sounding>,
+    strands: Vec<Strand>,
     ties: BTreeMap<TieKey, OpenTie>,
+    links: BTreeMap<StringKey, OpenLink>,
     pub(crate) warnings: Vec<PlaybackWarning>,
 }
 
@@ -137,6 +241,77 @@ fn pieces(span: Span, value: Fraction) -> Result<Vec<Span>, PlaybackError> {
     Ok(out)
 }
 
+fn scaled(span: Span, ratio: (i128, i128)) -> Result<Span, PlaybackError> {
+    Ok(Span {
+        start: span.start,
+        length: span.length.mul(Exact::new(ratio.0, ratio.1)?)?,
+    })
+}
+
+pub(crate) fn musical_velocity(dynamic: u8, note: &Note) -> u8 {
+    let effects = &note.effects;
+    let mut offset: i16 = 0;
+    offset += match effects.accent {
+        Some(Accent::Normal) => ACCENT_VELOCITY,
+        Some(Accent::Heavy) => HEAVY_ACCENT_VELOCITY,
+        None => 0,
+    };
+    if effects.ghost {
+        offset += GHOST_VELOCITY;
+    }
+    if effects.palm_mute {
+        offset += PALM_MUTE_VELOCITY;
+    }
+    if effects.dead {
+        offset += DEAD_VELOCITY;
+    }
+    let value = (i16::from(dynamic) + offset).clamp(MIN_VELOCITY, MAX_VELOCITY);
+    u8::try_from(value).unwrap_or(1)
+}
+
+fn musical_span(span: Span, note: &Note) -> Result<Span, PlaybackError> {
+    let effects = &note.effects;
+    let mut sounding = span;
+    if effects.staccato {
+        sounding = scaled(sounding, STACCATO_LENGTH)?;
+    }
+    if effects.palm_mute {
+        sounding = scaled(sounding, PALM_MUTE_LENGTH)?;
+    }
+    if effects.dead {
+        sounding.length = sounding.length.min(Exact::of(DEAD_LENGTH));
+    }
+    Ok(sounding)
+}
+
+fn shape_of(note: &Note, beat: &Beat) -> Option<Shape> {
+    if let Some(bend) = note.effects.bend {
+        return Some(Shape {
+            origin: bend.origin(),
+            middle_start: bend.middle_start(),
+            middle_end: bend.middle_end(),
+            destination: bend.destination(),
+        });
+    }
+    beat.effects
+        .tremolo_bar
+        .filter(|bar| bar.moves())
+        .map(|bar| Shape {
+            origin: bar.origin(),
+            middle_start: bar.middle_start(),
+            middle_end: bar.middle_end(),
+            destination: bar.destination(),
+        })
+}
+
+fn link_of(note: &Note) -> Option<Link> {
+    match note.effects.slide {
+        Some(Slide::Legato) => Some(Link::LegatoSlide),
+        Some(Slide::Shift) => Some(Link::ShiftSlide),
+        _ => note.effects.hammer_on_pull_off.then_some(Link::Hammer),
+    }
+}
+
 impl<'a> TrackWriter<'a> {
     pub(crate) fn new(
         score: &'a Score,
@@ -153,7 +328,9 @@ impl<'a> TrackWriter<'a> {
             profile,
             kit: track.kit().cloned(),
             soundings: Vec::new(),
+            strands: Vec::new(),
             ties: BTreeMap::new(),
+            links: BTreeMap::new(),
             warnings: Vec::new(),
         }
     }
@@ -162,7 +339,7 @@ impl<'a> TrackWriter<'a> {
         mut self,
         order: &PlayOrder,
         stream: &mut Stream,
-    ) -> Result<Vec<PlaybackWarning>, PlaybackError> {
+    ) -> Result<TrackOutput, PlaybackError> {
         for (staff_index, staff) in self.track.staves.iter().enumerate() {
             for played in &order.bars {
                 let Some(bar) = staff.bars.get(played.source) else {
@@ -173,26 +350,84 @@ impl<'a> TrackWriter<'a> {
                 }
             }
         }
-        for sounding in &self.soundings {
-            let lane = self.lane(sounding.staff);
-            stream.push(
-                sounding.start,
-                lane,
-                MidiMessage::NoteOn {
-                    key: sounding.key,
-                    velocity: sounding.velocity,
-                },
-            );
-            stream.push(
-                sounding.end,
-                lane,
-                MidiMessage::NoteOff {
-                    key: sounding.key,
-                    velocity: NOTE_OFF_VELOCITY,
-                },
-            );
+        match self.profile {
+            Profile::Gp => {
+                for sounding in &self.soundings {
+                    let lane = self.lane(sounding.staff);
+                    stream.push(
+                        sounding.start,
+                        lane,
+                        MidiMessage::NoteOn {
+                            key: sounding.key,
+                            velocity: sounding.velocity,
+                        },
+                    );
+                    stream.push(
+                        sounding.end,
+                        lane,
+                        MidiMessage::NoteOff {
+                            key: sounding.key,
+                            velocity: NOTE_OFF_VELOCITY,
+                        },
+                    );
+                }
+                Ok(TrackOutput {
+                    warnings: self.warnings,
+                    strands: Vec::new(),
+                })
+            }
+            Profile::Musical => {
+                self.let_ring()?;
+                let mut strands = std::mem::take(&mut self.strands);
+                for sounding in &self.soundings {
+                    if let Some(strand) = strands.get_mut(sounding.strand) {
+                        strand.notes.push(StrandNote {
+                            start: sounding.start,
+                            end: sounding.end,
+                            key: sounding.key,
+                            velocity: sounding.velocity,
+                        });
+                    }
+                }
+                for strand in &mut strands {
+                    let end = strand.end();
+                    strand.bends.retain(|event| event.at < end);
+                }
+                strands.retain(|strand| !strand.notes.is_empty());
+                Ok(TrackOutput {
+                    warnings: self.warnings,
+                    strands,
+                })
+            }
         }
-        Ok(self.warnings)
+    }
+
+    fn let_ring(&mut self) -> Result<(), PlaybackError> {
+        let limit = Exact::of(LET_RING_LIMIT);
+        let mut onsets: BTreeMap<(usize, u8), Vec<Exact>> = BTreeMap::new();
+        for sounding in &self.soundings {
+            if let Some(string) = sounding.string {
+                onsets
+                    .entry((sounding.staff, string))
+                    .or_default()
+                    .push(sounding.start);
+            }
+        }
+        for list in onsets.values_mut() {
+            list.sort();
+        }
+        for sounding in &mut self.soundings {
+            let (true, Some(string)) = (sounding.let_ring, sounding.string) else {
+                continue;
+            };
+            let cap = sounding.end.add(limit)?;
+            let next = onsets
+                .get(&(sounding.staff, string))
+                .and_then(|list| list.iter().find(|at| **at > sounding.start).copied())
+                .map_or(cap, |next| next.min(cap));
+            sounding.end = sounding.end.max(next);
+        }
+        Ok(())
     }
 
     fn lane(&self, staff: usize) -> Lane {
@@ -321,21 +556,31 @@ impl<'a> TrackWriter<'a> {
         place: Place,
         stream: &mut Stream,
     ) -> Result<(), PlaybackError> {
+        match self.profile {
+            Profile::Gp => self.gp_beat(beat, span, place, stream),
+            Profile::Musical => self.musical_beat(beat, span, place),
+        }
+    }
+
+    fn gp_beat(
+        &mut self,
+        beat: &Beat,
+        span: Span,
+        place: Place,
+        stream: &mut Stream,
+    ) -> Result<(), PlaybackError> {
         let velocity = velocity_of(beat.effects.dynamic);
         for note in &beat.notes {
             let Some(key) = self.key_of(note, span.start)? else {
                 continue;
             };
             let sounding = if note.effects.staccato && note.effects.accent.is_none() {
-                Span {
-                    start: span.start,
-                    length: span.length.mul(Exact::new(1, 2)?)?,
-                }
+                scaled(span, STACCATO_LENGTH)?
             } else {
                 span
             };
             if self.track.instrument.kind == InstrumentKind::Fretted {
-                for event in bend_events(note, sounding.start, sounding.length, self.profile)? {
+                for event in bend_events(note, sounding.start, sounding.length)? {
                     stream.push(
                         event.at,
                         self.lane(place.staff),
@@ -343,73 +588,290 @@ impl<'a> TrackWriter<'a> {
                     );
                 }
             }
-            if let Some(auxiliary) = self.trill_key(note, span.start)? {
-                let speed = note
-                    .effects
-                    .trill
-                    .map(|trill| trill.speed.value().denominator())
-                    .unwrap_or(1);
-                for (index, piece) in pieces(sounding, Fraction::new(1, speed))?
-                    .into_iter()
-                    .enumerate()
-                {
-                    let key = if index % 2 == 0 { key } else { auxiliary };
-                    self.sound(piece, key, velocity, place.staff, None);
-                }
-            } else if let Some(tremolo) = beat.effects.tremolo_picking {
-                let value = Fraction::new(1, tremolo.value().denominator());
-                for piece in pieces(sounding, value)? {
-                    self.sound(piece, key, velocity, place.staff, None);
-                }
-            } else {
+            let voicing = Voicing {
+                key,
+                velocity,
+                staff: place.staff,
+                strand: 0,
+                string: None,
+                let_ring: false,
+            };
+            let auxiliary = self.trill_key(note, span.start)?;
+            if !self.pieces(note, beat, auxiliary, sounding, voicing)? {
                 let tie = place.ties.then_some((place, note, span));
-                self.sound(sounding, key, velocity, place.staff, tie);
+                self.sound(sounding, voicing, tie);
             }
         }
         Ok(())
     }
 
-    fn sound(
+    fn pieces(
         &mut self,
-        span: Span,
-        key: u8,
-        velocity: u8,
-        staff: usize,
-        tie: Option<(Place, &Note, Span)>,
-    ) {
+        note: &Note,
+        beat: &Beat,
+        auxiliary: Option<u8>,
+        sounding: Span,
+        voicing: Voicing,
+    ) -> Result<bool, PlaybackError> {
+        if let Some(auxiliary) = auxiliary {
+            let speed = note
+                .effects
+                .trill
+                .map(|trill| trill.speed.value().denominator())
+                .unwrap_or(1);
+            for (index, piece) in pieces(sounding, Fraction::new(1, speed))?
+                .into_iter()
+                .enumerate()
+            {
+                let key = if index % 2 == 0 {
+                    voicing.key
+                } else {
+                    auxiliary
+                };
+                self.sound(piece, Voicing { key, ..voicing }, None);
+            }
+            return Ok(true);
+        }
+        if let Some(tremolo) = beat.effects.tremolo_picking {
+            let value = Fraction::new(1, tremolo.value().denominator());
+            for piece in pieces(sounding, value)? {
+                self.sound(piece, voicing, None);
+            }
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn musical_beat(&mut self, beat: &Beat, span: Span, place: Place) -> Result<(), PlaybackError> {
+        let dynamic = velocity_of(beat.effects.dynamic);
+        let fretted = self.track.instrument.kind == InstrumentKind::Fretted;
+        let guitar = fretted && is_guitar(self.track.instrument.midi_program);
+        for note in &beat.notes {
+            let Some(key) = self.key_of(note, span.start)? else {
+                continue;
+            };
+            let sounding = musical_span(span, note)?;
+            let string = match note.kind {
+                NoteKind::Fretted { string, .. } => Some(string),
+                NoteKind::Percussion { .. } => None,
+            };
+            let string_key = string.map(|string| StringKey {
+                staff: place.staff,
+                slot: place.slot,
+                string,
+            });
+            let open = string_key
+                .and_then(|found| self.links.remove(&found))
+                .filter(|open| open.until == span.start);
+            let auxiliary = self.trill_key(note, span.start)?;
+            let simple = auxiliary.is_none() && beat.effects.tremolo_picking.is_none();
+            let tie = (place.ties && simple)
+                .then(|| self.tie_of(place, note, key, span.start))
+                .flatten();
+            let mut voicing = Voicing {
+                key,
+                velocity: musical_velocity(dynamic, note),
+                staff: place.staff,
+                strand: 0,
+                string,
+                let_ring: note.effects.let_ring,
+            };
+            let window = Window {
+                start: sounding.start,
+                end: sounding.start.add(sounding.length)?,
+            };
+            if let Some(open) = open
+                && open.link == Link::ShiftSlide
+                && fretted
+            {
+                let target = (i64::from(key) - i64::from(open.base_key)) * CENTS_PER_SEMITONE;
+                self.glide_into(open, target)?;
+            }
+            let joined = open.filter(|open| {
+                open.link != Link::ShiftSlide
+                    && fretted
+                    && simple
+                    && tie.is_none()
+                    && (i64::from(key) - i64::from(open.base_key)).abs()
+                        <= i64::from(MUSICAL_BEND_RANGE)
+            });
+            if let Some(open) = joined {
+                let cents = (i64::from(key) - i64::from(open.base_key)) * CENTS_PER_SEMITONE;
+                match open.link {
+                    Link::Hammer => {
+                        let mut curve = Curve::default();
+                        curve.point(span.start, cents);
+                        self.extend_strand(open.strand, curve);
+                    }
+                    Link::LegatoSlide | Link::ShiftSlide => self.glide_into(open, cents)?,
+                }
+                self.curves(open.strand, note, beat, window, cents)?;
+                if let Some(merged) = self.soundings.get_mut(open.sounding) {
+                    merged.end = merged.end.max(window.end);
+                    merged.let_ring |= note.effects.let_ring;
+                }
+                if let (Some(link), Some(found)) = (link_of(note), string_key) {
+                    self.links.insert(
+                        found,
+                        OpenLink {
+                            link,
+                            sounding: open.sounding,
+                            strand: open.strand,
+                            until: span.start.add(span.length)?,
+                            origin: window,
+                            base_key: open.base_key,
+                            cents,
+                        },
+                    );
+                }
+                continue;
+            }
+            let strand = match tie.and_then(|index| self.soundings.get(index)) {
+                Some(merged) => merged.strand,
+                None => {
+                    self.strands.push(Strand {
+                        track: self.index,
+                        staff: place.staff,
+                        muted: guitar && (note.effects.palm_mute || note.effects.dead),
+                        bends: Vec::new(),
+                        notes: Vec::new(),
+                    });
+                    self.strands.len() - 1
+                }
+            };
+            voicing.strand = strand;
+            if fretted {
+                self.curves(strand, note, beat, window, 0)?;
+            }
+            if !self.pieces(note, beat, auxiliary, sounding, voicing)? {
+                self.sound(sounding, voicing, place.ties.then_some((place, note, span)));
+            }
+            if let (Some(link), Some(found)) = (link_of(note), string_key)
+                && simple
+            {
+                let sounding_index = self.soundings.len().saturating_sub(1);
+                let sounding_index = tie.unwrap_or(sounding_index);
+                self.links.insert(
+                    found,
+                    OpenLink {
+                        link,
+                        sounding: sounding_index,
+                        strand,
+                        until: span.start.add(span.length)?,
+                        origin: window,
+                        base_key: key,
+                        cents: 0,
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn glide_into(&mut self, open: OpenLink, target: i64) -> Result<(), PlaybackError> {
+        let origin = Window {
+            start: open.origin.start,
+            end: open.until.max(open.origin.start),
+        };
+        let mut curve = Curve::default();
+        curve.towards(origin, open.cents, target)?;
+        self.extend_strand(open.strand, curve);
+        Ok(())
+    }
+
+    fn extend_strand(&mut self, strand: usize, curve: Curve) {
+        if let Some(found) = self.strands.get_mut(strand) {
+            found.bends.extend(curve.events);
+        }
+    }
+
+    fn curves(
+        &mut self,
+        strand: usize,
+        note: &Note,
+        beat: &Beat,
+        window: Window,
+        base: i64,
+    ) -> Result<(), PlaybackError> {
+        let mut curve = Curve::default();
+        let mut settled = window.start;
+        if let Some(shape) = shape_of(note, beat) {
+            settled = curve.shape(window, shape, base)?;
+        } else if let Some(slide) = note.effects.slide {
+            curve.slide(window, slide, base)?;
+        }
+        if let Some(vibrato) = note.effects.vibrato {
+            let tail = Window {
+                start: settled,
+                end: window.end,
+            };
+            let base = if settled == window.start {
+                if curve.events.is_empty() {
+                    curve.point(window.start, base);
+                }
+                base
+            } else {
+                shape_of(note, beat)
+                    .map_or(base, |shape| base + i64::from(shape.destination.value()))
+            };
+            curve.vibrato(tail, vibrato, base)?;
+        }
+        self.extend_strand(strand, curve);
+        Ok(())
+    }
+
+    fn tie_of(&self, place: Place, note: &Note, key: u8, start: Exact) -> Option<usize> {
+        if !note.effects.tie_destination {
+            return None;
+        }
+        let tie_key = TieKey {
+            staff: place.staff,
+            slot: place.slot,
+            key,
+        };
+        self.ties
+            .get(&tie_key)
+            .filter(|open| open.until == start)
+            .map(|open| open.sounding)
+    }
+
+    fn sound(&mut self, span: Span, voicing: Voicing, tie: Option<(Place, &Note, Span)>) {
         let Ok(end) = span.start.add(span.length) else {
             return;
         };
         if end <= span.start {
             return;
         }
+        let fresh = Sounding {
+            staff: voicing.staff,
+            start: span.start,
+            end,
+            key: voicing.key,
+            velocity: voicing.velocity,
+            strand: voicing.strand,
+            string: voicing.string,
+            let_ring: voicing.let_ring,
+        };
         let Some((place, note, written)) = tie else {
-            self.soundings.push(Sounding {
-                staff,
-                start: span.start,
-                end,
-                key,
-                velocity,
-            });
+            self.soundings.push(fresh);
             return;
         };
         let tie_key = TieKey {
             staff: place.staff,
             slot: place.slot,
-            key,
+            key: voicing.key,
         };
         let until = written.start.add(written.length).unwrap_or(end);
-        if note.effects.tie_destination
-            && let Some(open) = self.ties.get(&tie_key).copied()
-            && open.until == span.start
-            && let Some(merged) = self.soundings.get_mut(open.sounding)
+        if let Some(index) = self.tie_of(place, note, voicing.key, span.start)
+            && let Some(merged) = self.soundings.get_mut(index)
         {
             merged.end = end.max(merged.end);
+            merged.let_ring |= voicing.let_ring;
             if note.effects.tie_origin {
                 self.ties.insert(
                     tie_key,
                     OpenTie {
-                        sounding: open.sounding,
+                        sounding: index,
                         until,
                     },
                 );
@@ -418,13 +880,7 @@ impl<'a> TrackWriter<'a> {
             }
             return;
         }
-        self.soundings.push(Sounding {
-            staff,
-            start: span.start,
-            end,
-            key,
-            velocity,
-        });
+        self.soundings.push(fresh);
         if note.effects.tie_origin {
             self.ties.insert(
                 tie_key,

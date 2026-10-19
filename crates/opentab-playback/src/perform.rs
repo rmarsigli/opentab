@@ -1,7 +1,9 @@
 use opentab_model::Score;
 
 use crate::beats::{Click, beat_grid};
-use crate::channels::{gp_channels, pooled_channels};
+use crate::channels::{ChannelPool, gp_channels, pooled_channels};
+use crate::controls::{Timeline, timeline};
+use crate::emit::Musical;
 use crate::exact::Exact;
 use crate::midi::{
     BEND_RANGE_SEMITONES, Channel, ChannelSetup, ChannelState, ConductorEvent, ConductorKind,
@@ -15,6 +17,7 @@ use crate::unplayed::{UnplayedFeature, catalogue};
 use crate::{PlaybackError, PlaybackWarning, ScoreTime};
 
 const MICROS_PER_MINUTE: i128 = 60_000_000;
+const OPENING_MESSAGES: usize = 5;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum Profile {
@@ -169,6 +172,7 @@ fn conductor(
 fn setup(
     score: &Score,
     channels: &[Channel],
+    timelines: &[Timeline],
     layout: TrackLayout,
     stream: &mut Stream,
 ) -> Vec<TrackSetup> {
@@ -178,10 +182,14 @@ fn setup(
         .zip(channels)
         .enumerate()
         .map(|(index, (track, channel))| {
-            let state = ChannelState {
-                program: track.instrument.midi_program,
-                bend_range: BEND_RANGE_SEMITONES,
-                ..ChannelState::default()
+            let musical = timelines.get(index);
+            let state = match musical {
+                Some(timeline) => timeline.initial,
+                None => ChannelState {
+                    program: track.instrument.midi_program,
+                    bend_range: BEND_RANGE_SEMITONES,
+                    ..ChannelState::default()
+                },
             };
             let lanes = match layout {
                 TrackLayout::PerStaff => track.staves.len(),
@@ -193,21 +201,21 @@ fn setup(
                     staff,
                     channel: *channel,
                 };
-                stream.push(
-                    Exact::ZERO,
-                    lane,
-                    MidiMessage::Program {
-                        program: state.program,
-                    },
-                );
-                stream.push(
-                    Exact::ZERO,
-                    lane,
-                    MidiMessage::Rpn {
-                        parameter: PITCH_BEND_RANGE_RPN,
-                        value: state.bend_range,
-                    },
-                );
+                let messages: Vec<MidiMessage> = match musical {
+                    Some(_) => state.messages()[..OPENING_MESSAGES].to_vec(),
+                    None => vec![
+                        MidiMessage::Program {
+                            program: state.program,
+                        },
+                        MidiMessage::Rpn {
+                            parameter: PITCH_BEND_RANGE_RPN,
+                            value: state.bend_range,
+                        },
+                    ],
+                };
+                for message in messages {
+                    stream.push(Exact::ZERO, lane, message);
+                }
             }
             TrackSetup {
                 name: track.name.clone(),
@@ -231,20 +239,40 @@ pub fn perform(score: &Score, options: &PlaybackOptions) -> Result<Performance, 
         options.profile.jump_tempo(),
     )?;
     let mut warnings = Vec::new();
-    let channels = match options.profile {
-        Profile::Gp => gp_channels(&score.tracks),
+    let (channels, pool) = match options.profile {
+        Profile::Gp => (gp_channels(&score.tracks), ChannelPool::new()),
         Profile::Musical => pooled_channels(&score.tracks, &mut warnings),
     };
+    let timelines: Vec<Timeline> = match options.profile {
+        Profile::Gp => Vec::new(),
+        Profile::Musical => score
+            .tracks
+            .iter()
+            .map(|track| timeline(score, track, &order))
+            .collect::<Result<_, _>>()?,
+    };
     let mut stream = Stream::default();
-    let tracks = setup(
+    let mut tracks = setup(
         score,
         &channels,
+        &timelines,
         options.profile.track_layout(),
         &mut stream,
     );
+    let mut strands = Vec::new();
     for ((index, track), channel) in score.tracks.iter().enumerate().zip(&channels) {
         let writer = TrackWriter::new(score, index, track, *channel, options.profile);
-        warnings.extend(writer.write(&order, &mut stream)?);
+        let output = writer.write(&order, &mut stream)?;
+        warnings.extend(output.warnings);
+        strands.extend(output.strands);
+    }
+    if options.profile == Profile::Musical {
+        Musical {
+            shared: &channels,
+            timelines: &timelines,
+            pool,
+        }
+        .emit(strands, &mut stream, &mut warnings, &mut tracks)?;
     }
     let mut pending = stream.pending;
     pending.sort_by(|left, right| {

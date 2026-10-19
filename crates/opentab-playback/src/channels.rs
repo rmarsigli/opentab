@@ -71,9 +71,9 @@ pub(crate) fn gp_channels(tracks: &[Track]) -> Vec<Channel> {
 pub(crate) fn pooled_channels(
     tracks: &[Track],
     warnings: &mut Vec<PlaybackWarning>,
-) -> Vec<Channel> {
+) -> (Vec<Channel>, ChannelPool) {
     let mut pool = ChannelPool::new();
-    tracks
+    let channels = tracks
         .iter()
         .enumerate()
         .map(|(index, track)| match track.instrument.kind {
@@ -88,5 +88,6 @@ pub(crate) fn pooled_channels(
                     pool.fallback()
                 }),
         })
-        .collect()
+        .collect();
+    (channels, pool)
 }

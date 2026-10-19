@@ -5,6 +5,7 @@ mod floats;
 mod gp9;
 mod gp_oracle;
 mod gp_orders;
+mod musical;
 mod oracle_allowances;
 mod oracle_side;
 mod orders;
