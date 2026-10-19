@@ -18,6 +18,9 @@ const ITEM: &str = "<Item ";
 const ITEM_ID: &str = "id=\"";
 const DIAGRAM: &str = "<Diagram";
 const SYLLABLE_BREAKS: [char; 1] = ['-'];
+const UNMAPPED_WHAMMY: &str = "guard=\"tremolo-bar:none\"";
+const WHAMMY: &str = "<Whammy ";
+const WHAMMY_VALUES: [&str; 3] = ["originValue=\"", "middleValue=\"", "destinationValue=\""];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LyricLine {
@@ -130,6 +133,29 @@ pub fn diagram_ids(data: &str) -> HashSet<String> {
         .collect()
 }
 
+fn moves(value: &str) -> bool {
+    value
+        .trim()
+        .trim_start_matches(['-', '+'])
+        .chars()
+        .any(|character| character.is_ascii_digit() && character != '0')
+}
+
+pub fn holds_unmapped_whammy(data: &str) -> bool {
+    if !data.contains(UNMAPPED_WHAMMY) {
+        return false;
+    }
+    data.split(WHAMMY).skip(1).any(|rest| {
+        let tag = rest.split('>').next().unwrap_or_default();
+        WHAMMY_VALUES.iter().any(|name| {
+            tag.split(name)
+                .nth(1)
+                .and_then(|value| value.split('"').next())
+                .is_some_and(moves)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,6 +215,20 @@ mod tests {
         ));
         assert!(!holds_legato(
             "<Keep><Property name=\"origin=&quot;true&quot;\"/></Keep>"
+        ));
+    }
+
+    #[test]
+    fn only_a_moving_whammy_the_model_could_not_hold_counts() {
+        let kept = "<Keep parent=\"\" index=\"3\" guard=\"tremolo-bar:none\"><Whammy originValue=\"0\" middleValue=\"-50.25\" destinationValue=\"0\"/></Keep>";
+        assert!(holds_unmapped_whammy(kept));
+        assert!(!holds_unmapped_whammy(&kept.replace("-50.25", "-0.0")));
+        assert!(!holds_unmapped_whammy(&kept.replace(
+            "tremolo-bar:none",
+            "tremolo-bar:0 0;35 -100;35 -100;99 -200"
+        )));
+        assert!(!holds_unmapped_whammy(
+            "<Keep guard=\"tremolo-bar:none\"><Hairpin>Crescendo</Hairpin></Keep>"
         ));
     }
 

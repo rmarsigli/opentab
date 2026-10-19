@@ -459,6 +459,14 @@ fn whammy_and_trill_are_read_from_the_typed_effects_only() {
         "<Keep parent=\"\" index=\"3\"><Whammy originValue=\"0.3\" middleValue=\"-50\"/></Keep>",
     );
     assert!(names(&opaque, &both).is_empty());
+    let mut unmapped = score(2);
+    let beat = beat_id(&unmapped, 1, 0);
+    keep(
+        &mut unmapped,
+        beat,
+        "<Keep parent=\"\" index=\"3\" guard=\"tremolo-bar:none\"><Whammy originValue=\"0.3\" middleValue=\"-50\"/></Keep>",
+    );
+    assert_eq!(names(&unmapped, &both), vec!["whammy_bar"]);
     let mut trilled = score(2);
     trilled.tracks[0].staves[0].bars[1].voices[0].beats[0].notes[0]
         .effects

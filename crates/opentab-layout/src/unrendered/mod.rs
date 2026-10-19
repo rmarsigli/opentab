@@ -8,7 +8,7 @@ use opentab_model::{
 
 pub use payload::{
     LyricLine, chord_reference, diagram_ids, has_visible_text, holds_legato, holds_lyrics,
-    lyric_lines, syllables, visible_text,
+    holds_unmapped_whammy, lyric_lines, syllables, visible_text,
 };
 
 use crate::display::{Page, Primitive};
@@ -214,6 +214,7 @@ impl Walk<'_> {
                 self.add(marked(data, tag), feature);
             }
             self.add(holds_legato(data), Unrendered::LegatoSlurs);
+            self.add(holds_unmapped_whammy(data), Unrendered::WhammyBar);
         }
     }
 
