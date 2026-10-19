@@ -91,6 +91,11 @@ fn beat_effects() {
 }
 
 #[test]
+fn directions_coda_endings() {
+    check("directions-coda-endings", "", &default_options());
+}
+
+#[test]
 fn directions_coda_free() {
     check("directions-coda-free", "", &default_options());
 }
@@ -133,6 +138,11 @@ fn directions_endings() {
 #[test]
 fn directions_fine_ahead() {
     check("directions-fine-ahead", "", &default_options());
+}
+
+#[test]
+fn directions_fine_repeats() {
+    check("directions-fine-repeats", "", &default_options());
 }
 
 #[test]
@@ -253,5 +263,5 @@ fn every_committed_fixture_has_a_snapshot_test() {
         let test = format!("fn {}() {{", name.replace('-', "_"));
         assert!(source.contains(&test), "no snapshot test for {name}");
     }
-    assert_eq!(names.len(), 25);
+    assert_eq!(names.len(), 27);
 }

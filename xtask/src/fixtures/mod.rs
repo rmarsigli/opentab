@@ -50,7 +50,7 @@ pub struct Family {
 
 type Builder = fn() -> Result<Score, FixtureError>;
 
-const BUILDERS: [(&str, Builder); 25] = [
+const BUILDERS: [(&str, Builder); 27] = [
     ("metadata.gp", music::metadata),
     ("signatures.gp", music::signatures),
     ("repeats.gp", music::repeats),
@@ -76,7 +76,11 @@ const BUILDERS: [(&str, Builder); 25] = [
     ("directions-fine-ahead.gp", directions::fine_ahead),
     ("directions-dangling.gp", directions::dangling),
     ("directions-duplicates.gp", directions::duplicates),
+    ("directions-coda-endings.gp", directions::coda_endings),
+    ("directions-fine-repeats.gp", directions::fine_repeats),
 ];
+
+pub const PLAY_ORDERS: &str = include_str!("play-orders.json");
 
 pub fn families() -> Result<Vec<Family>, FixtureError> {
     let mut families = Vec::new();
@@ -125,13 +129,50 @@ mod tests {
     use super::{families, render, write_fixtures};
     use opentab_gp::read_gp;
     use opentab_model::diagnose;
+    use std::collections::BTreeMap;
     use std::path::Path;
 
-    const DIAGNOSED: [(&str, usize); 3] = [
+    const DIAGNOSED: [(&str, usize); 4] = [
         ("directions-dangling.gp", 3),
         ("directions-duplicates.gp", 2),
         ("directions-coda-free.gp", 1),
+        ("directions-coda-endings.gp", 1),
     ];
+    const DIRECTIONS_PREFIX: &str = "directions-";
+    const COMPETING_ORDERS: [(&str, usize); 1] = [("directions-duplicates.gp", 3)];
+
+    #[test]
+    fn every_directions_fixture_has_its_predicted_play_order() {
+        let orders: BTreeMap<String, Vec<Vec<usize>>> =
+            serde_json::from_str(super::PLAY_ORDERS).expect("play orders parse");
+        let families = families().expect("families");
+        let directed: Vec<&super::Family> = families
+            .iter()
+            .filter(|family| family.file.starts_with(DIRECTIONS_PREFIX))
+            .collect();
+        let named: Vec<&str> = directed.iter().map(|family| family.file).collect();
+        let listed: Vec<&str> = orders.keys().map(String::as_str).collect();
+        let mut sorted = named.clone();
+        sorted.sort_unstable();
+        assert_eq!(listed, sorted);
+        for family in directed {
+            let alternatives = &orders[family.file];
+            let expected = COMPETING_ORDERS
+                .iter()
+                .find(|(file, _)| *file == family.file)
+                .map_or(1, |(_, count)| *count);
+            assert_eq!(alternatives.len(), expected, "{}", family.file);
+            let bars = family.score.master_bars.len();
+            for order in alternatives {
+                assert_eq!(order.first(), Some(&0), "{}", family.file);
+                assert!(
+                    order.iter().all(|bar| *bar < bars),
+                    "{}: {order:?}",
+                    family.file
+                );
+            }
+        }
+    }
 
     #[test]
     fn rendering_twice_gives_identical_bytes() {

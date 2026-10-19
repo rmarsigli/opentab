@@ -22,7 +22,7 @@ const SEMITONES: i32 = 12;
 const DEFAULT_BPM: f64 = 120.0;
 const REPLACEMENT: char = '\u{FFFD}';
 const SHOWN_DIFF_LINES: usize = 40;
-const AWAITING_HARVEST: [&str; 13] = [
+const AWAITING_HARVEST: [&str; 15] = [
     "mixer.gp",
     "sound-change.gp",
     "sound-override.gp",
@@ -36,6 +36,8 @@ const AWAITING_HARVEST: [&str; 13] = [
     "directions-fine-ahead.gp",
     "directions-dangling.gp",
     "directions-duplicates.gp",
+    "directions-coda-endings.gp",
+    "directions-fine-repeats.gp",
 ];
 
 const GP_DEFAULT_PAYLOADS: [&str; 52] = [

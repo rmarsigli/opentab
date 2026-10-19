@@ -227,3 +227,37 @@ pub fn duplicates() -> Result<Score, FixtureError> {
         ],
     )
 }
+
+pub fn coda_endings() -> Result<Score, FixtureError> {
+    directed(
+        "To Coda in a repeat with endings",
+        6,
+        &[
+            opens(targets(0, &[DirectionTarget::DoubleCoda])),
+            jumps(0, &[DirectionJump::DaDoubleCoda]),
+            jumps(1, &[DirectionJump::DaCoda]),
+            ending(closes(jumps(2, &[DirectionJump::DaCapoAlCoda]), 2), 0b01),
+            ending(at(3), 0b10),
+            targets(4, &[DirectionTarget::Coda]),
+        ],
+    )
+}
+
+pub fn fine_repeats() -> Result<Score, FixtureError> {
+    directed(
+        "Fine and al Fine in a repeat",
+        5,
+        &[
+            targets(1, &[DirectionTarget::Segno]),
+            opens(at(2)),
+            closes(
+                Mark {
+                    targets: &[DirectionTarget::Fine],
+                    jumps: &[DirectionJump::DaSegnoAlFine],
+                    ..at(3)
+                },
+                2,
+            ),
+        ],
+    )
+}
