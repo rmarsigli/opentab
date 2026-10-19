@@ -5,7 +5,11 @@ const LINTS: [&str; 2] = [
     "#[deny(clippy::float_arithmetic)]\nmod builtin;",
     "#[deny(clippy::float_arithmetic)]\nmod bus;",
 ];
-const MIN_SOURCES: usize = 6;
+const SF2_LINTS: [&str; 2] = [
+    "#[deny(clippy::float_arithmetic)]\nmod map;",
+    "#[deny(clippy::float_arithmetic)]\nmod riff;",
+];
+const MIN_SOURCES: usize = 8;
 
 fn sources(dir: &Path, found: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).expect("source directory") {
@@ -37,6 +41,8 @@ fn the_built_in_backend_and_bus_hold_no_float_and_no_outside_noise() {
     let mut found = Vec::new();
     sources(&root.join("builtin"), &mut found);
     found.push(root.join("bus.rs"));
+    found.push(root.join("sf2/map.rs"));
+    found.push(root.join("sf2/riff.rs"));
     assert!(found.len() >= MIN_SOURCES, "{found:?}");
     for path in &found {
         let text = std::fs::read_to_string(path).expect("source");
@@ -48,6 +54,10 @@ fn the_built_in_backend_and_bus_hold_no_float_and_no_outside_noise() {
     let lib = std::fs::read_to_string(root.join("lib.rs")).expect("lib");
     for lint in LINTS {
         assert!(lib.contains(lint), "{lint}");
+    }
+    let sf2 = std::fs::read_to_string(root.join("sf2/mod.rs")).expect("sf2");
+    for lint in SF2_LINTS {
+        assert!(sf2.contains(lint), "{lint}");
     }
 }
 

@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-use opentab_audio::{Bank, BuiltInBank, RenderedAudio, SampleRate, Synth, encode_wav, render_all};
+use opentab_audio::{
+    Bank, BuiltInBank, RenderedAudio, SampleRate, Sf2Bank, Synth, encode_wav, render_all,
+};
 use opentab_gp::read_gp;
 use opentab_model::Score;
 use opentab_playback::{Performance, PlaybackOptions, Profile, perform};
@@ -59,4 +62,25 @@ pub fn profile_name(profile: Profile) -> &'static str {
         Profile::Gp => "gp",
         Profile::Musical => "musical",
     }
+}
+
+pub fn tiny_bytes() -> &'static [u8] {
+    static BYTES: OnceLock<Vec<u8>> = OnceLock::new();
+    BYTES.get_or_init(opentab_testkit::banks::tiny_sf2)
+}
+
+pub fn tiny_bank() -> Sf2Bank {
+    Sf2Bank::load(tiny_bytes()).expect("the tiny bank loads")
+}
+
+pub fn bank_voices(
+    bank: &dyn Bank,
+    performance: &Performance,
+    rate: SampleRate,
+) -> Vec<Box<dyn Synth>> {
+    performance
+        .tracks
+        .iter()
+        .map(|_| bank.instantiate(rate))
+        .collect()
 }

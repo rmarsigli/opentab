@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use opentab_audio::{SampleRate, frame_at, render_frames};
+use opentab_audio::{Bank, BuiltInBank, SampleRate, frame_at, render_frames};
 use opentab_gp::read_gp;
 use opentab_playback::Speed;
 
-use crate::support::{PROFILES, built_in_voices, performance, profile_name};
+use crate::support::{PROFILES, bank_voices, performance, profile_name, tiny_bank};
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
@@ -24,6 +24,17 @@ fn corpus() -> Option<Vec<PathBuf>> {
 
 #[test]
 fn every_corpus_example_renders_its_opening_bars_in_both_profiles() {
+    render_corpus(&BuiltInBank);
+}
+
+#[test]
+fn every_corpus_example_renders_its_opening_bars_with_the_tiny_sf2() {
+    let bank = tiny_bank();
+    render_corpus(&bank);
+    assert!(bank.faults().is_empty(), "{:?}", bank.faults());
+}
+
+fn render_corpus(bank: &dyn Bank) {
     let Some(paths) = corpus() else {
         return;
     };
@@ -43,7 +54,7 @@ fn every_corpus_example_renders_its_opening_bars_in_both_profiles() {
                 + rate.frames_of_millis(TAIL_MS);
             let audio = render_frames(
                 &performance,
-                built_in_voices(&performance, rate),
+                bank_voices(bank, &performance, rate),
                 rate,
                 frames,
             )
@@ -62,7 +73,8 @@ fn every_corpus_example_renders_its_opening_bars_in_both_profiles() {
                 profile_name(profile)
             );
             println!(
-                "{} {} tracks {} frames {} peak {peak}",
+                "{:?} {} {} tracks {} frames {} peak {peak}",
+                bank.format(),
                 path.file_name().expect("name").to_string_lossy(),
                 profile_name(profile),
                 performance.tracks.len(),
