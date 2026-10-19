@@ -103,10 +103,16 @@ struct KeyOnChannel {
 }
 
 fn meta(kind: u8, data: &[u8]) -> Vec<u8> {
-    let length = u32::try_from(data.len()).unwrap_or(MAX_DELTA);
+    let length = u32::try_from(data.len())
+        .unwrap_or(MAX_DELTA)
+        .min(MAX_DELTA);
+    let kept = usize::try_from(length)
+        .ok()
+        .and_then(|count| data.get(..count))
+        .unwrap_or_default();
     let mut bytes = vec![META, kind];
-    bytes.extend(variable_length(length.min(MAX_DELTA)));
-    bytes.extend(data);
+    bytes.extend(variable_length(length));
+    bytes.extend(kept);
     bytes
 }
 
@@ -325,7 +331,7 @@ pub fn export_midi(score: &Score, profile: Profile) -> Result<Vec<u8>, PlaybackE
 mod tests {
     use opentab_model::Fraction;
 
-    use super::{Ppq, to_ticks, variable_length};
+    use super::{MAX_DELTA, Ppq, delta, meta, to_ticks, variable_length};
     use crate::ScoreTime;
 
     #[test]
@@ -344,6 +350,32 @@ mod tests {
         for (value, bytes) in cases {
             assert_eq!(variable_length(value), bytes.to_vec(), "{value:#x}");
         }
+    }
+
+    #[test]
+    fn a_delta_beyond_four_bytes_is_split_by_empty_text_events() {
+        let limit = u64::from(MAX_DELTA);
+        let mut fits = Vec::new();
+        delta(&mut fits, limit);
+        assert_eq!(fits, vec![0xff, 0xff, 0xff, 0x7f]);
+        let mut split = Vec::new();
+        delta(&mut split, 2 * limit + 5);
+        assert_eq!(
+            split,
+            vec![
+                0xff, 0xff, 0xff, 0x7f, 0xff, 0x01, 0x00, 0xff, 0xff, 0xff, 0x7f, 0xff, 0x01, 0x00,
+                0x05
+            ]
+        );
+    }
+
+    #[test]
+    fn a_meta_event_states_the_length_of_the_data_it_holds() {
+        assert_eq!(
+            meta(0x03, b"Lead"),
+            vec![0xff, 0x03, 0x04, b'L', b'e', b'a', b'd']
+        );
+        assert_eq!(meta(0x2f, &[]), vec![0xff, 0x2f, 0x00]);
     }
 
     #[test]
