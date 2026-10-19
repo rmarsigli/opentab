@@ -96,6 +96,37 @@
       ]
     },
     {
+      "fixture": "ghost-accent.gp",
+      "sha256": "c24639de9ba87e1b0505c7109328c11ea42581f051379e676262f0f1fd36eda2",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "75ee9fa648a9103adbe8f4864dc8c7a203f1e990ce438a10685d90e9949912fd",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "16ee6c997e15d4ee210f0d3ba87409cd45225706d7fe9fdea751c81d540f0a8a",
+          "byte_identical": true
+        },
+        {
+          "path": "png/ghost-accent#1.png",
+          "sha256": "657402850969cf0bb1b199a3bb69d8bf85555ae11f302e23dc3cbf182d1b9f3a",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "7fbc89f4f12e031d0a28aee65374a8c931001f8ff1e3c3ec5e14c81391b41907",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
       "fixture": "metadata.gp",
       "sha256": "a3404a61ca6ca91160d98b40250c9ed0847e5594f4cd7c9a08f240aca7c254f4",
       "outputs": [

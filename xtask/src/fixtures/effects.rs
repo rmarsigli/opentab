@@ -547,3 +547,96 @@ pub fn note_effects() -> Result<Score, FixtureError> {
     sketch.fill(track, 12, vec![voice(0, quarter_notes(pairs)?)])?;
     Ok(sketch.finish())
 }
+
+fn marked(ghost: bool, accent: Option<Accent>, staccato: bool) -> NoteEffects {
+    NoteEffects {
+        ghost,
+        accent,
+        staccato,
+        ..NoteEffects::default()
+    }
+}
+
+fn dynamic_beats(
+    dynamic: Dynamic,
+    notes: Vec<NoteSketch>,
+) -> Result<Vec<BeatSketch>, FixtureError> {
+    let quarter = duration(NoteValue::Quarter)?;
+    Ok(notes
+        .into_iter()
+        .map(|note| {
+            with_effects(
+                quarter,
+                vec![note],
+                BeatEffects {
+                    dynamic,
+                    ..BeatEffects::default()
+                },
+            )
+        })
+        .collect())
+}
+
+fn accent_row() -> Vec<NoteSketch> {
+    vec![
+        fretted(2, 5),
+        on(2, 5, marked(true, None, false)),
+        on(2, 5, marked(false, Some(Accent::Normal), false)),
+        on(2, 5, marked(false, Some(Accent::Heavy), false)),
+    ]
+}
+
+pub fn ghost_accent() -> Result<Score, FixtureError> {
+    let mut sketch = Sketch::new("Ghost notes and accents");
+    sketch.master_bars(7, 4, 4)?;
+    let track = sketch.track(TrackSetup::guitar("Guitar", "Gtr"))?;
+    let rows = [
+        (Dynamic::Mf, accent_row()),
+        (
+            Dynamic::Mf,
+            vec![
+                on(2, 5, marked(true, Some(Accent::Normal), false)),
+                on(2, 5, marked(true, Some(Accent::Heavy), false)),
+                on(2, 5, marked(false, Some(Accent::Normal), true)),
+                on(2, 5, marked(true, None, true)),
+            ],
+        ),
+        (Dynamic::Pp, accent_row()),
+        (Dynamic::Ff, accent_row()),
+        (Dynamic::Ppp, accent_row()),
+        (Dynamic::Fff, accent_row()),
+    ];
+    for (index, (dynamic, notes)) in rows.into_iter().enumerate() {
+        sketch.fill(track, index, vec![voice(0, dynamic_beats(dynamic, notes)?)])?;
+    }
+    let quarter = duration(NoteValue::Quarter)?;
+    sketch.fill(
+        track,
+        6,
+        vec![voice(
+            0,
+            vec![
+                beat(
+                    quarter,
+                    vec![on(2, 5, marked(true, None, false)), fretted(1, 5)],
+                ),
+                beat(
+                    quarter,
+                    vec![
+                        on(2, 5, marked(false, Some(Accent::Normal), false)),
+                        fretted(1, 5),
+                    ],
+                ),
+                beat(
+                    quarter,
+                    vec![
+                        on(2, 5, marked(false, Some(Accent::Heavy), false)),
+                        on(1, 5, marked(true, None, false)),
+                    ],
+                ),
+                rest(quarter),
+            ],
+        )],
+    )?;
+    Ok(sketch.finish())
+}

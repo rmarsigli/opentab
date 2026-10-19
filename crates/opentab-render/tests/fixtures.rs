@@ -113,6 +113,11 @@ fn from_scratch() {
 }
 
 #[test]
+fn ghost_accent() {
+    check("ghost-accent", "", &default_options());
+}
+
+#[test]
 fn metadata() {
     check("metadata", "", &default_options());
 }
@@ -183,5 +188,5 @@ fn every_committed_fixture_has_a_snapshot_test() {
         let test = format!("fn {}() {{", name.replace('-', "_"));
         assert!(source.contains(&test), "no snapshot test for {name}");
     }
-    assert_eq!(names.len(), 11);
+    assert_eq!(names.len(), 12);
 }

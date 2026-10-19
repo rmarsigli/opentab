@@ -48,7 +48,7 @@ pub struct Family {
 
 type Builder = fn() -> Result<Score, FixtureError>;
 
-const BUILDERS: [(&str, Builder); 11] = [
+const BUILDERS: [(&str, Builder); 12] = [
     ("metadata.gp", music::metadata),
     ("signatures.gp", music::signatures),
     ("repeats.gp", music::repeats),
@@ -57,6 +57,7 @@ const BUILDERS: [(&str, Builder); 11] = [
     ("durations.gp", music::durations),
     ("beat-effects.gp", effects::beat_effects),
     ("note-effects.gp", effects::note_effects),
+    ("ghost-accent.gp", effects::ghost_accent),
     ("multi-voice.gp", music::multi_voice),
     ("multi-track.gp", music::multi_track),
     ("from-scratch.gp", music::from_scratch),

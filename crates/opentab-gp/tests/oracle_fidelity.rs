@@ -15,6 +15,9 @@ const LATER_STAFF_TUNING: &str = "Properties/Property@Tuning";
 const RESPELLED_PITCH: &str = "pitch:Properties/Property@TransposedPitch";
 const RESPELLED_PITCHES: usize = 3;
 const LATER_STAFF_TUNINGS: usize = 1;
+const GHOST_ACCENT: &str = "ghost-accent.gp";
+const GHOSTS_DROPPED_WITH_ACCENTS: usize = 3;
+const GHOST_NORMALISATION: &str = "gp_drops_ghost_on_accented_notes";
 const SEMITONES: i32 = 12;
 const DEFAULT_BPM: f64 = 120.0;
 const REPLACEMENT: char = '\u{FFFD}';
@@ -93,7 +96,7 @@ struct Normalisation {
     apply: Normalise,
 }
 
-const NORMALISATIONS: [Normalisation; 8] = [
+const NORMALISATIONS: [Normalisation; 9] = [
     Normalisation {
         name: "gp_writes_its_own_defaults",
         apply: gp_writes_its_own_defaults,
@@ -121,6 +124,10 @@ const NORMALISATIONS: [Normalisation; 8] = [
     Normalisation {
         name: "gp_drops_let_ring_on_staccato_notes",
         apply: gp_drops_let_ring_on_staccato_notes,
+    },
+    Normalisation {
+        name: GHOST_NORMALISATION,
+        apply: gp_drops_ghost_on_accented_notes,
     },
     Normalisation {
         name: "element_ids_follow_reading_order",
@@ -387,6 +394,41 @@ fn gp_drops_let_ring_on_staccato_notes(fixture: &mut Score, _golden: &mut Score)
                     }
                 }
             }
+        }
+    }
+}
+
+fn notes_mut(score: &mut Score) -> impl Iterator<Item = &mut Note> {
+    score
+        .tracks
+        .iter_mut()
+        .flat_map(|track| track.staves.iter_mut())
+        .flat_map(|staff| staff.bars.iter_mut())
+        .flat_map(|bar| bar.voices.iter_mut())
+        .flat_map(|voice| voice.beats.iter_mut())
+        .flat_map(|beat| beat.notes.iter_mut())
+}
+
+fn notes_of(score: &Score) -> Vec<&Note> {
+    score
+        .tracks
+        .iter()
+        .flat_map(|track| track.staves.iter())
+        .flat_map(|staff| staff.bars.iter())
+        .flat_map(|bar| bar.voices.iter())
+        .flat_map(|voice| voice.beats.iter())
+        .flat_map(|beat| beat.notes.iter())
+        .collect()
+}
+
+fn accented_ghost(note: &Note) -> bool {
+    note.effects.ghost && (note.effects.accent.is_some() || note.effects.staccato)
+}
+
+fn gp_drops_ghost_on_accented_notes(fixture: &mut Score, _golden: &mut Score) {
+    for note in notes_mut(fixture) {
+        if accented_ghost(note) {
+            note.effects.ghost = false;
         }
     }
 }
@@ -712,4 +754,38 @@ fn payload_kinds_name_their_parent_guard_and_element() {
         bpm: tempo,
         unit: TempoUnit::Quarter,
     }));
+}
+
+#[test]
+fn guitar_pro_drops_the_ghost_flag_only_on_accented_notes() {
+    let pair = pairs()
+        .into_iter()
+        .find(|pair| pair.name == GHOST_ACCENT)
+        .expect("the ghost-accent fixture");
+    let (fixture, golden) = normalised(&pair, Some(GHOST_NORMALISATION));
+    let ours = notes_of(&fixture);
+    let theirs = notes_of(&golden);
+    assert_eq!(ours.len(), theirs.len());
+    let changed: Vec<(&&Note, &&Note)> = ours
+        .iter()
+        .zip(&theirs)
+        .filter(|(mine, gp)| mine.effects != gp.effects)
+        .collect();
+    assert_eq!(changed.len(), GHOSTS_DROPPED_WITH_ACCENTS, "{changed:?}");
+    for (mine, gp) in changed {
+        assert!(accented_ghost(mine), "{mine:?}");
+        assert!(!gp.effects.ghost, "{gp:?}");
+        let mut expected = mine.effects.clone();
+        expected.ghost = false;
+        assert_eq!(expected, gp.effects);
+    }
+    let plain_ghosts = ours
+        .iter()
+        .filter(|note| note.effects.ghost && !accented_ghost(note))
+        .count();
+    assert!(plain_ghosts > 0);
+    assert_eq!(
+        plain_ghosts,
+        theirs.iter().filter(|note| note.effects.ghost).count()
+    );
 }
