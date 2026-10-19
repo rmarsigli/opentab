@@ -8,9 +8,10 @@ const PCM_FORMAT: u16 = 1;
 const FORMAT_CHUNK_BYTES: u32 = 16;
 const RIFF_EXTRA_BYTES: u32 = 36;
 const PCM_SCALE: f32 = 32_768.0;
+const ROUNDING: f32 = 0.5;
 
 pub fn pcm16(sample: f32) -> i16 {
-    let scaled = sample * PCM_SCALE;
+    let scaled = sample * PCM_SCALE + ROUNDING;
     let truncated = scaled as i32;
     let floored = if (truncated as f32) > scaled {
         truncated.saturating_sub(1)

@@ -1,6 +1,7 @@
 use opentab_audio::{RenderedAudio, SampleRate, WAV_HEADER_BYTES, encode_wav, pcm16};
 
 const LSB: f32 = 1.0 / 8_388_608.0;
+const BUS_LSB: f32 = 1.0 / 1_048_576.0;
 
 #[test]
 fn pcm16_floors_and_saturates_deterministically() {
@@ -15,23 +16,29 @@ fn pcm16_floors_and_saturates_deterministically() {
     assert_eq!(pcm16(f32::NEG_INFINITY), i16::MIN);
     assert_eq!(pcm16(f32::NAN), 0);
     assert_eq!(pcm16(LSB), 0);
-    assert_eq!(pcm16(-LSB), -1);
+    assert_eq!(pcm16(-LSB), 0);
+    assert_eq!(pcm16(0.49 / 32_768.0), 0);
+    assert_eq!(pcm16(0.5 / 32_768.0), 1);
+    assert_eq!(pcm16(-0.5 / 32_768.0), 0);
+    assert_eq!(pcm16(-0.51 / 32_768.0), -1);
     assert_eq!(pcm16(1.0 / 32_768.0), 1);
     assert_eq!(pcm16(-1.0 / 32_768.0), -1);
     for sample in [
-        -8_388_608i32,
-        -8_388_353,
-        -257,
-        -256,
+        -1_048_576i32,
+        -1_048_561,
+        -33,
+        -32,
+        -17,
+        -16,
         -1,
         0,
         1,
-        255,
-        256,
-        8_388_607,
+        15,
+        16,
+        1_048_575,
     ] {
-        let expected = i16::try_from(sample >> 8).expect("fits");
-        assert_eq!(pcm16(sample as f32 * LSB), expected, "{sample}");
+        let expected = i16::try_from(((sample + 16) >> 5).min(32_767)).expect("fits");
+        assert_eq!(pcm16(sample as f32 * BUS_LSB), expected, "{sample}");
     }
 }
 

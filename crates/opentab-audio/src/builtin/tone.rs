@@ -1,74 +1,12 @@
 use super::dsp::{Q16, Q30, UNITY_Q30, decay_q30, frames_of, sine};
 use super::pitch::{increment, period_q16};
+use super::voicing::ToneFamily;
 
 const SILENT_Q30: i64 = UNITY_Q30 >> 12;
 const SINE_TO_Q23: u32 = 8;
 const PHASE_PER_RADIAN: i64 = 683_565_276;
 const SINE_Q15: u32 = 15;
-const PROGRAMS_PER_FAMILY: u8 = 8;
 const PERCENT: i64 = 100;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ToneFamily {
-    ratio_numerator: u32,
-    ratio_denominator: u32,
-    index_low_q16: i64,
-    index_high_q16: i64,
-    attack_ms: u32,
-    decay_ms: u32,
-    sustain_percent: i64,
-    pub(crate) release_ms: u32,
-    level_q16: i64,
-}
-
-const fn family(
-    (ratio_numerator, ratio_denominator): (u32, u32),
-    (index_low_q16, index_high_q16): (i64, i64),
-    attack_ms: u32,
-    decay_ms: u32,
-    sustain_percent: i64,
-    release_ms: u32,
-) -> ToneFamily {
-    ToneFamily {
-        ratio_numerator,
-        ratio_denominator,
-        index_low_q16,
-        index_high_q16,
-        attack_ms,
-        decay_ms,
-        sustain_percent,
-        release_ms,
-        level_q16: 22_000,
-    }
-}
-
-const FAMILIES: [ToneFamily; 16] = [
-    family((1, 1), (20_000, 131_072), 3, 350, 0, 150),
-    family((7, 2), (32_768, 196_608), 1, 250, 0, 150),
-    family((1, 1), (65_536, 65_536), 8, 100, 90, 60),
-    family((1, 1), (20_000, 131_072), 3, 350, 0, 150),
-    family((1, 1), (20_000, 131_072), 3, 300, 0, 120),
-    family((1, 1), (65_536, 104_858), 90, 400, 80, 200),
-    family((1, 1), (65_536, 104_858), 120, 400, 80, 200),
-    family((1, 1), (52_429, 196_608), 35, 200, 75, 100),
-    family((2, 1), (78_643, 131_072), 30, 200, 80, 90),
-    family((1, 1), (13_107, 39_322), 40, 200, 85, 90),
-    family((1, 1), (163_840, 262_144), 4, 300, 85, 80),
-    family((1, 2), (65_536, 98_304), 250, 500, 90, 200),
-    family((3, 2), (65_536, 163_840), 50, 300, 70, 200),
-    family((1, 1), (65_536, 163_840), 20, 300, 70, 100),
-    family((7, 5), (65_536, 262_144), 1, 120, 0, 100),
-    family((11, 3), (131_072, 393_216), 10, 300, 50, 150),
-];
-
-pub(crate) const LONGEST_TONE_RELEASE_MS: u32 = 200;
-
-pub(crate) fn tone_family(program: u8) -> ToneFamily {
-    FAMILIES
-        .get(usize::from(program / PROGRAMS_PER_FAMILY))
-        .copied()
-        .unwrap_or(FAMILIES[0])
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Tone {

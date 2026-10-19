@@ -1,6 +1,9 @@
 #[deny(clippy::float_arithmetic)]
 mod builtin;
 
+#[deny(clippy::float_arithmetic)]
+mod bus;
+
 mod bank;
 mod error;
 mod gm;
@@ -11,7 +14,8 @@ mod synth;
 mod wav;
 
 pub use bank::{BuiltInBank, BuiltInSynth};
-pub use builtin::{DRUM_DECAY_MS, MELODIC_RELEASE_MS};
+pub use builtin::{DRUM_DECAY_MS, MELODIC_RELEASE_MS, OUTPUT_FRACTION_BITS, SoundingVoice};
+pub use bus::{BUS_FRACTION_BITS, Limiter, LimiterSettings};
 pub use error::AudioError;
 pub use rate::SampleRate;
 pub use render::{

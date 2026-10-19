@@ -18,7 +18,8 @@ const LOUD: u8 = 110;
 const SETTLE: usize = 4_800;
 const WINDOW: usize = 4_800;
 const PROPERTY_SEED: u64 = 0x0074_3112;
-const FULL_SCALE: f32 = 8_388_608.0;
+const PITCH_TOLERANCE_CENTS: f64 = 5.0;
+const OUTPUT_UNITY: f32 = 1_048_576.0;
 
 fn channel(number: u8) -> Channel {
     Channel::new(number).expect("channel")
@@ -61,20 +62,37 @@ fn energy(samples: &[f32]) -> f64 {
     samples.iter().map(|sample| f64::from(sample.abs())).sum()
 }
 
-fn best_lag(samples: &[f32], low: usize, high: usize) -> usize {
-    let window = &samples[..samples.len() - high];
-    (low..=high)
-        .max_by(|left, right| {
-            let score = |lag: usize| -> f64 {
-                window
-                    .iter()
-                    .zip(&samples[lag..])
-                    .map(|(a, b)| f64::from(*a) * f64::from(*b))
-                    .sum()
-            };
-            score(*left).total_cmp(&score(*right))
-        })
-        .expect("lag")
+fn correlation(samples: &[f32], lag: usize, span: usize) -> f64 {
+    samples[..span]
+        .iter()
+        .zip(&samples[lag..])
+        .map(|(a, b)| f64::from(*a) * f64::from(*b))
+        .sum()
+}
+
+fn fine_period(samples: &[f32], low: usize, high: usize) -> f64 {
+    let span = samples.len() - high - 1;
+    let scores: Vec<f64> = (low - 1..=high + 1)
+        .map(|lag| correlation(samples, lag, span))
+        .collect();
+    let best = (1..scores.len() - 1)
+        .max_by(|left, right| scores[*left].total_cmp(&scores[*right]))
+        .expect("lag");
+    let (before, at, after) = (scores[best - 1], scores[best], scores[best + 1]);
+    let shift = 0.5 * (before - after) / (before - 2.0 * at + after);
+    (low - 1 + best) as f64 + shift
+}
+
+fn cents_off(measured: f64, expected: f64) -> f64 {
+    1200.0 * (expected / measured).log2()
+}
+
+fn assert_period(samples: &[f32], low: usize, high: usize, expected: f64) {
+    let measured = fine_period(samples, low, high);
+    assert!(
+        cents_off(measured, expected).abs() <= PITCH_TOLERANCE_CENTS,
+        "{measured} vs {expected}"
+    );
 }
 
 fn plucked(rate: SampleRate, key: u8) -> Vec<f32> {
@@ -87,9 +105,10 @@ fn plucked(rate: SampleRate, key: u8) -> Vec<f32> {
 
 #[test]
 fn a_plucked_string_sounds_at_its_key() {
-    assert_eq!(best_lag(&plucked(SampleRate::STUDIO, A4), 60, 200), 109);
-    assert_eq!(best_lag(&plucked(SampleRate::CD, A4), 60, 200), 100);
-    assert_eq!(best_lag(&plucked(SampleRate::STUDIO, A2), 300, 600), 436);
+    assert_period(&plucked(SampleRate::STUDIO, A4), 60, 200, 48_000.0 / 440.0);
+    assert_period(&plucked(SampleRate::CD, A4), 60, 200, 44_100.0 / 440.0);
+    assert_period(&plucked(SampleRate::STUDIO, A2), 300, 600, 48_000.0 / 110.0);
+    assert_period(&plucked(SampleRate::STUDIO, 93), 20, 60, 48_000.0 / 1_760.0);
 }
 
 #[test]
@@ -108,7 +127,8 @@ fn pitch_bend_moves_the_delay_line_read_by_the_rpn_range() {
     render(&mut synth, SETTLE);
     send(&mut synth, 0, MidiMessage::PitchBend { value: BEND_MAX });
     render(&mut synth, SETTLE);
-    assert_eq!(best_lag(&render(&mut synth, WINDOW).left, 60, 200), 97);
+    let up = 48_000.0 / (440.0 * 2f64.powf(199.0 / 1_200.0));
+    assert_period(&render(&mut synth, WINDOW).left, 60, 200, up);
     send(
         &mut synth,
         0,
@@ -119,7 +139,7 @@ fn pitch_bend_moves_the_delay_line_read_by_the_rpn_range() {
     );
     send(&mut synth, 0, MidiMessage::PitchBend { value: 0 });
     render(&mut synth, SETTLE);
-    assert_eq!(best_lag(&render(&mut synth, WINDOW).left, 150, 300), 218);
+    assert_period(&render(&mut synth, WINDOW).left, 150, 300, 96_000.0 / 440.0);
 }
 
 #[test]
@@ -293,7 +313,7 @@ fn the_float_output_is_the_fixed_point_output_scaled_exactly() {
         .chain(&out.right)
         .zip(left.iter().chain(&right))
     {
-        assert_eq!(*sample * FULL_SCALE, *integer as f32);
+        assert_eq!(*sample * OUTPUT_UNITY, *integer as f32);
         assert!(integer.abs() <= 1 << 23);
     }
 }
@@ -414,9 +434,77 @@ proptest! {
                 right.extend(piece.right);
                 done += count;
             }
-            prop_assert!(expected.left.iter().all(|sample| sample.is_finite() && sample.abs() <= 1.0));
+            prop_assert!(expected.left.iter().all(|sample| sample.is_finite() && sample.abs() <= 8.0));
             prop_assert_eq!(&expected.left, &left);
             prop_assert_eq!(&expected.right, &right);
+        }
+    }
+}
+
+const BLOCK: usize = 480;
+const NOTE_SECONDS_FRAMES: usize = 144_000;
+const MID_KEY: u8 = 76;
+const HIGH_KEYS: [u8; 3] = [88, 93, 100];
+const LEVEL_TOLERANCE_DB: f64 = 3.0;
+const DECAY_DROP_DB: f64 = 20.0;
+const DECAY_RATIO_LIMIT: f64 = 2.0;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct NoteShape {
+    peak_db: f64,
+    decay_blocks: usize,
+}
+
+fn block_db(samples: &[f32]) -> Vec<f64> {
+    samples
+        .chunks(BLOCK)
+        .map(|block| {
+            let power: f64 = block
+                .iter()
+                .map(|sample| f64::from(*sample).powi(2))
+                .sum::<f64>()
+                / block.len() as f64;
+            10.0 * power.max(1e-20).log10()
+        })
+        .collect()
+}
+
+fn note_shape(program_number: u8, key: u8) -> NoteShape {
+    let mut synth = synth(SampleRate::STUDIO);
+    program(&mut synth, 0, program_number);
+    note_on(&mut synth, 0, key, 100);
+    let levels = block_db(&render(&mut synth, NOTE_SECONDS_FRAMES).left);
+    let (peak_index, peak_db) = levels
+        .iter()
+        .copied()
+        .enumerate()
+        .max_by(|left, right| left.1.total_cmp(&right.1))
+        .expect("blocks");
+    let decay_blocks = levels[peak_index..]
+        .iter()
+        .position(|level| *level <= peak_db - DECAY_DROP_DB)
+        .unwrap_or(levels.len() - peak_index);
+    NoteShape {
+        peak_db,
+        decay_blocks,
+    }
+}
+
+#[test]
+fn high_plucked_notes_keep_the_level_and_decay_of_the_middle_register() {
+    for program_number in [24, 25, 27, 31] {
+        let middle = note_shape(program_number, MID_KEY);
+        for key in HIGH_KEYS {
+            let high = note_shape(program_number, key);
+            assert!(
+                (high.peak_db - middle.peak_db).abs() <= LEVEL_TOLERANCE_DB,
+                "{program_number} {key}: {middle:?} {high:?}"
+            );
+            let ratio = high.decay_blocks as f64 / middle.decay_blocks.max(1) as f64;
+            assert!(
+                (1.0 / DECAY_RATIO_LIMIT..=DECAY_RATIO_LIMIT).contains(&ratio),
+                "{program_number} {key}: {middle:?} {high:?}"
+            );
         }
     }
 }

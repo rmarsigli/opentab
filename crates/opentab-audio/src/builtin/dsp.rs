@@ -1,3 +1,5 @@
+use crate::rate::millis_to_frames;
+
 pub(crate) const Q16: u32 = 16;
 pub(crate) const Q30: u32 = 30;
 pub(crate) const UNITY_Q16: i64 = 1 << Q16;
@@ -42,8 +44,11 @@ pub(crate) fn decay_q30(rate: u32, half_life_ms: u32) -> i64 {
 }
 
 pub(crate) fn frames_of(rate: u32, millis: u32) -> u32 {
-    let frames = u64::from(rate) * u64::from(millis) / 1000;
-    u32::try_from(frames.max(1)).unwrap_or(u32::MAX)
+    u32::try_from(millis_to_frames(rate, millis).max(1)).unwrap_or(u32::MAX)
+}
+
+pub(crate) fn round_shift(value: i64, bits: u32) -> i64 {
+    (value + (1 << (bits - 1))) >> bits
 }
 
 pub(crate) fn lowpass(state: &mut i64, input: i64, coefficient_q16: i64) {

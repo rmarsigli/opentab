@@ -45,7 +45,7 @@ proptest! {
                 let synth = &mut synths[event.track];
                 synth.handle(event.channel, &event.message);
                 synth.render(&mut left, &mut right);
-                prop_assert!(left.iter().chain(&right).all(|sample| sample.is_finite() && sample.abs() <= 1.0));
+                prop_assert!(left.iter().chain(&right).all(|sample| sample.is_finite() && sample.abs() <= 8.0));
             }
         }
     }

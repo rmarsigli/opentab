@@ -1,7 +1,10 @@
 use std::path::{Path, PathBuf};
 
 const FORBIDDEN: [&str; 6] = ["f32", "f64", "libm", "rand::", "Instant", "SystemTime"];
-const LINT: &str = "#[deny(clippy::float_arithmetic)]\nmod builtin;";
+const LINTS: [&str; 2] = [
+    "#[deny(clippy::float_arithmetic)]\nmod builtin;",
+    "#[deny(clippy::float_arithmetic)]\nmod bus;",
+];
 const MIN_SOURCES: usize = 6;
 
 fn sources(dir: &Path, found: &mut Vec<PathBuf>) {
@@ -29,10 +32,11 @@ fn float_literal(text: &str) -> Option<String> {
 }
 
 #[test]
-fn the_built_in_backend_holds_no_float_and_no_outside_noise() {
+fn the_built_in_backend_and_bus_hold_no_float_and_no_outside_noise() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut found = Vec::new();
     sources(&root.join("builtin"), &mut found);
+    found.push(root.join("bus.rs"));
     assert!(found.len() >= MIN_SOURCES, "{found:?}");
     for path in &found {
         let text = std::fs::read_to_string(path).expect("source");
@@ -42,7 +46,9 @@ fn the_built_in_backend_holds_no_float_and_no_outside_noise() {
         assert_eq!(float_literal(&text), None, "{}", path.display());
     }
     let lib = std::fs::read_to_string(root.join("lib.rs")).expect("lib");
-    assert!(lib.contains(LINT));
+    for lint in LINTS {
+        assert!(lib.contains(lint), "{lint}");
+    }
 }
 
 #[test]

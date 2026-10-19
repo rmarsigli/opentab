@@ -3,21 +3,27 @@ mod dsp;
 mod pitch;
 mod string;
 mod tone;
+mod voicing;
 
 use opentab_playback::{ChannelState, MidiMessage};
 
-use drum::{DRUM_LONGEST_MS, Drum};
-use dsp::{Noise, Q16, Release, clamp_q23, frames_of};
+use drum::Drum;
+use dsp::{Noise, Q16, Release, clamp_q23, frames_of, round_shift};
 use pitch::{bend_cents, key_cents};
-use string::{PluckedString, string_family};
-use tone::{LONGEST_TONE_RELEASE_MS, Tone, tone_family};
+use string::PluckedString;
+use tone::Tone;
+use voicing::{
+    CHOKE_RELEASE_MS, DRUM_LONGEST_MS, ENGINE_GAIN_Q16, LONGEST_MELODIC_RELEASE_MS,
+    STRING_RELEASE_MS, VELOCITY_CURVE_OFFSET, string_family, tone_family,
+};
 
 pub(crate) const LINE_LENGTH: u32 = 4096;
 pub(crate) const LINE_MASK: u32 = LINE_LENGTH - 1;
-pub const MELODIC_RELEASE_MS: u32 = LONGEST_TONE_RELEASE_MS;
+pub const MELODIC_RELEASE_MS: u32 = LONGEST_MELODIC_RELEASE_MS;
 pub const DRUM_DECAY_MS: u32 = DRUM_LONGEST_MS;
-const STRING_RELEASE_MS: u32 = 60;
-const CHOKE_RELEASE_MS: u32 = 30;
+pub const OUTPUT_FRACTION_BITS: u32 = 20;
+const VOICE_TO_OUTPUT: u32 = 3;
+const OUTPUT_LIMIT: i64 = 1 << 23;
 const VOICES: usize = 32;
 const CHANNELS: usize = 16;
 const DRUM_CHANNEL: u8 = 9;
@@ -29,7 +35,6 @@ const PAN_CENTRE: i64 = 64;
 const PAN_LEFT_SPAN: i64 = 63;
 const CLOSED_HATS: [u8; 2] = [42, 44];
 const OPEN_HAT: u8 = 46;
-const MASTER_SHIFT: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Body {
@@ -50,7 +55,7 @@ struct Voice {
 }
 
 impl Voice {
-    fn next(&mut self, line: &mut [i32]) -> (i32, bool) {
+    fn next(&mut self, line: &mut [i32]) -> Tick {
         let raw = match &mut self.body {
             Body::String(string) => i64::from(string.next(line)),
             Body::Drum(drum) => drum.next(),
@@ -58,7 +63,7 @@ impl Voice {
         };
         let mut sample = clamp_q23((raw * self.gain_q16) >> Q16);
         let mut finished = match &self.body {
-            Body::String(_) => false,
+            Body::String(string) => string.finished(),
             Body::Drum(drum) => drum.finished(),
             Body::Tone(tone) => tone.finished(),
         };
@@ -66,7 +71,7 @@ impl Voice {
             sample = release.apply(sample);
             finished |= release.done();
         }
-        (sample, finished)
+        Tick { sample, finished }
     }
 
     fn release(&mut self, frames: u32) {
@@ -114,7 +119,22 @@ fn gains(state: &ChannelState) -> Gains {
 
 fn velocity_gain(velocity: u8) -> i64 {
     let velocity = i64::from(velocity).min(MAX_LEVEL);
-    (velocity * velocity * (1 << Q16) / (MAX_LEVEL * MAX_LEVEL)) >> MASTER_SHIFT
+    velocity * (velocity + VELOCITY_CURVE_OFFSET) * (1 << Q16)
+        / (MAX_LEVEL * (MAX_LEVEL + VELOCITY_CURVE_OFFSET))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Tick {
+    sample: i32,
+    finished: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SoundingVoice {
+    pub slot: usize,
+    pub channel: u8,
+    pub key: u8,
+    pub released: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -311,11 +331,11 @@ impl Engine {
             let gains = gains(state);
             let mut finished = false;
             for (out_left, out_right) in left.iter_mut().zip(right.iter_mut()) {
-                let (sample, done) = active.next(line);
-                let sample = i64::from(sample);
+                let tick = active.next(line);
+                let sample = i64::from(tick.sample);
                 *out_left += clamp_q23((sample * gains.left_q16) >> Q16);
                 *out_right += clamp_q23((sample * gains.right_q16) >> Q16);
-                if done {
+                if tick.finished {
                     finished = true;
                     break;
                 }
@@ -325,8 +345,24 @@ impl Engine {
             }
         }
         for sample in left.iter_mut().chain(right.iter_mut()) {
-            *sample = clamp_q23(i64::from(*sample));
+            let output = round_shift(i64::from(*sample) * ENGINE_GAIN_Q16, Q16 + VOICE_TO_OUTPUT);
+            *sample = i32::try_from(output.clamp(-OUTPUT_LIMIT, OUTPUT_LIMIT)).unwrap_or(0);
         }
+    }
+
+    pub(crate) fn voices(&self) -> Vec<SoundingVoice> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, entry)| {
+                entry.voice.map(|voice| SoundingVoice {
+                    slot,
+                    channel: voice.channel,
+                    key: voice.key,
+                    released: voice.release.is_some(),
+                })
+            })
+            .collect()
     }
 
     pub(crate) fn sounding(&self) -> usize {

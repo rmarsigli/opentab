@@ -118,3 +118,46 @@ fn the_scheduler_peeks_without_consuming() {
         MidiMessage::Bank { .. } | MidiMessage::Program { .. }
     ));
 }
+
+const COVERAGE_SCORES: usize = 128;
+const COVERAGE_PERCENT: u16 = 75;
+const MIN_COVERED: usize = 200;
+
+#[test]
+fn the_frame_property_sees_many_positive_and_fractional_frames() {
+    use proptest::strategy::ValueTree;
+    let mut runner = proptest::test_runner::TestRunner::deterministic();
+    let rate = SampleRate::CD;
+    let mut positive = 0;
+    let mut fractional = 0;
+    let mut performed = 0;
+    for _ in 0..COVERAGE_SCORES {
+        let score = arb_score().new_tree(&mut runner).expect("tree").current();
+        for profile in PROFILES {
+            let Ok(performance) = perform(&score, &PlaybackOptions { profile }) else {
+                continue;
+            };
+            performed += 1;
+            let speed = Speed::new(COVERAGE_PERCENT).expect("speed");
+            let scheduler = Scheduler::new(&performance, speed, rate).expect("schedule");
+            for (sampled, event) in scheduler.events().iter().zip(&performance.events) {
+                let normal = performance
+                    .tempo
+                    .seconds_at(event.at, Speed::NORMAL)
+                    .expect("seconds");
+                let exact = Ratio::new(normal.numer(), normal.denom())
+                    * Ratio::from_integer(i128::from(rate.hz()) * PERCENT)
+                    / Ratio::from_integer(i128::from(COVERAGE_PERCENT));
+                assert_eq!(
+                    sampled.frame,
+                    u64::try_from(exact.floor().to_integer()).expect("frame")
+                );
+                positive += usize::from(sampled.frame > 0);
+                fractional += usize::from(!exact.is_integer());
+            }
+        }
+    }
+    assert_eq!(performed, 2 * COVERAGE_SCORES);
+    assert!(positive >= MIN_COVERED, "{positive}");
+    assert!(fractional >= MIN_COVERED, "{fractional}");
+}

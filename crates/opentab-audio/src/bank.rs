@@ -1,12 +1,12 @@
 use opentab_model::MidiBank;
 use opentab_playback::{Channel, MidiMessage};
 
-use crate::builtin::Engine;
+use crate::builtin::{Engine, SoundingVoice};
 use crate::gm::{DRUM_KIT_NAME, GM_NAMES};
 use crate::{Bank, BankFormat, BankInstrument, SampleRate, Synth};
 
 const CHUNK_FRAMES: usize = 256;
-const FULL_SCALE: f32 = 8_388_608.0;
+const OUTPUT_UNITY: f32 = 1_048_576.0;
 const DRUM_BANK_MSB: u8 = 120;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -57,6 +57,10 @@ impl BuiltInSynth {
         self.engine.sounding()
     }
 
+    pub fn voices(&self) -> Vec<SoundingVoice> {
+        self.engine.voices()
+    }
+
     pub fn render_fixed(&mut self, left: &mut [i32], right: &mut [i32]) {
         self.engine.render(left, right);
     }
@@ -97,5 +101,5 @@ impl Synth for BuiltInSynth {
 }
 
 fn to_float(sample: i32) -> f32 {
-    sample as f32 / FULL_SCALE
+    sample as f32 / OUTPUT_UNITY
 }

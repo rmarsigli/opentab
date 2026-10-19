@@ -2,6 +2,11 @@ use crate::AudioError;
 
 const HZ_44100: u32 = 44_100;
 const HZ_48000: u32 = 48_000;
+const MILLIS_PER_SECOND: u64 = 1000;
+
+pub(crate) fn millis_to_frames(hz: u32, millis: u32) -> u64 {
+    u64::from(hz) * u64::from(millis) / MILLIS_PER_SECOND
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SampleRate(u32);
@@ -23,7 +28,7 @@ impl SampleRate {
     }
 
     pub fn frames_of_millis(self, millis: u32) -> u64 {
-        u64::from(self.0) * u64::from(millis) / 1000
+        millis_to_frames(self.0, millis)
     }
 }
 
