@@ -7,7 +7,7 @@ Words used in this document:
 - **GP** means Guitar Pro 8.1.5.
 - **Accepted** means GP opened the file with no error notice and did not crash.
 - **Re-save** means GP opened a file and saved it with "Save As" into a new path.
-- **Experiment files** named in brackets, such as [min-all], are kept locally in the oracle machine's experiments folder (`C:\gf-oracle\corpus\experiments\`). They are not part of the repository; a bracketed name identifies the experiment files whose names start with it.
+- **Experiment files** named in brackets, such as [min-all], are kept locally in the oracle machine's experiments folder (`C:\gf-oracle\corpus\experiments\`). They are not part of the repository; a bracketed name identifies the experiment files whose names start with it. Names that start with `m3-`, such as [m3-po07], live in its `m3-t1` subfolder without that prefix: `inputs\po07-*.gp` is the file we built, and `harvests\po07-*\` holds what GP exported from it.
 
 ## 1. Container
 
@@ -59,6 +59,12 @@ An archive with exactly these three entries was accepted. That held when `PartCo
 - A big-endian u32 part count.
 - For each part: one flag byte, a big-endian u32 track count, and one byte per track. Bit 0 of that byte is standard notation and bit 1 is tablature.
 - A trailing big-endian u32.
+
+In the 27 examples, the first part lists every track and one more part follows per track; every flag byte is 0, drum tracks carry 1 (notation only) and the trailing number is 1 in 25 files and 0 in 2. Drum tracks do not need it: a score with a drum kit opens with the empty form (§16).
+
+### 1.2 Entries of our own
+
+GP opens a container that holds an extra entry it does not know, with no notice, and exports it normally. We tried a JSON entry under `Content/` in a subfolder, a JSON entry at the archive root and a 256-byte binary entry under `Content/` [m3-x01, m3-x02, m3-x03]. **GP's re-save drops the entry**: the re-saved container holds only GP's own fixed list of entries (§1). Data that OpenTab keeps in such an entry therefore survives our own round trips and a file opened in GP, but not a file that GP saves again.
 
 ## 2. `score.gpif` as an XML document
 
@@ -194,7 +200,48 @@ The other master automation type seen is `SyncPoint`. It aligns bars with a back
 2. A bar with `AlternateEndings` starts an ending group. The group runs through the following bars that have no endings of their own, and stops at the next repeat start. On pass p, a bar in a group whose endings do not include p is skipped.
 3. At a repeat end with count c, while the pass is below c, the pass grows by one and playback jumps back to the start of the section, or to the first bar if no section was opened.
 
-None of these 5 examples has `Directions`, so the rule ignores them. The other automations in GPIF (tempo, the track's `Sound` automations and the `DSPParam` automations under `RSE`) all name a plain master bar index in `Bar`.
+None of these 5 examples has `Directions`, so the rule ignores them; §5.1 adds them. The other automations in GPIF (tempo, the track's `Sound` automations and the `DSPParam` automations under `RSE`) all name a plain master bar index in `Bar`.
+
+### 5.1 Play order with directions
+
+We learned GP's order by building scores in which every bar holds one whole note of its own pitch, adding repeats and `Directions` (§6.1), and reading the note order of GP's MIDI export. Bars below are 0-based master bar indices. The rules hold for every one of the 38 experiments [m3-po01] to [m3-po41]:
+
+1. **Bars and repeats** play as in the rule above.
+2. **Targets** mark the start of their bar. **Jumps** act at the end of their bar, after it is played. GP writes the targets of a bar before its jumps.
+3. **Return jumps** go back and set a mode:
+   - `DaCapo…` goes to bar 0, `DaSegno…` to the bar holding `Segno`, `DaSegnoSegno…` to the bar holding `SegnoSegno`;
+   - the suffix `AlFine` arms the `Fine`, `AlCoda` arms `DaCoda` and `AlDoubleCoda` arms `DaDoubleCoda`; no suffix arms nothing and playback runs on to the end.
+4. **Every jump fires at most once** in a play-through, so the expansion is always finite. A jump reached again after it fired is passed over [m3-po01, m3-po05, m3-po25, m3-po37].
+5. **A return jump inside a repeated section fires only on the section's last pass.** The section runs from the repeat start to the repeat end, inclusive. A return jump on the repeat-end bar fires after the last pass [m3-po15, m3-po31, m3-po34]. One in an alternate ending that the last pass skips never fires [m3-po39].
+6. **After a return jump every repeat plays again in full**: pass counts restart, and alternate endings start again from ending 1 [m3-po13, m3-po14, m3-po23, m3-po27].
+7. **A return jump whose target does not exist is ignored**, for example `DaSegno` or `DaSegnoAlCoda` without a `Segno` [m3-po19, m3-po28].
+8. **`Fine`** acts only after an `…AlFine` jump has fired. It then ends playback at the end of its bar, on the first pass that reaches it, even inside a repeated section [m3-po02, m3-po06, m3-po10, m3-po24, m3-po32]. With only a plain `DaCapo`, or with no jump at all, it is ignored [m3-po17, m3-po30].
+9. **`DaCoda` (To Coda) and `DaDoubleCoda` (To Double Coda)** jump to the bar holding `Coda` or `DoubleCoda`:
+   - when the score holds no `…AlCoda` and no `…AlDoubleCoda` jump that can fire, they fire the first time they are reached [m3-po18, m3-po28, m3-po40];
+   - otherwise `DaCoda` waits until an `…AlCoda` jump has fired, and `DaDoubleCoda` until an `…AlDoubleCoda` jump has fired. An armed `DaDoubleCoda` does not arm `DaCoda` [m3-po03, m3-po04, m3-po07, m3-po08, m3-po11, m3-po12, m3-po26, m3-po41];
+   - once armed, it fires on the first pass that reaches it, even inside a repeated section and before that bar's own repeat end [m3-po16, m3-po33, m3-po38];
+   - without its target bar it is ignored [m3-po20].
+10. **Two directions in one bar** follow the same rules one by one. A `DaCoda` that is not armed yet is passed over while a return jump in the same bar fires; on the next visit the armed `DaCoda` fires [m3-po21]. A bar holding `Fine` and an `…AlFine` jump fires the jump first and ends at the `Fine` on the next visit [m3-po22].
+
+Selected orders (bar: directions → order played):
+
+| Experiment | Bars | Played |
+|---|---|---|
+| [m3-po02] D.C. al Fine | 2 `Fine`, 4 `DaCapoAlFine` (6 bars) | 0 1 2 3 4 0 1 2 |
+| [m3-po07] D.S. al Coda | 1 `Segno`, 2 `DaCoda`, 3 `DaSegnoAlCoda`, 4 `Coda` (6 bars) | 0 1 2 3 1 2 4 5 |
+| [m3-po12] D.S.S. al Double Coda | 1 `SegnoSegno`, 2 `DaDoubleCoda`, 3 `DaSegnoSegnoAlDoubleCoda`, 4 `DoubleCoda` (6 bars) | 0 1 2 3 1 2 4 5 |
+| [m3-po13] repeats after D.C. | repeat 1–2, 4 `DaCapo` (6 bars) | 0 1 2 1 2 3 4 0 1 2 1 2 3 4 5 |
+| [m3-po14] endings after D.S. | 1 `Segno` + repeat start, 2 ending 1 + repeat end, 3 ending 2, 4 `DaSegno` (6 bars) | 0 1 2 1 3 4 1 2 1 3 4 5 |
+| [m3-po15] D.C. inside a repeat | repeat 1–3, 2 `DaCapo` (5 bars) | 0 1 2 3 1 2 0 1 2 3 1 2 3 4 |
+| [m3-po18] To Coda alone | 1 `DaCoda`, 3 `Coda` (5 bars) | 0 1 3 4 |
+| [m3-po26] Coda then Double Coda | 1 `Segno`, 2 `DaCoda`, 3 `DaDoubleCoda`, 4 `DaSegnoAlCoda`, 5 `Coda`, 6 `DaSegnoAlDoubleCoda`, 7 `DoubleCoda` (9 bars) | 0 1 2 3 4 1 2 5 6 1 2 3 7 8 |
+| [m3-po31] D.S. inside a repeat ×3 | 1 `Segno`, repeat 2–4 ×3, 3 `DaSegno` (6 bars) | 0 1 2 3 4 2 3 4 2 3 1 2 3 4 2 3 4 2 3 4 5 |
+| [m3-po33] To Coda inside a repeat | repeat 0–2, 1 `DaCoda`, 3 `DaCapoAlCoda`, 4 `Coda` (6 bars) | 0 1 2 0 1 2 3 0 1 4 5 |
+| [m3-po41] Double Coda arms only itself | 1 `DaCoda`, 2 `DaDoubleCoda`, 3 `DaCapoAlDoubleCoda`, 4 `Coda`, 5 `DoubleCoda` (7 bars) | 0 1 2 3 0 1 2 5 6 |
+
+### 5.2 Tempo ramps
+
+`Linear true` on a tempo automation means a ramp from that tempo to the next tempo automation. 4 of the 39 tempo automations in the corpus are linear; 3 of those are the last tempo of their score, so nothing follows them. GP keeps the flag on re-save. **GP's MIDI export does not ramp**: it writes one tempo event at each automation and nothing between them, and its MusicXML export does the same [m3-mx06, m3-mx08]. A ramp is therefore audible only in GP's own playback.
 
 ## 6. Master bars
 
@@ -203,12 +250,12 @@ None of these 5 examples has `Directions`, so the rule ignores them. The other a
   <Key><AccidentalCount>K</AccidentalCount><Mode>Major|Minor</Mode><TransposeAs>Sharps|Flats</TransposeAs></Key>
   <Time>N/D</Time>
   <Fermatas>…</Fermatas>                         optional
-  <TripletFeel>Triplet8th</TripletFeel>          optional
   <Repeat start="true|false" end="true|false" count="C"/>   optional
   <Section><Letter><![CDATA[..]]></Letter><Text><![CDATA[..]]></Text></Section>   optional
   <AlternateEndings>E E</AlternateEndings>       optional
-  <Directions><Target>..</Target><Jump>..</Jump></Directions>   optional
+  <TripletFeel>Triplet8th</TripletFeel>          optional
   <DoubleBar/>                                   optional
+  <Directions><Target>..</Target><Jump>..</Jump></Directions>   optional
   <Bars>b b</Bars>
   <XProperties>…</XProperties>                   optional
 </MasterBar>
@@ -219,7 +266,29 @@ None of these 5 examples has `Directions`, so the rule ignores them. The other a
 - `AlternateEndings` lists the ending numbers that cover this bar. The corpus only has single values (1 or 2).
 - `Section` is a rehearsal mark: a letter and a text. Either may be empty. The letter is the mark shown beside the text.
 - `DoubleBar` marks a double bar line at the end of the bar.
-- `Directions` holds segno and coda targets and jumps such as `DaCoda`, `DaSegno` and `DaSegnoAlCoda`.
+- `Directions` holds segno and coda targets and jumps such as `DaCoda`, `DaSegno` and `DaSegnoAlCoda`; see §6.1.
+- Child order, as GP writes it: `Key`, `Time`, `Repeat`, `Section`, `AlternateEndings`, `TripletFeel`, `DoubleBar`, `Directions`, `Bars`, `XProperties`. No pair of master bar children breaks that order in the 1 260 master bars of the corpus. `Fermatas` comes after `Time` and before `Bars`; it never shares a bar with `Repeat`, `Section`, `AlternateEndings`, `TripletFeel`, `DoubleBar` or `Directions`.
+
+### 6.1 Directions
+
+```
+<Directions>
+  <Target>NAME</Target>   zero or more
+  <Jump>NAME</Jump>       zero or more
+</Directions>
+```
+
+The corpus has 8 master bars with `Directions`, in 2 files: 4 `Target` (`Segno` 2, `Coda` 2) and 4 `Jump` (`DaCoda` 2, `DaSegno` 1, `DaSegnoAlCoda` 1). 3 of the 8 bars also hold a `Repeat`. We wrote every other name below into scores of our own; GP opened each and re-saved every name unchanged [m3-po01] to [m3-po41]:
+
+| Kind | Names |
+|---|---|
+| Target | `Segno`, `SegnoSegno`, `Coda`, `DoubleCoda`, `Fine` |
+| Jump back to bar 0 | `DaCapo`, `DaCapoAlFine`, `DaCapoAlCoda`, `DaCapoAlDoubleCoda` |
+| Jump back to `Segno` | `DaSegno`, `DaSegnoAlFine`, `DaSegnoAlCoda`, `DaSegnoAlDoubleCoda` |
+| Jump back to `SegnoSegno` | `DaSegnoSegno`, `DaSegnoSegnoAlFine`, `DaSegnoSegnoAlCoda`, `DaSegnoSegnoAlDoubleCoda` |
+| Jump forward | `DaCoda` (To Coda), `DaDoubleCoda` (To Double Coda) |
+
+A bar may hold several targets and jumps. GP writes the targets first and orders jumps its own way: we wrote `DaCoda` before `DaSegnoAlCoda`, and the re-save has them the other way round [m3-po21]. The play order they produce is in §5.1.
 
 ## 7. Tracks and staves
 
@@ -251,12 +320,12 @@ None of these 5 examples has `Directions`, so the rule ignores them. The other a
 </Track>
 ```
 
-- **InstrumentSet/Type** names the instrument family. The corpus has these types:
-  - stringed: `electricGuitar`, `steelGuitar`, `nylonGuitar`, `electricBass`, `acousticBass`, `violin`;
-  - other pitched: `acousticPiano`, `saxophone`, `trumpet`, `electricOrgan`, `voice`;
-  - percussion: `drumKit`.
+- **InstrumentSet/Type** names the instrument family. The corpus has these types, with their track counts (64 tracks):
+  - stringed: `electricGuitar` 16, `steelGuitar` 12, `nylonGuitar` 6, `electricBass` 6, `acousticBass` 4, `violin` 1;
+  - other pitched: `acousticPiano` 2, `saxophone` 2, `trumpet` 2, `electricOrgan` 2, `voice` 1;
+  - percussion: `drumKit` 10.
 
-  A drum kit lists its articulations (54 elements in each drum track of the corpus). A pitched instrument lists a single "pitched" element.
+  Every set has the children `Name`, `Type`, `LineCount` (always 5) and `Elements`. A drum kit lists its instruments and their articulations (54 elements and 95 articulations in each drum track of the corpus; §16). A pitched instrument lists a single element of type `pitched` with one articulation whose `OutputMidiNumber` is 0 (54 tracks).
 - **Every non-drum track is stored as a string instrument.** Piano, saxophone, trumpet, organ and voice tracks all carry a six-string tuning, and their notes carry string and fret. Drum tracks carry a dummy tuning of six zeros.
 - **Tuning** `Pitches` are MIDI numbers, **lowest string first**. The corpus has these tunings:
   - guitar: standard, drop D, and a half step down;
@@ -264,7 +333,7 @@ None of these 5 examples has `Directions`, so the rule ignores them. The other a
   - violin: G D A E.
 - **CapoFret** is the capo fret. Two tracks have a non-zero capo.
 - **Transpose** is the written-to-sounding offset used for standard notation. Guitars and basses carry `Octave -1`, because they are written an octave above concert pitch. Transposing instruments and detuned guitars also carry a `Chromatic` offset. 49 of 64 tracks have a non-zero transpose.
-- **Sounds/Sound/MIDI/Program** is the General MIDI program. Two tracks have two sounds, and `Sound` automations on the track switch between them over time.
+- **Sounds/Sound/MIDI/Program** is the General MIDI program. Two tracks have two sounds, and `Sound` automations on the track switch between them over time. Sounds, MIDI channels, the mixer and track automations are described in §15.
 - **Lyrics/Line/Offset** is read as the master bar index where the line starts. GP's lyrics dialog starts each line at a bar. All 320 offsets in the corpus are 0, so the meaning has not been tested against GP.
 - The tuning name (`Staff/Properties/Name`) is sometimes cleared by GP on re-save; see §13.
 
@@ -301,11 +370,13 @@ Beat effects the corpus shows. Elements are written `<Name>` and named propertie
 | Rasgueado and golpe | `Property Rasgueado` and `<Golpe>`. |
 | Wah | `<Wah>`. |
 | Bar chord marking | `BarreFret` and `BarreString`. |
-| Whammy bar | `<Whammy>`, whose attributes give a four-point curve. |
+| Whammy bar (tremolo bar) | `<Whammy>`, whose attributes give a four-point curve; see below. |
 | Arpeggio | `<Arpeggio>`. |
 | Hairpins | `<Hairpin>`, `Crescendo` or `Decrescendo`. |
 | Slurs across beats | `<Legato origin destination>`. |
 | Free text | `<FreeText>`. |
+
+**Whammy bar.** `<Whammy originValue="V" middleValue="V" destinationValue="V" originOffset="O" middleOffset1="O" middleOffset2="O" destinationOffset="O"/>`, every number written with six decimals. It has the bend's four-point shape (§9): an origin, two middle points sharing one value, and a destination; offsets run from 0 to 100 across the beat. Values count hundredths of a tone, like bends: GP draws 100 as a dive or rise of "1" (a whole tone) and -100 as "-1" [m3-mx07], so the model value in cents is the GPIF value × 2. Negative values dive. The corpus has 2 whammy beats in 2 files, with values 0, -50 and -100 and offsets 0, 35, 50, 99 and 100. GP re-saves a whammy we wrote unchanged. The separate beat property `VibratoWTremBar` (1 beat) is a vibrato played with the bar.
 
 Effects that never occurred in the corpus. We applied each one through GP's Effects menu to a score we built, saved it, and compared the result with a plain re-save [fx-plain]:
 
@@ -367,6 +438,22 @@ Effect properties on notes:
 | `Bended` + `Bend{Origin,Middle,Destination}{Offset,Value}` | floats | See below. |
 | `Tapped`, `LeftHandTapped` | `Enable` | Tapping with the right or the left hand. Tapping is a note property, not a beat property. |
 | `ShowStringNumber` | `Enable` | Display only. |
+
+**Trill.** A trilled note carries `<Trill>P</Trill>` as a note child, and usually a note `XProperty` for its speed:
+
+```
+<Note id="n">
+  <Trill>P</Trill>
+  <InstrumentArticulation>0</InstrumentArticulation>
+  <Properties>…</Properties>
+  <XProperties><XProperty id="688062467"><Int>T</Int></XProperty></XProperties>
+</Note>
+```
+
+- `P` is the sounding MIDI number of the auxiliary note: open string + capo + auxiliary fret. GP's dialog asks for the auxiliary fret. Fret 2 on an open E string (64) gave 66 and fret 5 gave 69 [m3-tr02, m3-tr04]; with capo 2, fret 2 gave 68 [m3-tr23].
+- `T` is the length of each trill note in ticks at 480 per quarter note. GP's dialog wrote 480 by default [m3-tr02]. We wrote 60, 120, 240 and 480, and GP alternated the notes every 60, 120, 240 and 480 ticks in its MIDI export [m3-tr12, m3-tr13]. The dialog's speed slider shows four note values, from thirty-second to quarter. Without the property GP plays 60 and does not add the property on re-save [m3-tr20].
+- **960 made GP hang** during the MIDI export: the process stopped responding and grew to about 10 GB of memory, and had to be killed [m3-tr13-speed-960]. A writer must write only 60, 120, 240 or 480.
+- The corpus holds no trill.
 
 **Bends** have a fixed shape of four points:
 
@@ -620,7 +707,7 @@ What each part does:
   - it keeps its `InstrumentSet` body, including the articulation `Elements` [t6-drum-noiset, t6-drum-noelements crashed GP];
   - it keeps its `Sounds` and RSE data [t6-drum-nosound crashed GP].
 
-  That data is GP's own content. A writer that may not copy it must refuse a percussion track that does not carry it from a `.gp` file.
+  That data is GP's own content, and a writer may not copy it. A kit generated by our own code from the General MIDI key map is accepted instead (§16). With that kit an empty `PartConfiguration` was accepted, unlike the reduced GP kit above; a missing `Sounds` still crashed GP.
 - **Everything else is optional for GP to open the file:**
   - `Encoding`;
   - the other `Score` fields;
@@ -650,6 +737,8 @@ On scores built from scratch we also saw the following. Each case is a file in `
 - **Let ring on staccato notes.** `LetRing` is dropped from any note with the staccato accent bit. Palm mute, accent and vibrato do not affect it.
 - **Harmonic frets.** A harmonic at a fret that is not a harmonic node, such as 2.5, is dropped together with its type and fret [t6-harm-natural25]. 3.2, 5, 7, 12 and 17 survive.
 - **TransposedPitch spelling.** GP spells the written pitch by moving the concert spelling diatonically. In C sharp major with only an octave transposition, it keeps C sharp. For an instrument a tone below concert pitch, it writes B sharp. For a fourth plus an octave, it writes E sharp. A writer that picks the nearest enharmonic key instead differs only in spelling, never in pitch.
+- **Ghost notes with an accent.** GP drops `AntiAccent` from any note that also has an `Accent` bit: accent, heavy accent or staccato. A ghost note without an accent keeps it [ghost-accent].
+- **Container entries of our own** are dropped (§1.2).
 - **Default view.** When `GPVersion` is present and the container carries no score views, GP's default view shows only the first track. The other tracks are present in the track list and in every export. Adding `ScoreViews` to the GPIF without the matching `Content/ScoreViews/*.gpsv` entries crashed GP [t6-views-one].
 
 ## 14. Committed goldens
@@ -662,3 +751,112 @@ The oracle harness saves every fixture through GP and exports it. The repository
 - `png/*.png`.
 
 The full harvest stays local: the re-saved `.gp` container, `export.pdf` and `export.gpx`. The container and the GPX carry GP's default `BinaryStylesheet` and `Stylesheets/*.gpss`, and the PDF embeds font subsets. `cargo xtask oracle harvest` writes the full set into a directory outside the repository. `cargo xtask oracle publish --from <full> --out goldens/gp` copies the committed set and writes a manifest marked `"set": "published"`. `cargo xtask oracle check` then requires exactly that set.
+
+## 15. Track sound, MIDI channels and the mixer
+
+```
+<Track id="t">
+  …
+  <RSE>
+    <ChannelStrip version="…">
+      <Parameters>p0 p1 … p15</Parameters>
+      <ByPassedAutomations>DSPParam_12</ByPassedAutomations>     optional
+      <Automations>
+        <Automation><Type>DSPParam_12</Type><Linear>false</Linear><Bar>B</Bar><Position>P</Position><Visible>true</Visible><Value>V</Value></Automation>
+      </Automations>                                             optional
+    </ChannelStrip>
+  </RSE>
+  <Sounds>
+    <Sound><Name/><Label/><Path/><Role/><MIDI><LSB>L</LSB><MSB>M</MSB><Program>P</Program></MIDI><RSE/></Sound>
+  </Sounds>
+  <MidiConnection>
+    <Port>0</Port><PrimaryChannel>C</PrimaryChannel><SecondaryChannel>C</SecondaryChannel>
+    <ForeOneChannelPerString>false</ForeOneChannelPerString>
+  </MidiConnection>
+  …
+  <Automations>
+    <Automation><Type>Sound</Type><Linear>false</Linear><Bar>B</Bar><Position>P</Position><Visible>true</Visible>
+      <Value><![CDATA[path;name;role]]></Value></Automation>
+  </Automations>
+</Track>
+```
+
+**MIDI connection.** All 64 tracks have one, with exactly the four children shown. The element name is spelled `ForeOneChannelPerString` by GP, and it is `false` everywhere. `Port` is 0 everywhere. `PrimaryChannel` and `SecondaryChannel` are 0-based MIDI channels:
+- drum kits use 9 for both (10 tracks);
+- every other track has the next free channel above its primary channel as secondary, skipping 9 (54 tracks: 0/1, 2/3, 4/5, 6/7, 8/10, 11/12, 13/14).
+
+A separate empty `UseOneChannelPerString` element appears in 45 tracks. Without a `MidiConnection`, GP gives a pitched track channel 0 for both and a drum kit channel 9 [m3-mx01, m3-dr12].
+
+**Sounds.** 66 sounds in 64 tracks; two tracks have two. Every sound has `Name`, `Label`, `Path`, `Role`, `MIDI` and `RSE`. `MIDI/LSB` and `MIDI/MSB` are the bank select bytes and are 0 in all 66; GP keeps other values we wrote (MSB 1, LSB 3) on re-save [m3-mx03]. `Role` is `Factory` (40) or `User` (26). On re-save GP replaces `Path` and `Role` of a sound we wrote with its own library entry for the program, and keeps `Name` [m3-mx04].
+
+**Sound automations.** These are the track's `Automations`. All 67 in the corpus have `Type` `Sound`, `Linear` false and `Visible` true. Every track starts with one at bar 0, position 0, that names its first sound (64). 3 more switch sounds later; one of them sits at position 1, the end of its bar. `Value` is one CDATA text, `path;name;role`, and in all 67 it names a sound of the same track by those three fields. How GP resolves our values:
+- A sound written without `Path`, referenced as `;name;User`, is found. GP then rewrites both the sound and the automation with its own path and `Factory` [m3-mx11].
+- A value whose path part is a path of our own, or even GP's own library path, was re-pointed to the track's first sound [m3-mx04, m3-mx10, m3-mx12, m3-mx13]. A writer should therefore leave `Path` out of sounds it generates and reference them as `;name;User`.
+
+**Mixer.** Every track has `RSE/ChannelStrip/Parameters` with 16 numbers from 0 to 1. **Index 12 is the volume and index 11 the pan.** Evidence: GP's GP5 export writes these two into the GP5 channel table [m3-mx01]:
+- volume 0.2, 0.5 and 0.8 became 1, 4 and 16 there, so the curve is not linear;
+- pan 0.1, 0.5 and 0.9 became 1, 8 and 14.
+
+GP's MIDI and MusicXML exports ignore both: MusicXML says volume 80 and pan 0 whatever the values are [m3-mx01]. In the corpus, volume runs from 0.47 to 0.8125 and pan from 0 to 1, with 0.5 as the centre (45 of 64). GP writes 0.5 for both when a file has no channel strip. Every value is a decimal of at most 4 places in its shortest form.
+
+**Volume and pan automations** live in the channel strip, not in the track's `Automations`:
+- `DSPParam_12` is volume (79 automations) and `DSPParam_11` is pan (65), in 24 files;
+- each has the six children of a tempo automation, and `Value` is a decimal from 0 to 1 of at most 6 places in its shortest form;
+- 1 is linear, 18 are not visible, and 8 sit inside their bar at a 6-significant-digit `Position` such as 0.785714;
+- `ByPassedAutomations` (50 tracks) lists automation types separated by spaces: `DSPParam_12` 37, both 12, `DSPParam_11` 1. Its effect on playback was not tested.
+
+GP keeps the automations we wrote, linear or not, on re-save [m3-mx05, m3-mx09].
+
+## 16. Drum kits
+
+```
+<InstrumentSet>
+  <Name>…</Name><Type>drumKit</Type><LineCount>5</LineCount>
+  <Elements>
+    <Element>
+      <Name>…</Name><Type>ELEMENT</Type><SoundbankName/>
+      <Articulations>
+        <Articulation>
+          <Name>…</Name><StaffLine>S</StaffLine>
+          <Noteheads>GLYPH GLYPH GLYPH</Noteheads>
+          <TechniquePlacement>outside|inside|above|below</TechniquePlacement><TechniqueSymbol/>
+          <InputMidiNumbers>K</InputMidiNumbers><OutputRSESound/><OutputMidiNumber>K</OutputMidiNumber>
+        </Articulation>
+      </Articulations>
+    </Element>
+  </Elements>
+</InstrumentSet>
+```
+
+The corpus has 10 drum kits. Each has 54 elements and 95 articulations, with every child shown above. The element `Type` values name the drum instrument; the corpus uses 32 of them (for example `kickDrum`, `snare`, `hiHat`, `tom`, `ride`, `crash`); a missing or unknown type is re-saved as `unknown` [m3-dr16]. `Noteheads` names three SMuFL glyphs: the heads for black, half and whole notes.
+
+**A drum note** uses `InstrumentArticulation` as an index into the kit's articulations, counted across all elements in document order. In the corpus (2 327 drum notes) its `Fret` and `Midi` properties both equal the articulation's `InputMidiNumbers`, and its `String` is a number from 0 to 5.
+
+**A kit of our own opens.** We generated a General MIDI kit in our own words: 37 elements and 47 articulations, one per GM percussion key 35 to 81, with our names and our element grouping. GP opened it with no notice, alone or after a guitar track, and with an empty `PartConfiguration` [m3-dr01, m3-dr02, m3-dr03, m3-dr04]. The MIDI export played each note on channel 9 at its articulation's `OutputMidiNumber`.
+
+**What GP needs**, found by removing parts one at a time:
+- **`Elements` with articulations.** A set with only `Type drumKit` and notes is silently refused, as in §12 [m3-dr24]. With no notes it opens [m3-dr14].
+- **`OutputMidiNumber`** is the key GP plays. Without it every note plays key 0 [m3-dr19]. `InputMidiNumbers` is not used for playback [m3-dr20].
+- **`Sounds`.** A drum track without `Sounds` crashed GP while opening [m3-dr11]. `<Sounds><Sound><MIDI><Program>0</Program></MIDI></Sound></Sounds>` is enough.
+- **Defaults.** Every other child may be left out, and GP fills it in on re-save [m3-dr05 … m3-dr10, m3-dr13, m3-dr15 … m3-dr18, m3-dr22]:
+  - `Name` empty, `Type` `unknown`, `SoundbankName` empty;
+  - `StaffLine` 0, black noteheads (`noteheadBlack noteheadHalf noteheadWhole`), `TechniquePlacement` `outside`;
+  - empty `TechniqueSymbol`, `InputMidiNumbers` and `OutputRSESound`;
+  - set `Name`, `LineCount` 5, the `MidiConnection` (channel 9) and the note properties.
+- **Tuning and note properties.** A drum track whose staff has no `Tuning` and whose notes have no `String` and `Fret` opens. But GP's GP5 and GPX exports then stop at a "Notes outside range" box [m3-dr23, m3-dr25, m3-dr26]. With a `0 0 0 0 0 0` tuning, or with `Fret`, `Midi` and `String` on the notes, all exports run [m3-dr09, m3-dr13]. A writer should give drum notes `Fret` and `Midi` equal to the input key and a `String`, and the staff a six-zero tuning, as GP's own files do.
+
+**StaffLine** places the articulation on the five-line staff. 0 is the top line, and each step of 1 moves down by one line or space, so 8 is the bottom line; negative values sit above the staff. We read this from GP's PNG of a kit whose articulations had staff lines -2 to 10 [m3-dr21]. It is a visual reading, not a measurement.
+
+## 17. GP's MIDI export
+
+What GP's `export.mid` does with the data above. The comparison profile that copies GP's export relies on these points:
+- **Format.** SMF format 1 at 480 ticks per quarter. Track 0 carries the tempo and time signature, then one MIDI track per score track.
+- **Channels.** Each track plays on its `PrimaryChannel`. Bent notes stay on that channel; the secondary channel is not used [m3-mx02]. Drum kits play on channel 9 [m3-dr01].
+- **Program.** The first sound's program is set at tick 0. Sound automations do not produce program changes, even when GP resolved them [m3-mx04, m3-mx11].
+- **Bank, volume and pan are not exported**: no bank select, no volume and no pan controllers, whether they come from the channel strip or its automations [m3-mx01, m3-mx03, m3-mx05, m3-mx09]. Each track sets a pitch-bend range of 6 semitones.
+- **Tempo.** One event per tempo automation; linear ramps are not expanded (§5.2).
+- **Whammy** is not exported [m3-mx07].
+- **Velocity** comes from the beat's dynamic only: ppp 25, pp 38, mf 76, ff 102, fff 114 in the `ghost-accent` fixture. Ghost notes, accents and heavy accents get the same velocity as plain notes, alone or in chords.
+- **Staccato** halves a note, but not a note that also has an accent: in the `ghost-accent` fixture, accent + staccato plays its full length while ghost + staccato (re-saved as staccato only) plays half.
+- **Trill** alternates principal and auxiliary notes every `T` ticks, starting with the principal (§9). Defect: the note-off after each auxiliary note names the principal's key, so the file never releases the auxiliary key [m3-tr12, m3-tr13].
+- **Directions and repeats** are expanded in the order of §5.1.
