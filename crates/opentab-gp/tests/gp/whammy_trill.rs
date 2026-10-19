@@ -271,3 +271,61 @@ fn the_writer_refuses_an_auxiliary_note_above_midi_127_and_diagnose_flags_it() {
     assert_eq!(diagnose(&score), Vec::new());
     round_trip(&score);
 }
+
+fn committed(name: &str) -> Score {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/gp")
+        .join(name);
+    read_gp(&std::fs::read(path).expect("fixture")).expect("fixture reads")
+}
+
+#[test]
+fn the_playing_fixtures_read_back_typed_and_clean() {
+    let ramps = committed("tempo-ramp.gp");
+    let linear: Vec<(usize, bool)> = ramps
+        .master_bars
+        .iter()
+        .enumerate()
+        .flat_map(|(index, master)| {
+            master
+                .tempo_changes
+                .iter()
+                .map(move |change| (index, change.linear))
+        })
+        .collect();
+    assert_eq!(
+        linear,
+        vec![(0, true), (2, true), (3, false), (4, true), (5, true)]
+    );
+    let whammy = committed("tremolo-bar.gp");
+    let bars: Vec<TremoloBar> = whammy.tracks[0].staves[0]
+        .bars
+        .iter()
+        .flat_map(|bar| &bar.voices[0].beats)
+        .filter_map(|beat| beat.effects.tremolo_bar)
+        .collect();
+    assert_eq!(bars.len(), 8);
+    assert_eq!(bars.iter().filter(|bar| bar.moves()).count(), 7);
+    assert!(bars.iter().any(|bar| bar.origin().value() < 0));
+    assert!(bars.iter().any(|bar| bar.middle_value() == 25));
+    let trills = committed("trill.gp");
+    let speeds: Vec<NoteValue> = trills.tracks[0].staves[0]
+        .bars
+        .iter()
+        .filter_map(|bar| bar.voices[0].beats[0].notes[0].effects.trill)
+        .map(|trill| trill.speed.value())
+        .collect();
+    assert_eq!(
+        speeds,
+        vec![
+            NoteValue::ThirtySecond,
+            NoteValue::Sixteenth,
+            NoteValue::Eighth,
+            NoteValue::Quarter
+        ]
+    );
+    for score in [&ramps, &whammy, &trills] {
+        assert_eq!(diagnose(score), Vec::new());
+        assert!(score.extensions.0.is_empty());
+    }
+}

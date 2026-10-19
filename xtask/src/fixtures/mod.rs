@@ -2,6 +2,7 @@ mod directions;
 mod effects;
 mod midi;
 mod music;
+mod playing;
 mod sketch;
 
 use std::fmt;
@@ -50,7 +51,7 @@ pub struct Family {
 
 type Builder = fn() -> Result<Score, FixtureError>;
 
-const BUILDERS: [(&str, Builder); 27] = [
+const BUILDERS: [(&str, Builder); 30] = [
     ("metadata.gp", music::metadata),
     ("signatures.gp", music::signatures),
     ("repeats.gp", music::repeats),
@@ -78,6 +79,9 @@ const BUILDERS: [(&str, Builder); 27] = [
     ("directions-duplicates.gp", directions::duplicates),
     ("directions-coda-endings.gp", directions::coda_endings),
     ("directions-fine-repeats.gp", directions::fine_repeats),
+    ("tempo-ramp.gp", playing::tempo_ramp),
+    ("tremolo-bar.gp", playing::tremolo_bar),
+    ("trill.gp", playing::trill),
 ];
 
 pub const PLAY_ORDERS: &str = include_str!("play-orders.json");

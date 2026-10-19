@@ -240,6 +240,21 @@ fn tempo() {
 }
 
 #[test]
+fn tempo_ramp() {
+    check("tempo-ramp", "", &default_options());
+}
+
+#[test]
+fn tremolo_bar() {
+    check("tremolo-bar", "", &default_options());
+}
+
+#[test]
+fn trill() {
+    check("trill", "", &default_options());
+}
+
+#[test]
 fn tunings() {
     check("tunings", "", &default_options());
 }
@@ -263,5 +278,5 @@ fn every_committed_fixture_has_a_snapshot_test() {
         let test = format!("fn {}() {{", name.replace('-', "_"));
         assert!(source.contains(&test), "no snapshot test for {name}");
     }
-    assert_eq!(names.len(), 27);
+    assert_eq!(names.len(), 30);
 }
