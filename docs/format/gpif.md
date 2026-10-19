@@ -66,6 +66,8 @@ In the 27 examples, the first part lists every track and one more part follows p
 
 GP opens a container that holds an extra entry it does not know, with no notice, and exports it normally. We tried a JSON entry under `Content/` in a subfolder, a JSON entry at the archive root and a 256-byte binary entry under `Content/` [m3-x01, m3-x02, m3-x03]. **GP's re-save drops the entry**: the re-saved container holds only GP's own fixed list of entries (§1). Data that OpenTab keeps in such an entry therefore survives our own round trips and a file opened in GP, but not a file that GP saves again.
 
+OpenTab keeps one such entry: `Content/OpenTab/sound-overrides.json`, holding the per-score sound bank overrides as `{"sound_overrides": [{"track": T, "bank": "B"}]}`, where `T` is the track's position in `Tracks`. The writer adds it at the end of the container only when the score has an override, and the reader takes it out of the container again. A malformed entry, or one that names a missing track, is a read error.
+
 ## 2. `score.gpif` as an XML document
 
 - UTF-8 with an XML declaration.
@@ -550,7 +552,18 @@ Notation used in this table:
 | `Track.name` | `Track/Name` | CDATA |
 | `Track.short_name` | `Track/ShortName` | CDATA |
 | `instrument.kind` | `InstrumentSet/Type`: `drumKit` → Percussion, anything else → Fretted | — |
-| `instrument.midi_program` | first `Sounds/Sound/MIDI/Program` | — |
+| `instrument.set` | `InstrumentSet/Type`, one of the 12 types of §7 | An unknown type gives no set and stays opaque, guarded by the kind and set. A set of the other kind is refused (`InstrumentSet`); a track without a set and without a kept type is refused (`NoInstrumentSet`), since GPIF needs a type. |
+| `instrument.midi_program` | first `Sounds/Sound/MIDI/Program` | The initial program. |
+| `midi.bank` | first `Sounds/Sound/MIDI/MSB`, `LSB` | The initial bank. |
+| `sounds[k].name` | `Sounds/Sound[k]/Name` | CDATA. `Label` equal to the name is mapped; any other label is kept, guarded by the name. `Path`, `Role` and `RSE` stay opaque. |
+| `sounds[k].program`, `.bank` | `Sounds/Sound[k]/MIDI/Program`, `MSB`, `LSB` | `sounds[0]` must match the initial program and bank (`FirstSound` refusal). |
+| `sounds` empty | a single bare `Sound` holding only `MIDI` with `Program` and, when not 0/0, `LSB` and `MSB` | The implicit sound of the track: written as `midi_program` and `midi.bank`, and read back as no sound. Any other `Sounds` content is read as sounds. |
+| `midi.port`, `.primary`, `.secondary`, `.per_string` | `MidiConnection/Port`, `PrimaryChannel`, `SecondaryChannel`, `ForeOneChannelPerString` | Channels 0 to 15. A missing element reads as GP's default: 0 for pitched tracks, 9 for drum kits, port 0, `false`. The writer omits `MidiConnection` while all four hold that default. |
+| `midi.volume`, `midi.pan` | `RSE/ChannelStrip/Parameters` index 12 and 11 | Millionths, 500 000 when missing or not a decimal in 0..1 of at most 6 places. `Parameters` equal to GP's default list (§15) with these two values is mapped; any other list is kept, and the writer rewrites only the index whose value changed. |
+| `automations[i]` with `Volume`, `Pan` | `RSE/ChannelStrip/Automations/Automation` of `Type` `DSPParam_12`, `DSPParam_11` | Typed only when the element is exactly what the writer generates: the six children in GP's order, `Bar` naming a master bar, `Position` in GP's 6-digit form on the 1/3840 grid (end of bar included) and `Value` in shortest decimal form. Anything else stays opaque, anchored to its bar. |
+| `automations[i]` with `Sound` | `Track/Automations/Automation` of `Type` `Sound` | `Value` names a sound as `path;name;role`, from that sound's `Path` (empty when absent), name and `Role` (`User` when absent). Typed only when exactly one sound matches; the writer refuses an ambiguous one (`AmbiguousSound`). A generated sound has no `Path`, so its automation reads `;name;User`, GP's link rule. |
+| `automations[i].master_bar`, `.position`, `.linear`, `.visible` | `Bar`, `Position` × bar length, `Linear`, `Visible` | `Bar` follows the master bar's id. Positions outside the grid or the bar are refused (`AutomationPosition`), and a missing master bar is refused (`AutomationBar`). The model lists the channel-strip automations before the sound automations; the writer keeps the order within each list. |
+| `Score.sound_overrides` | the container entry of §1.2 | An override naming a missing track is refused (`SoundOverrideTrack`). |
 | `tuning.strings` | `Staff/Properties/Property[Tuning]/Pitches`, **reversed** | Model index 0 is the highest string. |
 | `capo` | `Property[CapoFret]/Fret` | — |
 | `transpose.chromatic`, `.octave` | `Track/Transpose/Chromatic`, `Octave` | Chromatic runs from -12 to 12 and octave from -3 to 3. Observed: chromatic -11 to 0, octave -1 to 0. Guitars and basses carry octave -1. |
@@ -626,10 +639,11 @@ These stay as opaque payloads of their owner, or of the score:
 - **Track:**
   - colour, layout, playing style and icon;
   - the `InstrumentSet` body (the type is mapped);
-  - `NotationPatch`, `RSE`, `ForcedSound`;
-  - all but the first sound's program;
-  - `MidiConnection`, playback and engine state, `Lyrics`;
-  - track automations and `LetRingThroughout`.
+  - `NotationPatch`, `ForcedSound`;
+  - the `RSE` content other than volume, pan and their automations: `ChannelStrip@version`, `ByPassedAutomations` and the other 14 parameters;
+  - a sound's `Path`, `Role` and `RSE`, and a label that differs from its name;
+  - `MidiConnection` children other than the four mapped ones, playback and engine state, `Lyrics`;
+  - track automations other than typed sound automations, and `LetRingThroughout`.
 - **Staff properties:**
   - `FretCount`, partial capo;
   - the tuning extras (`Flat`, `Instrument`, `Label`, `LabelVisible`) and `TuningFlat`;
@@ -769,6 +783,7 @@ On scores built from scratch we also saw the following. Each case is a file in `
 - **TransposedPitch spelling.** GP spells the written pitch by moving the concert spelling diatonically. In C sharp major with only an octave transposition, it keeps C sharp. For an instrument a tone below concert pitch, it writes B sharp. For a fourth plus an octave, it writes E sharp. A writer that picks the nearest enharmonic key instead differs only in spelling, never in pitch.
 - **Ghost notes with an accent.** GP drops `AntiAccent` from any note that also has an `Accent` bit: accent, heavy accent or staccato. A ghost note without an accent keeps it [ghost-accent].
 - **Container entries of our own** are dropped (§1.2).
+- **The implicit sound.** A track whose only sound is a bare `Sound` with `MIDI/Program` comes back with that sound spelled out: empty `Name` and `Label`, GP's own `Path` and `Role`, `LSB` and `MSB`, and a `Sound` automation at bar 0, position 0, naming it. It also gains a `MidiConnection` with GP's default channels and a channel strip with GP's default parameters, which read as the defaults the model already holds (every fixture of §14).
 - **Default view.** When `GPVersion` is present and the container carries no score views, GP's default view shows only the first track. The other tracks are present in the track list and in every export. Adding `ScoreViews` to the GPIF without the matching `Content/ScoreViews/*.gpsv` entries crashed GP [t6-views-one].
 
 ## 14. Committed goldens
@@ -827,7 +842,7 @@ A separate empty `UseOneChannelPerString` element appears in 45 tracks. Without 
 - volume 0.2, 0.5 and 0.8 became 1, 4 and 16 there, so the curve is not linear;
 - pan 0.1, 0.5 and 0.9 became 1, 8 and 14.
 
-GP's MIDI and MusicXML exports ignore both: MusicXML says volume 80 and pan 0 whatever the values are [m3-mx01]. In the corpus, volume runs from 0.47 to 0.8125 and pan from 0 to 1, with 0.5 as the centre (45 of 64). GP writes 0.5 for both when a file has no channel strip. Every value is a decimal of at most 4 places in its shortest form.
+GP's MIDI and MusicXML exports ignore both: MusicXML says volume 80 and pan 0 whatever the values are [m3-mx01]. In the corpus, volume runs from 0.47 to 0.8125 and pan from 0 to 1, with 0.5 as the centre (45 of 64). GP writes 0.5 for both when a file has no channel strip: every committed `resave.gpif` of §14 holds `0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0 0.5 0.5 0.5 0.5 0.5 0.5`, GP's default list, which OpenTab's writer also uses around a volume or pan of its own. Every value is a decimal of at most 4 places in its shortest form.
 
 **Volume and pan automations** live in the channel strip, not in the track's `Automations`:
 - `DSPParam_12` is volume (79 automations) and `DSPParam_11` is pan (65), in 24 files;
