@@ -8,7 +8,9 @@ use crate::ids::{
 use crate::midi::{
     check_removable_automations, check_restorable_automations, put_automations, take_automations,
 };
-use crate::rules::{already_broken, check_bar, check_tempo_changes, clef_for_new_bar, empty_bar};
+use crate::rules::{
+    Owner, already_broken, check_bar, check_tempo_changes, clef_for_new_bar, empty_bar,
+};
 use crate::{AutomationEntry, Command, CommandError, ExtensionEntry};
 
 const WHAT: &str = "master bar";
@@ -60,7 +62,7 @@ where
         .iter()
         .flat_map(|track| track.staves.iter().map(move |_| track));
     for (track, bar) in owners.zip(bars) {
-        check_bar(track, bar)?;
+        check_bar(&Owner::of(score, track), bar)?;
     }
     Ok(())
 }

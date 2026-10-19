@@ -2,7 +2,7 @@ use opentab_model::{BarId, Score, Voice, VoiceId};
 
 use crate::ids::{check_removable, check_restorable, put_extensions, take_extensions, voice_ids};
 use crate::locate::{bar_in, bar_ref, find_bar, not_found};
-use crate::rules::{already_broken, check_beat};
+use crate::rules::{Owner, already_broken, check_beat};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const VOICE: &str = "voice";
@@ -37,7 +37,7 @@ pub(crate) fn remove(score: &mut Score, voice: VoiceId) -> Result<Command, Comma
         )));
     }
     for beat in &current.beats {
-        check_beat(track, beat).map_err(already_broken)?;
+        check_beat(&Owner::of(score, track), beat).map_err(already_broken)?;
     }
     check_removable(score, voice_ids(current))?;
     let bar_id = bar.id;
@@ -94,7 +94,7 @@ pub(crate) fn restore(score: &mut Score, restored: Restored<'_>) -> Result<Comma
     }
     let track = score.tracks.get(path.track).ok_or(not_found(BAR, bar))?;
     for beat in &voice.beats {
-        check_beat(track, beat)?;
+        check_beat(&Owner::of(score, track), beat)?;
     }
     check_restorable(score, voice_ids(voice), extensions)?;
     let target = bar_in(&mut score.tracks, path).ok_or(not_found(BAR, bar))?;

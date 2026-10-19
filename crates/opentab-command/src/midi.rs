@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use opentab_model::{
     AUTOMATION_GRID, Automation, AutomationValue, DrumKit, Fraction, InstrumentKind, MasterBar,
     MasterBarId, NoteKind, Score, SoundOverride, Track, TrackId, TrackMidi, automations_in_order,
-    on_automation_grid,
+    gm_drum_kit, on_automation_grid,
 };
 
 use crate::rules::{already_broken, check_articulation};
@@ -63,7 +63,11 @@ pub(crate) fn set_drum_kit(
     track: TrackId,
     drum_kit: Option<&DrumKit>,
 ) -> Result<Command, CommandError> {
-    let target = track_mut(score, track)?;
+    let index = track_index(score, track)?;
+    let target = score.tracks.get(index).ok_or(CommandError::NotFound {
+        what: "track",
+        id: track.0.0,
+    })?;
     let percussion = target.instrument.kind == InstrumentKind::Percussion;
     if !percussion && target.drum_kit.is_some() {
         return Err(already_broken(not_percussion(track)));
@@ -71,32 +75,34 @@ pub(crate) fn set_drum_kit(
     if !percussion && drum_kit.is_some() {
         return Err(not_percussion(track));
     }
-    let articulations: Vec<u16> = target
-        .staves
-        .iter()
-        .flat_map(|staff| &staff.bars)
-        .flat_map(|bar| &bar.voices)
-        .flat_map(|voice| &voice.beats)
-        .flat_map(|beat| &beat.notes)
-        .filter_map(|note| match note.kind {
-            NoteKind::Percussion { articulation } => Some(articulation),
-            NoteKind::Fretted { .. } => None,
-        })
-        .collect();
     if percussion {
+        let articulations: Vec<u16> = target
+            .staves
+            .iter()
+            .flat_map(|staff| &staff.bars)
+            .flat_map(|bar| &bar.voices)
+            .flat_map(|voice| &voice.beats)
+            .flat_map(|beat| &beat.notes)
+            .filter_map(|note| match note.kind {
+                NoteKind::Percussion { articulation } => Some(articulation),
+                NoteKind::Fretted { .. } => None,
+            })
+            .collect();
+        let before = score.articulation_count(target);
+        let after = match drum_kit {
+            Some(kit) => Some(kit.articulations().len()),
+            None if score.kept_drum_kit(track) => None,
+            None => Some(gm_drum_kit().articulations().len()),
+        };
         for articulation in &articulations {
-            check_articulation(target, *articulation).map_err(already_broken)?;
+            check_articulation(target, before, *articulation).map_err(already_broken)?;
+        }
+        for articulation in &articulations {
+            check_articulation(target, after, *articulation)?;
         }
     }
+    let target = track_mut(score, track)?;
     let old = std::mem::replace(&mut target.drum_kit, drum_kit.cloned());
-    if percussion {
-        for articulation in &articulations {
-            if let Err(error) = check_articulation(target, *articulation) {
-                target.drum_kit = old;
-                return Err(error);
-            }
-        }
-    }
     Ok(Command::SetDrumKit {
         track,
         drum_kit: old,

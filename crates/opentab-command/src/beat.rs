@@ -9,7 +9,7 @@ use crate::ids::{
 use crate::locate::{
     bar_in, bar_ref, beat_in, beat_ref, find_bar, not_found, voice_in, voice_path, voice_ref,
 };
-use crate::rules::{already_broken, check_beat};
+use crate::rules::{Owner, already_broken, check_beat};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const BEAT: &str = "beat";
@@ -134,7 +134,7 @@ pub(crate) fn remove(score: &mut Score, beat: BeatId) -> Result<Command, Command
             owner.id.0.0
         )));
     }
-    check_beat(track, current).map_err(already_broken)?;
+    check_beat(&Owner::of(score, track), current).map_err(already_broken)?;
     check_removable(score, beat_ids(current))?;
     let voice = voice_in(&mut score.tracks, voice_path(path)).ok_or(not_found(BEAT, beat))?;
     if path.beat >= voice.beats.len() {
@@ -164,7 +164,7 @@ pub(crate) fn restore(
         .tracks
         .get(path.track)
         .ok_or(not_found(VOICE, voice))?;
-    check_beat(track, beat)?;
+    check_beat(&Owner::of(score, track), beat)?;
     check_restorable(score, beat_ids(beat), extensions)?;
     let target = voice_in(&mut score.tracks, path).ok_or(not_found(VOICE, voice))?;
     target.beats.insert(index, beat.clone());

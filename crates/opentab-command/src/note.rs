@@ -7,7 +7,7 @@ use crate::ids::{
     check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
 };
 use crate::locate::{beat_in, beat_ref, not_found, note_in};
-use crate::rules::{already_broken, check_note_in, check_trill};
+use crate::rules::{Owner, already_broken, check_note_in, check_trill};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const BEAT: &str = "beat";
@@ -23,7 +23,7 @@ pub(crate) fn add(
     let track = score.tracks.get(path.track).ok_or(not_found(BEAT, beat))?;
     let target = beat_ref(&score.tracks, path).ok_or(not_found(BEAT, beat))?;
     check_note_in(
-        track,
+        &Owner::of(score, track),
         beat,
         &target.notes,
         NoteKind::Fretted { string, fret },
@@ -59,8 +59,9 @@ pub(crate) fn remove(score: &mut Score, note: NoteId) -> Result<Command, Command
             owner.id.0.0
         )));
     }
-    check_note_in(track, owner.id, before, current.kind).map_err(already_broken)?;
-    check_note_in(track, owner.id, after, current.kind).map_err(already_broken)?;
+    let rules = Owner::of(score, track);
+    check_note_in(&rules, owner.id, before, current.kind).map_err(already_broken)?;
+    check_note_in(&rules, owner.id, after, current.kind).map_err(already_broken)?;
     check_trill(track, current).map_err(already_broken)?;
     check_removable(score, once(current.id.0))?;
     let target = beat_in(&mut score.tracks, path.beat).ok_or(not_found(NOTE, note))?;
@@ -96,7 +97,7 @@ pub(crate) fn restore(
             len,
         });
     }
-    check_note_in(track, beat, &target.notes, note.kind)?;
+    check_note_in(&Owner::of(score, track), beat, &target.notes, note.kind)?;
     check_trill(track, note)?;
     check_restorable(score, once(note.id.0), extensions)?;
     let target = beat_in(&mut score.tracks, path).ok_or(not_found(BEAT, beat))?;

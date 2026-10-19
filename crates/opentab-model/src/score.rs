@@ -60,7 +60,30 @@ pub struct NotePath {
     pub note: usize,
 }
 
+const KEPT_KIT_PARENT: &str = "parent=\"InstrumentSet\"";
+const KEPT_KIT_ELEMENTS: &str = "<Elements";
+const KEPT_KIT_GUARD: &str = "guard=";
+const UNTYPED_KIT_GUARD: &str = "guard=\"drum-kit:percussion none\"";
+
 impl Score {
+    pub fn kept_drum_kit(&self, track: TrackId) -> bool {
+        self.extensions.0.get(&track.0).is_some_and(|payloads| {
+            payloads.iter().any(|payload| {
+                let data = payload.data.as_str();
+                data.contains(KEPT_KIT_PARENT)
+                    && data.contains(KEPT_KIT_ELEMENTS)
+                    && (!data.contains(KEPT_KIT_GUARD) || data.contains(UNTYPED_KIT_GUARD))
+            })
+        })
+    }
+
+    pub fn articulation_count(&self, track: &Track) -> Option<usize> {
+        if track.drum_kit.is_none() && self.kept_drum_kit(track.id) {
+            return None;
+        }
+        track.kit().map(|kit| kit.articulations().len())
+    }
+
     pub fn new() -> Score {
         Score::default()
     }

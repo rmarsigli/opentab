@@ -1,17 +1,32 @@
 use opentab_model::{
-    Bar, Beat, BeatId, Clef, Fraction, IdAllocator, InstrumentKind, Note, NoteKind, Tempo,
+    Bar, Beat, BeatId, Clef, Fraction, IdAllocator, InstrumentKind, Note, NoteKind, Score, Tempo,
     TempoChange, TimeSignature, Track, Voice, VoiceSlot,
 };
 
 use crate::CommandError;
 use crate::ids::next_id;
 
+pub(crate) struct Owner<'t> {
+    pub track: &'t Track,
+    pub articulations: Option<usize>,
+}
+
+impl<'t> Owner<'t> {
+    pub fn of(score: &Score, track: &'t Track) -> Owner<'t> {
+        Owner {
+            track,
+            articulations: score.articulation_count(track),
+        }
+    }
+}
+
 pub(crate) fn check_note_in(
-    track: &Track,
+    owner: &Owner<'_>,
     beat: BeatId,
     notes: &[Note],
     kind: NoteKind,
 ) -> Result<(), CommandError> {
+    let track = owner.track;
     match (track.instrument.kind, kind) {
         (InstrumentKind::Fretted, NoteKind::Fretted { string, .. }) => {
             let strings = track.tuning.strings.len();
@@ -33,7 +48,7 @@ pub(crate) fn check_note_in(
             Ok(())
         }
         (InstrumentKind::Percussion, NoteKind::Percussion { articulation }) => {
-            check_articulation(track, articulation)
+            check_articulation(track, owner.articulations, articulation)
         }
         (InstrumentKind::Percussion, NoteKind::Fretted { .. }) => {
             Err(CommandError::WrongInstrument { track: track.id })
@@ -47,8 +62,14 @@ pub(crate) fn check_note_in(
     }
 }
 
-pub(crate) fn check_articulation(track: &Track, articulation: u16) -> Result<(), CommandError> {
-    let size = track.kit().map_or(0, |kit| kit.articulations().len());
+pub(crate) fn check_articulation(
+    track: &Track,
+    articulations: Option<usize>,
+    articulation: u16,
+) -> Result<(), CommandError> {
+    let Some(size) = articulations else {
+        return Ok(());
+    };
     if usize::from(articulation) >= size {
         return Err(CommandError::invalid(format!(
             "articulation {articulation} is outside the drum kit of track {}, which has {size} articulations",
@@ -80,16 +101,16 @@ pub(crate) fn check_trill(track: &Track, note: &Note) -> Result<(), CommandError
     Ok(())
 }
 
-pub(crate) fn check_beat(track: &Track, beat: &Beat) -> Result<(), CommandError> {
+pub(crate) fn check_beat(owner: &Owner<'_>, beat: &Beat) -> Result<(), CommandError> {
     for (index, note) in beat.notes.iter().enumerate() {
         let before = beat.notes.get(..index).unwrap_or_default();
-        check_note_in(track, beat.id, before, note.kind)?;
-        check_trill(track, note)?;
+        check_note_in(owner, beat.id, before, note.kind)?;
+        check_trill(owner.track, note)?;
     }
     Ok(())
 }
 
-pub(crate) fn check_bar(track: &Track, bar: &Bar) -> Result<(), CommandError> {
+pub(crate) fn check_bar(owner: &Owner<'_>, bar: &Bar) -> Result<(), CommandError> {
     let ordered = bar.voices.windows(2).all(|pair| match pair {
         [first, second] => first.slot < second.slot,
         _ => true,
@@ -102,7 +123,7 @@ pub(crate) fn check_bar(track: &Track, bar: &Bar) -> Result<(), CommandError> {
     }
     for voice in &bar.voices {
         for beat in &voice.beats {
-            check_beat(track, beat)?;
+            check_beat(owner, beat)?;
         }
     }
     Ok(())

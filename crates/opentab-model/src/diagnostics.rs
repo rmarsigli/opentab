@@ -217,7 +217,7 @@ impl Report {
                 master_bars: score.master_bars.len(),
             });
         }
-        let articulations = track.kit().map(|kit| kit.articulations().len());
+        let articulations = score.articulation_count(track);
         for (index, bar) in staff.bars.iter().enumerate() {
             self.id(bar.id.0);
             self.bar_voices(bar);

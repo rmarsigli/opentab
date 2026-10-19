@@ -483,6 +483,46 @@ fn an_untypeable_kit_stays_opaque_until_a_kit_is_set() {
 }
 
 #[test]
+fn an_unreadable_kept_kit_skips_the_kit_membership_check() {
+    let unreadable =
+        canonical_elements().replace("<StaffLine>7</StaffLine>", "<StaffLine>low</StaffLine>");
+    let doc = drum_doc(&unreadable).replace(
+        "<InstrumentArticulation>1</InstrumentArticulation>",
+        "<InstrumentArticulation>60</InstrumentArticulation>",
+    );
+    let score = read_gpif(&doc);
+    assert_eq!(track(&score).drum_kit, None);
+    assert_eq!(score.articulation_count(track(&score)), None);
+    assert_eq!(
+        score.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].kind,
+        NoteKind::Percussion { articulation: 60 }
+    );
+    assert_eq!(diagnose(&score), Vec::new());
+    let bytes = write_gp(&score).expect("an unknown kit is not checked");
+    assert_eq!(read_gp(&bytes).expect("read"), score);
+    assert_eq!(
+        write_gp(&read_gp(&bytes).expect("read")).expect("rewrite"),
+        bytes
+    );
+    let mut edited = score.clone();
+    let note = edited.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].id;
+    let inverse =
+        opentab_command::apply(&mut edited, &opentab_command::Command::RemoveNote { note })
+            .expect("the note can be removed");
+    assert!(
+        edited.tracks[0].staves[0].bars[0].voices[0].beats[0]
+            .notes
+            .is_empty()
+    );
+    opentab_command::apply(&mut edited, &inverse).expect("and restored");
+    assert_eq!(edited, score);
+    let mut general = score.clone();
+    general.extensions.0.remove(&general.tracks[0].id.0);
+    assert_eq!(general.articulation_count(&general.tracks[0]), Some(47));
+    assert!(!diagnose(&general).is_empty());
+}
+
+#[test]
 fn only_the_first_elements_child_is_typed() {
     let doubled = format!("{}{}", canonical_elements(), canonical_elements());
     let score = read_gpif(&drum_doc(&doubled));
