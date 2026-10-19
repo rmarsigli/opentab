@@ -146,7 +146,15 @@ pub fn kick() -> Waveform {
 }
 
 pub fn snare() -> Waveform {
-    let mut noise = Noise::new(NOISE_SEED ^ 0x5555);
+    snare_seeded(NOISE_SEED ^ 0x5555)
+}
+
+pub fn snare_variant() -> Waveform {
+    snare_seeded(NOISE_SEED ^ 0x3C3C)
+}
+
+fn snare_seeded(seed: u32) -> Waveform {
+    let mut noise = Noise::new(seed);
     let mut noise_level = 22_000 * UNITY_Q16;
     let mut tone_level = 14_000 * UNITY_Q16;
     let step = increment(190) as u32;
@@ -163,15 +171,23 @@ pub fn snare() -> Waveform {
 }
 
 pub fn hat() -> Waveform {
-    let mut noise = Noise::new(NOISE_SEED ^ 0xAAAA);
+    noise_burst(NOISE_SEED ^ 0xAAAA, 4_410, 65_433)
+}
+
+pub fn open_hat() -> Waveform {
+    noise_burst(NOISE_SEED ^ 0x0F0F, 22_050, 65_521)
+}
+
+fn noise_burst(seed: u32, frames: u32, factor_q16: i64) -> Waveform {
+    let mut noise = Noise::new(seed);
     let mut level = 20_000 * UNITY_Q16;
     let mut previous = 0i64;
-    let points = (0..4_410)
+    let points = (0..frames)
         .map(|_| {
             let current = i64::from(noise.next());
             let high = (current - previous) / 2;
             previous = current;
-            clip(high * decay(&mut level, 65_433) / 32_768)
+            clip(high * decay(&mut level, factor_q16) / 32_768)
         })
         .collect();
     one_shot(points)

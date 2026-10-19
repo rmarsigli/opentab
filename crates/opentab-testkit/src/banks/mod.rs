@@ -1,17 +1,26 @@
-mod samples;
+mod flac;
+pub mod samples;
 mod sf2;
+mod sfz;
 mod structural;
+mod vorbis;
+mod wav;
 
-pub use samples::SAMPLE_RATE;
+pub use flac::{FlacOverrides, FlacSpec, write_flac, write_flac_with};
+pub use samples::{SAMPLE_RATE, Waveform};
 pub use sf2::{
     BypassRoute, Generator, InstrumentDef, PresetDef, SampleDef, SoundFontDef, Zone, bypass_bank,
     generator, write_sf2, zone_bomb,
 };
+pub use sfz::{
+    SIDECAR_FILE, SINE_BIN, SINE_PACKETS, TINY_SFZ_FOLDER, flac16, mono_points, sine_ogg,
+    stereo_points, tiny_sfz, wav16, write_tiny_sfz,
+};
 pub use structural::{
     FieldValue, PdtaField, PdtaTable, StructuralMutation, apply_structural, arb_structural_mutation,
 };
-
-use samples::Waveform;
+pub use vorbis::{ExtraCodebook, VorbisSpec, reseal_ogg, write_vorbis};
+pub use wav::{WavOverrides, WavSpec, write_wav, write_wav_with};
 
 pub const KEY_RANGE: u16 = 43;
 pub const INSTRUMENT: u16 = 41;
