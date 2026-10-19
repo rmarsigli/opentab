@@ -9,7 +9,7 @@ use crate::midi::{
     BEND_RANGE_SEMITONES, Channel, ChannelSetup, ChannelState, ConductorEvent, ConductorKind,
     MidiMessage, PITCH_BEND_RANGE_RPN, TimedEvent, TrackSetup,
 };
-use crate::notes::{Lane, Stream, TrackWriter};
+use crate::notes::{Lane, Restrikes, Stream, TrackWriter};
 use crate::order::{PlayOrder, play_order};
 use crate::smf::{Ppq, TrackLayout};
 use crate::tempo::{JumpTempo, RampGrid, TempoMap};
@@ -72,6 +72,7 @@ pub struct Performance {
     pub clicks: Vec<Click>,
     pub unplayed: Vec<UnplayedFeature>,
     pub warnings: Vec<PlaybackWarning>,
+    pub restrikes: Restrikes,
 }
 
 fn conductor(
@@ -266,15 +267,19 @@ pub fn perform(score: &Score, options: &PlaybackOptions) -> Result<Performance, 
         warnings.extend(output.warnings);
         strands.extend(output.strands);
     }
+    let mut restrikes = Restrikes::default();
     if options.profile == Profile::Musical {
-        Musical {
-            shared: &channels,
-            timelines: &timelines,
-            pool,
-        }
-        .emit(strands, &mut stream, &mut warnings, &mut tracks)?;
+        restrikes.add(
+            Musical {
+                shared: &channels,
+                timelines: &timelines,
+                pool,
+            }
+            .emit(strands, &mut stream, &mut warnings, &mut tracks)?,
+        );
     }
-    let mut pending = stream.finish();
+    let (mut pending, finished) = stream.finish(&mut warnings)?;
+    restrikes.add(finished);
     pending.sort_by(|left, right| {
         left.at
             .cmp(&right.at)
@@ -302,6 +307,7 @@ pub fn perform(score: &Score, options: &PlaybackOptions) -> Result<Performance, 
         tracks,
         events,
         warnings,
+        restrikes,
     })
 }
 

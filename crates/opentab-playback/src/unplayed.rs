@@ -65,6 +65,10 @@ pub enum PlaybackWarning {
         at: ScoreTime,
         articulation: u16,
     },
+    MergedUnison {
+        track: usize,
+        at: ScoreTime,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

@@ -256,6 +256,7 @@ pub fn restruck(notes: &[Note]) -> (Vec<Note>, bool) {
             previous = Some(index);
         } else if earlier.onset.tick == current.tick {
             kept[before].length = earlier.length.max(kept[index].length);
+            kept[before].onset.velocity = earlier.onset.velocity.max(current.velocity);
             dropped[index] = true;
             changed = true;
         } else {

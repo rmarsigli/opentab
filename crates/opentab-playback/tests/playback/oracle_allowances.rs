@@ -153,7 +153,7 @@ pub const ALLOWED_DIFFERENCES: [Allowance; 13] = [
     },
     Allowance {
         name: "restrike-cut",
-        reason: "GP lets one key sound twice on one channel (unison tracks or staves sharing a channel), which synths release together; we end the earlier note at the re-strike and keep one note for a same-tick unison (M3 Task 11 ruling I1), so GP's notes are compared after the same cut",
+        reason: "GP lets one key sound twice on one channel (unison tracks or staves sharing a channel), which synths release together; we end the earlier note at the re-strike and keep one note, at the louder velocity, for a same-tick unison (M3 Task 11 rulings I1 and N1), so GP's notes are compared after the same cut",
         rule: Rule::RestrikeCut,
     },
 ];

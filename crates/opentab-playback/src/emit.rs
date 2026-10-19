@@ -6,7 +6,7 @@ use crate::channels::ChannelPool;
 use crate::controls::{MUTED_GUITAR_PROGRAM, Timeline};
 use crate::exact::Exact;
 use crate::midi::{BEND_CENTRE, Channel, ChannelSetup, ChannelState, MidiMessage, TrackSetup};
-use crate::notes::{Lane, Strand, Stream, Struck, restrike};
+use crate::notes::{Lane, Restrikes, Sounded, Strand, Stream, Struck, restrike};
 use crate::{PlaybackError, PlaybackWarning, ScoreTime};
 
 #[derive(Debug, Clone, Copy)]
@@ -59,7 +59,7 @@ impl Musical<'_> {
         stream: &mut Stream,
         warnings: &mut Vec<PlaybackWarning>,
         setups: &mut [TrackSetup],
-    ) -> Result<(), PlaybackError> {
+    ) -> Result<Restrikes, PlaybackError> {
         for (track, timeline) in self.timelines.iter().enumerate() {
             let channel = self.shared_channel(track);
             for change in &timeline.changes {
@@ -131,24 +131,25 @@ impl Musical<'_> {
             placed.push(place);
         }
         let mut struck: Vec<Struck> = Vec::new();
-        let mut owners: Vec<usize> = Vec::new();
-        for (slot, place) in placed.iter().enumerate() {
-            for note in strands
-                .get(place.index)
-                .map_or(&[][..], |strand| &strand.notes)
-            {
+        for place in &placed {
+            let Some(strand) = strands.get(place.index) else {
+                continue;
+            };
+            for note in &strand.notes {
                 struck.push(Struck {
+                    track: strand.track,
                     channel: place.channel,
                     key: note.key,
                     start: note.start,
                     end: note.end,
+                    velocity: note.velocity,
+                    expressive: !strand.bends.is_empty(),
                     dropped: false,
                 });
-                owners.push(slot);
             }
         }
-        restrike(&mut struck);
-        let mut cut = struck.iter().zip(&owners);
+        let counted = restrike(&mut struck, warnings)?;
+        let mut cut = struck.iter();
         for place in &placed {
             let Some(strand) = strands.get(place.index) else {
                 continue;
@@ -168,15 +169,13 @@ impl Musical<'_> {
             }
             let mut end = start;
             let mut notes: Vec<Struck> = Vec::with_capacity(strand.notes.len());
-            let mut velocities: Vec<u8> = Vec::with_capacity(strand.notes.len());
-            for note in &strand.notes {
-                let Some((kept, _)) = cut.next() else {
+            for _ in &strand.notes {
+                let Some(kept) = cut.next() else {
                     continue;
                 };
                 if !kept.dropped {
                     end = end.max(kept.end);
                     notes.push(*kept);
-                    velocities.push(note.velocity);
                 }
             }
             for bend in bends.iter().filter(|bend| bend.at < end) {
@@ -186,14 +185,23 @@ impl Musical<'_> {
                     MidiMessage::PitchBend { value: bend.value },
                 );
             }
-            for (note, velocity) in notes.iter().zip(velocities) {
+            for note in &notes {
                 if place.fallback {
                     warnings.push(PlaybackWarning::ChannelFallback {
                         track,
                         at: time_of(note.start)?,
                     });
                 }
-                stream.note(note.start, note.end, strand_lane, note.key, velocity);
+                stream.note(
+                    strand_lane,
+                    Sounded {
+                        start: note.start,
+                        end: note.end,
+                        key: note.key,
+                        velocity: note.velocity,
+                        expressive: note.expressive,
+                    },
+                );
             }
             if place.fallback && !strand.bends.is_empty() && !notes.is_empty() {
                 stream.push(
@@ -221,6 +229,6 @@ impl Musical<'_> {
                 }
             }
         }
-        Ok(())
+        Ok(counted)
     }
 }

@@ -149,6 +149,7 @@ fn check(score: &Score, profile: Profile) -> Result<(), TestCaseError> {
     }
     paired(&performance)?;
     no_key_sounds_twice_on_a_channel(&performance)?;
+    merges_are_reported(&performance)?;
     if profile == Profile::Musical {
         shared_only_with_fallback(score, &performance)?;
         bends_reach_only_their_own_note(&performance)?;
@@ -231,6 +232,19 @@ fn no_key_sounds_twice_on_a_channel(performance: &Performance) -> Result<(), Tes
         }
     }
     prop_assert!(sounding.is_empty());
+    Ok(())
+}
+
+fn merges_are_reported(performance: &Performance) -> Result<(), TestCaseError> {
+    let reported = performance
+        .warnings
+        .iter()
+        .filter(|warning| matches!(warning, PlaybackWarning::MergedUnison { .. }))
+        .count();
+    prop_assert_eq!(
+        reported,
+        usize::try_from(performance.restrikes.merged).unwrap_or(usize::MAX)
+    );
     Ok(())
 }
 
@@ -519,7 +533,9 @@ proptest! {
         shared_only_with_fallback(&score, &musical)?;
         paired(&musical)?;
         let gp = perform(&score, &PlaybackOptions { profile: Profile::Gp }).expect("perform");
-        prop_assert!(gp.warnings.is_empty());
+        let merged_only = gp.warnings.iter().all(|warning| matches!(warning, PlaybackWarning::MergedUnison { .. }));
+        prop_assert!(merged_only, "gp reports only merged unisons");
+        prop_assert_eq!(gp.warnings.len(), usize::try_from(gp.restrikes.merged).expect("count"));
     }
 
     #[test]
@@ -651,12 +667,15 @@ fn dense_score(tracks: &[Vec<Vec<DenseNote>>]) -> Score {
 
 const DENSE_COVERAGE_CASES: usize = 64;
 const MELODIC_CHANNELS: usize = 15;
+const MIN_RESTRIKES: u32 = 16;
 
 #[test]
-fn the_dense_generator_allocates_dedicated_channels_and_exhausts_the_pool() {
+fn the_dense_generator_allocates_falls_back_cuts_and_merges() {
     let mut runner = proptest::test_runner::TestRunner::deterministic();
     let mut dedicated = 0;
     let mut exhausted = 0;
+    let mut cut: u32 = 0;
+    let mut merged: u32 = 0;
     for _ in 0..DENSE_COVERAGE_CASES {
         let tracks = arb_dense().new_tree(&mut runner).expect("tree").current();
         let score = dense_score(&tracks);
@@ -677,6 +696,8 @@ fn the_dense_generator_allocates_dedicated_channels_and_exhausts_the_pool() {
         }) {
             dedicated += 1;
         }
+        cut += performance.restrikes.cut;
+        merged += performance.restrikes.merged;
         let homeless = tracks.len().saturating_sub(MELODIC_CHANNELS);
         if reported(&performance).len() > homeless {
             exhausted += 1;
@@ -685,6 +706,8 @@ fn the_dense_generator_allocates_dedicated_channels_and_exhausts_the_pool() {
     let floor = DENSE_COVERAGE_CASES / 4;
     assert!(dedicated >= floor, "{dedicated} cases allocate");
     assert!(exhausted >= floor, "{exhausted} cases fall back");
+    assert!(cut >= MIN_RESTRIKES, "{cut} re-strikes cut");
+    assert!(merged >= MIN_RESTRIKES, "{merged} unisons merged");
 }
 
 #[derive(Debug, Default)]
@@ -761,6 +784,7 @@ proptest! {
         prop_assert_eq!(&performance, &perform(&score, &options).expect("second run"));
         paired(&performance)?;
         no_key_sounds_twice_on_a_channel(&performance)?;
+        merges_are_reported(&performance)?;
         shared_only_with_fallback(&score, &performance)?;
         bends_reach_only_their_own_note(&performance)?;
         channels_are_set_up_only_while_idle(&performance)?;

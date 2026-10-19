@@ -50,19 +50,47 @@ pub(crate) struct Lane {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Struck {
+    pub(crate) track: usize,
     pub(crate) channel: Channel,
     pub(crate) key: u8,
     pub(crate) start: Exact,
     pub(crate) end: Exact,
+    pub(crate) velocity: u8,
+    pub(crate) expressive: bool,
     pub(crate) dropped: bool,
 }
 
-pub(crate) fn restrike(notes: &mut [Struck]) {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct Restrikes {
+    pub cut: u32,
+    pub merged: u32,
+}
+
+impl Restrikes {
+    pub(crate) fn add(&mut self, other: Restrikes) {
+        self.cut = self.cut.saturating_add(other.cut);
+        self.merged = self.merged.saturating_add(other.merged);
+    }
+}
+
+fn merge(notes: &mut [Struck], keep: usize, drop: usize) {
+    let (kept, gone) = (notes[keep], notes[drop]);
+    notes[keep].end = kept.end.max(gone.end);
+    notes[keep].velocity = kept.velocity.max(gone.velocity);
+    notes[keep].expressive = kept.expressive || gone.expressive;
+    notes[drop].dropped = true;
+}
+
+pub(crate) fn restrike(
+    notes: &mut [Struck],
+    warnings: &mut Vec<PlaybackWarning>,
+) -> Result<Restrikes, PlaybackError> {
     let mut order: Vec<usize> = (0..notes.len()).collect();
     order.sort_by(|left, right| {
         let (a, b) = (&notes[*left], &notes[*right]);
         (a.channel, a.key, a.start, *left).cmp(&(b.channel, b.key, b.start, *right))
     });
+    let mut counted = Restrikes::default();
     let mut previous: Option<usize> = None;
     for index in order {
         let current = notes[index];
@@ -77,20 +105,40 @@ pub(crate) fn restrike(notes: &mut [Struck]) {
         if earlier.end <= current.start {
             previous = Some(index);
         } else if earlier.start == current.start {
-            notes[before].end = earlier.end.max(current.end);
-            notes[index].dropped = true;
+            let (keep, drop) = if current.expressive && !earlier.expressive {
+                (index, before)
+            } else {
+                (before, index)
+            };
+            merge(notes, keep, drop);
+            warnings.push(PlaybackWarning::MergedUnison {
+                track: notes[drop].track,
+                at: time_of(notes[drop].start)?,
+            });
+            counted.merged = counted.merged.saturating_add(1);
+            previous = Some(keep);
         } else {
             notes[before].end = current.start;
+            counted.cut = counted.cut.saturating_add(1);
             previous = Some(index);
         }
     }
+    Ok(counted)
 }
 
 #[derive(Debug, Clone, Copy)]
 struct PendingNote {
     struck: Struck,
     lane: Lane,
-    velocity: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Sounded {
+    pub(crate) start: Exact,
+    pub(crate) end: Exact,
+    pub(crate) key: u8,
+    pub(crate) velocity: u8,
+    pub(crate) expressive: bool,
 }
 
 #[derive(Debug, Default)]
@@ -100,23 +148,28 @@ pub(crate) struct Stream {
 }
 
 impl Stream {
-    pub(crate) fn note(&mut self, start: Exact, end: Exact, lane: Lane, key: u8, velocity: u8) {
+    pub(crate) fn note(&mut self, lane: Lane, sounded: Sounded) {
         self.notes.push(PendingNote {
             struck: Struck {
+                track: lane.track,
                 channel: lane.channel,
-                key,
-                start,
-                end,
+                key: sounded.key,
+                start: sounded.start,
+                end: sounded.end,
+                velocity: sounded.velocity,
+                expressive: sounded.expressive,
                 dropped: false,
             },
             lane,
-            velocity,
         });
     }
 
-    pub(crate) fn finish(mut self) -> Vec<Pending> {
+    pub(crate) fn finish(
+        mut self,
+        warnings: &mut Vec<PlaybackWarning>,
+    ) -> Result<(Vec<Pending>, Restrikes), PlaybackError> {
         let mut struck: Vec<Struck> = self.notes.iter().map(|note| note.struck).collect();
-        restrike(&mut struck);
+        let counted = restrike(&mut struck, warnings)?;
         let notes = std::mem::take(&mut self.notes);
         for (note, struck) in notes.into_iter().zip(struck) {
             if struck.dropped {
@@ -127,7 +180,7 @@ impl Stream {
                 note.lane,
                 MidiMessage::NoteOn {
                     key: struck.key,
-                    velocity: note.velocity,
+                    velocity: struck.velocity,
                 },
             );
             self.push(
@@ -139,7 +192,7 @@ impl Stream {
                 },
             );
         }
-        self.pending
+        Ok((self.pending, counted))
     }
 
     pub(crate) fn push(&mut self, at: Exact, lane: Lane, message: MidiMessage) {
@@ -457,11 +510,14 @@ impl<'a> TrackWriter<'a> {
                 for sounding in &self.soundings {
                     let lane = self.lane(sounding.staff);
                     stream.note(
-                        sounding.start,
-                        sounding.end,
                         lane,
-                        sounding.key,
-                        sounding.velocity,
+                        Sounded {
+                            start: sounding.start,
+                            end: sounding.end,
+                            key: sounding.key,
+                            velocity: sounding.velocity,
+                            expressive: false,
+                        },
                     );
                 }
                 Ok(TrackOutput {

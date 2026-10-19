@@ -688,6 +688,15 @@ fn sixteen_guitars_bending_together_exhaust_the_pool_and_report_the_fallback() {
     assert_eq!(fallbacks, expected);
     let heard = heard(&performance);
     assert_eq!(heard.len(), 15);
+    assert!(
+        performance
+            .warnings
+            .contains(&PlaybackWarning::MergedUnison {
+                track: 15,
+                at: ScoreTime::ZERO
+            })
+    );
+    assert_eq!(performance.restrikes.merged, 1);
 }
 
 #[test]
@@ -908,4 +917,161 @@ fn a_tie_from_a_swung_eighth_into_a_straight_sixteenth_sounds_once() {
             options.profile
         );
     }
+}
+
+fn merged(performance: &Performance) -> Vec<(usize, ScoreTime)> {
+    performance
+        .warnings
+        .iter()
+        .filter_map(|warning| match warning {
+            PlaybackWarning::MergedUnison { track, at } => Some((*track, *at)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_same_instant_unison_keeps_the_louder_velocity_and_is_reported() {
+    for (first, second) in [(Dynamic::Mf, Dynamic::Fff), (Dynamic::Fff, Dynamic::Mf)] {
+        let mut builder = one_bar(vec![beat_with(
+            beat(NoteValue::Whole, vec![fretted(2, 5)]),
+            |effects| effects.dynamic = first,
+        )]);
+        builder.voice(
+            0,
+            0,
+            1,
+            vec![beat_with(
+                beat(NoteValue::Whole, vec![fretted(1, 1)]),
+                |effects| effects.dynamic = second,
+            )],
+        );
+        for options in [GP, MUSICAL] {
+            let performance = perform(&builder.score, &options).expect("perform");
+            let notes = heard(&performance);
+            assert_eq!(notes.len(), 1, "{:?}", options.profile);
+            assert_eq!(notes[0].velocity, velocity_of(Dynamic::Fff));
+            assert_eq!(merged(&performance), vec![(0, ScoreTime::ZERO)]);
+            assert_eq!(performance.restrikes.merged, 1);
+        }
+    }
+}
+
+fn bent_unison(builder: &mut Builder, track: usize) {
+    builder.voice(
+        track,
+        0,
+        0,
+        vec![beat(
+            NoteValue::Whole,
+            vec![
+                fretted(2, 5),
+                with(fretted(3, 10), |effects| {
+                    effects.bend = Some(bend([(0, 0), (50, 200), (50, 200), (100, 200)]));
+                }),
+            ],
+        )],
+    );
+}
+
+#[test]
+fn a_bent_unison_keeps_its_bend_on_a_channel_of_its_own() {
+    let mut builder = Builder::new(1);
+    let track = builder.guitar();
+    bent_unison(&mut builder, track);
+    let performance = musical(&builder);
+    let notes = heard(&performance);
+    assert_eq!(
+        notes.iter().map(|note| note.key).collect::<Vec<u8>>(),
+        vec![60, 60]
+    );
+    assert_eq!(
+        notes.iter().map(|note| note.channel).collect::<Vec<u8>>(),
+        vec![0, 1]
+    );
+    assert!(
+        bends_on(&performance, 1)
+            .iter()
+            .any(|(_, bent)| *bent == value(200))
+    );
+    assert!(bends_on(&performance, 0).is_empty());
+    assert!(merged(&performance).is_empty());
+}
+
+#[test]
+fn with_the_pool_exhausted_the_bent_unison_wins_and_the_merge_is_reported() {
+    let mut builder = Builder::new(1);
+    let track = builder.guitar();
+    for _ in 1..15 {
+        builder.guitar();
+    }
+    bent_unison(&mut builder, track);
+    let performance = musical(&builder);
+    let notes = heard(&performance);
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].channel, 0);
+    assert!(
+        bends_on(&performance, 0)
+            .iter()
+            .any(|(_, bent)| *bent == value(200))
+    );
+    assert_eq!(merged(&performance), vec![(track, ScoreTime::ZERO)]);
+    assert!(
+        performance
+            .warnings
+            .contains(&PlaybackWarning::ChannelFallback {
+                track,
+                at: ScoreTime::ZERO
+            })
+    );
+}
+
+#[test]
+fn a_shift_slide_beyond_the_bend_range_glides_only_to_the_range() {
+    let builder = one_bar(vec![
+        beat(
+            NoteValue::Half,
+            vec![with(fretted(2, 0), |effects| {
+                effects.slide = Some(Slide::Shift)
+            })],
+        ),
+        beat(NoteValue::Half, vec![fretted(2, 20)]),
+    ]);
+    let performance = musical(&builder);
+    let channel = heard(&performance)[0].channel;
+    let glide: Vec<u16> = bends_on(&performance, channel)
+        .into_iter()
+        .skip(1)
+        .map(|(_, bent)| bent)
+        .collect();
+    assert_eq!(glide.len(), 60);
+    assert!(glide.windows(2).all(|pair| pair[0] < pair[1]));
+    assert_eq!(glide.last().copied(), Some(value(1180)));
+}
+
+#[test]
+fn a_muted_channel_opens_on_bank_zero_whatever_the_track_bank() {
+    let mut builder = one_bar(vec![beat(
+        NoteValue::Whole,
+        vec![with(fretted(5, 0), |effects| effects.palm_mute = true)],
+    )]);
+    builder.score.tracks[0].midi.bank = MidiBank::new(4, 2).expect("bank");
+    let performance = musical(&builder);
+    assert_eq!(
+        setup_on(&performance, 1, frac(0, 1))[..2].to_vec(),
+        vec![
+            MidiMessage::Bank {
+                bank: MidiBank::default()
+            },
+            MidiMessage::Program {
+                program: MUTED_GUITAR
+            },
+        ]
+    );
+    assert_eq!(
+        setup_on(&performance, 0, frac(0, 1))[0],
+        MidiMessage::Bank {
+            bank: MidiBank::new(4, 2).expect("bank")
+        }
+    );
 }

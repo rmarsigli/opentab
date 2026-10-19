@@ -29,6 +29,7 @@ pub use midi::{
     ConductorEvent, ConductorKind, DEFAULT_PAN, DEFAULT_VOLUME, MidiMessage, NOTE_OFF_VELOCITY,
     PAN_CONTROLLER, PITCH_BEND_RANGE_RPN, TimedEvent, TrackSetup, VOLUME_CONTROLLER, velocity_of,
 };
+pub use notes::Restrikes;
 pub use order::{MAX_PLAYED_BARS, PlayOrder, PlayedBar, PlayedPosition, play_order};
 pub use perform::{Performance, PlaybackOptions, Profile, perform};
 pub use smf::{Ppq, TrackLayout, export_midi, to_ticks, write_smf};
