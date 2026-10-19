@@ -1,8 +1,12 @@
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
 
 use opentab_gp::read_gp;
-use opentab_playback::{RampGrid, Speed, TempoMap, beat_grid, play_order};
+use opentab_playback::{
+    MidiMessage, PlaybackOptions, Profile, RampGrid, ScoreTime, Speed, TempoMap, beat_grid,
+    perform, play_order,
+};
 use zip::ZipArchive;
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
@@ -127,4 +131,40 @@ fn every_corpus_score_builds_its_tempo_map_and_beat_grid() {
             path.display()
         );
     }
+}
+
+#[test]
+fn every_corpus_score_performs_with_every_note_paired() {
+    let Some(paths) = corpus() else {
+        return;
+    };
+    let mut notes = 0;
+    for path in &paths {
+        let bytes = std::fs::read(path).expect("corpus file");
+        let score = read_gp(&bytes).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        for profile in [Profile::Gp, Profile::Musical] {
+            let performance = perform(&score, &PlaybackOptions { profile })
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            let mut open: BTreeMap<(usize, u8, u8), VecDeque<ScoreTime>> = BTreeMap::new();
+            for event in &performance.events {
+                let slot = |key: u8| (event.track, event.channel.get(), key);
+                match event.message {
+                    MidiMessage::NoteOn { key, .. } => {
+                        open.entry(slot(key)).or_default().push_back(event.at);
+                        notes += 1;
+                    }
+                    MidiMessage::NoteOff { key, .. } => {
+                        let start = open
+                            .get_mut(&slot(key))
+                            .and_then(VecDeque::pop_front)
+                            .unwrap_or_else(|| panic!("{}: unpaired off", path.display()));
+                        assert!(start < event.at, "{}", path.display());
+                    }
+                    _ => {}
+                }
+            }
+            assert!(open.values().all(VecDeque::is_empty), "{}", path.display());
+        }
+    }
+    assert!(notes > 0);
 }

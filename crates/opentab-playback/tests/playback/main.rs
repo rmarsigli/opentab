@@ -1,8 +1,11 @@
 mod beats;
+mod build;
 mod corpus;
 mod floats;
 mod gp_orders;
 mod orders;
+mod perform;
+mod perform_properties;
 mod properties;
 mod reference;
 mod support;
