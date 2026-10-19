@@ -1,9 +1,14 @@
 mod samples;
 mod sf2;
+mod structural;
 
 pub use samples::SAMPLE_RATE;
 pub use sf2::{
     Generator, InstrumentDef, PresetDef, SampleDef, SoundFontDef, Zone, generator, write_sf2,
+    zone_bomb,
+};
+pub use structural::{
+    FieldValue, PdtaField, PdtaTable, StructuralMutation, apply_structural, arb_structural_mutation,
 };
 
 use samples::Waveform;
@@ -17,6 +22,7 @@ pub const DECAY_VOL_ENV: u16 = 36;
 pub const SUSTAIN_VOL_ENV: u16 = 37;
 pub const RELEASE_VOL_ENV: u16 = 38;
 pub const EXCLUSIVE_CLASS: u16 = 57;
+pub const INITIAL_ATTENUATION: u16 = 48;
 
 pub const PERCUSSION_BANK: u16 = 128;
 pub const VARIATION_BANK: u16 = 8;
@@ -98,13 +104,13 @@ pub fn tiny_definition(pad_frames: Option<u32>) -> SoundFontDef {
     ];
     let mut presets = vec![
         preset("Sine Lead", 0, 0, SINE_INSTRUMENT),
-        preset("Synth Nylon", 0, 24, PLUCK_INSTRUMENT),
-        preset("Synth Steel", 0, 25, PLUCK_INSTRUMENT),
-        preset("Synth Clean", 0, 27, PLUCK_INSTRUMENT),
-        preset("Synth Overdrive", 0, 29, PLUCK_INSTRUMENT),
-        preset("Synth Distortion", 0, 30, PLUCK_INSTRUMENT),
-        preset("Synth Finger Bass", 0, 33, BASS_INSTRUMENT),
-        preset("Synth Pick Bass", 0, 34, BASS_INSTRUMENT),
+        softer(preset("Synth Nylon", 0, 24, PLUCK_INSTRUMENT), 0),
+        softer(preset("Synth Steel", 0, 25, PLUCK_INSTRUMENT), 20),
+        softer(preset("Synth Clean", 0, 27, PLUCK_INSTRUMENT), 40),
+        softer(preset("Synth Overdrive", 0, 29, PLUCK_INSTRUMENT), 60),
+        softer(preset("Synth Distortion", 0, 30, PLUCK_INSTRUMENT), 80),
+        softer(preset("Synth Finger Bass", 0, 33, BASS_INSTRUMENT), 0),
+        softer(preset("Synth Pick Bass", 0, 34, BASS_INSTRUMENT), 30),
         preset("Sine Nylon", VARIATION_BANK, 24, SINE_INSTRUMENT),
         preset("Standard Kit", PERCUSSION_BANK, 0, KIT_INSTRUMENT),
     ];
@@ -162,6 +168,16 @@ fn drum_zone(low: u8, high: u8, sample_id: u16, class: Option<i16>) -> Zone {
     Zone { generators }
 }
 
+fn softer(mut preset: PresetDef, centibels: i16) -> PresetDef {
+    if centibels > 0 {
+        for zone in &mut preset.zones {
+            zone.generators
+                .insert(0, generator(INITIAL_ATTENUATION, centibels));
+        }
+    }
+    preset
+}
+
 fn preset(name: &str, bank: u16, program: u16, instrument: u16) -> PresetDef {
     PresetDef {
         name: name.to_owned(),
@@ -171,4 +187,31 @@ fn preset(name: &str, bank: u16, program: u16, instrument: u16) -> PresetDef {
             generators: vec![generator(INSTRUMENT, instrument as i16)],
         }],
     }
+}
+
+pub const LAYERED_PROGRAM: u16 = 0;
+pub const SINGLE_PROGRAM: u16 = 1;
+
+pub fn layered_sf2(preset_zones: usize, instrument_zones: usize) -> Vec<u8> {
+    let layered = InstrumentDef {
+        name: "Layered".to_owned(),
+        zones: vec![looped(SINE, MELODIC_RELEASE_TIMECENTS); instrument_zones],
+    };
+    let single = InstrumentDef {
+        name: "Single".to_owned(),
+        zones: vec![looped(SINE, MELODIC_RELEASE_TIMECENTS)],
+    };
+    let mut stacked = preset("Layered", 0, LAYERED_PROGRAM, 0);
+    stacked.zones = vec![
+        Zone {
+            generators: vec![generator(INSTRUMENT, 0)],
+        };
+        preset_zones
+    ];
+    write_sf2(&SoundFontDef {
+        name: "OpenTab Layered Test Bank".to_owned(),
+        samples: vec![sample("Sine A4", samples::sine_loop(), 69, -4)],
+        instruments: vec![layered, single],
+        presets: vec![stacked, preset("Single", 0, SINGLE_PROGRAM, 1)],
+    })
 }

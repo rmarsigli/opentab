@@ -271,3 +271,85 @@ pub fn write_sf2(definition: &SoundFontDef) -> Vec<u8> {
     riff.extend_from_slice(&body);
     chunk(b"RIFF", &riff)
 }
+
+const BOMB_GENERATORS: usize = 65_535;
+const BOMB_SAMPLE_POINTS: usize = 100;
+const BOMB_SAMPLE_END: u32 = 50;
+const BOMB_ROOT_KEY: u8 = 60;
+const BOMB_INSTRUMENT_GENERATOR: u16 = 41;
+const BOMB_SAMPLE_GENERATOR: u16 = 53;
+
+pub fn zone_bomb(bag_entries: u16) -> Vec<u8> {
+    let mut version = Vec::new();
+    version.extend_from_slice(&VERSION_MAJOR.to_le_bytes());
+    version.extend_from_slice(&VERSION_MINOR.to_le_bytes());
+    let info = list(
+        b"INFO",
+        &[
+            chunk(b"ifil", &version),
+            chunk(b"isng", &text(SOUND_ENGINE)),
+            chunk(b"INAM", &text("bomb")),
+        ],
+    );
+    let sdta = list(b"sdta", &[chunk(b"smpl", &[0u8; BOMB_SAMPLE_POINTS * 2])]);
+    let mut phdr = Vec::new();
+    phdr.extend_from_slice(&name("P"));
+    phdr.extend(std::iter::repeat_n(0u8, 18));
+    phdr.extend_from_slice(&name("EOP"));
+    phdr.extend(std::iter::repeat_n(0u8, 4));
+    phdr.extend_from_slice(&1u16.to_le_bytes());
+    phdr.extend(std::iter::repeat_n(0u8, 12));
+    let mut pbag = Vec::new();
+    for generator_index in [0u16, 1] {
+        pbag.extend_from_slice(&generator_index.to_le_bytes());
+        pbag.extend_from_slice(&0u16.to_le_bytes());
+    }
+    let mut pgen = BOMB_INSTRUMENT_GENERATOR.to_le_bytes().to_vec();
+    pgen.extend_from_slice(&[0u8; 6]);
+    let mut inst = name("I").to_vec();
+    inst.extend_from_slice(&0u16.to_le_bytes());
+    inst.extend_from_slice(&name("EOI"));
+    inst.extend_from_slice(&bag_entries.saturating_sub(1).to_le_bytes());
+    let mut ibag = Vec::new();
+    for entry in 0..bag_entries {
+        let generator_index = if entry % 2 == 0 {
+            index(0)
+        } else {
+            index(BOMB_GENERATORS - 1)
+        };
+        ibag.extend_from_slice(&generator_index);
+        ibag.extend_from_slice(&0u16.to_le_bytes());
+    }
+    let mut igen = Vec::with_capacity(BOMB_GENERATORS * 4 + 4);
+    for _ in 0..BOMB_GENERATORS {
+        igen.extend_from_slice(&BOMB_SAMPLE_GENERATOR.to_le_bytes());
+        igen.extend_from_slice(&0u16.to_le_bytes());
+    }
+    igen.extend_from_slice(&[0u8; 4]);
+    let mut shdr = name("S").to_vec();
+    for value in [0, BOMB_SAMPLE_END, 0, 0, super::SAMPLE_RATE] {
+        shdr.extend_from_slice(&value.to_le_bytes());
+    }
+    shdr.extend_from_slice(&[BOMB_ROOT_KEY, 0]);
+    shdr.extend_from_slice(&0u16.to_le_bytes());
+    shdr.extend_from_slice(&MONO_SAMPLE.to_le_bytes());
+    shdr.extend_from_slice(&name("EOS"));
+    shdr.extend(std::iter::repeat_n(0u8, 26));
+    let pdta = list(
+        b"pdta",
+        &[
+            chunk(b"phdr", &phdr),
+            chunk(b"pbag", &pbag),
+            chunk(b"pmod", &[0u8; MODULATOR_BYTES]),
+            chunk(b"pgen", &pgen),
+            chunk(b"inst", &inst),
+            chunk(b"ibag", &ibag),
+            chunk(b"imod", &[0u8; MODULATOR_BYTES]),
+            chunk(b"igen", &igen),
+            chunk(b"shdr", &shdr),
+        ],
+    );
+    let mut riff = b"sfbk".to_vec();
+    riff.extend_from_slice(&[info, sdta, pdta].concat());
+    chunk(b"RIFF", &riff)
+}
