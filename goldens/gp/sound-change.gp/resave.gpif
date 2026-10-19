@@ -274,7 +274,7 @@
 <Type>Sound</Type>
 <Linear>false</Linear>
 <Bar>2</Bar>
-<Position>0.5</Position>
+<Position>2</Position>
 <Visible>true</Visible>
 <Value><![CDATA[Stringed/Acoustic Guitars/Nylon Guitar;Nylon;User]]></Value>
 </Automation>
@@ -354,10 +354,10 @@
 <Beats>4 5 6 7</Beats>
 </Voice>
 <Voice id="2">
-<Beats>5 8 9 10</Beats>
+<Beats>5 6 8 9</Beats>
 </Voice>
 <Voice id="3">
-<Beats>3 11 12 13</Beats>
+<Beats>3 10 11 12</Beats>
 </Voice>
 </Voices>
 <Beats>
@@ -486,7 +486,7 @@
 <Rhythm ref="0" />
 <TransposedPitchStemOrientation>Upward</TransposedPitchStemOrientation>
 <ConcertPitchStemOrientation>Undefined</ConcertPitchStemOrientation>
-<Variation>2</Variation><Notes>3</Notes>
+<Variation>2</Variation><Notes>4</Notes>
 <Properties>
 <Property name="PrimaryPickupVolume">
 <Float>0.500000</Float>
@@ -501,7 +501,7 @@
 <Rhythm ref="0" />
 <TransposedPitchStemOrientation>Upward</TransposedPitchStemOrientation>
 <ConcertPitchStemOrientation>Undefined</ConcertPitchStemOrientation>
-<Variation>2</Variation><Notes>4</Notes>
+<Variation>2</Variation><Notes>5</Notes>
 <Properties>
 <Property name="PrimaryPickupVolume">
 <Float>0.500000</Float>
@@ -516,7 +516,7 @@
 <Rhythm ref="0" />
 <TransposedPitchStemOrientation>Upward</TransposedPitchStemOrientation>
 <ConcertPitchStemOrientation>Undefined</ConcertPitchStemOrientation>
-<Variation>2</Variation><Notes>5</Notes>
+<Notes>4</Notes>
 <Properties>
 <Property name="PrimaryPickupVolume">
 <Float>0.500000</Float>
@@ -531,21 +531,6 @@
 <Rhythm ref="0" />
 <TransposedPitchStemOrientation>Upward</TransposedPitchStemOrientation>
 <ConcertPitchStemOrientation>Undefined</ConcertPitchStemOrientation>
-<Notes>4</Notes>
-<Properties>
-<Property name="PrimaryPickupVolume">
-<Float>0.500000</Float>
-</Property>
-<Property name="PrimaryPickupTone">
-<Float>0.500000</Float>
-</Property>
-</Properties>
-</Beat>
-<Beat id="12">
-<Dynamic>MF</Dynamic>
-<Rhythm ref="0" />
-<TransposedPitchStemOrientation>Upward</TransposedPitchStemOrientation>
-<ConcertPitchStemOrientation>Undefined</ConcertPitchStemOrientation>
 <Notes>5</Notes>
 <Properties>
 <Property name="PrimaryPickupVolume">
@@ -556,7 +541,7 @@
 </Property>
 </Properties>
 </Beat>
-<Beat id="13">
+<Beat id="12">
 <Dynamic>MF</Dynamic>
 <Rhythm ref="0" />
 <TransposedPitchStemOrientation>Upward</TransposedPitchStemOrientation>

@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use opentab_gp::read_gp;
 use opentab_model::{
-    Automation, AutomationValue, ElementId, Fraction, IdAllocator, Note, OpaquePayload, Score,
-    Sound, SoundRef, Tempo, TempoChange, TempoUnit, Track, to_json,
+    Automation, AutomationValue, Beat, BeatId, BendPoint, ElementId, Fraction, IdAllocator, Note,
+    NoteId, OpaquePayload, Score, Sound, SoundRef, Tempo, TempoChange, TempoUnit, Track,
+    TremoloBar, VoiceSlot, to_json,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -25,6 +26,7 @@ const SHOWN_DIFF_LINES: usize = 40;
 const SOUND_CHANGE: &str = "sound-change.gp";
 const SOUND_VARIATION: &str = "/Variation";
 const SOUND_MARKED_BEATS: usize = 8;
+const OVERDRIVE_AND_NYLON_BEATS: (usize, usize) = (6, 2);
 const SOUND_NORMALISATION: &str = "gp_marks_beats_with_their_sound";
 const DIRECTIONS_PREFIX: &str = "directions-";
 const EXPORT_MID: &str = "export.mid";
@@ -39,15 +41,15 @@ const TEMPO: &str = "tempo.gp";
 const SET_TEMPO: u8 = 0x51;
 const TICKS_PER_WHOLE: i64 = 1920;
 const TEMPO_TICK_TOLERANCE: i64 = 1;
-const AWAITING_HARVEST: [&str; 5] = [
-    SOUND_CHANGE,
-    "tempo-ramp.gp",
-    "tremolo-bar.gp",
-    "trill.gp",
-    "drums.gp",
-];
-const STALE_GOLDENS: [&str; 1] = [SOUND_CHANGE];
-const NEEDED_BY_AWAITING: [(&str, &str); 1] = [(SOUND_NORMALISATION, SOUND_CHANGE)];
+const AWAITING_HARVEST: [&str; 1] = ["drums.gp"];
+const TEMPO_RAMP: &str = "tempo-ramp.gp";
+const TREMOLO_BAR: &str = "tremolo-bar.gp";
+const TRILL: &str = "trill.gp";
+const TRILLED_NOTES: usize = 4;
+const TRILL_REVISION: &str = "/GPRevision";
+const TRILL_REQUIRED_REVISION: &str = "required=\"12025\"";
+const PITCH_BEND: u8 = 0xE0;
+const MICROSECONDS_PER_MINUTE: i64 = 60_000_000;
 
 const GP_DEFAULT_PAYLOADS: [&str; 52] = [
     "/AudioEngineState",
@@ -117,7 +119,7 @@ struct Normalisation {
     apply: Normalise,
 }
 
-const NORMALISATIONS: [Normalisation; 15] = [
+const NORMALISATIONS: [Normalisation; 17] = [
     Normalisation {
         name: "gp_writes_its_own_defaults",
         apply: gp_writes_its_own_defaults,
@@ -173,6 +175,14 @@ const NORMALISATIONS: [Normalisation; 15] = [
     Normalisation {
         name: SOUND_NORMALISATION,
         apply: gp_marks_beats_with_their_sound,
+    },
+    Normalisation {
+        name: "gp_continues_tremolo_bars_and_shares_their_beats",
+        apply: gp_continues_tremolo_bars_and_shares_their_beats,
+    },
+    Normalisation {
+        name: "gp_raises_the_revision_for_trills_under_a_capo",
+        apply: gp_raises_the_revision_for_trills_under_a_capo,
     },
     Normalisation {
         name: "element_ids_follow_reading_order",
@@ -615,6 +625,115 @@ fn gp_marks_beats_with_their_sound(_fixture: &mut Score, golden: &mut Score) {
     });
 }
 
+type BeatPlace = (usize, usize, usize, usize, usize);
+
+fn beat_at(score: &Score, place: BeatPlace) -> &Beat {
+    let (track, staff, bar, voice, beat) = place;
+    &score.tracks[track].staves[staff].bars[bar].voices[voice].beats[beat]
+}
+
+fn beat_at_mut(score: &mut Score, place: BeatPlace) -> &mut Beat {
+    let (track, staff, bar, voice, beat) = place;
+    &mut score.tracks[track].staves[staff].bars[bar].voices[voice].beats[beat]
+}
+
+fn voice_runs(score: &Score) -> Vec<Vec<BeatPlace>> {
+    let mut runs = Vec::new();
+    for (track_index, track) in score.tracks.iter().enumerate() {
+        for (staff_index, staff) in track.staves.iter().enumerate() {
+            let mut slots: BTreeMap<VoiceSlot, Vec<BeatPlace>> = BTreeMap::new();
+            for (bar_index, bar) in staff.bars.iter().enumerate() {
+                for (voice_index, voice) in bar.voices.iter().enumerate() {
+                    let run = slots.entry(voice.slot).or_default();
+                    for beat_index in 0..voice.beats.len() {
+                        run.push((track_index, staff_index, bar_index, voice_index, beat_index));
+                    }
+                }
+            }
+            runs.extend(slots.into_values());
+        }
+    }
+    runs
+}
+
+fn flat_middle(bar: TremoloBar) -> TremoloBar {
+    let start = BendPoint::new(bar.middle_start().offset(), 0).expect("offset");
+    let end = BendPoint::new(bar.middle_end().offset(), 0).expect("offset");
+    TremoloBar::new(bar.origin(), start, end, bar.destination()).expect("tremolo bar")
+}
+
+fn with_origin(bar: TremoloBar, value: i16) -> TremoloBar {
+    let origin = BendPoint::new(bar.origin().offset(), value).expect("origin");
+    TremoloBar::new(
+        origin,
+        bar.middle_start(),
+        bar.middle_end(),
+        bar.destination(),
+    )
+    .expect("tremolo bar")
+}
+
+fn sharing_key(beat: &Beat) -> Option<Beat> {
+    let bar = beat.effects.tremolo_bar?;
+    let mut key = beat.clone();
+    key.id = BeatId(ElementId(0));
+    for note in &mut key.notes {
+        note.id = NoteId(ElementId(0));
+    }
+    key.effects.tremolo_bar = Some(flat_middle(bar));
+    Some(key)
+}
+
+fn gp_continues_tremolo_bars_and_shares_their_beats(fixture: &mut Score, _golden: &mut Score) {
+    let runs = voice_runs(fixture);
+    let keyed: Vec<(BeatPlace, Beat)> = runs
+        .iter()
+        .flatten()
+        .filter_map(|place| sharing_key(beat_at(fixture, *place)).map(|key| (*place, key)))
+        .collect();
+    for run in &runs {
+        let mut previous: Option<i16> = None;
+        for place in run {
+            let effects = &mut beat_at_mut(fixture, *place).effects;
+            if let (Some(destination), Some(bar)) = (previous, effects.tremolo_bar) {
+                effects.tremolo_bar = Some(with_origin(bar, destination));
+            }
+            previous = effects.tremolo_bar.map(|bar| bar.destination().value());
+        }
+    }
+    for (index, (place, key)) in keyed.iter().enumerate() {
+        let Some((first, _)) = keyed[..index].iter().find(|(_, earlier)| earlier == key) else {
+            continue;
+        };
+        let shared = beat_at(fixture, *first).effects.tremolo_bar;
+        beat_at_mut(fixture, *place).effects.tremolo_bar = shared;
+    }
+}
+
+fn trills_under_a_capo(score: &Score) -> bool {
+    score.tracks.iter().any(|track| {
+        track.capo > 0
+            && track
+                .staves
+                .iter()
+                .flat_map(|staff| staff.bars.iter())
+                .flat_map(|bar| bar.voices.iter())
+                .flat_map(|voice| voice.beats.iter())
+                .flat_map(|beat| beat.notes.iter())
+                .any(|note| note.effects.trill.is_some())
+    })
+}
+
+fn gp_raises_the_revision_for_trills_under_a_capo(fixture: &mut Score, golden: &mut Score) {
+    if !trills_under_a_capo(fixture) {
+        return;
+    }
+    golden.document_extensions.retain(|payload| {
+        payload_kind(&payload.data) != TRILL_REVISION
+            || !payload.data.contains(TRILL_REQUIRED_REVISION)
+    });
+}
+
 fn renumbered(score: &mut Score) {
     let mut ids = IdAllocator::default();
     let mut next = || ids.next().unwrap_or(ElementId(0));
@@ -819,17 +938,12 @@ fn every_fixture_has_a_golden_and_reads_without_payloads() {
         .collect();
     let harvested: BTreeSet<String> = names
         .iter()
-        .filter(|name| {
-            !AWAITING_HARVEST.contains(&name.as_str()) || STALE_GOLDENS.contains(&name.as_str())
-        })
+        .filter(|name| !AWAITING_HARVEST.contains(&name.as_str()))
         .cloned()
         .collect();
     assert_eq!(golden_dirs, harvested);
     for name in AWAITING_HARVEST {
         assert!(names.iter().any(|fixture| fixture == name), "{name}");
-    }
-    for name in STALE_GOLDENS {
-        assert!(AWAITING_HARVEST.contains(&name), "{name}");
     }
     for name in &names {
         let fixture = read(&root().join("fixtures").join("gp").join(name));
@@ -857,7 +971,11 @@ fn guitar_pro_adds_only_documented_default_payloads() {
     let mut seen = BTreeSet::new();
     for pair in pairs() {
         for kind in golden_payload_kinds(&pair.golden) {
-            if kind == LATER_STAFF_TUNING || kind == RESPELLED_PITCH || kind == SOUND_VARIATION {
+            if kind == LATER_STAFF_TUNING
+                || kind == RESPELLED_PITCH
+                || kind == SOUND_VARIATION
+                || kind == TRILL_REVISION
+            {
                 continue;
             }
             assert!(
@@ -905,14 +1023,10 @@ fn guitar_pro_respells_exactly_the_counted_transposed_pitches_enharmonically() {
 fn every_normalisation_is_needed() {
     let pairs = pairs();
     for normalisation in &NORMALISATIONS {
-        let awaiting = NEEDED_BY_AWAITING.iter().any(|(name, fixture)| {
-            *name == normalisation.name && AWAITING_HARVEST.contains(fixture)
+        let needed = pairs.iter().any(|pair| {
+            let (fixture, golden) = normalised(pair, Some(normalisation.name));
+            fixture != golden
         });
-        let needed = awaiting
-            || pairs.iter().any(|pair| {
-                let (fixture, golden) = normalised(pair, Some(normalisation.name));
-                fixture != golden
-            });
         assert!(
             needed,
             "{} changes no fixture comparison",
@@ -1013,7 +1127,7 @@ fn guitar_pro_marks_the_beats_after_each_sound_change_with_the_sound_index() {
     assert_eq!(marks.len(), SOUND_MARKED_BEATS);
     let overdrive = marks.iter().filter(|mark| mark.sound == 1).count();
     let nylon = marks.iter().filter(|mark| mark.sound == 2).count();
-    assert_eq!((overdrive, nylon), (5, 3));
+    assert_eq!((overdrive, nylon), OVERDRIVE_AND_NYLON_BEATS);
     let elsewhere: usize = pairs()
         .iter()
         .filter(|pair| pair.name != SOUND_CHANGE)
@@ -1064,10 +1178,17 @@ impl<'b> SmfReader<'b> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct TempoEvent {
+    tick: usize,
+    micros: usize,
+}
+
 #[derive(Default)]
 struct Events {
     notes: Vec<NoteOn>,
-    tempos: Vec<usize>,
+    tempos: Vec<TempoEvent>,
+    bends: usize,
 }
 
 fn track_events(reader: &mut SmfReader<'_>, end: usize, found: &mut Events) {
@@ -1079,9 +1200,12 @@ fn track_events(reader: &mut SmfReader<'_>, end: usize, found: &mut Events) {
         if first == META {
             let kind = reader.byte();
             let len = reader.quantity();
-            reader.take(len);
+            let data = reader.take(len);
             if kind == SET_TEMPO {
-                found.tempos.push(tick);
+                let micros = data
+                    .iter()
+                    .fold(0, |value, byte| (value << 8) | usize::from(*byte));
+                found.tempos.push(TempoEvent { tick, micros });
             }
             continue;
         }
@@ -1102,6 +1226,9 @@ fn track_events(reader: &mut SmfReader<'_>, end: usize, found: &mut Events) {
             continue;
         }
         let velocity = reader.byte();
+        if status & STATUS_KIND == PITCH_BEND {
+            found.bends += 1;
+        }
         if status & STATUS_KIND == NOTE_ON && velocity > 0 {
             found.notes.push(NoteOn { tick, key, offset });
         }
@@ -1254,35 +1381,223 @@ fn bar_starts(score: &Score) -> Vec<Fraction> {
     starts
 }
 
-#[test]
-fn guitar_pro_places_each_tempo_change_at_its_fraction_of_the_bar() {
-    let golden = read_resave(&golden_path(TEMPO, RESAVE));
-    let starts = bar_starts(&golden);
+fn gp_quarters_per_unit(unit: TempoUnit) -> Fraction {
+    match unit {
+        TempoUnit::Eighth => Fraction::new(1, 2),
+        TempoUnit::Quarter => Fraction::from_integer(1),
+        TempoUnit::DottedQuarter => Fraction::new(5, 4),
+        TempoUnit::Half => Fraction::from_integer(2),
+        TempoUnit::DottedHalf => Fraction::from_integer(3),
+    }
+}
+
+fn gp_microseconds_per_quarter(change: &TempoChange) -> usize {
+    let bpm = change.bpm.exact().expect("an exact tempo");
+    let quarters = bpm * gp_quarters_per_unit(change.unit);
+    let micros = (Fraction::from_integer(MICROSECONDS_PER_MINUTE) / quarters).floor();
+    usize::try_from(micros.to_integer()).expect("microseconds")
+}
+
+fn tempo_events_of(golden: &Score) -> Vec<TempoEvent> {
+    let starts = bar_starts(golden);
     let mut expected = Vec::new();
     for (master, start) in golden.master_bars.iter().zip(&starts) {
         for change in &master.tempo_changes {
             let at = (*start + change.position) * TICKS_PER_WHOLE;
-            expected.push(at.to_integer());
+            expected.push(TempoEvent {
+                tick: usize::try_from(at.to_integer()).expect("tick"),
+                micros: gp_microseconds_per_quarter(change),
+            });
         }
     }
+    expected
+}
+
+#[test]
+fn guitar_pro_exports_one_tempo_event_per_change_at_its_bar_fraction_and_no_ramp() {
+    let ramp = read(&fixture_path(TEMPO_RAMP));
+    let ramps = ramp
+        .master_bars
+        .iter()
+        .flat_map(|master| &master.tempo_changes)
+        .filter(|change| change.linear)
+        .count();
     assert!(
-        golden
-            .master_bars
-            .iter()
-            .flat_map(|master| &master.tempo_changes)
-            .any(|change| change.position > Fraction::from_integer(0)),
-        "the tempo golden holds tempo changes inside a bar"
+        ramps > 1,
+        "the tempo-ramp fixture holds linear tempo changes"
     );
-    let smf = std::fs::read(golden_path(TEMPO, EXPORT_MID)).expect("export.mid");
-    let played = events(&smf).tempos;
-    assert_eq!(played.len(), expected.len());
-    for (ours, theirs) in expected.iter().zip(&played) {
-        let theirs = i64::try_from(*theirs).expect("tick");
+    for name in [TEMPO, TEMPO_RAMP] {
+        let golden = read_resave(&golden_path(name, RESAVE));
         assert!(
-            (ours - theirs).abs() <= TEMPO_TICK_TOLERANCE,
-            "ours {expected:?}, Guitar Pro {played:?}"
+            golden
+                .master_bars
+                .iter()
+                .flat_map(|master| &master.tempo_changes)
+                .any(|change| change.position > Fraction::from_integer(0)),
+            "{name} holds tempo changes inside a bar"
         );
+        let expected = tempo_events_of(&golden);
+        let smf = std::fs::read(golden_path(name, EXPORT_MID)).expect("export.mid");
+        let played = events(&smf).tempos;
+        assert_eq!(played.len(), expected.len(), "{name}: {played:?}");
+        for (ours, theirs) in expected.iter().zip(&played) {
+            let gap = i64::try_from(ours.tick.abs_diff(theirs.tick)).expect("gap");
+            assert!(
+                gap <= TEMPO_TICK_TOLERANCE && ours.micros == theirs.micros,
+                "{name}: ours {expected:?}, Guitar Pro {played:?}"
+            );
+        }
     }
+}
+
+struct TrillNote {
+    onset: usize,
+    length: usize,
+    principal: u8,
+    auxiliary: u8,
+    speed: usize,
+}
+
+fn trill_notes(fixture: &Score) -> Vec<TrillNote> {
+    let track = &fixture.tracks[0];
+    let mut found = Vec::new();
+    let mut onset = Fraction::from_integer(0);
+    for bar in &track.staves[0].bars {
+        for beat in &bar.voices[0].beats {
+            let length = beat.duration.length() * TICKS_PER_WHOLE;
+            for note in &beat.notes {
+                let (Some(trill), Some(principal), Some(auxiliary)) = (
+                    note.effects.trill,
+                    track.pitch_of(note),
+                    track.trill_pitch_of(note),
+                ) else {
+                    continue;
+                };
+                found.push(TrillNote {
+                    onset: usize::try_from((onset * TICKS_PER_WHOLE).to_integer()).expect("tick"),
+                    length: usize::try_from(length.to_integer()).expect("length"),
+                    principal: principal.0,
+                    auxiliary: auxiliary.0,
+                    speed: usize::try_from(TICKS_PER_WHOLE / trill.speed.value().denominator())
+                        .expect("speed"),
+                });
+            }
+            onset += beat.duration.length();
+        }
+    }
+    found
+}
+
+fn trill_mismatches(fixture: &Score, smf: &[u8]) -> Vec<String> {
+    let played = note_ons(smf);
+    let mut mismatches = Vec::new();
+    for trill in trill_notes(fixture) {
+        let expected: Vec<(usize, u8)> = (0..trill.length / trill.speed)
+            .map(|step| {
+                let key = if step % 2 == 0 {
+                    trill.principal
+                } else {
+                    trill.auxiliary
+                };
+                (trill.onset + step * trill.speed, key)
+            })
+            .collect();
+        let heard: Vec<(usize, u8)> = played
+            .iter()
+            .filter(|note| (trill.onset..trill.onset + trill.length).contains(&note.tick))
+            .map(|note| (note.tick, note.key))
+            .collect();
+        if heard != expected {
+            mismatches.push(format!(
+                "trill at {}: expected {expected:?}, heard {heard:?}",
+                trill.onset
+            ));
+        }
+    }
+    mismatches
+}
+
+#[test]
+fn guitar_pros_export_alternates_each_trill_from_the_principal_at_its_speed() {
+    let fixture = read(&fixture_path(TRILL));
+    assert_eq!(trill_notes(&fixture).len(), TRILLED_NOTES);
+    let speeds: BTreeSet<usize> = trill_notes(&fixture)
+        .iter()
+        .map(|trill| trill.speed)
+        .collect();
+    assert_eq!(speeds.len(), TRILLED_NOTES);
+    let smf = std::fs::read(golden_path(TRILL, EXPORT_MID)).expect("export.mid");
+    let mismatches = trill_mismatches(&fixture, &smf);
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+}
+
+#[test]
+fn guitar_pros_export_plays_the_tremolo_bar_as_plain_notes() {
+    let fixture = read(&fixture_path(TREMOLO_BAR));
+    let track = &fixture.tracks[0];
+    let beats: Vec<&Beat> = track.staves[0]
+        .bars
+        .iter()
+        .flat_map(|bar| bar.voices[0].beats.iter())
+        .collect();
+    assert!(beats.iter().all(|beat| beat.effects.tremolo_bar.is_some()));
+    let keys: Vec<u8> = beats
+        .iter()
+        .flat_map(|beat| beat.notes.iter())
+        .map(|note| track.pitch_of(note).expect("a fretted note").0)
+        .collect();
+    let smf = std::fs::read(golden_path(TREMOLO_BAR, EXPORT_MID)).expect("export.mid");
+    let played = events(&smf);
+    assert_eq!(played.bends, 0);
+    let heard: Vec<u8> = played.notes.iter().map(|note| note.key).collect();
+    assert_eq!(heard, keys);
+}
+
+fn first_children_of_trilled_notes(gpif: &str) -> Vec<String> {
+    gpif.split("<Note id=")
+        .skip(1)
+        .filter_map(|rest| rest.split("</Note>").next())
+        .filter(|note| note.contains("<Trill>"))
+        .filter_map(|note| {
+            let body = &note[note.find('>')? + 1..];
+            let tag = body.trim_start().strip_prefix('<')?;
+            Some(
+                tag.chars()
+                    .take_while(|character| character.is_ascii_alphanumeric())
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn guitar_pro_writes_the_trill_before_every_other_note_child() {
+    let resave = std::fs::read_to_string(golden_path(TRILL, RESAVE)).expect("resave");
+    let firsts = first_children_of_trilled_notes(&resave);
+    assert_eq!(firsts.len(), TRILLED_NOTES);
+    assert!(firsts.iter().all(|first| first == "Trill"), "{firsts:?}");
+    assert!(resave.contains("<InstrumentArticulation>"));
+}
+
+#[test]
+fn altered_copies_of_harvest_2_goldens_fail_their_checks() {
+    let scratch = Scratch::new("tamper-2");
+    let resave = std::fs::read_to_string(golden_path(TREMOLO_BAR, RESAVE)).expect("resave");
+    let intact = scratch.copy(resave.as_bytes(), "intact.gpif");
+    assert!(compares_equal(TREMOLO_BAR, &intact));
+    let altered_text = resave.replacen("middleValue=\"12.500000\"", "middleValue=\"25.000000\"", 1);
+    assert_ne!(altered_text, resave);
+    let altered = scratch.copy(altered_text.as_bytes(), "altered.gpif");
+    assert!(!compares_equal(TREMOLO_BAR, &altered));
+
+    let fixture = read(&fixture_path(TRILL));
+    let mut smf = std::fs::read(golden_path(TRILL, EXPORT_MID)).expect("export.mid");
+    let intact_smf = std::fs::read(scratch.copy(&smf, "intact.mid")).expect("intact copy");
+    assert!(trill_mismatches(&fixture, &intact_smf).is_empty());
+    let notes = note_ons(&smf);
+    smf[notes[1].offset] = notes[0].key;
+    let altered_smf = std::fs::read(scratch.copy(&smf, "altered.mid")).expect("altered copy");
+    assert!(!trill_mismatches(&fixture, &altered_smf).is_empty());
 }
 
 fn active_sound(
@@ -1327,11 +1642,11 @@ fn guitar_pro_switches_sound_at_the_first_beat_on_or_after_the_position_in_quart
         .collect();
     let track = &golden.tracks[0];
     assert!(track.sounds.len() > 1);
-    let between_beats = track.automations.iter().any(|automation| {
-        let onsets = [0, 1, 2, 3].map(|quarter| Fraction::new(quarter, 4));
-        !onsets.contains(&automation.position)
-    });
-    assert!(between_beats, "a sound change between two beats");
+    let inside_a_bar = track
+        .automations
+        .iter()
+        .any(|automation| is_sound(automation) && automation.position > Fraction::from_integer(0));
+    assert!(inside_a_bar, "a sound change inside a bar");
     let mut checked = 0;
     for (bar, start) in track.staves[0].bars.iter().zip(&starts) {
         for voice in &bar.voices {
@@ -1348,20 +1663,4 @@ fn guitar_pro_switches_sound_at_the_first_beat_on_or_after_the_position_in_quart
         }
     }
     assert!(checked >= SOUND_MARKED_BEATS);
-}
-
-#[test]
-fn a_golden_awaiting_harvest_no_longer_matches_its_fixture() {
-    for name in STALE_GOLDENS {
-        let pair = Pair {
-            name: name.to_string(),
-            fixture: read(&fixture_path(name)),
-            golden: read_resave(&golden_path(name, RESAVE)),
-        };
-        let (fixture, golden) = normalised(&pair, None);
-        assert_ne!(
-            fixture, golden,
-            "{name} matches its golden; drop it from STALE_GOLDENS"
-        );
-    }
 }

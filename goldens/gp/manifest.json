@@ -717,7 +717,7 @@
     },
     {
       "fixture": "sound-change.gp",
-      "sha256": "13354a0af8eee3c8d244cb47269d072fd16a81dcf164943103554c0323055cac",
+      "sha256": "e1439209dac54a133511c87c9a44edda7e77062cdc2aadae8d710b05b07a7d57",
       "outputs": [
         {
           "path": "export.gp5",
@@ -736,12 +736,12 @@
         },
         {
           "path": "png/sound-change#1.png",
-          "sha256": "9078191fa5695dd6924a481c3ce62303762ae56ff04ef95b1f7b62618304ec80",
+          "sha256": "da779a6bdb7ac2105ae48e579fc2cf4fa775d5653c4eb11b9cdc6666582e52bb",
           "byte_identical": true
         },
         {
           "path": "resave.gpif",
-          "sha256": "a33a8a804f03b1f04fc2787a3f0165513465effca229f61cfc627d9a9a398138",
+          "sha256": "72f195d29216fc534bbccf493dd5cd14d7aa3e701ebcd8abc75c34be2aec4cb1",
           "byte_identical": true
         }
       ]
@@ -778,6 +778,37 @@
       ]
     },
     {
+      "fixture": "tempo-ramp.gp",
+      "sha256": "4547f4739cddfd7328f81156603a10d725f3e3fc23d920ad484da04bb340b94b",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "3071e64e40e72969670479ce994822fff3e84227d27f480bf0dd3f35ad8de690",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "d0c389f65fb6ca7bf30349516ebe8df7ac54ce5fc698050e5b37081a9754410b",
+          "byte_identical": true
+        },
+        {
+          "path": "png/tempo-ramp#1.png",
+          "sha256": "36234c9cbd4c00a8d57ab96a9237b322aab05b4966008a02e36ac0bc38326d58",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "997301dc3a4f179cc0d0e87f51b2380d2a559627475e9c8e8cdd1c243ccdb670",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
       "fixture": "tempo.gp",
       "sha256": "901b0d905b87bcbf04194f15c6524d3a63b5243e1e76127d13333fc0378c68e1",
       "outputs": [
@@ -804,6 +835,68 @@
         {
           "path": "resave.gpif",
           "sha256": "93dbbb46b099d65ec9eeb4af198830ea10a31767124ae6cd7049826cbf261e3e",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "tremolo-bar.gp",
+      "sha256": "3db79f0100032f7cdbbac049d2b3a8fccf94beec9151a3d56f5c23bae2e7e867",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "1659c223adafd0ad9f5887c5769a5309a72994a671ae5ba55a48355087a69b59",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "96390b480c10701cc173bebccb1345eb3eeb259c405f301e7f00e3cb539ba709",
+          "byte_identical": true
+        },
+        {
+          "path": "png/tremolo-bar#1.png",
+          "sha256": "e5fd290331a8d8f142e123da35a5ed836dfb463df3b31ec152627059d029dfff",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "c155c0db2b409fd36461de9622df3b9b3e0fdef7ad3e9c3d1405b8f40d594aaf",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "trill.gp",
+      "sha256": "c19485a2c145aa32b60c28a329f849b282026da58130a9998adcd2c21fa604ae",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "68fad251f7dfa6718638ba38b6b1a2c20b307b7e8a408d9fc160f8ee58c58f8f",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "3cc4525f0740c101e59e94d2b2af350defa3c00a3a1287c6dd41c7510aa1c421",
+          "byte_identical": true
+        },
+        {
+          "path": "png/trill#1.png",
+          "sha256": "a4c1f268258e1cb3436aa25aca54a5c14ce586dab420ffe12c57048a9297b50b",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "f73467e64fb49f1e1de7bc28e7584d150c8809b00b3f7df8075d69aa8bf408c6",
           "byte_identical": true
         }
       ]
