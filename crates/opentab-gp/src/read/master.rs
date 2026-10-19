@@ -327,11 +327,19 @@ fn read_tempo(ctx: &mut Context, element: &Element, location: &Location) -> Resu
     let position = tempo_position(element, location, numerator, denominator)?;
     let position_guard = guard::tempo_position(position, time);
     let mut value = None;
+    let linear = element
+        .child("Linear")
+        .and_then(|(_, child)| number::boolean(&child.text()))
+        .unwrap_or(false);
     let canonical =
         canon::tempo_position(position, time).map(|text| Element::leaf("Position", &text));
     ctx.visit(&scope, element, |_, visit| match visit.key.as_str() {
         "Type" | "Bar" => Ok(Handled::Mapped(&[])),
         "Position" if canonical.as_ref() == Some(visit.element) => Ok(Handled::Mapped(&[])),
+        "Linear" if linear && *visit.element == canon::tempo_linear() => Ok(Handled::Mapped(&[])),
+        "Linear" => Ok(Handled::Replayed(guard::tempo_linear(
+            position, time, linear,
+        ))),
         "Value" => {
             value = Some(read_tempo_value(visit)?);
             Ok(Handled::Mapped(&[]))
@@ -344,6 +352,7 @@ fn read_tempo(ctx: &mut Context, element: &Element, location: &Location) -> Resu
             position,
             bpm,
             unit,
+            linear,
         });
     }
     Ok(())

@@ -1,5 +1,7 @@
-use opentab_gp::GpifProblem;
-use opentab_model::{Fraction, TempoUnit};
+use opentab_gp::{GpifProblem, read_gp, write_gp};
+use opentab_model::{Fraction, Score, TempoUnit};
+
+use crate::anchors::gpif_text;
 
 use crate::support::{Doc, document_payloads, gpif_path, master_bar, payloads};
 
@@ -46,7 +48,7 @@ fn position_is_rounded_and_every_extra_guarded_by_it() {
     assert_eq!(
         payloads(&score, bar.id.0),
         vec![
-            "<Keep parent=\"*Tempo#0\" index=\"1\" guard=\"tempo-position:1/4;time 3/4\"><Linear>false</Linear></Keep>".to_string(),
+            "<Keep parent=\"*Tempo#0\" index=\"1\" guard=\"tempo-linear:false;1/4;time 3/4\"><Linear>false</Linear></Keep>".to_string(),
             "<Keep parent=\"*Tempo#0\" index=\"3\" guard=\"tempo-position:1/4;time 3/4\"><Position>0.33333</Position></Keep>".to_string(),
             "<Keep parent=\"*Tempo#0\" index=\"4\" guard=\"tempo-position:1/4;time 3/4\"><Visible>true</Visible></Keep>".to_string(),
         ]
@@ -145,12 +147,8 @@ fn set_tempo_keeps_the_extras_of_a_later_tempo_change_in_the_bar() {
     let bytes = opentab_gp::write_gp(&score).expect("write");
     let again = opentab_gp::read_gp(&bytes).expect("read");
     let carried: Vec<String> = payloads(&again, master_bar(&again).id.0);
-    assert!(
-        carried
-            .iter()
-            .any(|data| data.contains("*Tempo#1") && data.contains("<Linear>true</Linear>")),
-        "{carried:?}"
-    );
+    assert!(changes[1].linear);
+    assert!(!changes[0].linear);
     assert!(
         carried
             .iter()
@@ -162,4 +160,94 @@ fn set_tempo_keeps_the_extras_of_a_later_tempo_change_in_the_bar() {
         "{carried:?}"
     );
     assert_eq!(again.master_bars[0].tempo_changes, *changes);
+}
+
+fn ramp(linear: &str) -> String {
+    format!(
+        "<Automation><Type>Tempo</Type><Linear>{linear}</Linear><Bar>0</Bar><Position>0</Position><Visible>true</Visible><Value>60 2</Value></Automation><Automation><Type>Tempo</Type><Linear>false</Linear><Bar>0</Bar><Position>0.5</Position><Visible>true</Visible><Value>120 2</Value></Automation>"
+    )
+}
+
+fn tempo_blocks(score: &Score) -> Vec<String> {
+    let text = gpif_text(&write_gp(score).expect("write"));
+    text.split("<Automation>")
+        .skip(1)
+        .map(|block| {
+            block
+                .split("</Automation>")
+                .next()
+                .unwrap_or_default()
+                .replace('\n', "")
+        })
+        .collect()
+}
+
+#[test]
+fn a_linear_tempo_is_typed_and_written_back_in_place() {
+    let score = with_automations(&ramp("true"), "4/4").read();
+    let changes = &master_bar(&score).tempo_changes;
+    assert_eq!(
+        changes
+            .iter()
+            .map(|change| change.linear)
+            .collect::<Vec<_>>(),
+        vec![true, false]
+    );
+    assert!(
+        payloads(&score, master_bar(&score).id.0)
+            .iter()
+            .all(|payload| !payload.contains("<Linear>true"))
+    );
+    let blocks = tempo_blocks(&score);
+    assert_eq!(
+        blocks[0],
+        "<Type>Tempo</Type><Linear>true</Linear><Bar>0</Bar><Position>0</Position><Visible>true</Visible><Value>60 2</Value>"
+    );
+    assert_eq!(
+        blocks[1],
+        "<Type>Tempo</Type><Linear>false</Linear><Bar>0</Bar><Position>0.5</Position><Visible>true</Visible><Value>120 2</Value>"
+    );
+    let again = read_gp(&write_gp(&score).unwrap()).unwrap();
+    assert_eq!(again, score);
+}
+
+#[test]
+fn flipping_linear_replaces_the_kept_flag() {
+    let mut score = with_automations(&ramp("true"), "4/4").read();
+    score.master_bars[0].tempo_changes[0].linear = false;
+    score.master_bars[0].tempo_changes[1].linear = true;
+    let blocks = tempo_blocks(&score);
+    assert!(!blocks[0].contains("<Linear>"), "{}", blocks[0]);
+    assert!(blocks[1].contains("<Linear>true</Linear>"), "{}", blocks[1]);
+    assert!(
+        !blocks[1].contains("<Linear>false</Linear>"),
+        "{}",
+        blocks[1]
+    );
+    let again = read_gp(&write_gp(&score).unwrap()).unwrap();
+    let linear: Vec<bool> = again.master_bars[0]
+        .tempo_changes
+        .iter()
+        .map(|change| change.linear)
+        .collect();
+    assert_eq!(linear, vec![false, true]);
+}
+
+#[test]
+fn a_linear_flag_in_another_spelling_is_kept_with_its_meaning() {
+    let score = with_automations(&ramp(" true "), "4/4").read();
+    assert!(master_bar(&score).tempo_changes[0].linear);
+    let blocks = tempo_blocks(&score);
+    assert!(
+        blocks[0].contains("<Linear> true </Linear>"),
+        "{}",
+        blocks[0]
+    );
+    assert_eq!(blocks[0].matches("<Linear>").count(), 1, "{}", blocks[0]);
+    let mut flipped = score.clone();
+    flipped.master_bars[0].tempo_changes[0].linear = false;
+    assert!(!tempo_blocks(&flipped)[0].contains("<Linear>"));
+    let unreadable = with_automations(&ramp("yes"), "4/4").read();
+    assert!(!master_bar(&unreadable).tempo_changes[0].linear);
+    assert!(tempo_blocks(&unreadable)[0].contains("<Linear>yes</Linear>"));
 }

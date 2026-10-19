@@ -9,6 +9,7 @@ fn change(position: Fraction, bpm: f64) -> TempoChange {
         position,
         bpm: Tempo::new(bpm).unwrap(),
         unit: TempoUnit::Quarter,
+        linear: false,
     }
 }
 
@@ -130,4 +131,84 @@ fn restore_tempo_changes_validates_index_and_positions() {
         tempo_changes: vec![change(Fraction::new(1, 4), 80.0)],
     };
     round_trip(&mut fx.score, &valid);
+}
+
+#[test]
+fn set_tempo_linear_flips_one_change_and_undoes() {
+    let mut fx = fixture();
+    let first = change(Fraction::from_integer(0), 60.0);
+    let second = change(Fraction::new(1, 2), 90.0);
+    fx.score.master_bars[0].tempo_changes = vec![first.clone(), second.clone()];
+    let command = Command::SetTempoLinear {
+        master_bar: 0,
+        index: 1,
+        linear: true,
+    };
+    let inverse = round_trip(&mut fx.score, &command);
+    assert_eq!(
+        inverse,
+        Command::SetTempoLinear {
+            master_bar: 0,
+            index: 1,
+            linear: false,
+        }
+    );
+    apply(&mut fx.score, &command).unwrap();
+    let mut ramp = second;
+    ramp.linear = true;
+    assert_eq!(fx.score.master_bars[0].tempo_changes, vec![first, ramp]);
+}
+
+#[test]
+fn set_tempo_linear_needs_an_existing_change() {
+    let mut fx = fixture();
+    let far_bar = Command::SetTempoLinear {
+        master_bar: 9,
+        index: 0,
+        linear: true,
+    };
+    assert_eq!(
+        rejected(&mut fx.score, &far_bar),
+        CommandError::IndexOutOfRange {
+            what: "master bar",
+            index: 9,
+            len: 2
+        }
+    );
+    fx.score.master_bars[0].tempo_changes.clear();
+    let missing = Command::SetTempoLinear {
+        master_bar: 0,
+        index: 0,
+        linear: true,
+    };
+    assert_eq!(
+        rejected(&mut fx.score, &missing),
+        CommandError::IndexOutOfRange {
+            what: "tempo change",
+            index: 0,
+            len: 0
+        }
+    );
+}
+
+#[test]
+fn set_tempo_linear_reads_from_json() {
+    let command: Command = serde_json::from_str(
+        r#"{"op": "set_tempo_linear", "master_bar": 1, "index": 0, "linear": true}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        command,
+        Command::SetTempoLinear {
+            master_bar: 1,
+            index: 0,
+            linear: true,
+        }
+    );
+    assert!(
+        serde_json::from_str::<Command>(
+            r#"{"op": "set_tempo_linear", "master_bar": 1, "index": 0, "linear": true, "x": 1}"#
+        )
+        .is_err()
+    );
 }

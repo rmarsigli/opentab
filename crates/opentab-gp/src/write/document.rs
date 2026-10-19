@@ -62,6 +62,9 @@ fn tempo_element(
     });
     let mut element = Element::new("Automation");
     element.push(Element::leaf("Type", "Tempo"));
+    if change.linear {
+        element.push(canon::tempo_linear());
+    }
     element.push(Element::leaf("Bar", &bar.to_string()));
     if !replayed {
         let position = canon::tempo_position(change.position, master.time_signature)
@@ -93,10 +96,12 @@ fn tempo_target(items: &[Item], ordinal: usize, master: &MasterBar, claimed: &[b
     let Some(wanted) = items.iter().find_map(|item| item.guard.as_deref()) else {
         return ordinal;
     };
+    let wanted = guard::tempo_anchor(wanted);
     let fits = |index: &usize| {
         !claimed.get(*index).copied().unwrap_or(true)
             && master.tempo_changes.get(*index).is_some_and(|change| {
-                guard::tempo_position(change.position, master.time_signature) == wanted
+                let current = guard::tempo_position(change.position, master.time_signature);
+                wanted.is_some() && guard::tempo_anchor(&current) == wanted
             })
     };
     if fits(&ordinal) {

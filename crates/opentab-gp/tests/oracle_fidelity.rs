@@ -60,7 +60,7 @@ const GP_DEFAULT_PAYLOADS: [&str; 52] = [
     "/TransposedPitchStemOrientation",
     "midi-connection:/MidiConnection",
     "note-kind:/InstrumentArticulation",
-    "tempo-position:*Tempo/Linear",
+    "tempo-linear:*Tempo/Linear",
     "tempo-position:*Tempo/Visible",
     "InstrumentSet/Elements",
     "InstrumentSet/LineCount",
@@ -962,6 +962,7 @@ fn payload_kinds_name_their_parent_guard_and_element() {
         position: opentab_model::Fraction::from_integer(0),
         bpm: tempo,
         unit: TempoUnit::Quarter,
+        linear: false,
     }));
 }
 

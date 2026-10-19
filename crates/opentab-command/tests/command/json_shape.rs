@@ -36,6 +36,14 @@ fn forward_commands_have_the_documented_json_shape() {
         json!({"op": "remove_master_bar", "index": 0}),
     );
     shape(
+        &Command::SetTempoLinear {
+            master_bar: 3,
+            index: 1,
+            linear: true,
+        },
+        json!({"op": "set_tempo_linear", "master_bar": 3, "index": 1, "linear": true}),
+    );
+    shape(
         &Command::InsertBeat {
             voice: Some(VoiceId(id)),
             bar: None,
@@ -192,7 +200,7 @@ fn restore_commands_have_the_documented_json_shape() {
     shape(
         &tempo,
         json!({"op": "restore_tempo_changes", "master_bar": 1,
-               "tempo_changes": [{"position": [0, 1], "bpm": 120.0, "unit": "quarter"}]}),
+               "tempo_changes": [{"position": [0, 1], "bpm": 120.0, "unit": "quarter", "linear": false}]}),
     );
     let note = fx.notes[1];
     let note_raw = ElementId::from(note).0;

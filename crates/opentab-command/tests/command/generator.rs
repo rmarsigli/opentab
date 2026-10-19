@@ -111,6 +111,11 @@ pub enum Step {
         master_bar: Pick,
         directions: Directions,
     },
+    SetTempoLinear {
+        master_bar: Pick,
+        index: Pick,
+        linear: bool,
+    },
     PadStaffBars {
         track: Pick,
         staff: Pick,
@@ -382,6 +387,24 @@ fn automations_of(score: &Score, track: TrackId) -> usize {
         .map_or(0, |track| track.automations.len())
 }
 
+fn automation_index(score: &Score, track: TrackId, pick: Pick, value: &ValueSeed) -> usize {
+    let automations = score
+        .find_track(track)
+        .map_or(&[][..], |found| found.automations.as_slice());
+    let len = automations.len();
+    if !pick.valid {
+        return insert_index(pick, len);
+    }
+    let first_sound = automations
+        .iter()
+        .position(|automation| matches!(automation.value, AutomationValue::Sound(_)))
+        .unwrap_or(len);
+    match value {
+        ValueSeed::Sound(_) => first_sound + pick.selector % (len - first_sound + 1),
+        ValueSeed::Volume(_) | ValueSeed::Pan(_) => pick.selector % (first_sound + 1),
+    }
+}
+
 fn sounds_of(score: &Score, track: TrackId) -> usize {
     score
         .find_track(track)
@@ -529,6 +552,22 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
             master_bar: existing_index(*master_bar, master_bars),
             directions: directions.clone(),
         },
+        Step::SetTempoLinear {
+            master_bar,
+            index,
+            linear,
+        } => {
+            let master_bar = existing_index(*master_bar, master_bars);
+            let changes = score
+                .master_bars
+                .get(master_bar)
+                .map_or(0, |master| master.tempo_changes.len());
+            Command::SetTempoLinear {
+                master_bar,
+                index: existing_index(*index, changes),
+                linear: *linear,
+            }
+        }
         Step::PadStaffBars { track, staff } => {
             let short: Vec<StaffInfo> = catalog
                 .staves
@@ -565,11 +604,16 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
             track: catalog.id(*track, &catalog.tracks),
             midi: *midi,
         },
-        Step::InsertAutomation { track, index, .. } => {
+        Step::InsertAutomation {
+            track,
+            index,
+            value,
+            ..
+        } => {
             let track = catalog.id(*track, &catalog.tracks);
             Command::InsertAutomation {
                 track,
-                index: insert_index(*index, automations_of(score, track)),
+                index: automation_index(score, track, *index, value),
                 automation: automation(score, step, track),
             }
         }
@@ -704,6 +748,13 @@ fn arb_step() -> impl Strategy<Value = Step> {
             master_bar,
             directions
         }),
+        (arb_pick(), arb_pick(), any::<bool>()).prop_map(|(master_bar, index, linear)| {
+            Step::SetTempoLinear {
+                master_bar,
+                index,
+                linear,
+            }
+        }),
         (arb_pick(), arb_pick()).prop_map(|(track, staff)| Step::PadStaffBars { track, staff }),
         (arb_pick(), arb_pick(), arb_pick()).prop_map(|(track, staff, len)| Step::TrimStaffBars {
             track,
@@ -827,6 +878,7 @@ fn corrupt(score: &mut Score, corruption: Corruption, pick: usize) {
                     position,
                     bpm: Tempo::new(90.0).expect("valid bpm"),
                     unit: TempoUnit::Quarter,
+                    linear: false,
                 });
             }
         }

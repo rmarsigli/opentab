@@ -70,14 +70,33 @@ pub(crate) fn note_kind(kind: NoteKind) -> String {
     }
 }
 
-pub(crate) fn tempo_position(position: Fraction, time: TimeSignature) -> String {
+const TEMPO_POSITION: &str = "tempo-position:";
+const TEMPO_LINEAR: &str = "tempo-linear:";
+
+fn tempo_anchor_of(position: Fraction, time: TimeSignature) -> String {
     format!(
-        "tempo-position:{}/{};time {}/{}",
+        "{}/{};time {}/{}",
         position.numer(),
         position.denom(),
         time.numerator(),
         time.denominator()
     )
+}
+
+pub(crate) fn tempo_position(position: Fraction, time: TimeSignature) -> String {
+    format!("{TEMPO_POSITION}{}", tempo_anchor_of(position, time))
+}
+
+pub(crate) fn tempo_linear(position: Fraction, time: TimeSignature, linear: bool) -> String {
+    format!("{TEMPO_LINEAR}{linear};{}", tempo_anchor_of(position, time))
+}
+
+pub(crate) fn tempo_anchor(guard: &str) -> Option<&str> {
+    if let Some(anchor) = guard.strip_prefix(TEMPO_POSITION) {
+        return Some(anchor);
+    }
+    let rest = guard.strip_prefix(TEMPO_LINEAR)?;
+    rest.split_once(';').map(|(_, anchor)| anchor)
 }
 
 pub(crate) fn stroke(stroke: Option<Stroke>) -> String {

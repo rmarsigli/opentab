@@ -4,6 +4,7 @@ use crate::rules::{already_broken, check_tempo_changes};
 use crate::{Command, CommandError};
 
 const WHAT: &str = "master bar";
+const CHANGE: &str = "tempo change";
 
 fn out_of_range(score: &Score, index: usize) -> CommandError {
     CommandError::IndexOutOfRange {
@@ -35,6 +36,7 @@ pub(crate) fn set(score: &mut Score, master_bar: usize, bpm: f64) -> Result<Comm
                 position: start,
                 bpm: tempo,
                 unit: TempoUnit::default(),
+                linear: false,
             },
         ),
     }
@@ -62,5 +64,30 @@ pub(crate) fn restore(
     Ok(Command::RestoreTempoChanges {
         master_bar,
         tempo_changes: old,
+    })
+}
+
+pub(crate) fn set_linear(
+    score: &mut Score,
+    master_bar: usize,
+    index: usize,
+    linear: bool,
+) -> Result<Command, CommandError> {
+    let error = out_of_range(score, master_bar);
+    let target = score.master_bars.get_mut(master_bar).ok_or(error)?;
+    let len = target.tempo_changes.len();
+    let change = target
+        .tempo_changes
+        .get_mut(index)
+        .ok_or(CommandError::IndexOutOfRange {
+            what: CHANGE,
+            index,
+            len,
+        })?;
+    let old = std::mem::replace(&mut change.linear, linear);
+    Ok(Command::SetTempoLinear {
+        master_bar,
+        index,
+        linear: old,
     })
 }

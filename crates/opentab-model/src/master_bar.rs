@@ -7,6 +7,8 @@ const MIN_BPM: f64 = 1.0;
 const MAX_BPM: f64 = 1000.0;
 const MAX_ACCIDENTALS: i8 = 7;
 const MAX_DENOMINATOR: u8 = 64;
+const MAX_TEMPO_DECIMALS: usize = 6;
+const DECIMAL_BASE: i128 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "TimeSignatureRepr")]
@@ -133,6 +135,27 @@ impl Tempo {
     pub fn bpm(self) -> f64 {
         self.0
     }
+
+    pub fn exact(self) -> Option<Fraction> {
+        let text = self.0.to_string();
+        let (whole, decimals) = text.split_once('.').unwrap_or((text.as_str(), ""));
+        if decimals.len() > MAX_TEMPO_DECIMALS || whole.is_empty() {
+            return None;
+        }
+        let mut numer: i128 = 0;
+        for byte in whole.bytes().chain(decimals.bytes()) {
+            if !byte.is_ascii_digit() {
+                return None;
+            }
+            numer = numer
+                .checked_mul(DECIMAL_BASE)?
+                .checked_add(i128::from(byte - b'0'))?;
+        }
+        let places = u32::try_from(decimals.len()).ok()?;
+        let denom = DECIMAL_BASE.checked_pow(places)?;
+        let exact = Fraction::new(i64::try_from(numer).ok()?, i64::try_from(denom).ok()?);
+        (exact > Fraction::from_integer(0)).then_some(exact)
+    }
 }
 
 impl TryFrom<f64> for Tempo {
@@ -156,6 +179,8 @@ pub struct TempoChange {
     pub position: WholeNotes,
     pub bpm: Tempo,
     pub unit: TempoUnit,
+    #[serde(default)]
+    pub linear: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

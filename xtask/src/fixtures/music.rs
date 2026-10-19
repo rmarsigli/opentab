@@ -133,6 +133,7 @@ fn change(position: Fraction, bpm: f64, unit: TempoUnit) -> Result<TempoChange, 
         position,
         bpm: Tempo::new(bpm)?,
         unit,
+        linear: false,
     })
 }
 

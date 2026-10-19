@@ -92,6 +92,10 @@ pub(crate) fn directions(directions: &Directions) -> Option<Element> {
     Some(element)
 }
 
+pub(crate) fn tempo_linear() -> Element {
+    Element::leaf("Linear", "true")
+}
+
 pub(crate) fn instrument_type(set: InstrumentSet) -> Element {
     Element::leaf("Type", name_of(INSTRUMENT_SETS, set))
 }

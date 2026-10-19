@@ -27,8 +27,9 @@ const MAX_CAPO: u8 = 12;
 const MAX_CONTAINER_ENTRIES: usize = 3;
 const MAX_CONTAINER_BYTES: usize = 48;
 const MAX_PICK: usize = 4096;
-const MIN_BPM: f64 = 1.0;
-const MAX_BPM: f64 = 1000.0;
+const MIN_BPM: u32 = 1;
+const MAX_BPM: u32 = 1000;
+const HUNDREDTHS: u32 = 100;
 const DENOMINATORS: [u8; 4] = [2, 4, 8, 16];
 const MAX_WRITABLE_OPEN: u8 = 91;
 const GRID_DENOMINATORS: [i64; 11] = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 16];
@@ -178,6 +179,7 @@ pub struct TempoChangeSeed {
     pub share: Fraction,
     pub bpm: Tempo,
     pub unit: TempoUnit,
+    pub linear: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -462,11 +464,22 @@ fn arb_share_denominator(gp_writable: bool) -> BoxedStrategy<i64> {
     }
 }
 
+fn arb_exact_bpm() -> impl Strategy<Value = Tempo> {
+    prop_oneof![
+        4 => (MIN_BPM..=MAX_BPM).prop_map(f64::from),
+        4 => (MIN_BPM * HUNDREDTHS..=MAX_BPM * HUNDREDTHS)
+            .prop_map(|units| f64::from(units) / f64::from(HUNDREDTHS)),
+        2 => (MIN_BPM * MILLIONTHS..=MAX_BPM * MILLIONTHS)
+            .prop_map(|units| f64::from(units) / f64::from(MILLIONTHS)),
+    ]
+    .prop_map(|bpm| Tempo::new(bpm).expect("bpm within range"))
+}
+
 fn arb_tempo_change(gp_writable: bool) -> impl Strategy<Value = TempoChangeSeed> {
     (
         0i64..=64,
         arb_share_denominator(gp_writable),
-        MIN_BPM..=MAX_BPM,
+        arb_exact_bpm(),
         select(vec![
             TempoUnit::Eighth,
             TempoUnit::Quarter,
@@ -474,11 +487,13 @@ fn arb_tempo_change(gp_writable: bool) -> impl Strategy<Value = TempoChangeSeed>
             TempoUnit::Half,
             TempoUnit::DottedHalf,
         ]),
+        any::<bool>(),
     )
-        .prop_map(|(numer, denom, bpm, unit)| TempoChangeSeed {
+        .prop_map(|(numer, denom, bpm, unit, linear)| TempoChangeSeed {
             share: Fraction::new(numer % denom, denom),
-            bpm: Tempo::new(bpm).expect("bpm within range"),
+            bpm,
             unit,
+            linear,
         })
 }
 

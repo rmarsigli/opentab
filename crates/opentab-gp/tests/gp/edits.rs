@@ -46,11 +46,12 @@ enum Op {
     SetFret,
     SetTempo,
     SetDirections,
+    SetTempoLinear,
     PadStaffBars,
     TrimStaffBars,
 }
 
-const OPS: [Op; 16] = [
+const OPS: [Op; 17] = [
     Op::SetMeta,
     Op::SetAnacrusis,
     Op::InsertMasterBar,
@@ -65,11 +66,12 @@ const OPS: [Op; 16] = [
     Op::SetFret,
     Op::SetTempo,
     Op::SetDirections,
+    Op::SetTempoLinear,
     Op::PadStaffBars,
     Op::TrimStaffBars,
 ];
 
-const FORWARD_OPS: [&str; 15] = [
+const FORWARD_OPS: [&str; 16] = [
     "set_meta",
     "set_anacrusis",
     "insert_master_bar",
@@ -83,6 +85,7 @@ const FORWARD_OPS: [&str; 15] = [
     "set_fret",
     "set_tempo",
     "set_directions",
+    "set_tempo_linear",
     "pad_staff_bars",
     "trim_staff_bars",
 ];
@@ -234,6 +237,11 @@ fn resolve(edit: Edit, score: &Score) -> Command {
             master_bar: at % bars.max(1),
             directions: directions(value),
         },
+        Op::SetTempoLinear => Command::SetTempoLinear {
+            master_bar: at % bars.max(1),
+            index: usize::from(value % 2),
+            linear: value % 3 == 0,
+        },
         Op::PadStaffBars | Op::TrimStaffBars => {
             let track = &score.tracks[0];
             let staff = &track.staves[0];
@@ -268,6 +276,7 @@ fn op_name(command: &Command) -> String {
         Command::SetFret { .. } => "set_fret",
         Command::SetTempo { .. } => "set_tempo",
         Command::SetDirections { .. } => "set_directions",
+        Command::SetTempoLinear { .. } => "set_tempo_linear",
         Command::PadStaffBars { .. } => "pad_staff_bars",
         Command::TrimStaffBars { .. } => "trim_staff_bars",
         _ => "restore",
@@ -589,6 +598,7 @@ fn the_rich_document_carries_each_kind_of_guard() {
         "guard=\"accent:",
         "guard=\"stroke:",
         "guard=\"tempo-position:",
+        "guard=\"tempo-linear:false;",
     ] {
         assert!(
             all.iter().any(|data| data.contains(guard)),

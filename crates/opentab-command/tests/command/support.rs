@@ -52,6 +52,7 @@ pub fn master_bar(score: &mut Score, bpm: Option<f64>) -> MasterBar {
                 position: opentab_model::Fraction::from_integer(0),
                 bpm: Tempo::new(bpm).unwrap(),
                 unit: TempoUnit::Quarter,
+                linear: false,
             })
             .into_iter()
             .collect(),

@@ -65,6 +65,11 @@ pub enum Diagnostic {
         #[serde(deserialize_with = "deserialize_non_negative")]
         position: Fraction,
     },
+    InexactTempo {
+        master_bar: MasterBarId,
+        #[serde(deserialize_with = "deserialize_non_negative")]
+        position: Fraction,
+    },
     AutomationOutsideBar {
         track: TrackId,
         master_bar: MasterBarId,
@@ -224,6 +229,12 @@ impl Report {
         for change in &master_bar.tempo_changes {
             if change.position < start || change.position >= end {
                 self.diagnostics.push(Diagnostic::TempoChangeOutsideBar {
+                    master_bar: master_bar.id,
+                    position: change.position,
+                });
+            }
+            if change.bpm.exact().is_none() {
+                self.diagnostics.push(Diagnostic::InexactTempo {
                     master_bar: master_bar.id,
                     position: change.position,
                 });

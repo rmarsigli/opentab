@@ -86,6 +86,11 @@ pub enum Command {
         master_bar: usize,
         bpm: f64,
     },
+    SetTempoLinear {
+        master_bar: usize,
+        index: usize,
+        linear: bool,
+    },
     SetDirections {
         master_bar: usize,
         directions: Directions,

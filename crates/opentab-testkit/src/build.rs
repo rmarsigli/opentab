@@ -323,6 +323,7 @@ fn tempo_change(seed: TempoChangeSeed, time_signature: TimeSignature) -> TempoCh
         position: seed.share * time_signature.bar_length(),
         bpm: seed.bpm,
         unit: seed.unit,
+        linear: seed.linear,
     }
 }
 

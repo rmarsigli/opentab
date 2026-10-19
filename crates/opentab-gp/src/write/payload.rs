@@ -254,6 +254,9 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
         ("minor", Env::MasterBar(bar)) => guard::minor(bar.key_signature.minor()),
         ("directions", Env::MasterBar(bar)) => guard::directions(&bar.directions),
         ("tempo-position", Env::Tempo(tempo, time)) => guard::tempo_position(tempo.position, *time),
+        ("tempo-linear", Env::Tempo(tempo, time)) => {
+            guard::tempo_linear(tempo.position, *time, tempo.linear)
+        }
         ("instrument", Env::Track(track)) => {
             guard::instrument(track.instrument.kind, track.instrument.set)
         }

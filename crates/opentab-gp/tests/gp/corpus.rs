@@ -14,7 +14,7 @@ use opentab_model::{
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
-const EXPECTED_TOTALS: [(&str, usize); 33] = [
+const EXPECTED_TOTALS: [(&str, usize); 36] = [
     ("tracks", 64),
     ("master_bars", 1260),
     ("bars", 2392),
@@ -35,6 +35,9 @@ const EXPECTED_TOTALS: [(&str, usize); 33] = [
     ("dynamics_not_mf", 4998),
     ("clefs_not_treble", 618),
     ("tempo_units_not_quarter", 2),
+    ("linear_tempos", 4),
+    ("inexact_tempos", 0),
+    ("tempos_beyond_three_decimals", 1),
     ("sounds", 66),
     ("sound_automations", 67),
     ("volume_automations", 79),
@@ -49,6 +52,7 @@ const EXPECTED_TOTALS: [(&str, usize); 33] = [
     ("jump_da_segno_al_coda", 1),
     ("direction_payloads", 0),
 ];
+const THOUSANDTHS: i64 = 1000;
 const EXPECTED_DIAGNOSTICS: [(&str, usize); 1] = [("IncompleteBar", 14)];
 
 fn diagnostic_kind(diagnostic: &Diagnostic) -> String {
@@ -81,6 +85,13 @@ fn tally(score: &Score, totals: &mut BTreeMap<String, usize>) {
             .filter(|change| change.unit != TempoUnit::Quarter)
             .count();
         count(totals, "tempo_units_not_quarter", units);
+        for change in &master_bar.tempo_changes {
+            count(totals, "linear_tempos", usize::from(change.linear));
+            let exact = change.bpm.exact();
+            count(totals, "inexact_tempos", usize::from(exact.is_none()));
+            let beyond = exact.is_some_and(|bpm| THOUSANDTHS % *bpm.denom() != 0);
+            count(totals, "tempos_beyond_three_decimals", usize::from(beyond));
+        }
         let directions = &master_bar.directions;
         count(
             totals,

@@ -530,6 +530,7 @@ fn long_score(case: &LongCase) -> Score {
             position: Fraction::new(i64::try_from(index % 5).unwrap(), 4),
             bpm: Tempo::new(f64::from(*tenths) / 10.0).unwrap(),
             unit: UNITS[usize::from(*unit)],
+            linear: false,
         });
     }
     let beats = score.tracks[0].staves[0]

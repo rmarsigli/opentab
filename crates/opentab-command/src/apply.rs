@@ -83,6 +83,11 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
         } => note::restore(score, *beat, *index, note, extensions),
         Command::SetFret { note, fret } => note::set_fret(score, *note, *fret),
         Command::SetTempo { master_bar, bpm } => tempo::set(score, *master_bar, *bpm),
+        Command::SetTempoLinear {
+            master_bar,
+            index,
+            linear,
+        } => tempo::set_linear(score, *master_bar, *index, *linear),
         Command::SetDirections {
             master_bar,
             directions,

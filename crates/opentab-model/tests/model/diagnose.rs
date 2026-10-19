@@ -513,6 +513,7 @@ fn tempo_at(numer: i64, denom: i64) -> opentab_model::TempoChange {
         position: Fraction::new(numer, denom),
         bpm: opentab_model::Tempo::new(100.0).unwrap(),
         unit: opentab_model::TempoUnit::Quarter,
+        linear: false,
     }
 }
 
@@ -756,5 +757,35 @@ fn voice_slot_order_round_trips_through_json() {
     assert_eq!(
         serde_json::from_str::<Diagnostic>(&text).unwrap(),
         diagnostic
+    );
+}
+
+#[test]
+fn a_tempo_without_an_exact_value_is_reported_where_it_sits() {
+    let mut score = four_four(&quarters(4));
+    let mut odd = tempo_at(1, 2);
+    odd.bpm = opentab_model::Tempo::new(128.488_062_080_115_01).unwrap();
+    let mut fine = tempo_at(0, 1);
+    fine.bpm = opentab_model::Tempo::new(133.1234).unwrap();
+    score.master_bars[0].tempo_changes = vec![fine, odd];
+    let master_bar = score.master_bars[0].id;
+    assert_eq!(
+        diagnose(&score),
+        vec![Diagnostic::InexactTempo {
+            master_bar,
+            position: Fraction::new(1, 2),
+        }]
+    );
+    let json = serde_json::to_string(&diagnose(&score)[0]).unwrap();
+    assert_eq!(
+        json,
+        format!(
+            r#"{{"kind":"inexact_tempo","master_bar":{},"position":[1,2]}}"#,
+            master_bar.0.0
+        )
+    );
+    assert_eq!(
+        serde_json::from_str::<Diagnostic>(&json).unwrap(),
+        diagnose(&score)[0]
     );
 }

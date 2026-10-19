@@ -6,6 +6,7 @@ use quick_xml::{Reader, XmlVersion};
 const BYTE_ORDER_MARK: char = '\u{feff}';
 const TRACK_ROOT: [&str; 3] = ["GPIF", "Tracks", "Track"];
 const MASTER_BAR_ROOT: [&str; 3] = ["GPIF", "MasterBars", "MasterBar"];
+const MASTER_TRACK_ROOT: [&str; 2] = ["GPIF", "MasterTrack"];
 
 pub type Inventory = BTreeMap<String, Vec<String>>;
 
@@ -68,6 +69,8 @@ impl Walk {
         } else if names == MASTER_BAR_ROOT {
             self.owner = Some(format!("MasterBar#{}", self.master_bars));
             self.master_bars += 1;
+        } else if names == MASTER_TRACK_ROOT {
+            self.owner = Some("MasterTrack".to_string());
         }
         let path = self.path();
         for attribute in start.attributes().flatten() {
@@ -84,7 +87,7 @@ impl Walk {
         let path = self.path();
         let names_are_root = {
             let names = self.names();
-            names == TRACK_ROOT || names == MASTER_BAR_ROOT
+            names == TRACK_ROOT || names == MASTER_BAR_ROOT || names == MASTER_TRACK_ROOT
         };
         if let Some(open) = self.stack.pop() {
             let text = open.text.trim().to_string();
@@ -307,5 +310,16 @@ fn ordered_directions_keep_the_order_of_targets_and_jumps() {
     assert_eq!(
         ordered_directions(gpif),
         vec!["Jump:DaCoda Target:Coda".to_string(), String::new()]
+    );
+}
+
+#[test]
+fn the_master_track_is_an_owner_of_its_own() {
+    let gpif = "<GPIF><MasterTrack><Automations><Automation><Linear>true</Linear></Automation></Automations></MasterTrack></GPIF>";
+    let found = inventory(gpif);
+    let entries = found.get("MasterTrack").cloned().unwrap_or_default();
+    assert!(
+        entries.contains(&"GPIF/MasterTrack/Automations/Automation/Linear=true".to_string()),
+        "{entries:?}"
     );
 }

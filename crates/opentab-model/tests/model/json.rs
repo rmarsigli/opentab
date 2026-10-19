@@ -30,11 +30,13 @@ fn rich_score() -> Score {
             position: Fraction::new(0, 1),
             bpm: Tempo::new(120.0).unwrap(),
             unit: TempoUnit::DottedQuarter,
+            linear: false,
         },
         TempoChange {
             position: Fraction::new(3, 8),
             bpm: Tempo::new(97.123_456_789_012_34).unwrap(),
             unit: TempoUnit::Quarter,
+            linear: true,
         },
     ];
     let first_voice = &mut score.tracks[0].staves[0].bars[0].voices[0];
@@ -176,9 +178,15 @@ fn rich_score_round_trips_losslessly() {
     let score = rich_score();
     assert_eq!(
         diagnose(&score),
-        vec![Diagnostic::OrphanExtension {
-            id: ElementId(u64::MAX)
-        }]
+        vec![
+            Diagnostic::InexactTempo {
+                master_bar: score.master_bars[0].id,
+                position: Fraction::new(3, 8),
+            },
+            Diagnostic::OrphanExtension {
+                id: ElementId(u64::MAX)
+            }
+        ]
     );
     let text = to_json(&score).unwrap();
     assert_eq!(from_json(&text), Ok(score.clone()));
@@ -591,4 +599,27 @@ fn container_entry_names_are_reachable() {
     let score = rich_score();
     let names: Vec<&str> = score.container.iter().map(ContainerEntry::name).collect();
     assert_eq!(names[1], "Content/score.gpif");
+}
+
+#[test]
+fn a_tempo_ramp_flag_round_trips_and_defaults_to_false() {
+    let value = document();
+    assert_eq!(
+        value["master_bars"][0]["tempo_changes"][1]["linear"],
+        json!(true)
+    );
+    assert_eq!(
+        value["master_bars"][0]["tempo_changes"][0]["linear"],
+        json!(false)
+    );
+    let mut missing = value.clone();
+    missing["master_bars"][0]["tempo_changes"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("linear");
+    let score = from_json(&missing.to_string()).unwrap();
+    assert!(!score.master_bars[0].tempo_changes[1].linear);
+    let mut wrong = value;
+    wrong["master_bars"][0]["tempo_changes"][1]["linear"] = json!("yes");
+    assert!(from_json(&wrong.to_string()).is_err());
 }

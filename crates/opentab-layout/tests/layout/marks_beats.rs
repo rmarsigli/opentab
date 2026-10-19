@@ -29,6 +29,7 @@ fn tempo(numer: i64, denom: i64, bpm: f64, unit: TempoUnit) -> TempoChange {
         position: Fraction::new(numer, denom),
         bpm: Tempo::new(bpm).unwrap(),
         unit,
+        linear: false,
     }
 }
 

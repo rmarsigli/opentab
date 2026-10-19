@@ -30,6 +30,7 @@ pub fn blank_score() -> Result<Score, ModelError> {
             position: Fraction::from_integer(0),
             bpm: Tempo::new(DEFAULT_BPM)?,
             unit: TempoUnit::Quarter,
+            linear: false,
         }],
     };
     let track = guitar_track(&mut score)?;

@@ -623,6 +623,7 @@ fn every_documented_refusal_is_reachable() {
         position: Fraction::new(1, 7),
         bpm: Tempo::new(120.0).expect("bpm"),
         unit: TempoUnit::Quarter,
+        linear: false,
     });
     assert_eq!(
         refusal(&tempo),
@@ -636,6 +637,7 @@ fn every_documented_refusal_is_reachable() {
         position: Fraction::from_integer(1),
         bpm: Tempo::new(120.0).expect("bpm"),
         unit: TempoUnit::Quarter,
+        linear: false,
     });
     assert_eq!(
         refusal(&late).1,

@@ -43,6 +43,7 @@ fn change(numer: i64, denom: i64) -> TempoChange {
         position: Fraction::new(numer, denom),
         bpm: Tempo::new(90.0).unwrap(),
         unit: TempoUnit::Quarter,
+        linear: false,
     }
 }
 
