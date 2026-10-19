@@ -249,9 +249,12 @@ fn exporting_onto_the_source_replaces_it_atomically_and_reads_back() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("song.gp");
     std::fs::copy(crate::support::fixture_path(FIXTURE), &source).unwrap();
-    let mut permissions = std::fs::metadata(&source).unwrap().permissions();
-    permissions.set_readonly(true);
-    std::fs::set_permissions(&source, permissions).unwrap();
+    #[cfg(unix)]
+    {
+        let mut permissions = std::fs::metadata(&source).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&source, permissions).unwrap();
+    }
     let mut server = Server::start();
     let session = server.open(&source.display().to_string());
     let title = Command::SetMeta {
