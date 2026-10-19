@@ -123,6 +123,10 @@ pub(crate) fn whammy(bar: TremoloBar) -> Element {
     element
 }
 
+pub(crate) fn drum_string(string: usize) -> Element {
+    Element::property("String", Element::leaf("String", &string.to_string()))
+}
+
 pub(crate) fn trill(pitch: u8) -> Element {
     Element::leaf("Trill", &pitch.to_string())
 }

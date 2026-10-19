@@ -138,6 +138,8 @@ pub enum Refusal {
         articulation: u16,
         articulations: usize,
     },
+    #[error("a drum beat holds {notes} notes; GP's GPX export keeps at most 6, one per string")]
+    TooManyDrumNotes { notes: usize },
     #[error("the instrument set belongs to another instrument kind than the track's")]
     InstrumentSet,
     #[error("MIDI program {program} is outside 0..=127")]

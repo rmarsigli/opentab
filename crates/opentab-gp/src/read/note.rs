@@ -67,6 +67,7 @@ struct TrillRead {
 
 struct NoteFrame<'f> {
     kind: NoteKind,
+    slot: usize,
     previous: Option<&'f Beat>,
     key: KeySignature,
     pitch: PitchInputs<'f>,
@@ -114,6 +115,7 @@ pub(crate) fn read_note(
     token: &str,
     at: &Location,
     previous: Option<&Beat>,
+    slot: usize,
 ) -> Result<Note, Fault> {
     let (element, location) = pools.notes.fetch(token, at)?;
     let id: NoteId = ctx.alloc(&location)?;
@@ -123,6 +125,7 @@ pub(crate) fn read_note(
     let kind = note_kind(element, &location, &properties, staff)?;
     let frame = NoteFrame {
         kind,
+        slot,
         previous,
         key: staff.key,
         pitch: PitchInputs {
@@ -412,6 +415,9 @@ fn note_property(
     if POSITION_PROPERTIES.contains(&name) {
         return match frame.kind {
             NoteKind::Fretted { .. } => Handled::Mapped(&["name"]),
+            NoteKind::Percussion { .. } if *property.element == canon::drum_string(frame.slot) => {
+                Handled::Mapped(&["name"])
+            }
             NoteKind::Percussion { .. } => Handled::Replayed(guard::pitch(&frame.pitch)),
         };
     }

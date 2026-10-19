@@ -134,6 +134,7 @@ fn properties(
     key: KeySignature,
     items: &[Item],
     strings: usize,
+    drum_string: Option<usize>,
 ) -> Result<Vec<Element>, Fail> {
     let effects = &note.effects;
     let mut out = Vec::new();
@@ -187,6 +188,11 @@ fn properties(
             Element::leaf("String", &reversed.to_string()),
         ));
     }
+    if let Some(string) = drum_string
+        && !has_guarded(items, "Property@String")
+    {
+        out.push(canon::drum_string(string));
+    }
     if effects.tap == Some(Tap::Right) {
         out.push(flag("Tapped"));
     }
@@ -224,6 +230,7 @@ pub(crate) struct NoteSite<'s> {
     pub staff: &'s StaffContext,
     pub key: KeySignature,
     pub previous: Option<&'s Beat>,
+    pub drum_string: Option<usize>,
 }
 
 pub(crate) fn write_note(
@@ -300,7 +307,14 @@ pub(crate) fn write_note(
             &articulation.to_string(),
         ));
     }
-    let generated = properties(note, inputs, key, &items, staff.tuning.len())?;
+    let generated = properties(
+        note,
+        inputs,
+        key,
+        &items,
+        staff.tuning.len(),
+        site.drum_string,
+    )?;
     if !generated.is_empty() {
         let mut container = Element::new(PROPERTIES);
         for property in generated {

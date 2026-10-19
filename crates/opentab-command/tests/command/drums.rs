@@ -1,5 +1,7 @@
 use opentab_command::{Command, CommandError, History, apply, parse_jsonl};
-use opentab_model::{Diagnostic, DrumKit, ElementId, NoteKind, TrackId, diagnose, gm_drum_kit};
+use opentab_model::{
+    Diagnostic, DrumKit, ElementId, MAX_DRUM_BEAT_NOTES, NoteKind, TrackId, diagnose, gm_drum_kit,
+};
 use serde_json::json;
 
 use crate::support::{Fixture, fixture};
@@ -207,4 +209,64 @@ fn set_drum_kit_has_the_documented_json_shape_and_validates_the_kit() {
     broken["drum_kit"]["elements"][0]["count"] = json!(3);
     assert!(serde_json::from_value::<Command>(broken.clone()).is_err());
     assert!(parse_jsonl(&broken.to_string()).is_err());
+}
+
+fn fill_drum_beat(fx: &mut Fixture, notes: usize) {
+    let mut extra = Vec::new();
+    for articulation in 39..39 + notes - 1 {
+        extra.push(opentab_model::Note {
+            id: fx.score.alloc().unwrap(),
+            kind: NoteKind::Percussion {
+                articulation: u16::try_from(articulation).unwrap(),
+            },
+            effects: opentab_model::NoteEffects::default(),
+        });
+    }
+    let path = fx.score.find_beat(fx.drum_beat).unwrap();
+    let beat = &mut fx.score.tracks[path.track].staves[path.staff].bars[path.bar].voices
+        [path.voice]
+        .beats[path.beat];
+    beat.notes.extend(extra);
+}
+
+#[test]
+fn a_seventh_note_in_a_drum_beat_is_diagnosed_and_refused() {
+    let mut fx = fixture();
+    fill_drum_beat(&mut fx, MAX_DRUM_BEAT_NOTES);
+    assert_eq!(diagnose(&fx.score), Vec::new());
+    let inverse = apply(&mut fx.score, &Command::RemoveNote { note: fx.drum_note }).unwrap();
+    let Command::RestoreNote {
+        beat,
+        index,
+        mut note,
+        extensions,
+    } = inverse.clone()
+    else {
+        panic!("restore_note expected");
+    };
+    apply(&mut fx.score, &inverse).unwrap();
+    note.id = fx.score.alloc().unwrap();
+    let seventh = Command::RestoreNote {
+        beat,
+        index,
+        note,
+        extensions,
+    };
+    let CommandError::InvalidValue { message } = rejected(&mut fx, &seventh) else {
+        panic!("invalid value expected");
+    };
+    assert!(message.contains("at most 6"), "{message}");
+    fill_drum_beat(&mut fx, 2);
+    assert_eq!(
+        diagnose(&fx.score),
+        vec![Diagnostic::TooManyDrumNotes {
+            beat: fx.drum_beat,
+            notes: MAX_DRUM_BEAT_NOTES + 1
+        }]
+    );
+    let remove = Command::RemoveBeat { beat: fx.drum_beat };
+    let CommandError::InvalidValue { message } = rejected(&mut fx, &remove) else {
+        panic!("invalid value expected");
+    };
+    assert!(message.contains("run diagnose"), "{message}");
 }

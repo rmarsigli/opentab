@@ -75,10 +75,11 @@ fn the_instrument_type_is_typed_unknown_ones_replayed_and_drum_kits_are_percussi
     assert_eq!(track(&drums).instrument.kind, InstrumentKind::Percussion);
     assert_eq!(track(&drums).instrument.set, Some(InstrumentSet::DrumKit));
     assert_eq!(note(&drums).kind, NoteKind::Percussion { articulation: 12 });
-    assert!(crate::support::note_payloads(&drums).contains(
-        &"<Keep parent=\"Properties\" index=\"0\" guard=\"pitch:percussion 12\"><Property name=\"String\"><String>0</String></Property></Keep>"
-            .to_string()
-    ));
+    assert!(
+        !crate::support::note_payloads(&drums)
+            .iter()
+            .any(|payload| payload.contains("Property name=\"String\""))
+    );
 }
 
 #[test]

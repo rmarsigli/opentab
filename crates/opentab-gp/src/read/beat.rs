@@ -191,6 +191,7 @@ fn read_beat(
     };
     if let Some(notes) = fields.notes {
         for token in notes.text.split_whitespace() {
+            let slot = beat.notes.len();
             beat.notes.push(read_note(
                 ctx,
                 pools,
@@ -198,6 +199,7 @@ fn read_beat(
                 token,
                 &notes.location,
                 previous,
+                slot,
             )?);
         }
     }

@@ -1,9 +1,11 @@
+use std::collections::BTreeMap;
+
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
     Bar, Beat, BeatEffects, Clef, Diagnostic, Directions, DrumArticulation, DrumElement, DrumKit,
-    Duration, InstrumentKind, InstrumentSet, KeySignature, MasterBar, Note, NoteEffects, NoteKind,
-    NoteValue, Pitch, Score, TechniquePlacement, TimeSignature, TrackMidi, Transpose, Voice,
-    VoiceSlot, blank_score, diagnose, gm_drum_kit,
+    Duration, InstrumentKind, InstrumentSet, KeySignature, MAX_DRUM_BEAT_NOTES, MasterBar, Note,
+    NoteEffects, NoteKind, NoteValue, Pitch, Score, TechniquePlacement, TimeSignature, TrackMidi,
+    Transpose, Voice, VoiceSlot, blank_score, diagnose, gm_drum_kit,
 };
 
 use crate::anchors::gpif_text;
@@ -14,11 +16,11 @@ const BEATS_PER_BAR: usize = 4;
 const BARE_SET: &str = "<InstrumentSet><Type>drumKit</Type></InstrumentSet>";
 const PERCUSSION_NONE: &str = "guard=\"drum-kit:percussion none\"";
 
-fn drum_beats(score: &mut Score, articulations: &[u16]) -> Vec<Beat> {
+fn chord_beats(score: &mut Score, chords: &[&[u16]]) -> Vec<Beat> {
     let mut beats = Vec::new();
-    for chord in articulations.chunks(NOTES_PER_BEAT) {
+    for chord in chords {
         let mut notes = Vec::new();
-        for articulation in chord {
+        for articulation in *chord {
             notes.push(Note {
                 id: score.alloc().expect("id"),
                 kind: NoteKind::Percussion {
@@ -38,8 +40,13 @@ fn drum_beats(score: &mut Score, articulations: &[u16]) -> Vec<Beat> {
 }
 
 fn from_scratch(articulations: &[u16]) -> Score {
+    let chords: Vec<&[u16]> = articulations.chunks(NOTES_PER_BEAT).collect();
+    from_chords(&chords)
+}
+
+fn from_chords(chords: &[&[u16]]) -> Score {
     let mut score = blank_score().expect("blank");
-    let mut beats = drum_beats(&mut score, articulations);
+    let mut beats = chord_beats(&mut score, chords);
     while !beats.len().is_multiple_of(BEATS_PER_BAR) {
         beats.push(Beat {
             id: score.alloc().expect("id"),
@@ -564,6 +571,100 @@ fn kit_text_guitar_pro_cannot_hold_is_refused() {
             assert_eq!(path, "tracks[0].drum_kit");
             assert_eq!(reason, Refusal::Character { code: 1 });
         }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
+fn elements_by_id(gpif: &str, name: &str) -> BTreeMap<String, String> {
+    let open = format!("<{name} id=\"");
+    let close = format!("</{name}>");
+    gpif.split(&open)
+        .skip(1)
+        .filter_map(|rest| {
+            let (id, body) = rest.split_once('"')?;
+            let (body, _) = body.split_once(&close)?;
+            Some((id.to_string(), body.to_string()))
+        })
+        .collect()
+}
+
+fn strings_per_beat(gpif: &str) -> Vec<Vec<usize>> {
+    let notes = elements_by_id(gpif, "Note");
+    let mut beats: Vec<(usize, String)> = elements_by_id(gpif, "Beat")
+        .into_iter()
+        .map(|(id, body)| (id.parse().expect("beat id"), body))
+        .collect();
+    beats.sort();
+    beats
+        .iter()
+        .filter_map(|(_, beat)| texts(beat, "Notes").first().cloned())
+        .map(|ids| {
+            ids.split_whitespace()
+                .map(|id| {
+                    texts(&notes[id], "String")
+                        .first()
+                        .and_then(|text| text.trim().parse().ok())
+                        .expect("every drum note carries a String")
+                })
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn every_note_of_a_drum_chord_gets_its_own_string() {
+    let chords: Vec<Vec<u16>> = (1..=MAX_DRUM_BEAT_NOTES)
+        .map(|size| (0..u16::try_from(size).expect("small")).collect())
+        .collect();
+    let chords: Vec<&[u16]> = chords.iter().map(Vec::as_slice).collect();
+    let score = from_chords(&chords);
+    assert_eq!(diagnose(&score), Vec::new());
+    let bytes = write_gp(&score).expect("write");
+    let strings = strings_per_beat(&gpif_text(&bytes));
+    let expected: Vec<Vec<usize>> = (1..=MAX_DRUM_BEAT_NOTES)
+        .map(|size| (0..size).collect())
+        .collect();
+    assert_eq!(strings, expected);
+    let again = read_gp(&bytes).expect("read");
+    assert!(again.extensions.0.is_empty(), "{:?}", again.extensions);
+    assert_eq!(write_gp(&again).expect("write again"), bytes);
+}
+
+#[test]
+fn a_kept_string_moves_a_generated_one_to_a_free_string() {
+    let score = from_chords(&[&[0, 1, 2]]);
+    let gpif = gpif_text(&write_gp(&score).expect("write"));
+    let first = "<String>0</String>";
+    assert!(gpif.contains(first), "{gpif}");
+    let edited = gpif.replacen(first, "<String>2</String>", 1);
+    let kept = read_gpif(&edited);
+    let note = kept.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].id;
+    assert!(!payloads(&kept, note.0).is_empty());
+    let rewritten = gpif_text(&write_gp(&kept).expect("write"));
+    let strings = strings_per_beat(&rewritten);
+    assert_eq!(strings[0], vec![2, 1, 0]);
+    assert_eq!(read_gpif(&rewritten).tracks, kept.tracks);
+}
+
+#[test]
+fn a_drum_beat_of_seven_notes_is_diagnosed_and_refused() {
+    let seven: Vec<u16> = (0..u16::try_from(MAX_DRUM_BEAT_NOTES + 1).expect("small")).collect();
+    let score = from_chords(&[&seven]);
+    let beat = score.tracks[0].staves[0].bars[0].voices[0].beats[0].id;
+    assert_eq!(
+        diagnose(&score),
+        vec![Diagnostic::TooManyDrumNotes {
+            beat,
+            notes: MAX_DRUM_BEAT_NOTES + 1
+        }]
+    );
+    match write_gp(&score) {
+        Err(GpError::Unsupported { reason, .. }) => assert_eq!(
+            reason,
+            Refusal::TooManyDrumNotes {
+                notes: MAX_DRUM_BEAT_NOTES + 1
+            }
+        ),
         other => panic!("expected a refusal, got {other:?}"),
     }
 }

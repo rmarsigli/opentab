@@ -21,7 +21,9 @@ pub use diagnostics::{Diagnostic, diagnose};
 pub use directions::{
     DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump, DirectionTarget, Directions, JumpDestination,
 };
-pub use drums::{DrumArticulation, DrumElement, DrumKit, TechniquePlacement, gm_drum_kit};
+pub use drums::{
+    DrumArticulation, DrumElement, DrumKit, MAX_DRUM_BEAT_NOTES, TechniquePlacement, gm_drum_kit,
+};
 pub use duration::{Duration, NoteValue, Tuplet};
 pub use effects::{
     Accent, BeatEffects, Bend, BendPoint, Dynamic, Finger, Grace, Harmonic, HarmonicKind,

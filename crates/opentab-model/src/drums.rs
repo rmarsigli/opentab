@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::ModelError;
 
 const MAX_KEY: u8 = 127;
+pub const MAX_DRUM_BEAT_NOTES: usize = 6;
 const PLAIN_HEADS: [&str; 3] = ["noteheadBlack", "noteheadHalf", "noteheadWhole"];
 const CROSS_HEADS: [&str; 3] = ["noteheadXBlack", "noteheadXHalf", "noteheadXWhole"];
 const KICK: &str = "kickDrum";

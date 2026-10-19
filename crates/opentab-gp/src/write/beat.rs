@@ -1,4 +1,6 @@
-use opentab_model::{Bar, Beat, BeatEffects, Duration, KeySignature, Voice};
+use opentab_model::{
+    Bar, Beat, BeatEffects, Duration, InstrumentKind, KeySignature, MAX_DRUM_BEAT_NOTES, Voice,
+};
 
 use crate::canon;
 use crate::codes::{
@@ -8,6 +10,7 @@ use crate::codes::{
 use crate::dom::{Element, Node};
 use crate::error::Refusal;
 use crate::guard;
+use crate::write::drums::drum_strings;
 use crate::write::note::{NoteSite, write_note};
 use crate::write::payload::{self, Env, Item};
 use crate::write::state::{Layouts, Owners, Pools, StaffContext};
@@ -191,6 +194,13 @@ fn write_beat(
             problem: "parent root does not apply here".to_string(),
         }));
     }
+    let percussion = staff.kind == InstrumentKind::Percussion;
+    if percussion && beat.notes.len() > MAX_DRUM_BEAT_NOTES {
+        return Err(Fail::new(Refusal::TooManyDrumNotes {
+            notes: beat.notes.len(),
+        }))
+        .within(|| "notes".to_string());
+    }
     let rhythm = rhythm_element(beat.duration, split.rhythm)?;
     let rhythm = intern_rhythm(build.pools, rhythm);
     let effects = &beat.effects;
@@ -233,16 +243,27 @@ fn write_beat(
     payload::apply(&mut element, split.own)?;
     build.pools.beats.push(element);
     build.pools.beat_rhythms.push(rhythm);
-    for (index, note) in beat.notes.iter().enumerate() {
-        let note_id = Layouts::id(&build.layouts.notes, first_note + index);
-        let note_site = NoteSite {
-            staff,
-            key: site.key,
-            previous,
-        };
-        let note = write_note(build.owners, &note_site, note, note_id)
-            .within(|| format!("notes[{index}]"))?;
-        build.pools.notes.push(note);
+    let mut strings = vec![None; beat.notes.len()];
+    let passes = if percussion { 2 } else { 1 };
+    for pass in 0..passes {
+        let mut written = Vec::with_capacity(beat.notes.len());
+        for (index, note) in beat.notes.iter().enumerate() {
+            let note_id = Layouts::id(&build.layouts.notes, first_note + index);
+            let note_site = NoteSite {
+                staff,
+                key: site.key,
+                previous,
+                drum_string: strings[index],
+            };
+            let note = write_note(build.owners, &note_site, note, note_id)
+                .within(|| format!("notes[{index}]"))?;
+            written.push(note);
+        }
+        if pass + 1 < passes {
+            strings = drum_strings(&written);
+        } else {
+            build.pools.notes.extend(written);
+        }
     }
     Ok(())
 }

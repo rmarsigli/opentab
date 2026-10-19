@@ -1,6 +1,6 @@
 use opentab_model::{
-    Bar, Beat, BeatId, Clef, Fraction, IdAllocator, InstrumentKind, Note, NoteKind, Score, Tempo,
-    TempoChange, TimeSignature, Track, Voice, VoiceSlot,
+    Bar, Beat, BeatId, Clef, Fraction, IdAllocator, InstrumentKind, MAX_DRUM_BEAT_NOTES, Note,
+    NoteKind, Score, Tempo, TempoChange, TimeSignature, Track, Voice, VoiceSlot,
 };
 
 use crate::CommandError;
@@ -101,7 +101,22 @@ pub(crate) fn check_trill(track: &Track, note: &Note) -> Result<(), CommandError
     Ok(())
 }
 
+pub(crate) fn check_drum_notes(
+    track: &Track,
+    beat: BeatId,
+    notes: usize,
+) -> Result<(), CommandError> {
+    if track.instrument.kind == InstrumentKind::Percussion && notes > MAX_DRUM_BEAT_NOTES {
+        return Err(CommandError::invalid(format!(
+            "beat {} would hold {notes} drum notes; a drum beat holds at most {MAX_DRUM_BEAT_NOTES}",
+            beat.0.0
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn check_beat(owner: &Owner<'_>, beat: &Beat) -> Result<(), CommandError> {
+    check_drum_notes(owner.track, beat.id, beat.notes.len())?;
     for (index, note) in beat.notes.iter().enumerate() {
         let before = beat.notes.get(..index).unwrap_or_default();
         check_note_in(owner, beat.id, before, note.kind)?;

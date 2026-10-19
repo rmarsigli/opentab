@@ -1,6 +1,7 @@
 mod anchor;
 mod beat;
 mod document;
+mod drums;
 mod mixer;
 mod note;
 mod payload;

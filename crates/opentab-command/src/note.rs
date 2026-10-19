@@ -7,7 +7,7 @@ use crate::ids::{
     check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
 };
 use crate::locate::{beat_in, beat_ref, not_found, note_in};
-use crate::rules::{Owner, already_broken, check_note_in, check_trill};
+use crate::rules::{Owner, already_broken, check_drum_notes, check_note_in, check_trill};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const BEAT: &str = "beat";
@@ -98,6 +98,7 @@ pub(crate) fn restore(
         });
     }
     check_note_in(&Owner::of(score, track), beat, &target.notes, note.kind)?;
+    check_drum_notes(track, beat, len.saturating_add(1))?;
     check_trill(track, note)?;
     check_restorable(score, once(note.id.0), extensions)?;
     let target = beat_in(&mut score.tracks, path).ok_or(not_found(BEAT, beat))?;

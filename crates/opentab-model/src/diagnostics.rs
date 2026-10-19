@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::fraction::{checked_sum, deserialize_non_negative};
 use crate::{
     AutomationValue, Bar, BarId, Beat, BeatId, DirectionJump, DirectionTarget, ElementId, Fraction,
-    InstrumentKind, JumpDestination, MasterBar, MasterBarId, NoteId, NoteKind, Score, SoundRef,
-    Staff, StaffId, Track, TrackId, Voice, VoiceId, automations_in_order, check_program,
-    on_automation_grid,
+    InstrumentKind, JumpDestination, MAX_DRUM_BEAT_NOTES, MasterBar, MasterBarId, NoteId, NoteKind,
+    Score, SoundRef, Staff, StaffId, Track, TrackId, Voice, VoiceId, automations_in_order,
+    check_program, on_automation_grid,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -66,6 +66,10 @@ pub enum Diagnostic {
     DuplicateString {
         beat: BeatId,
         string: u8,
+    },
+    TooManyDrumNotes {
+        beat: BeatId,
+        notes: usize,
     },
     VoiceSlotOrder {
         bar: BarId,
@@ -468,6 +472,14 @@ impl Report {
                 }
             }
             self.strings(beat);
+            if track.instrument.kind == InstrumentKind::Percussion
+                && beat.notes.len() > MAX_DRUM_BEAT_NOTES
+            {
+                self.diagnostics.push(Diagnostic::TooManyDrumNotes {
+                    beat: beat.id,
+                    notes: beat.notes.len(),
+                });
+            }
         }
         let timed = || {
             voice
