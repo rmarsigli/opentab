@@ -1,3 +1,4 @@
+mod directions;
 mod effects;
 mod midi;
 mod music;
@@ -49,7 +50,7 @@ pub struct Family {
 
 type Builder = fn() -> Result<Score, FixtureError>;
 
-const BUILDERS: [(&str, Builder); 15] = [
+const BUILDERS: [(&str, Builder); 25] = [
     ("metadata.gp", music::metadata),
     ("signatures.gp", music::signatures),
     ("repeats.gp", music::repeats),
@@ -65,6 +66,16 @@ const BUILDERS: [(&str, Builder); 15] = [
     ("sound-change.gp", midi::sound_change),
     ("mixer.gp", midi::mixer),
     ("sound-override.gp", midi::sound_override),
+    ("directions-dc-fine.gp", directions::dc_fine),
+    ("directions-ds-coda.gp", directions::ds_coda),
+    ("directions-dss-double-coda.gp", directions::dss_double_coda),
+    ("directions-repeat-jumps.gp", directions::repeat_jumps),
+    ("directions-endings.gp", directions::endings),
+    ("directions-coda-held.gp", directions::coda_held),
+    ("directions-coda-free.gp", directions::coda_free),
+    ("directions-fine-ahead.gp", directions::fine_ahead),
+    ("directions-dangling.gp", directions::dangling),
+    ("directions-duplicates.gp", directions::duplicates),
 ];
 
 pub fn families() -> Result<Vec<Family>, FixtureError> {
@@ -116,6 +127,11 @@ mod tests {
     use opentab_model::diagnose;
     use std::path::Path;
 
+    const DIAGNOSED: [(&str, usize); 2] = [
+        ("directions-dangling.gp", 3),
+        ("directions-duplicates.gp", 2),
+    ];
+
     #[test]
     fn rendering_twice_gives_identical_bytes() {
         let first = render().expect("render");
@@ -164,7 +180,11 @@ mod tests {
             let bytes = opentab_gp::write_gp(&family.score).expect("write");
             let again = opentab_gp::write_gp(&read_gp(&bytes).expect("read")).expect("rewrite");
             assert!(again == bytes, "{}", family.file);
-            assert_eq!(diagnose(&family.score), Vec::new(), "{}", family.file);
+            let expected = DIAGNOSED
+                .iter()
+                .find(|(file, _)| *file == family.file)
+                .map_or(0, |(_, count)| *count);
+            assert_eq!(diagnose(&family.score).len(), expected, "{}", family.file);
         }
     }
 

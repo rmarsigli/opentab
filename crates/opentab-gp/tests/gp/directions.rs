@@ -1,6 +1,7 @@
 use opentab_gp::{read_gp, write_gp};
 use opentab_model::{
-    DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump, DirectionTarget, Directions, Score,
+    DIRECTION_JUMPS, DIRECTION_TARGETS, Diagnostic, DirectionJump, DirectionTarget, Directions,
+    Score, diagnose,
 };
 
 use crate::anchors::gpif_text;
@@ -185,4 +186,69 @@ fn a_second_directions_element_is_refused() {
     let doubled = "<Directions><Target>Coda</Target></Directions><Directions/>";
     let error = with_directions(doubled).error();
     assert!(error.to_string().contains("Directions"), "{error}");
+}
+
+fn fixture(name: &str) -> Score {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/gp")
+        .join(name);
+    read_gp(&std::fs::read(path).expect("fixture")).expect("fixture reads")
+}
+
+#[test]
+fn the_dangling_fixture_reports_each_missing_target() {
+    let score = fixture("directions-dangling.gp");
+    let id = |bar: usize| score.master_bars[bar].id;
+    assert_eq!(
+        diagnose(&score),
+        vec![
+            Diagnostic::DanglingJump {
+                master_bar: id(1),
+                jump: DirectionJump::DaCoda,
+                target: DirectionTarget::Coda,
+            },
+            Diagnostic::DanglingJump {
+                master_bar: id(2),
+                jump: DirectionJump::DaSegno,
+                target: DirectionTarget::Segno,
+            },
+            Diagnostic::DanglingJump {
+                master_bar: id(3),
+                jump: DirectionJump::DaCapoAlCoda,
+                target: DirectionTarget::Coda,
+            },
+        ]
+    );
+}
+
+#[test]
+fn the_duplicates_fixture_reports_each_later_target() {
+    let score = fixture("directions-duplicates.gp");
+    let id = |bar: usize| score.master_bars[bar].id;
+    assert_eq!(
+        diagnose(&score),
+        vec![
+            Diagnostic::DuplicateTarget {
+                master_bar: id(4),
+                target: DirectionTarget::Segno,
+            },
+            Diagnostic::DuplicateTarget {
+                master_bar: id(5),
+                target: DirectionTarget::Fine,
+            },
+        ]
+    );
+}
+
+#[test]
+fn the_ds_coda_fixture_holds_two_jumps_in_gp_order() {
+    let score = fixture("directions-ds-coda.gp");
+    assert_eq!(
+        score.master_bars[3].directions.jumps,
+        vec![DirectionJump::DaSegnoAlCoda, DirectionJump::DaCoda]
+    );
+    assert!(
+        written(&score)
+            .contains("<Directions><Jump>DaSegnoAlCoda</Jump><Jump>DaCoda</Jump></Directions>")
+    );
 }

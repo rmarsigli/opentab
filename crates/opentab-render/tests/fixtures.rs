@@ -91,6 +91,56 @@ fn beat_effects() {
 }
 
 #[test]
+fn directions_coda_free() {
+    check("directions-coda-free", "", &default_options());
+}
+
+#[test]
+fn directions_coda_held() {
+    check("directions-coda-held", "", &default_options());
+}
+
+#[test]
+fn directions_dangling() {
+    check("directions-dangling", "", &default_options());
+}
+
+#[test]
+fn directions_dc_fine() {
+    check("directions-dc-fine", "", &default_options());
+}
+
+#[test]
+fn directions_ds_coda() {
+    check("directions-ds-coda", "", &default_options());
+}
+
+#[test]
+fn directions_dss_double_coda() {
+    check("directions-dss-double-coda", "", &default_options());
+}
+
+#[test]
+fn directions_duplicates() {
+    check("directions-duplicates", "", &default_options());
+}
+
+#[test]
+fn directions_endings() {
+    check("directions-endings", "", &default_options());
+}
+
+#[test]
+fn directions_fine_ahead() {
+    check("directions-fine-ahead", "", &default_options());
+}
+
+#[test]
+fn directions_repeat_jumps() {
+    check("directions-repeat-jumps", "", &default_options());
+}
+
+#[test]
 fn durations() {
     check("durations", "", &default_options());
 }
@@ -203,5 +253,5 @@ fn every_committed_fixture_has_a_snapshot_test() {
         let test = format!("fn {}() {{", name.replace('-', "_"));
         assert!(source.contains(&test), "no snapshot test for {name}");
     }
-    assert_eq!(names.len(), 15);
+    assert_eq!(names.len(), 25);
 }

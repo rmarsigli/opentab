@@ -22,7 +22,21 @@ const SEMITONES: i32 = 12;
 const DEFAULT_BPM: f64 = 120.0;
 const REPLACEMENT: char = '\u{FFFD}';
 const SHOWN_DIFF_LINES: usize = 40;
-const AWAITING_HARVEST: [&str; 3] = ["mixer.gp", "sound-change.gp", "sound-override.gp"];
+const AWAITING_HARVEST: [&str; 13] = [
+    "mixer.gp",
+    "sound-change.gp",
+    "sound-override.gp",
+    "directions-dc-fine.gp",
+    "directions-ds-coda.gp",
+    "directions-dss-double-coda.gp",
+    "directions-repeat-jumps.gp",
+    "directions-endings.gp",
+    "directions-coda-held.gp",
+    "directions-coda-free.gp",
+    "directions-fine-ahead.gp",
+    "directions-dangling.gp",
+    "directions-duplicates.gp",
+];
 
 const GP_DEFAULT_PAYLOADS: [&str; 52] = [
     "/AudioEngineState",

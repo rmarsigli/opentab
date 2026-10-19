@@ -419,3 +419,14 @@ fn track_lyrics_count_only_in_the_bars_their_syllables_reach() {
     assert_eq!(names(&sung, &range(2, 2)), vec!["lyrics"]);
     assert!(names(&sung, &range(3, 3)).is_empty());
 }
+
+#[test]
+fn direction_fixtures_report_directions() {
+    let both = options(StaffMode::Both);
+    for name in ["directions-dc-fine.gp", "directions-ds-coda.gp"] {
+        let score = crate::snapshots::fixture(name);
+        assert!(names(&score, &both).contains(&"directions"), "{name}");
+    }
+    let plain = crate::snapshots::fixture("repeats.gp");
+    assert!(!names(&plain, &both).contains(&"directions"));
+}
