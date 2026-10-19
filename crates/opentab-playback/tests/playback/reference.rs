@@ -1,8 +1,44 @@
 use std::collections::BTreeSet;
 
-use opentab_model::{DirectionJump, DirectionTarget, JumpDestination, MasterBar};
+use opentab_model::{DirectionJump, DirectionTarget, MasterBar};
 
 const PASS_LIMIT: u32 = 8;
+
+#[derive(Debug, Clone, Copy)]
+enum Goal {
+    Top,
+    Mark(DirectionTarget),
+}
+
+fn goal_of(jump: DirectionJump) -> Goal {
+    use DirectionJump as J;
+    use DirectionTarget as T;
+    match jump {
+        J::DaCapo | J::DaCapoAlFine | J::DaCapoAlCoda | J::DaCapoAlDoubleCoda => Goal::Top,
+        J::DaSegno | J::DaSegnoAlFine | J::DaSegnoAlCoda | J::DaSegnoAlDoubleCoda => {
+            Goal::Mark(T::Segno)
+        }
+        J::DaSegnoSegno
+        | J::DaSegnoSegnoAlFine
+        | J::DaSegnoSegnoAlCoda
+        | J::DaSegnoSegnoAlDoubleCoda => Goal::Mark(T::SegnoSegno),
+        J::DaCoda => Goal::Mark(T::Coda),
+        J::DaDoubleCoda => Goal::Mark(T::DoubleCoda),
+    }
+}
+
+fn armed_by(jump: DirectionJump) -> Option<DirectionTarget> {
+    use DirectionJump as J;
+    use DirectionTarget as T;
+    match jump {
+        J::DaCapoAlFine | J::DaSegnoAlFine | J::DaSegnoSegnoAlFine => Some(T::Fine),
+        J::DaCapoAlCoda | J::DaSegnoAlCoda | J::DaSegnoSegnoAlCoda => Some(T::Coda),
+        J::DaCapoAlDoubleCoda | J::DaSegnoAlDoubleCoda | J::DaSegnoSegnoAlDoubleCoda => {
+            Some(T::DoubleCoda)
+        }
+        J::DaCapo | J::DaSegno | J::DaSegnoSegno | J::DaCoda | J::DaDoubleCoda => None,
+    }
+}
 const WALK_LIMIT: usize = 1 << 22;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,9 +95,9 @@ impl Score<'_> {
     }
 
     fn goal(&self, jump: DirectionJump) -> Option<usize> {
-        match jump.destination() {
-            JumpDestination::Start => Some(0),
-            JumpDestination::Target(target) => self.holder(target),
+        match goal_of(jump) {
+            Goal::Top => Some(0),
+            Goal::Mark(target) => self.holder(target),
         }
     }
 
@@ -119,7 +155,7 @@ impl Score<'_> {
 
     fn take(&self, cursor: &mut Cursor, memory: &mut Memory, jump: DirectionJump, goal: usize) {
         memory.fired.insert(jump);
-        if let Some(released) = jump.releases() {
+        if let Some(released) = armed_by(jump) {
             memory.released.insert(released);
         }
         *cursor = Cursor {

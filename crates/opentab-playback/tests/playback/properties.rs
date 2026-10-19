@@ -9,7 +9,7 @@ use proptest::prelude::*;
 use proptest::sample::select;
 use proptest::test_runner::FileFailurePersistence;
 
-use crate::reference::reference_order;
+use crate::reference::{Visit, reference_order};
 use crate::support::master_bar;
 
 const MAX_BARS: usize = 10;
@@ -44,16 +44,16 @@ fn check(score: &Score) -> Result<(), TestCaseError> {
     let bound = expansion_bound(&score.master_bars);
     prop_assert!(order.bars.len() <= bound.min(MAX_PLAYED_BARS));
     let reference = reference_order(&score.master_bars, MAX_PLAYED_BARS);
-    let ours: Vec<(usize, u32)> = order
+    prop_assert!(!order.truncated);
+    let ours: Vec<Visit> = order
         .bars
         .iter()
-        .map(|bar| (bar.source, u32::from(bar.pass)))
+        .map(|bar| Visit {
+            bar: bar.source,
+            pass: u32::from(bar.pass),
+        })
         .collect();
-    let theirs: Vec<(usize, u32)> = reference
-        .iter()
-        .map(|visit| (visit.bar, visit.pass))
-        .collect();
-    prop_assert_eq!(ours, theirs);
+    prop_assert_eq!(ours, reference);
     let mut end = opentab_model::Fraction::new(0, 1);
     for bar in &order.bars {
         prop_assert_eq!(bar.start.whole_notes(), end);
@@ -74,33 +74,53 @@ fn arb_directions() -> impl Strategy<Value = Directions> {
         .prop_map(|(targets, jumps)| Directions { targets, jumps })
 }
 
-fn arb_bar() -> impl Strategy<Value = (bool, Option<u8>, u8, Directions, (u8, u8))> {
+#[derive(Debug, Clone)]
+struct BarSeed {
+    repeat_start: bool,
+    repeat_end: Option<u8>,
+    endings: u8,
+    directions: Directions,
+    numerator: u8,
+    denominator: u8,
+}
+
+fn arb_bar() -> impl Strategy<Value = BarSeed> {
     (
         proptest::bool::weighted(0.3),
         proptest::option::weighted(0.3, 0..=MAX_COUNT),
         prop_oneof![3 => Just(0u8), 1 => 1..=MAX_ENDING_MASK],
         prop_oneof![1 => Just(Directions::default()), 1 => arb_directions()],
-        (1u8..=7, select(vec![2u8, 4, 8, 16])),
+        1u8..=7,
+        select(vec![2u8, 4, 8, 16]),
     )
+        .prop_map(
+            |(repeat_start, repeat_end, endings, directions, numerator, denominator)| BarSeed {
+                repeat_start,
+                repeat_end,
+                endings,
+                directions,
+                numerator,
+                denominator,
+            },
+        )
 }
 
 fn arb_structure() -> impl Strategy<Value = Score> {
-    proptest::collection::vec(arb_bar(), 0..=MAX_BARS).prop_map(|bars| {
+    proptest::collection::vec(arb_bar(), 0..=MAX_BARS).prop_map(|seeds| {
         let mut score = Score::new();
-        score.master_bars = bars
+        score.master_bars = seeds
             .into_iter()
             .enumerate()
-            .map(
-                |(index, (start, end, endings, directions, (numer, denom)))| {
-                    let mut bar = master_bar(index, 4, 4);
-                    bar.time_signature = TimeSignature::new(numer, denom).expect("signature");
-                    bar.repeat_start = start;
-                    bar.repeat_end = end;
-                    bar.alternate_endings = endings;
-                    bar.directions = directions;
-                    bar
-                },
-            )
+            .map(|(index, seed)| {
+                let mut bar = master_bar(index, 4, 4);
+                bar.time_signature =
+                    TimeSignature::new(seed.numerator, seed.denominator).expect("signature");
+                bar.repeat_start = seed.repeat_start;
+                bar.repeat_end = seed.repeat_end;
+                bar.alternate_endings = seed.endings;
+                bar.directions = seed.directions;
+                bar
+            })
             .collect();
         score
     })

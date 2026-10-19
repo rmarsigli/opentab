@@ -1,7 +1,7 @@
 use opentab_model::{Fraction, Score, Tempo, TempoUnit};
 use opentab_playback::{
-    PlaybackError, RampGrid, ScoreTime, Seconds, Speed, TempoMap, TempoSegment, play_order,
-    playback_bpm, quarters_per_minute, quarters_per_unit,
+    PlaybackError, RampGrid, RampStep, ScoreTime, Seconds, Speed, TempoMap, TempoSegment,
+    play_order, playback_bpm, quarters_per_minute, quarters_per_unit,
 };
 
 use crate::support::{frac, plain_score, score_from, tempo};
@@ -75,10 +75,10 @@ fn tempo_units_convert_to_quarters_by_their_factor() {
     assert_eq!(quarters_per_unit(TempoUnit::DottedHalf), frac(3, 1));
     let cases = [
         (TempoUnit::Eighth, 120.0, frac(4, 1)),
-        (TempoUnit::DottedQuarter, 60.0, frac(8, 3)),
+        (TempoUnit::DottedQuarter, 60.0, frac(666_667, 250_000)),
         (TempoUnit::Half, 60.0, frac(2, 1)),
         (TempoUnit::DottedHalf, 40.0, frac(2, 1)),
-        (TempoUnit::Quarter, 90.0, frac(8, 3)),
+        (TempoUnit::Quarter, 90.0, frac(666_667, 250_000)),
     ];
     for (unit, bpm, bar_seconds) in cases {
         let mut score = plain_score(1);
@@ -127,6 +127,10 @@ fn microsecond_tempo(quarters_per_minute: Fraction) -> Fraction {
     Fraction::from_integer(60_000_000) / micros
 }
 
+fn quarter_steps() -> RampGrid {
+    RampGrid::Step(RampStep::new(frac(1, 4)).expect("step"))
+}
+
 fn ramp_score(end: Fraction) -> Score {
     let mut score = plain_score(3);
     score.master_bars[0]
@@ -151,7 +155,7 @@ fn a_ramp_steps_on_its_grid_up_to_the_next_tempo() {
     }
     expected.push(segment(frac(3, 2), frac(120, 1)));
     assert_eq!(map.segments(), expected.as_slice());
-    let gp = self::map(&score, RampGrid::GP);
+    let gp = self::map(&score, quarter_steps());
     let starts: Vec<Fraction> = gp
         .segments()
         .iter()
@@ -205,7 +209,7 @@ fn a_ramp_on_the_last_tempo_holds_it() {
         map.segments(),
         [
             segment(frac(0, 1), frac(120, 1)),
-            segment(frac(1, 1), frac(90, 1))
+            segment(frac(1, 1), microsecond_tempo(frac(90, 1)))
         ]
     );
 }
@@ -219,7 +223,7 @@ fn a_repeated_bar_plays_its_own_tempo_again() {
     score.master_bars[2]
         .tempo_changes
         .push(tempo(frac(0, 1), 120.0, TempoUnit::Quarter, false));
-    let map = map(&score, RampGrid::GP);
+    let map = map(&score, quarter_steps());
     let first: Vec<Fraction> = map
         .segments()
         .iter()
@@ -259,30 +263,113 @@ fn an_inexact_tempo_plays_at_its_nearest_millionth() {
 }
 
 #[test]
-fn ramp_grids_are_positive() {
-    assert_eq!(RampGrid::MUSICAL.step(), frac(1, 16));
-    assert_eq!(RampGrid::GP.step(), frac(1, 4));
+fn ramp_grids_hold_or_step_on_a_positive_step() {
+    assert_eq!(RampGrid::MUSICAL, RampGrid::Step(RampStep::SIXTEENTH));
+    assert_eq!(RampStep::SIXTEENTH.whole_notes(), frac(1, 16));
+    assert_eq!(RampGrid::GP, RampGrid::Hold);
     assert_eq!(
-        RampGrid::new(frac(0, 1)),
+        RampStep::new(frac(0, 1)),
         Err(PlaybackError::NonPositiveStep)
     );
     assert_eq!(
-        RampGrid::new(frac(-1, 8)),
+        RampStep::new(frac(-1, 8)),
         Err(PlaybackError::NonPositiveStep)
     );
     assert_eq!(
-        RampGrid::new(frac(1, 32)).map(RampGrid::step),
+        RampStep::new(frac(1, 32)).map(RampStep::whole_notes),
         Ok(frac(1, 32))
     );
 }
 
 #[test]
-fn too_many_unrelated_precise_tempi_overflow_instead_of_wrapping() {
-    let mut score = plain_score(40);
-    for (index, bar) in score.master_bars.iter_mut().enumerate() {
-        let bpm = 100.000001 + 0.000002 * index as f64;
+fn the_gp_profile_holds_the_start_tempo_across_a_ramp() {
+    let score = ramp_score(frac(1, 2));
+    let map = map(&score, RampGrid::Hold);
+    assert_eq!(
+        map.segments(),
+        [
+            segment(frac(0, 1), frac(60, 1)),
+            segment(frac(3, 2), frac(120, 1))
+        ]
+    );
+    assert_eq!(seconds(&map, frac(3, 2), 100), frac(6, 1));
+}
+
+#[test]
+fn every_tempo_plays_at_whole_microseconds_per_quarter() {
+    let mut score = plain_score(2);
+    score.master_bars[0]
+        .tempo_changes
+        .push(tempo(frac(0, 1), 84.4235, TempoUnit::Quarter, false));
+    score.master_bars[1].tempo_changes.push(tempo(
+        frac(0, 1),
+        109.659,
+        TempoUnit::DottedQuarter,
+        false,
+    ));
+    let map = map(&score, RampGrid::MUSICAL);
+    assert_eq!(
+        map.segments(),
+        [
+            segment(frac(0, 1), frac(60_000_000, 710_703)),
+            segment(frac(1, 1), frac(60_000_000, 364_767))
+        ]
+    );
+    assert_eq!(seconds(&map, frac(1, 1), 100), frac(4 * 710_703, 1_000_000));
+}
+
+#[test]
+fn equal_positions_ramp_to_the_tempo_that_wins_there() {
+    let mut score = plain_score(2);
+    score.master_bars[0]
+        .tempo_changes
+        .push(tempo(frac(0, 1), 60.0, TempoUnit::Quarter, true));
+    score.master_bars[1]
+        .tempo_changes
+        .push(tempo(frac(0, 1), 240.0, TempoUnit::Quarter, false));
+    score.master_bars[1]
+        .tempo_changes
+        .push(tempo(frac(0, 1), 120.0, TempoUnit::Quarter, false));
+    let map = map(&score, quarter_steps());
+    let tempi: Vec<Fraction> = map
+        .segments()
+        .iter()
+        .map(|segment| segment.quarters_per_minute)
+        .collect();
+    assert_eq!(
+        tempi,
+        [
+            frac(60, 1),
+            microsecond_tempo(frac(75, 1)),
+            microsecond_tempo(frac(90, 1)),
+            microsecond_tempo(frac(105, 1)),
+            frac(120, 1)
+        ]
+    );
+}
+
+#[test]
+fn a_play_order_of_another_score_is_refused() {
+    let long = plain_score(4);
+    let short = plain_score(2);
+    assert_eq!(
+        TempoMap::build(&short, &play_order(&long), RampGrid::MUSICAL),
+        Err(PlaybackError::OrderMismatch)
+    );
+}
+
+#[test]
+fn only_absurd_positions_overflow_and_never_wrap() {
+    const PRIMES: [i64; 12] = [
+        999_983, 999_979, 999_961, 999_959, 999_953, 999_931, 999_917, 999_907, 999_883, 999_863,
+        999_853, 999_841,
+    ];
+    let mut score = plain_score(PRIMES.len());
+    for (bar, prime) in score.master_bars.iter_mut().zip(PRIMES) {
         bar.tempo_changes
-            .push(tempo(frac(0, 1), bpm, TempoUnit::Quarter, false));
+            .push(tempo(frac(1, prime), 100.0, TempoUnit::Quarter, false));
+        bar.tempo_changes
+            .push(tempo(frac(2, prime), 50.0, TempoUnit::Quarter, false));
     }
     let built = TempoMap::build(&score, &play_order(&score), RampGrid::MUSICAL);
     assert_eq!(built, Err(PlaybackError::TimeOverflow));

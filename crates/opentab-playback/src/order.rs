@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use opentab_model::{
     DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump, DirectionTarget, Fraction, JumpDestination,
     MasterBar, Score,
@@ -29,6 +31,7 @@ pub struct PlayedPosition {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PlayOrder {
     pub bars: Vec<PlayedBar>,
+    pub truncated: bool,
 }
 
 impl PlayOrder {
@@ -94,12 +97,26 @@ fn target_slot(target: DirectionTarget) -> usize {
         .unwrap_or(0)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct JumpCopy {
+    jump: DirectionJump,
+    bar: usize,
+    slot: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Firing {
+    jump: DirectionJump,
+    target: usize,
+}
+
 struct Plan<'s> {
     bars: &'s [MasterBar],
     jumps: Vec<Vec<DirectionJump>>,
     targets: [Option<usize>; DIRECTION_TARGETS.len()],
     section_start: Vec<usize>,
     section_count: Vec<Option<u8>>,
+    exhausted: Cell<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,15 +139,19 @@ enum Leave {
 
 impl<'s> Plan<'s> {
     fn new(bars: &'s [MasterBar]) -> Plan<'s> {
-        let mut last_jump: Vec<(DirectionJump, usize, usize)> = Vec::new();
+        let mut last_jump: Vec<JumpCopy> = Vec::new();
         let mut targets = [None; DIRECTION_TARGETS.len()];
         for (index, bar) in bars.iter().enumerate() {
             for target in &bar.directions.targets {
                 targets[target_slot(*target)] = Some(index);
             }
             for (slot, jump) in bar.directions.jumps.iter().enumerate() {
-                last_jump.retain(|(kept, _, _)| kept != jump);
-                last_jump.push((*jump, index, slot));
+                last_jump.retain(|kept| kept.jump != *jump);
+                last_jump.push(JumpCopy {
+                    jump: *jump,
+                    bar: index,
+                    slot,
+                });
             }
         }
         let jumps = bars
@@ -141,7 +162,13 @@ impl<'s> Plan<'s> {
                     .jumps
                     .iter()
                     .enumerate()
-                    .filter(|(slot, jump)| last_jump.contains(&(**jump, index, *slot)))
+                    .filter(|(slot, jump)| {
+                        last_jump.contains(&JumpCopy {
+                            jump: **jump,
+                            bar: index,
+                            slot: *slot,
+                        })
+                    })
                     .map(|(_, jump)| *jump)
                     .collect()
             })
@@ -170,6 +197,7 @@ impl<'s> Plan<'s> {
             targets,
             section_start,
             section_count,
+            exhausted: Cell::new(false),
         }
     }
 
@@ -206,6 +234,7 @@ impl<'s> Plan<'s> {
                 Some(false) => state.index += 1,
             }
         }
+        self.exhausted.set(true);
         false
     }
 
@@ -272,17 +301,20 @@ impl<'s> Plan<'s> {
                 .iter()
                 .filter(|other| other.is_return())
                 .find_map(|other| {
-                    self.return_fires(&probe, *other)
-                        .map(|target| (*other, target))
+                    self.return_fires(&probe, *other).map(|target| Firing {
+                        jump: *other,
+                        target,
+                    })
                 });
             match fired {
-                Some((other, target)) => self.fire(&mut probe, other, target),
+                Some(firing) => self.fire(&mut probe, firing.jump, firing.target),
                 None => self.close(&mut probe),
             }
             if !self.advance(&mut probe) {
                 return false;
             }
         }
+        self.exhausted.set(true);
         false
     }
 
@@ -365,5 +397,6 @@ pub fn play_order(score: &Score) -> PlayOrder {
             break;
         }
     }
-    PlayOrder { bars }
+    let truncated = bars.len() >= MAX_PLAYED_BARS || plan.exhausted.get();
+    PlayOrder { bars, truncated }
 }

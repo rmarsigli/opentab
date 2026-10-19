@@ -9,6 +9,8 @@ const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const SCORE_ENTRY: &str = "Content/score.gpif";
 const EXPECTED_FILES: usize = 27;
 const SYNC_POINT: &str = "<Type>SyncPoint</Type>";
+const EXPECTED_SYNC_POINTS: usize = 546;
+const EXPECTED_SYNC_FILES: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SyncPoint {
@@ -90,8 +92,10 @@ fn every_corpus_sync_point_sits_at_its_place_in_our_play_order() {
             checked += 1;
         }
     }
-    eprintln!("sync points checked: {checked} in {files_with_points} files");
-    assert!(checked > 0);
+    assert_eq!(
+        (checked, files_with_points),
+        (EXPECTED_SYNC_POINTS, EXPECTED_SYNC_FILES)
+    );
 }
 
 #[test]

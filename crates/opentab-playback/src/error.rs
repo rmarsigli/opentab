@@ -10,4 +10,6 @@ pub enum PlaybackError {
     NonPositiveStep,
     #[error("a time before the start of playback has no position")]
     NegativeTime,
+    #[error("the play order names a bar the score does not have")]
+    OrderMismatch,
 }

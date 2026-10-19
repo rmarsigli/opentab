@@ -3,6 +3,12 @@ use opentab_playback::{PlayedPosition, ScoreTime, play_order};
 
 use crate::support::{frac, master_bar, numbers, plain_score, score_from};
 
+#[derive(Debug, PartialEq, Eq)]
+struct SourcePass {
+    source: usize,
+    pass: u8,
+}
+
 fn sources(score: &Score) -> Vec<usize> {
     play_order(score).sources()
 }
@@ -43,33 +49,41 @@ fn a_to_coda_never_visited_plays_our_order_not_guitar_pros_truncated_export() {
 fn passes_count_the_repeat_and_restart_after_a_return_jump() {
     let score = score_from(5, "1 [S]; 2 [E3]; 3 DaCapo");
     let order = play_order(&score);
-    let passes: Vec<(usize, u8)> = order
+    let passes: Vec<SourcePass> = order
         .bars
         .iter()
-        .map(|bar| (bar.source, bar.pass))
+        .map(|bar| SourcePass {
+            source: bar.source,
+            pass: bar.pass,
+        })
         .collect();
-    assert_eq!(
-        passes,
-        [
-            (0, 1),
-            (1, 1),
-            (2, 1),
-            (1, 2),
-            (2, 2),
-            (1, 3),
-            (2, 3),
-            (3, 3),
-            (0, 1),
-            (1, 1),
-            (2, 1),
-            (1, 2),
-            (2, 2),
-            (1, 3),
-            (2, 3),
-            (3, 3),
-            (4, 3)
-        ]
-    );
+    let expected: Vec<SourcePass> = [
+        [0, 1],
+        [1, 1],
+        [2, 1],
+        [1, 2],
+        [2, 2],
+        [1, 3],
+        [2, 3],
+        [3, 3],
+        [0, 1],
+        [1, 1],
+        [2, 1],
+        [1, 2],
+        [2, 2],
+        [1, 3],
+        [2, 3],
+        [3, 3],
+        [4, 3],
+    ]
+    .iter()
+    .map(|[source, pass]| SourcePass {
+        source: *source,
+        pass: u8::try_from(*pass).expect("pass"),
+    })
+    .collect();
+    assert_eq!(passes, expected);
+    assert!(!order.truncated);
 }
 
 #[test]
@@ -152,4 +166,17 @@ fn position_at_finds_the_played_bar_and_its_offset() {
     );
     assert_eq!(at(5, 1), None);
     assert!(ScoreTime::new(frac(-1, 2)).is_err());
+}
+
+#[test]
+fn an_order_beyond_the_cap_is_flagged_as_truncated() {
+    let mut score = plain_score(5000);
+    for bar in &mut score.master_bars {
+        bar.repeat_start = true;
+        bar.repeat_end = Some(255);
+    }
+    let order = play_order(&score);
+    assert_eq!(order.bars.len(), opentab_playback::MAX_PLAYED_BARS);
+    assert!(order.truncated);
+    assert!(!play_order(&plain_score(3)).truncated);
 }

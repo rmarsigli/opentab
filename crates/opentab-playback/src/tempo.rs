@@ -13,22 +13,32 @@ const SECONDS_PER_WHOLE_AT_ONE_QPM: i128 = 240;
 const MICROSECONDS_PER_MINUTE: i128 = 60_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RampGrid(Fraction);
+pub struct RampStep(Fraction);
 
-impl RampGrid {
-    pub const MUSICAL: RampGrid = RampGrid(Fraction::new_raw(1, 16));
-    pub const GP: RampGrid = RampGrid(Fraction::new_raw(1, 4));
+impl RampStep {
+    pub const SIXTEENTH: RampStep = RampStep(Fraction::new_raw(1, 16));
 
-    pub fn new(step: Fraction) -> Result<RampGrid, PlaybackError> {
+    pub fn new(step: Fraction) -> Result<RampStep, PlaybackError> {
         if step <= Fraction::new_raw(0, 1) {
             return Err(PlaybackError::NonPositiveStep);
         }
-        Ok(RampGrid(step))
+        Ok(RampStep(step))
     }
 
-    pub fn step(self) -> Fraction {
+    pub fn whole_notes(self) -> Fraction {
         self.0
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RampGrid {
+    Hold,
+    Step(RampStep),
+}
+
+impl RampGrid {
+    pub const MUSICAL: RampGrid = RampGrid::Step(RampStep::SIXTEENTH);
+    pub const GP: RampGrid = RampGrid::Hold;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,7 +119,7 @@ struct Point {
 struct Profile {
     points: Vec<Point>,
     bar_starts: Vec<Exact>,
-    grid: Exact,
+    grid: Option<Exact>,
 }
 
 struct Piece {
@@ -117,7 +127,7 @@ struct Piece {
     until: Option<Exact>,
 }
 
-fn quantized(qpm: Exact) -> Result<Exact, PlaybackError> {
+pub(crate) fn quantized(qpm: Exact) -> Result<Exact, PlaybackError> {
     let doubled = qpm
         .numer()
         .checked_mul(2)
@@ -150,7 +160,7 @@ impl Profile {
                 let offset = change.position.min(length);
                 points.push(Point {
                     at: start.add(Exact::of(offset))?,
-                    qpm: Exact::of(qpm),
+                    qpm: quantized(Exact::of(qpm))?,
                     linear: change.linear,
                 });
             }
@@ -162,7 +172,10 @@ impl Profile {
         Ok(Profile {
             points,
             bar_starts,
-            grid: Exact::of(grid.step()),
+            grid: match grid {
+                RampGrid::Hold => None,
+                RampGrid::Step(step) => Some(Exact::of(step.whole_notes())),
+            },
         })
     }
 
@@ -174,20 +187,24 @@ impl Profile {
             .and_then(|index| self.points.get(index))
         else {
             return Ok(Piece {
-                qpm: Exact::integer(i128::from(DEFAULT_QUARTERS_PER_MINUTE)),
+                qpm: quantized(Exact::integer(i128::from(DEFAULT_QUARTERS_PER_MINUTE)))?,
                 until: next.map(|point| point.at),
             });
         };
-        let Some(next) = next.filter(|_| current.linear) else {
+        let target = next.map(|first| {
+            let last = self.points[after..].partition_point(|point| point.at <= first.at);
+            self.points[after + last - 1]
+        });
+        let (Some(next), Some(grid)) = (target.filter(|_| current.linear), self.grid) else {
             return Ok(Piece {
                 qpm: current.qpm,
                 until: next.map(|point| point.at),
             });
         };
         let span = next.at.sub(current.at)?;
-        let step = x.sub(current.at)?.div(self.grid)?.floor();
-        let reached = Exact::integer(step).mul(self.grid)?;
-        let step_end = current.at.add(reached)?.add(self.grid)?;
+        let step = x.sub(current.at)?.div(grid)?.floor();
+        let reached = Exact::integer(step).mul(grid)?;
+        let step_end = current.at.add(reached)?.add(grid)?;
         let until = step_end.min(next.at);
         let qpm = if step == 0 {
             current.qpm
@@ -220,7 +237,10 @@ impl TempoMap {
             )?;
         }
         for played in &order.bars {
-            let source_start = profile.bar_starts[played.source];
+            let source_start = *profile
+                .bar_starts
+                .get(played.source)
+                .ok_or(PlaybackError::OrderMismatch)?;
             let source_end = source_start.add(Exact::of(played.length))?;
             let played_start = Exact::of(played.start.whole_notes());
             let mut x = source_start;
@@ -314,7 +334,7 @@ impl TempoMap {
         speed: Speed,
         step: Fraction,
     ) -> Result<ScoreTime, PlaybackError> {
-        let step = Exact::of(RampGrid::new(step)?.step());
+        let step = Exact::of(RampStep::new(step)?.whole_notes());
         let steps = self.whole_notes_at(seconds, speed)?.div(step)?.floor();
         ScoreTime::new(Exact::integer(steps).mul(step)?.fraction()?)
     }
