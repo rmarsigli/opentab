@@ -9,6 +9,7 @@ use crate::{BankError, UnsafeBank};
 
 const SFZ_EXTENSION: &str = "sfz";
 const DRIVE_SEPARATOR: char = ':';
+const CACHE_ENTRY_BYTES: u64 = 96;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PathProblem {
@@ -17,6 +18,7 @@ pub(crate) enum PathProblem {
     Missing,
     Exhausted,
     Lookups,
+    Budget,
 }
 
 pub(crate) fn refusal(problem: PathProblem, limits: &SfzLimits) -> Option<BankError> {
@@ -27,6 +29,7 @@ pub(crate) fn refusal(problem: PathProblem, limits: &SfzLimits) -> Option<BankEr
         PathProblem::Lookups => UnsafeBank::PathLookups {
             limit: limits.path_lookups,
         },
+        PathProblem::Budget => UnsafeBank::LoaderBudget,
         PathProblem::Rejected | PathProblem::Outside | PathProblem::Missing => return None,
     };
     Some(unsafe_bank(reason))
@@ -52,6 +55,8 @@ pub(crate) struct BankFs {
     lookups: u64,
     lookup_cap: u64,
     steps: u64,
+    cache_bytes: u64,
+    cache_cap: u64,
 }
 
 fn invalid(reason: &str) -> BankError {
@@ -127,6 +132,8 @@ impl BankFs {
             lookups: 0,
             lookup_cap: limits.path_lookups,
             steps: 0,
+            cache_bytes: 0,
+            cache_cap: limits.loader_bytes,
         })
     }
 
@@ -140,6 +147,10 @@ impl BankFs {
 
     pub(crate) fn steps(&self) -> u64 {
         self.steps
+    }
+
+    pub(crate) fn cache_bytes(&self) -> u64 {
+        self.cache_bytes
     }
 
     pub(crate) fn root(&self) -> &Path {
@@ -269,9 +280,18 @@ impl BankFs {
         }
         self.steps = self.steps.saturating_add(text.len() as u64);
         let outcome = self.resolve_uncached(base, text);
-        if !matches!(outcome, Err(PathProblem::Exhausted)) {
-            self.resolved.insert(key, outcome.clone());
+        if matches!(outcome, Err(PathProblem::Exhausted)) {
+            return outcome;
         }
+        let stored = outcome
+            .as_ref()
+            .map_or(0, |path| path.as_os_str().len() as u64);
+        let entry = (key.0.as_os_str().len() + key.1.len()) as u64 + stored + CACHE_ENTRY_BYTES;
+        self.cache_bytes = self.cache_bytes.saturating_add(entry);
+        if self.cache_bytes > self.cache_cap {
+            return Err(PathProblem::Budget);
+        }
+        self.resolved.insert(key, outcome.clone());
         outcome
     }
 

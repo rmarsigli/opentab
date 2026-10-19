@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::sfz::limits::{KIB, MIB, SfzLimits};
@@ -43,9 +43,9 @@ impl IncludeSource for FsIncludes<'_> {
                 Err(ReadProblem::TooLarge) => Opened::TooLarge,
             },
             Err(PathProblem::Outside) => Opened::Outside,
-            Err(problem @ (PathProblem::Exhausted | PathProblem::Lookups)) => {
-                Opened::Refused(problem)
-            }
+            Err(
+                problem @ (PathProblem::Exhausted | PathProblem::Lookups | PathProblem::Budget),
+            ) => Opened::Refused(problem),
             Err(PathProblem::Missing | PathProblem::Rejected) => Opened::Missing,
         }
     }
@@ -73,7 +73,8 @@ impl IncludeSource for MemoryIncludes<'_> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Expanded {
     pub(crate) text: String,
-    pub(crate) included: Vec<PathBuf>,
+    pub(crate) included: HashSet<PathBuf>,
+    pub(crate) includes: u64,
     pub(crate) listing: Listing,
     pub(crate) read_bytes: u64,
     pub(crate) steps: u64,
@@ -162,6 +163,7 @@ pub(crate) struct Preprocessor<'a, S: IncludeSource> {
     root_dir: PathBuf,
     defines: Defines,
     includes: u64,
+    bank_includes: u64,
     stack: Vec<PathBuf>,
     out: Expanded,
     in_path: bool,
@@ -181,10 +183,16 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
                 bytes: 0,
             },
             includes: 0,
+            bank_includes: 0,
             stack: Vec::new(),
             out: Expanded::default(),
             in_path: false,
         }
+    }
+
+    pub(crate) fn after_includes(mut self, used: u64) -> Self {
+        self.bank_includes = used;
+        self
     }
 
     pub(crate) fn run(self, key: &Path, text: &str) -> Result<Expanded, BankError> {
@@ -340,6 +348,12 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
             }));
         }
         self.includes += 1;
+        self.out.includes = self.includes;
+        if self.bank_includes.saturating_add(self.includes) > self.limits.bank_includes {
+            return Err(unsafe_bank(UnsafeBank::BankIncludes {
+                limit: self.limits.bank_includes,
+            }));
+        }
         if self.includes > self.limits.includes {
             return Err(unsafe_bank(UnsafeBank::TooManyIncludes {
                 limit: self.limits.includes,
@@ -363,7 +377,7 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
                 };
                 let text = text.to_owned();
                 drop(bytes);
-                self.out.included.push(key.clone());
+                self.out.included.insert(key.clone());
                 self.stack.push(key.clone());
                 self.expand(&text, &key, depth + 1)?;
                 self.stack.pop();

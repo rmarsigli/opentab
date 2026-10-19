@@ -10,7 +10,7 @@ mod region;
 mod text;
 mod vorbis;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,14 +20,15 @@ use opentab_model::MidiBank;
 
 pub use decode::{AudioKind, DecodedSample, audio_kind, decode_audio, vorbis_setup_cost};
 pub use limits::{
-    SFZ_MAX_AUDIO_FILE_BYTES, SFZ_MAX_BANK_TEXT_BYTES, SFZ_MAX_DECODED_BYTES, SFZ_MAX_DEFINE_BYTES,
-    SFZ_MAX_DEFINE_NAME_BYTES, SFZ_MAX_DEFINES, SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_FILE_BYTES,
-    SFZ_MAX_FOLDER_DEPTH, SFZ_MAX_FOLDER_ENTRIES, SFZ_MAX_INCLUDE_DEPTH, SFZ_MAX_INCLUDES,
-    SFZ_MAX_LINE_BYTES, SFZ_MAX_LISTED_ENTRIES, SFZ_MAX_LOADER_BYTES, SFZ_MAX_PATH_BYTES,
-    SFZ_MAX_PATH_LOOKUPS, SFZ_MAX_READ_BYTES, SFZ_MAX_REGIONS, SFZ_MAX_SAMPLE_CHANNELS,
-    SFZ_MAX_SAMPLE_FRAMES, SFZ_MAX_SAMPLE_RATE, SFZ_MAX_SFZ_FILES, SFZ_MAX_SIDECAR_BYTES,
-    SFZ_MAX_VOICES, SFZ_MAX_VOICES_PER_NOTE, SFZ_MAX_VORBIS_COMMENT_BYTES, SFZ_MAX_VORBIS_ENTRIES,
-    SFZ_MAX_VORBIS_SETUP_BYTES, SFZ_MIN_SAMPLE_RATE, SfzLimits,
+    SFZ_MAX_AUDIO_FILE_BYTES, SFZ_MAX_BANK_INCLUDES, SFZ_MAX_BANK_TEXT_BYTES,
+    SFZ_MAX_DECODED_BYTES, SFZ_MAX_DEFINE_BYTES, SFZ_MAX_DEFINE_NAME_BYTES, SFZ_MAX_DEFINES,
+    SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_FILE_BYTES, SFZ_MAX_FOLDER_DEPTH, SFZ_MAX_FOLDER_ENTRIES,
+    SFZ_MAX_INCLUDE_DEPTH, SFZ_MAX_INCLUDES, SFZ_MAX_LINE_BYTES, SFZ_MAX_LISTED_ENTRIES,
+    SFZ_MAX_LOADER_BYTES, SFZ_MAX_PATH_BYTES, SFZ_MAX_PATH_LOOKUPS, SFZ_MAX_READ_BYTES,
+    SFZ_MAX_REGIONS, SFZ_MAX_SAMPLE_CHANNELS, SFZ_MAX_SAMPLE_FRAMES, SFZ_MAX_SAMPLE_RATE,
+    SFZ_MAX_SFZ_FILES, SFZ_MAX_SIDECAR_BYTES, SFZ_MAX_VOICES, SFZ_MAX_VOICES_PER_NOTE,
+    SFZ_MAX_VORBIS_COMMENT_BYTES, SFZ_MAX_VORBIS_ENTRIES, SFZ_MAX_VORBIS_SETUP_BYTES,
+    SFZ_MIN_SAMPLE_RATE, SfzLimits,
 };
 pub use listing::{IgnoreReason, IgnoredOpcode, SfzScope};
 pub use mapping::{SIDECAR_NAME, SIDECAR_VERSION};
@@ -199,6 +200,7 @@ struct Loader<'a> {
     samples: Vec<PathBuf>,
     sample_index: HashMap<PathBuf, usize>,
     resolved: HashMap<(PathBuf, String), Result<usize, IgnoreReason>>,
+    include_count: u64,
 }
 
 enum Expansion {
@@ -232,7 +234,10 @@ impl Loader<'_> {
             fs: &mut self.fs,
             cap: limits.file_bytes,
         };
-        let expanded = Preprocessor::new(&mut source, limits, &root_dir).run(file, text)?;
+        let expanded = Preprocessor::new(&mut source, limits, &root_dir)
+            .after_includes(self.include_count)
+            .run(file, text)?;
+        self.include_count = self.include_count.saturating_add(expanded.includes);
         self.count_text(
             expanded
                 .text
@@ -264,7 +269,9 @@ impl Loader<'_> {
             }
             Err(PathProblem::Outside | PathProblem::Rejected) => Err(IgnoreReason::PathOutsideBank),
             Err(PathProblem::Missing) => Err(IgnoreReason::MissingFile),
-            Err(problem @ (PathProblem::Exhausted | PathProblem::Lookups)) => {
+            Err(
+                problem @ (PathProblem::Exhausted | PathProblem::Lookups | PathProblem::Budget),
+            ) => {
                 return Err(refusal(problem, self.limits).unwrap_or(refuse(
                     UnsafeBank::ListedEntries {
                         limit: self.limits.listed_entries,
@@ -303,7 +310,7 @@ impl Loader<'_> {
             .sum::<u64>()
             + listing.bytes();
         self.loader_bytes = self.loader_bytes.saturating_add(retained);
-        if self.loader_bytes > self.limits.loader_bytes {
+        if self.loader_bytes.saturating_add(self.fs.cache_bytes()) > self.limits.loader_bytes {
             return Err(refuse(UnsafeBank::LoaderBudget));
         }
         let file_name = self.fs.relative_name(file);
@@ -344,21 +351,17 @@ impl SfzBank {
             samples: Vec::new(),
             sample_index: HashMap::new(),
             resolved: HashMap::new(),
+            include_count: 0,
         };
-        let mut included: Vec<PathBuf> = Vec::new();
+        let mut included: HashSet<PathBuf> = HashSet::new();
         for file in &files {
             if let Expansion::Done(expanded) = loader.expand(file)? {
                 included.extend(expanded.included);
             }
         }
-        included.sort();
-        included.dedup();
         let mut instruments = Vec::new();
         let mut skipped = Vec::new();
-        for file in files
-            .iter()
-            .filter(|file| included.binary_search(file).is_err())
-        {
+        for file in files.iter().filter(|file| !included.contains(*file)) {
             match loader.expand(file)? {
                 Expansion::Done(expanded) => instruments.push(loader.instrument(file, expanded)?),
                 Expansion::NotText => skipped.push(SkippedInstrument {

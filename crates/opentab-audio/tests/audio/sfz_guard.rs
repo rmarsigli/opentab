@@ -756,3 +756,57 @@ fn an_unreadable_folder_refuses_the_bank() {
         );
     }
 }
+
+fn include_list_bank(dir: &Path, roots: usize, lines: usize) -> std::path::PathBuf {
+    let list = "#include \"e.txt\"\n".repeat(lines);
+    let mut files: Vec<(String, String)> = vec![
+        ("e.txt".to_owned(), String::new()),
+        ("inc.txt".to_owned(), list),
+    ];
+    for index in 0..roots {
+        files.push((
+            format!("r{index:04}.sfz"),
+            "#include \"inc.txt\"\n<region> sample=pluck.wav\n".to_owned(),
+        ));
+    }
+    let named: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect();
+    pluck_bank(dir, &named)
+}
+
+#[test]
+fn include_occurrences_across_the_bank_are_capped() {
+    let dir = scratch_dir();
+    let root = include_list_bank(dir.path(), 20, 50);
+    let limits = SfzLimits {
+        bank_includes: 1000,
+        ..SfzLimits::DEFAULT
+    };
+    assert_eq!(
+        refusal(load(&root, &limits)),
+        UnsafeBank::BankIncludes { limit: 1000 }
+    );
+    let bank = load(&root, &SfzLimits::DEFAULT).expect("loads");
+    assert_eq!(bank.instrument_names().len(), 20);
+}
+
+#[test]
+fn the_path_lookup_cache_counts_against_the_loader_budget_while_expanding() {
+    let spellings: String = (0..200)
+        .map(|index| format!("#include \"{}e.txt\"\n", "./".repeat(index + 1)))
+        .collect();
+    let looped = spellings + "#include \"a.sfz\"\n";
+    let dir = scratch_dir();
+    let root = pluck_bank(dir.path(), &[("a.sfz", &looped), ("e.txt", "")]);
+    let limits = SfzLimits {
+        loader_bytes: 32 << 10,
+        ..SfzLimits::DEFAULT
+    };
+    assert_eq!(refusal(load(&root, &limits)), UnsafeBank::LoaderBudget);
+    assert_eq!(
+        refusal(load(&root, &SfzLimits::DEFAULT)),
+        UnsafeBank::IncludeCycle
+    );
+}

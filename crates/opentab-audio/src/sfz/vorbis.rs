@@ -7,6 +7,9 @@ const CODEBOOK_SYNC: u32 = 0x56_4342;
 const IDENT_CHANNELS: usize = 11;
 const IDENT_RATE: usize = 12;
 const LENGTH_FIELD_BYTES: u64 = 4;
+const PAGE_HEADER_BYTES: usize = 27;
+const PAGE_SERIAL: usize = 14;
+const PAGE_SEGMENTS: usize = 26;
 const COMMENT_ENTRY_BYTES: u64 = 48;
 const COMMENT_COPIES: u64 = 2;
 const BOOK_BYTES: u64 = 4096;
@@ -92,6 +95,41 @@ fn lookup1_values(entries: u32, dimensions: u16) -> u64 {
     if entries == 0 { 0 } else { low.max(1) }
 }
 
+pub(crate) fn check_pages(bytes: &[u8]) -> Result<(), BankError> {
+    let mut at = 0usize;
+    let mut serial: Option<u32> = None;
+    while at < bytes.len() {
+        let header = bytes.get(at..at + PAGE_HEADER_BYTES).ok_or_else(damaged)?;
+        if &header[..4] != b"OggS" {
+            return Err(damaged());
+        }
+        let page_serial = u32::from_le_bytes([
+            header[PAGE_SERIAL],
+            header[PAGE_SERIAL + 1],
+            header[PAGE_SERIAL + 2],
+            header[PAGE_SERIAL + 3],
+        ]);
+        match serial {
+            None => serial = Some(page_serial),
+            Some(first) if first != page_serial => {
+                return Err(refuse(UnsafeBank::OggStreams));
+            }
+            Some(_) => {}
+        }
+        let segments = usize::from(header[PAGE_SEGMENTS]);
+        let table_end = at + PAGE_HEADER_BYTES + segments;
+        let table = bytes
+            .get(at + PAGE_HEADER_BYTES..table_end)
+            .ok_or_else(damaged)?;
+        let body: usize = table.iter().map(|segment| usize::from(*segment)).sum();
+        at = table_end + body;
+        if at > bytes.len() {
+            return Err(damaged());
+        }
+    }
+    Ok(())
+}
+
 pub(crate) struct VorbisShape {
     pub(crate) channels: u32,
     pub(crate) rate: u32,
@@ -133,6 +171,9 @@ pub(crate) fn check_comment(packet: &[u8], limits: &SfzLimits) -> Result<(), Ban
         return Err(refuse(UnsafeBank::VorbisComments));
     }
     let mut estimate = vendor.saturating_add(comments.saturating_mul(COMMENT_ENTRY_BYTES));
+    if estimate > limits.vorbis_comment_bytes {
+        return Err(refuse(UnsafeBank::VorbisComments));
+    }
     for _ in 0..comments {
         let length = read_length(&mut at)?;
         if length > total.saturating_sub(at as u64) {

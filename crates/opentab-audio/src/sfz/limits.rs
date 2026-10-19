@@ -4,6 +4,7 @@ pub const SFZ_MAX_BANK_TEXT_BYTES: u64 = 512 << 20;
 pub const SFZ_MAX_REGIONS: u64 = 100_000;
 pub const SFZ_MAX_INCLUDE_DEPTH: u64 = 8;
 pub const SFZ_MAX_INCLUDES: u64 = 4096;
+pub const SFZ_MAX_BANK_INCLUDES: u64 = 16_384;
 pub const SFZ_MAX_DEFINES: u64 = 16_384;
 pub const SFZ_MAX_DEFINE_BYTES: u64 = 1 << 20;
 pub const SFZ_MAX_DEFINE_NAME_BYTES: usize = 64;
@@ -37,6 +38,7 @@ pub struct SfzLimits {
     pub regions: u64,
     pub include_depth: u64,
     pub includes: u64,
+    pub bank_includes: u64,
     pub defines: u64,
     pub define_bytes: u64,
     pub define_name_bytes: usize,
@@ -71,6 +73,7 @@ impl SfzLimits {
         regions: SFZ_MAX_REGIONS,
         include_depth: SFZ_MAX_INCLUDE_DEPTH,
         includes: SFZ_MAX_INCLUDES,
+        bank_includes: SFZ_MAX_BANK_INCLUDES,
         defines: SFZ_MAX_DEFINES,
         define_bytes: SFZ_MAX_DEFINE_BYTES,
         define_name_bytes: SFZ_MAX_DEFINE_NAME_BYTES,

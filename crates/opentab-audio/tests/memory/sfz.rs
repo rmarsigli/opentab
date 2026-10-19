@@ -2,13 +2,15 @@ use std::collections::BTreeMap;
 use std::fs;
 
 use opentab_audio::{
-    Bank, BankError, SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_VORBIS_ENTRIES, SampleRate, SfzBank,
-    SfzLimits, Synth, UnsafeBank, decode_audio, parse_sfz_text, vorbis_setup_cost,
+    Bank, BankError, SFZ_MAX_BANK_INCLUDES, SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_VORBIS_ENTRIES,
+    SampleRate, SfzBank, SfzLimits, Synth, UnsafeBank, decode_audio, parse_sfz_text,
+    vorbis_setup_cost,
 };
 use opentab_playback::{Channel, MidiMessage};
 use opentab_testkit::banks::{
     ExtraCodebook, FilledComments, FlacOverrides, FlacSpec, SAMPLE_RATE, VorbisSpec, WavOverrides,
-    WavSpec, mono_points, samples, wav16, write_flac_with, write_vorbis, write_wav_with,
+    WavSpec, mono_points, ogg_start_pages, samples, wav16, write_flac_with, write_vorbis,
+    write_wav_with,
 };
 use stats_alloc::Region;
 
@@ -24,6 +26,10 @@ const HUFFMAN_BOMB_DEPTH: u8 = 17;
 const HUFFMAN_ACCEPTED_DEPTH: u8 = 14;
 const NODE_BYTES: usize = 32;
 const COMMENT_BOMB: u32 = 30_000;
+const SERIAL_BOMB: u32 = 10_000;
+const INCLUDE_LINES: usize = 100;
+const INCLUDE_ROOTS: usize = 200;
+const BYTES_PER_INCLUDE: usize = 4096;
 const PACKET_COPIES: usize = 2;
 const SPARSE_BYTES: u64 = 1 << 30;
 
@@ -125,6 +131,7 @@ pub fn hostile_samples_never_allocate_what_they_declare() {
         length: 0,
     });
     refused_with_little(&write_vorbis(&many), UnsafeBank::VorbisComments);
+    refused_with_little(&ogg_start_pages(SERIAL_BOMB), UnsafeBank::OggStreams);
     let mut vendor = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
     vendor.declared_vendor_bytes = Some(u32::MAX);
     refused_with_little(&write_vorbis(&vendor), UnsafeBank::VorbisComments);
@@ -304,4 +311,39 @@ pub fn symlink_bombs_are_refused_before_listing() {
     }
     let bound = BOMB_FILES * BYTES_PER_WALKED_ENTRY + REFUSAL_BYTES;
     assert!(spent <= bound, "{spent} bytes, bound {bound}");
+}
+
+pub fn include_bombs_stop_at_the_bank_include_cap() {
+    let dir = tempfile::Builder::new()
+        .prefix("sfz-includes-")
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .expect("scratch");
+    let root = dir.path().join("bank");
+    fs::create_dir_all(&root).expect("bank folder");
+    fs::write(root.join("e.txt"), "").expect("empty");
+    fs::write(
+        root.join("inc.txt"),
+        "#include \"e.txt\"\n".repeat(INCLUDE_LINES),
+    )
+    .expect("list");
+    for index in 0..INCLUDE_ROOTS {
+        fs::write(
+            root.join(format!("r{index:04}.sfz")),
+            "#include \"inc.txt\"\n",
+        )
+        .expect("root");
+    }
+    let loading = Region::new(GLOBAL);
+    let result = SfzBank::load(&root).map(|bank| bank.sample_count());
+    let spent = allocated(&loading);
+    assert_eq!(
+        result,
+        Err(BankError::Unsafe {
+            reason: UnsafeBank::BankIncludes {
+                limit: SFZ_MAX_BANK_INCLUDES
+            }
+        })
+    );
+    let cap = usize::try_from(SFZ_MAX_BANK_INCLUDES).unwrap_or(usize::MAX);
+    assert!(spent <= cap * BYTES_PER_INCLUDE, "{spent} bytes");
 }

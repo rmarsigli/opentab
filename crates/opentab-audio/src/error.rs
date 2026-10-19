@@ -79,6 +79,8 @@ pub enum UnsafeBank {
     IncludeTooDeep { limit: u64 },
     #[error("an instrument includes more than {limit} files")]
     TooManyIncludes { limit: u64 },
+    #[error("its instruments include files more than {limit} times in all")]
+    BankIncludes { limit: u64 },
     #[error("files include each other in a loop")]
     IncludeCycle,
     #[error("an instrument defines more than {limit} variables")]
@@ -103,6 +105,8 @@ pub enum UnsafeBank {
     SampleRate { hz: u32 },
     #[error("its decoded samples would need more than {limit_mib} MiB")]
     DecodedAudioBudget { limit_mib: u64 },
+    #[error("an Ogg sample holds more than one stream")]
+    OggStreams,
     #[error("an Ogg Vorbis sample declares decoding tables larger than OpenTab allows")]
     VorbisTables,
     #[error("an Ogg Vorbis sample declares more than {limit} codebook entries")]

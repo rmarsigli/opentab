@@ -45,6 +45,7 @@ pub struct VorbisSpec {
     pub declared_comments: Option<u32>,
     pub declared_comment_bytes: Option<u32>,
     pub filled_comments: Option<FilledComments>,
+    pub vendor_text: Option<u32>,
     pub truncate_to: Option<usize>,
 }
 
@@ -64,6 +65,7 @@ impl VorbisSpec {
             declared_comments: None,
             declared_comment_bytes: None,
             filled_comments: None,
+            vendor_text: None,
             truncate_to: None,
         }
     }
@@ -133,6 +135,13 @@ fn ident(spec: &VorbisSpec) -> Vec<u8> {
 
 fn comment(spec: &VorbisSpec) -> Vec<u8> {
     let mut out = header_start(COMMENT_TYPE);
+    if let Some(length) = spec.vendor_text {
+        out.extend_from_slice(&length.to_le_bytes());
+        out.extend(std::iter::repeat_n(b'v', length as usize));
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.push(1);
+        return out;
+    }
     let vendor = spec.declared_vendor_bytes.unwrap_or(VENDOR.len() as u32);
     out.extend_from_slice(&vendor.to_le_bytes());
     out.extend_from_slice(VENDOR);
@@ -355,6 +364,18 @@ impl Pager {
         }
         out
     }
+}
+
+pub fn ogg_start_pages(count: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    for serial in 0..count {
+        let mut pager = Pager {
+            serial,
+            sequence: 0,
+        };
+        out.extend_from_slice(&pager.page(BEGIN_OF_STREAM, 0, &[], &[]));
+    }
+    out
 }
 
 pub fn write_vorbis(spec: &VorbisSpec) -> Vec<u8> {

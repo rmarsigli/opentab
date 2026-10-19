@@ -219,6 +219,7 @@ struct VorbisHeaders<'a> {
 }
 
 fn vorbis_headers<'a>(bytes: &'a [u8], limits: &SfzLimits) -> Result<VorbisHeaders<'a>, BankError> {
+    vorbis::check_pages(bytes)?;
     let mut packets = PacketReader::new(Cursor::new(bytes));
     let ident = packets.read_packet_expected().map_err(ogg_error)?;
     let serial = ident.stream_serial();

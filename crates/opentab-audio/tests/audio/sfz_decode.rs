@@ -4,8 +4,8 @@ use opentab_audio::{
 };
 use opentab_testkit::banks::{
     ExtraCodebook, FilledComments, FlacOverrides, FlacSpec, SAMPLE_RATE, SINE_BIN, SINE_PACKETS,
-    VorbisSpec, WavOverrides, WavSpec, flac16, mono_points, samples, sine_ogg, stereo_points,
-    wav16, write_flac, write_flac_with, write_vorbis, write_wav, write_wav_with,
+    VorbisSpec, WavOverrides, WavSpec, flac16, mono_points, ogg_start_pages, samples, sine_ogg,
+    stereo_points, wav16, write_flac, write_flac_with, write_vorbis, write_wav, write_wav_with,
 };
 
 fn expected(points: &[i32], bits: u32) -> Vec<f32> {
@@ -406,4 +406,31 @@ fn vorbis_comment_text_beyond_the_comment_budget_is_refused() {
         UnsafeBank::VorbisComments
     );
     assert!(decode_audio(&long, &SfzLimits::DEFAULT).is_ok());
+}
+
+#[test]
+fn an_ogg_file_holding_more_than_one_stream_is_refused() {
+    let mut other = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
+    other.serial = 7;
+    let chained = [sine_ogg(), write_vorbis(&other)].concat();
+    assert_eq!(
+        unsafe_reason(decode_audio(&chained, &SfzLimits::DEFAULT)),
+        UnsafeBank::OggStreams
+    );
+    assert_eq!(
+        unsafe_reason(decode_audio(&ogg_start_pages(1000), &SfzLimits::DEFAULT)),
+        UnsafeBank::OggStreams
+    );
+}
+
+#[test]
+fn a_vorbis_vendor_string_beyond_the_comment_budget_is_refused() {
+    let mut long = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
+    long.vendor_text = Some((1 << 20) + 1);
+    assert_eq!(
+        unsafe_reason(decode_audio(&write_vorbis(&long), &SfzLimits::DEFAULT)),
+        UnsafeBank::VorbisComments
+    );
+    long.vendor_text = Some(1000);
+    assert!(decode_audio(&write_vorbis(&long), &SfzLimits::DEFAULT).is_ok());
 }

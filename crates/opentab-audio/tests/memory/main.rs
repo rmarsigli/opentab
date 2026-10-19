@@ -202,5 +202,6 @@ fn main() {
     sfz::a_huge_declared_file_is_refused_before_it_is_read();
     sfz::the_vorbis_setup_estimate_covers_what_lewton_allocates();
     sfz::symlink_bombs_are_refused_before_listing();
-    println!("memory: 11 checks passed");
+    sfz::include_bombs_stop_at_the_bank_include_cap();
+    println!("memory: 12 checks passed");
 }
