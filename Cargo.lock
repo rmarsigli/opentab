@@ -794,6 +794,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentab-playback"
+version = "0.1.0"
+dependencies = [
+ "num-rational",
+ "opentab-gp",
+ "opentab-model",
+ "opentab-testkit",
+ "proptest",
+ "serde_json",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
 name = "opentab-render"
 version = "0.1.0"
 dependencies = [

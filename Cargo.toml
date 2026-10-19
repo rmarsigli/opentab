@@ -10,6 +10,7 @@ members = [
     "crates/opentab-layout",
     "crates/opentab-render",
     "crates/opentab-mcp",
+    "crates/opentab-playback",
     "xtask",
 ]
 

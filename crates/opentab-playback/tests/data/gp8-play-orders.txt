@@ -1,0 +1,56 @@
+m3-po01-dc | 5 | 3 DaCapo | 0 1 2 3 0 1 2 3 4
+m3-po02-dc-al-fine | 6 | 2 Fine; 4 DaCapoAlFine | 0 1 2 3 4 0 1 2
+m3-po03-dc-al-coda | 6 | 1 DaCoda; 3 DaCapoAlCoda; 4 Coda | 0 1 2 3 0 1 4 5
+m3-po04-dc-al-double-coda | 6 | 1 DaDoubleCoda; 3 DaCapoAlDoubleCoda; 4 DoubleCoda | 0 1 2 3 0 1 4 5
+m3-po05-ds | 5 | 1 Segno; 3 DaSegno | 0 1 2 3 1 2 3 4
+m3-po06-ds-al-fine | 6 | 1 Segno; 2 Fine; 4 DaSegnoAlFine | 0 1 2 3 4 1 2
+m3-po07-ds-al-coda | 6 | 1 Segno; 2 DaCoda; 3 DaSegnoAlCoda; 4 Coda | 0 1 2 3 1 2 4 5
+m3-po08-ds-al-double-coda | 6 | 1 Segno; 2 DaDoubleCoda; 3 DaSegnoAlDoubleCoda; 4 DoubleCoda | 0 1 2 3 1 2 4 5
+m3-po09-dss | 5 | 1 SegnoSegno; 3 DaSegnoSegno | 0 1 2 3 1 2 3 4
+m3-po10-dss-al-fine | 6 | 1 SegnoSegno; 2 Fine; 4 DaSegnoSegnoAlFine | 0 1 2 3 4 1 2
+m3-po11-dss-al-coda | 6 | 1 SegnoSegno; 2 DaCoda; 3 DaSegnoSegnoAlCoda; 4 Coda | 0 1 2 3 1 2 4 5
+m3-po12-dss-al-double-coda | 6 | 1 SegnoSegno; 2 DaDoubleCoda; 3 DaSegnoSegnoAlDoubleCoda; 4 DoubleCoda | 0 1 2 3 1 2 4 5
+m3-po13-repeat-after-dc | 6 | 1 [S]; 2 [E2]; 4 DaCapo | 0 1 2 1 2 3 4 0 1 2 1 2 3 4 5
+m3-po14-endings-after-ds | 6 | 1 [S] Segno; 2 [E2]{1}; 3 {2}; 4 DaSegno | 0 1 2 1 3 4 1 2 1 3 4 5
+m3-po15-jump-inside-repeat | 5 | 1 [S]; 2 DaCapo; 3 [E2] | 0 1 2 3 1 2 0 1 2 3 1 2 3 4
+m3-po16-tocoda-inside-repeat | 7 | 1 [S] Segno; 2 DaCoda; 3 [E2]; 4 DaSegnoAlCoda; 5 Coda | 0 1 2 3 1 2 3 4 1 2 5 6
+m3-po17-dc-plain-with-fine | 6 | 2 Fine; 4 DaCapo | 0 1 2 3 4 0 1 2 3 4 5
+m3-po18-tocoda-without-alcoda | 5 | 1 DaCoda; 3 Coda | 0 1 3 4
+m3-po19-ds-without-segno | 4 | 2 DaSegno | 0 1 2 3
+m3-po20-alcoda-without-coda | 5 | 1 DaCoda; 3 DaCapoAlCoda | 0 1 2 3 0 1 2 3 4
+m3-po21-two-jumps-one-bar | 6 | 1 Segno; 3 DaCoda DaSegnoAlCoda; 4 Coda | 0 1 2 3 1 2 3 4 5
+m3-po22-target-and-jump-one-bar | 5 | 1 Segno; 3 Fine DaSegnoAlFine | 0 1 2 3 1 2 3
+m3-po23-repeat-count3-dc-al-fine | 5 | 0 [S]; 1 [E3]; 2 Fine; 3 DaCapoAlFine | 0 1 0 1 0 1 2 3 0 1 0 1 0 1 2
+m3-po24-fine-before-dc-first-pass | 5 | 1 Fine; 3 DaCapoAlFine | 0 1 2 3 0 1
+m3-po25-dc-then-ds | 6 | 1 Segno; 2 DaCapo; 4 DaSegno | 0 1 2 0 1 2 3 4 1 2 3 4 5
+m3-po26-coda-and-double-coda | 9 | 1 Segno; 2 DaCoda; 3 DaDoubleCoda; 4 DaSegnoAlCoda; 5 Coda; 6 DaSegnoAlDoubleCoda; 7 DoubleCoda | 0 1 2 3 4 1 2 5 6 1 2 3 7 8
+m3-po27-ds-repeat-count3 | 5 | 1 [S] Segno; 2 [E3]; 3 DaSegno | 0 1 2 1 2 1 2 3 1 2 1 2 1 2 3 4
+m3-po28-dangling-alcoda-then-tocoda | 6 | 1 DaSegnoAlCoda; 2 DaCoda; 4 Coda | 0 1 2 4 5
+m3-po30-fine-without-jump | 4 | 1 Fine | 0 1 2 3
+m3-po31-ds-inside-repeat-count3 | 6 | 1 Segno; 2 [S]; 3 DaSegno; 4 [E3] | 0 1 2 3 4 2 3 4 2 3 1 2 3 4 2 3 4 2 3 4 5
+m3-po32-fine-inside-repeat | 6 | 1 [S]; 2 Fine; 3 [E2]; 4 DaCapoAlFine | 0 1 2 3 1 2 3 4 0 1 2
+m3-po33-tocoda-inside-repeat-dc | 6 | 0 [S]; 1 DaCoda; 2 [E2]; 3 DaCapoAlCoda; 4 Coda | 0 1 2 0 1 2 3 0 1 4 5
+m3-po34-dc-on-repeat-end | 4 | 1 [S]; 2 [E2] DaCapo | 0 1 2 1 2 0 1 2 1 2 3
+m3-po37-two-alcoda-jumps | 7 | 1 Segno; 2 DaCoda; 3 DaSegnoAlCoda; 4 Coda; 5 DaCapoAlCoda | 0 1 2 3 1 2 4 5 0 1 2 3 4 5 6
+m3-po38-tocoda-in-ending | 7 | 1 [S] Segno; 2 [E2]{1} DaCoda; 3 {2}; 4 DaSegnoAlCoda; 5 Coda | 0 1 2 1 3 4 1 2 5 6
+m3-po39-dc-in-ending-1 | 5 | 1 [S]; 2 [E2]{1} DaCapo; 3 {2} | 0 1 2 1 3 4
+m3-po40-todoublecoda-without-jump | 5 | 1 DaDoubleCoda; 3 DoubleCoda | 0 1 3 4
+m3-po41-coda-armed-separately | 7 | 1 DaCoda; 2 DaDoubleCoda; 3 DaCapoAlDoubleCoda; 4 Coda; 5 DoubleCoda | 0 1 2 3 0 1 2 5 6
+m3-po42-alcoda-in-skipped-ending | 7 | 0 [S]; 1 [E2]{1} DaCapoAlCoda; 2 {2}; 3 DaCoda; 5 Coda | 0 1 0 2 3 5 6
+m3-po43-alcoda-forward-segno | 7 | 1 DaCoda; 3 DaSegnoAlCoda; 4 Segno; 5 Coda | 0 1 5 6
+m3-po44-alcoda-only-after-coda | 7 | 1 DaCoda; 3 Coda; 5 DaCapoAlCoda | 0 1 2 3 4 5 0 1 3 4 5 6
+m3-po45-ds-forward-segno | 5 | 1 DaSegno; 3 Segno | 0 1 3 4
+m3-po46-tocoda-after-coda | 5 | 1 Coda; 3 DaCoda | 0 1 2 3 4
+m3-po47-two-segnos | 6 | 1 Segno; 3 Segno; 4 DaSegno | 0 1 2 3 4 3 4 5
+m3-po48-two-fines | 6 | 1 Fine; 3 Fine; 4 DaCapoAlFine | 0 1 2 3 4 0 1 2 3
+m3-po49-dc-in-second-ending | 4 | 0 [S]; 1 [E2]{1}; 2 {2} DaCapo | 0 1 0 2 0 1 0 2 3
+m3-po51-alcoda-after-in-skipped-ending | 6 | 0 [S]; 1 DaCoda; 2 [E2]{1} DaCapoAlCoda; 3 {2}; 4 Coda | 0 1 2 0 1 4 5
+m3-po52-alcoda-after-jumped-over | 7 | 1 DaCoda; 2 DaSegno; 3 DaCapoAlCoda; 4 Segno; 5 Coda | 0 1 5 6
+m3-po53-alcoda-after-forward-target-segno-before | 7 | 1 Segno; 2 DaCoda; 4 DaSegnoAlCoda; 5 Coda | 0 1 2 3 4 1 2 5 6
+m3-po54-tocoda-with-alfine-ahead | 7 | 1 DaCoda; 3 Coda; 4 Fine; 5 DaCapoAlFine | 0 1 2 3 4 5 0 1 3 4
+m3-po55-doublecoda-in-coda-mode | 8 | 1 Segno; 2 DaDoubleCoda; 3 DaCoda; 4 DaSegnoAlCoda; 5 Coda; 6 DoubleCoda | 0 1 2 3 4 1 2 6 7
+m3-po56-alcoda-ahead-beyond-repeat | 7 | 1 DaCoda; 2 [S]; 3 [E2]; 4 DaCapoAlCoda; 5 Coda | 0 1 2 3 2 3 4 0 1 5 6
+m3-po58-tocoda-after-aldoublecoda | 6 | 1 DaCoda; 2 DaCapoAlDoubleCoda; 3 Coda; 4 DoubleCoda | 0 1 2 0 1 3 4 5
+m3-po59-tocoda-after-plain-dc | 6 | 1 DaCoda; 3 DaCapo; 4 Coda | 0 1 2 3 0 1 4 5
+m3-t4-y1-ignored-double-coda-ahead | 8 | 1 DoubleCoda; 2 DaCoda; 3 DaDoubleCoda; 4 Coda | 0 1 2 4 5 6 7
+m3-t4-y3-valid-double-coda-ahead | 8 | 1 DaCoda; 2 DaDoubleCoda; 4 Coda; 6 DoubleCoda | 0 1 2 6 7

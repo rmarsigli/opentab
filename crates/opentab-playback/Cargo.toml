@@ -1,0 +1,22 @@
+[package]
+name = "opentab-playback"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+opentab-model = { path = "../opentab-model" }
+thiserror.workspace = true
+
+[dev-dependencies]
+opentab-gp = { path = "../opentab-gp" }
+opentab-testkit = { path = "../opentab-testkit" }
+num-rational.workspace = true
+proptest.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true
