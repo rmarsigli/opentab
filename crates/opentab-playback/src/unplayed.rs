@@ -152,7 +152,10 @@ fn note_kinds(note: &Note, profile: Profile) -> Vec<UnplayedKind> {
         (effects.hammer_on_pull_off, UnplayedKind::HammerOnPullOff),
         (effects.slide.is_some(), UnplayedKind::Slide),
         (effects.tap.is_some(), UnplayedKind::Tap),
-        (bend_below_pitch(note), UnplayedKind::BendBelowPitch),
+        (
+            profile == Profile::Musical && bend_below_pitch(note),
+            UnplayedKind::BendBelowPitch,
+        ),
         (
             profile == Profile::Gp && effects.bend.is_some_and(gp_drops),
             UnplayedKind::DipBend,

@@ -527,24 +527,31 @@ fn a_bend_below_the_pitch_is_not_played_and_is_listed() {
         BendPoint::new(100, 0).expect("point"),
     )
     .expect("bend");
-    let performance = single_note(|builder, track| {
-        builder.voice(
-            track,
-            0,
-            0,
-            vec![beat(
-                NoteValue::Whole,
-                vec![with(fretted(2, 2), |effects| effects.bend = Some(dip))],
-            )],
-        );
-    });
-    assert!(bends(&performance).is_empty());
-    assert!(
-        performance
+    let mut builder = Builder::new(1);
+    let track = builder.guitar();
+    builder.voice(
+        track,
+        0,
+        0,
+        vec![beat(
+            NoteValue::Whole,
+            vec![with(fretted(2, 2), |effects| effects.bend = Some(dip))],
+        )],
+    );
+    for (options, listed, absent) in [
+        (GP, UnplayedKind::DipBend, UnplayedKind::BendBelowPitch),
+        (MUSICAL, UnplayedKind::BendBelowPitch, UnplayedKind::DipBend),
+    ] {
+        let performance = perform(&builder.score, &options).expect("perform");
+        assert!(bends(&performance).is_empty());
+        let kinds: Vec<UnplayedKind> = performance
             .unplayed
             .iter()
-            .any(|feature| feature.kind == UnplayedKind::BendBelowPitch)
-    );
+            .map(|feature| feature.kind)
+            .collect();
+        assert!(kinds.contains(&listed), "{options:?}: {kinds:?}");
+        assert!(!kinds.contains(&absent), "{options:?}: {kinds:?}");
+    }
 }
 
 #[test]

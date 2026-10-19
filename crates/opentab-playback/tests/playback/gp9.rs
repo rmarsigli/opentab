@@ -148,6 +148,13 @@ fn check_bend(case: BendCase) {
         .iter()
         .any(|feature| feature.kind == UnplayedKind::DipBend);
     assert_eq!(dip, case.exported == Exported::Silent, "{label}");
+    assert!(
+        performance
+            .unplayed
+            .iter()
+            .all(|feature| feature.kind != UnplayedKind::BendBelowPitch),
+        "{label}: gp clamps or drops a bend below the pitch, it never lists it as below"
+    );
     if case.exported == Exported::Silent {
         assert!(events.is_empty(), "{label}: {events:?}");
         return;
