@@ -8,7 +8,6 @@ use proptest::sample::subsequence;
 
 use crate::support::{assert_too_tall, check};
 
-const CASES: u32 = 256;
 const MIN_PAGE_WIDTH_MM: i64 = 120;
 const MAX_PAGE_WIDTH_MM: i64 = 300;
 const MIN_PAGE_HEIGHT_MM: i64 = 200;
@@ -75,7 +74,7 @@ fn has_staves(score: &Score, options: &LayoutOptions) -> bool {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(CASES))]
+    #![proptest_config(crate::cases::config())]
 
     #[test]
     fn layout_of_any_score_keeps_every_invariant((score, options) in arb_case()) {

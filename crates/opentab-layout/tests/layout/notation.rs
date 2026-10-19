@@ -35,7 +35,6 @@ const C_SHARP_5: (u8, u8) = (1, 2);
 const D7: (u8, u8) = (0, 22);
 const G2: (u8, u8) = (5, 3);
 const LOW_STRING: Pitch = Pitch(28);
-const CASES: u32 = 256;
 const MIN_MULTI_VOICE_ONSETS: usize = 80;
 const MIN_STACKED_ACCIDENTAL_ONSETS: usize = 10;
 const MIN_POSITIONED_HEADS: usize = 3_000;
@@ -811,9 +810,8 @@ fn arb_mode() -> impl Strategy<Value = Option<StaffMode>> {
 
 fn run_cases(each: impl Fn(&Score, &DisplayList) -> Tally) -> Tally {
     let mut runner = TestRunner::new(ProptestConfig {
-        cases: CASES,
         failure_persistence: None,
-        ..ProptestConfig::default()
+        ..crate::cases::config()
     });
     let total = RefCell::new(Tally::default());
     runner
@@ -844,11 +842,11 @@ fn run_cases(each: impl Fn(&Score, &DisplayList) -> Tally) -> Tally {
 fn every_note_has_one_notehead_and_nothing_overlaps() {
     let tally = run_cases(check_notation);
     assert!(
-        tally.multi_voice_onsets >= MIN_MULTI_VOICE_ONSETS,
+        tally.multi_voice_onsets >= crate::cases::scaled(MIN_MULTI_VOICE_ONSETS),
         "{tally:?}"
     );
     assert!(
-        tally.stacked_accidental_onsets >= MIN_STACKED_ACCIDENTAL_ONSETS,
+        tally.stacked_accidental_onsets >= crate::cases::scaled(MIN_STACKED_ACCIDENTAL_ONSETS),
         "{tally:?}"
     );
 }
@@ -860,8 +858,14 @@ fn notehead_steps_are_consistent_with_the_written_pitch_within_one_alteration() 
         drum_heads: crate::percussion::drum_heads(score, list),
         ..Tally::default()
     });
-    assert!(tally.positioned_heads >= MIN_POSITIONED_HEADS, "{tally:?}");
-    assert!(tally.drum_heads >= MIN_DRUM_HEADS, "{tally:?}");
+    assert!(
+        tally.positioned_heads >= crate::cases::scaled(MIN_POSITIONED_HEADS),
+        "{tally:?}"
+    );
+    assert!(
+        tally.drum_heads >= crate::cases::scaled(MIN_DRUM_HEADS),
+        "{tally:?}"
+    );
 }
 
 #[test]

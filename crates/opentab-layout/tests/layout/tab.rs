@@ -15,7 +15,6 @@ use proptest::test_runner::TestRunner;
 use crate::music::{Row, overlaps, rows, tall};
 use crate::support::{check, ink};
 
-const CASES: u32 = 256;
 const MIN_LABELS: usize = 3_000;
 const MIN_SAME_STRING_PAIRS: usize = 1_000;
 const MIN_LANE_TEXT_PAIRS: usize = 1_000;
@@ -296,9 +295,8 @@ fn arb_mode() -> impl Strategy<Value = Option<StaffMode>> {
 #[test]
 fn every_fretted_note_has_one_label_on_its_string_and_labels_never_collide() {
     let mut runner = TestRunner::new(ProptestConfig {
-        cases: CASES,
         failure_persistence: None,
-        ..ProptestConfig::default()
+        ..crate::cases::config()
     });
     let total = RefCell::new(Tally::default());
     runner
@@ -323,10 +321,16 @@ fn every_fretted_note_has_one_label_on_its_string_and_labels_never_collide() {
         })
         .unwrap();
     let tally = total.into_inner();
-    assert!(tally.labels >= MIN_LABELS, "{tally:?}");
     assert!(
-        tally.same_string_pairs >= MIN_SAME_STRING_PAIRS,
+        tally.labels >= crate::cases::scaled(MIN_LABELS),
         "{tally:?}"
     );
-    assert!(tally.lane_text_pairs >= MIN_LANE_TEXT_PAIRS, "{tally:?}");
+    assert!(
+        tally.same_string_pairs >= crate::cases::scaled(MIN_SAME_STRING_PAIRS),
+        "{tally:?}"
+    );
+    assert!(
+        tally.lane_text_pairs >= crate::cases::scaled(MIN_LANE_TEXT_PAIRS),
+        "{tally:?}"
+    );
 }
