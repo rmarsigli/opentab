@@ -1,12 +1,13 @@
 use opentab_model::{
-    Balance, BendPoint, Directions, Fraction, InstrumentSet, KeySignature, Level, MidiBank,
-    NoteKind, Pitch, TimeSignature, TremoloBar, TrillSpeed,
+    AutomationValue, Balance, BendPoint, Directions, Fraction, InstrumentSet, KeySignature, Level,
+    MidiBank, NoteKind, Pitch, TimeSignature, TremoloBar, TrillSpeed,
 };
 
 use crate::codes::{
     DIRECTION_JUMP, DIRECTION_JUMPS, DIRECTION_TARGET, DIRECTION_TARGETS, INSTRUMENT_SETS,
-    PAN_PARAMETER, SOUND_AUTOMATION, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS, TEMPO_POSITION_GRID,
-    TRILL_SPEED, TRILL_SPEEDS, VOLUME_PARAMETER, WHAMMY_ATTRIBUTES, name_of,
+    PAN_AUTOMATION, PAN_PARAMETER, SOUND_AUTOMATION, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS,
+    TEMPO_POSITION_GRID, TRILL_SPEED, TRILL_SPEEDS, VOLUME_AUTOMATION, VOLUME_PARAMETER,
+    WHAMMY_ATTRIBUTES, name_of,
 };
 use crate::dom::{self, Element, Node};
 use crate::guard::PitchInputs;
@@ -241,11 +242,34 @@ pub(crate) enum PositionUnit {
     Quarter,
 }
 
-pub(crate) fn position_unit(kind: &str) -> PositionUnit {
-    if kind == SOUND_AUTOMATION {
-        PositionUnit::Quarter
-    } else {
-        PositionUnit::Bar
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AutomationKind {
+    Volume,
+    Pan,
+    Sound,
+}
+
+pub(crate) fn automation_kind(name: &str) -> Option<AutomationKind> {
+    match name {
+        VOLUME_AUTOMATION => Some(AutomationKind::Volume),
+        PAN_AUTOMATION => Some(AutomationKind::Pan),
+        SOUND_AUTOMATION => Some(AutomationKind::Sound),
+        _ => None,
+    }
+}
+
+pub(crate) fn kind_of(value: &AutomationValue) -> AutomationKind {
+    match value {
+        AutomationValue::Volume(_) => AutomationKind::Volume,
+        AutomationValue::Pan(_) => AutomationKind::Pan,
+        AutomationValue::Sound(_) => AutomationKind::Sound,
+    }
+}
+
+pub(crate) fn position_unit(kind: AutomationKind) -> PositionUnit {
+    match kind {
+        AutomationKind::Volume | AutomationKind::Pan => PositionUnit::Bar,
+        AutomationKind::Sound => PositionUnit::Quarter,
     }
 }
 

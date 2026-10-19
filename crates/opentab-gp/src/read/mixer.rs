@@ -362,7 +362,7 @@ fn typed(master_bars: &[MasterBar], element: &Element, lane: &Lane<'_>) -> Optio
     let bar = number::integer::<usize>(&text_of(element, "Bar")?)?;
     let master = master_bars.get(bar)?;
     let time = master.time_signature;
-    let unit = canon::position_unit(&kind);
+    let unit = canon::position_unit(canon::automation_kind(&kind)?);
     let (numer, denom) = match unit {
         PositionUnit::Bar => (i64::from(time.numerator()), i64::from(time.denominator())),
         PositionUnit::Quarter => (1, canon::QUARTERS_PER_WHOLE),

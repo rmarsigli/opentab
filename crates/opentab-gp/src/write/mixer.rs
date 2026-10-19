@@ -157,13 +157,15 @@ fn automation_element(site: &Site<'_>, automation: &Automation) -> Result<Elemen
             (SOUND_AUTOMATION, canon::sound_value(key))
         }
     };
-    let position =
-        canon::automation_position(automation.position, time, canon::position_unit(kind)).ok_or(
-            Refusal::AutomationPosition {
-                numer: *automation.position.numer(),
-                denom: *automation.position.denom(),
-            },
-        )?;
+    let position = canon::automation_position(
+        automation.position,
+        time,
+        canon::position_unit(canon::kind_of(&automation.value)),
+    )
+    .ok_or(Refusal::AutomationPosition {
+        numer: *automation.position.numer(),
+        denom: *automation.position.denom(),
+    })?;
     Ok(canon::automation(AutomationParts {
         kind,
         linear: automation.linear,
