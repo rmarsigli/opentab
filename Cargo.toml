@@ -11,6 +11,7 @@ members = [
     "crates/opentab-render",
     "crates/opentab-mcp",
     "crates/opentab-playback",
+    "crates/opentab-audio",
     "xtask",
 ]
 
