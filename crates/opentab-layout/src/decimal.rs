@@ -112,6 +112,25 @@ mod tests {
     }
 
     #[test]
+    fn thirty_digits_are_the_most_a_number_may_have() {
+        let thirty = format!("0.{}1", "0".repeat(28));
+        assert_eq!(thirty.len() - 1, 30);
+        assert_eq!(units(&thirty), 0);
+        let thirty_one = format!("0.{}1", "0".repeat(29));
+        assert!(staff_spaces_to_units(&thirty_one).is_err());
+    }
+
+    #[test]
+    fn an_exponent_may_have_three_digits_and_no_more() {
+        assert_eq!(units("1e-100"), 0);
+        assert_eq!(units("1e-999"), 0);
+        assert_eq!(units("1e+000"), 1024);
+        assert!(staff_spaces_to_units("1e-1000").is_err());
+        assert!(staff_spaces_to_units("1e0000").is_err());
+        assert!(staff_spaces_to_units("1e+1000").is_err());
+    }
+
+    #[test]
     fn malformed_numbers_are_refused() {
         for text in [
             "", "-", ".5", "1.", "1..2", "1.2.3", "abc", "1e", "1e+", "1e1000", "0x10", "--1",

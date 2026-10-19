@@ -574,3 +574,153 @@ pub fn ending_label(mask: u8) -> String {
         .collect();
     format!("{}.", numbers.join(", "))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::display::DisplayList;
+    use crate::glyphs::TIME_SIG_DIGITS;
+    use crate::options::LayoutOptions;
+    use opentab_model::{
+        Bar, Beat, BeatEffects, Clef, Duration, NoteValue, TimeSignature, Voice, VoiceSlot,
+        blank_score,
+    };
+
+    struct BarSpec {
+        time: (u8, u8),
+        value: NoteValue,
+        count: usize,
+        repeat_start: bool,
+    }
+
+    fn spec(time: (u8, u8), value: NoteValue, count: usize) -> BarSpec {
+        BarSpec {
+            time,
+            value,
+            count,
+            repeat_start: false,
+        }
+    }
+
+    fn score_of(specs: &[BarSpec]) -> Score {
+        let mut score = blank_score().unwrap();
+        let template = score.master_bars[0].clone();
+        let mut bars = Vec::new();
+        let mut masters = Vec::new();
+        for spec in specs {
+            let beats = (0..spec.count)
+                .map(|_| Beat {
+                    id: score.alloc().unwrap(),
+                    duration: Duration::new(spec.value, 0, None).unwrap(),
+                    notes: Vec::new(),
+                    effects: BeatEffects::default(),
+                })
+                .collect();
+            bars.push(Bar {
+                id: score.alloc().unwrap(),
+                clef: Clef::Treble,
+                voices: vec![Voice {
+                    id: score.alloc().unwrap(),
+                    slot: VoiceSlot::default(),
+                    beats,
+                }],
+            });
+            masters.push(opentab_model::MasterBar {
+                id: score.alloc().unwrap(),
+                time_signature: TimeSignature::new(spec.time.0, spec.time.1).unwrap(),
+                repeat_start: spec.repeat_start,
+                ..template.clone()
+            });
+        }
+        score.master_bars = masters;
+        score.tracks[0].staves[0].bars = bars;
+        score
+    }
+
+    fn laid_out(specs: &[BarSpec]) -> DisplayList {
+        crate::engine::layout(&score_of(specs), &LayoutOptions::default()).unwrap()
+    }
+
+    fn first_staff(list: &DisplayList) -> Vec<&crate::structure::BarLayout> {
+        list.pages
+            .iter()
+            .flat_map(|page| &page.systems)
+            .flat_map(|system| &system.staves[0].bars)
+            .collect()
+    }
+
+    fn glyphs_of(items: &[Primitive], codepoint: char, out: &mut Vec<PlacedGlyph>) {
+        for item in items {
+            match item {
+                Primitive::Group(group) => glyphs_of(&group.items, codepoint, out),
+                Primitive::Glyph(glyph) if glyph.codepoint == codepoint => out.push(*glyph),
+                _ => {}
+            }
+        }
+    }
+
+    fn page_glyphs(list: &DisplayList, codepoint: char) -> Vec<PlacedGlyph> {
+        let mut found = Vec::new();
+        for page in &list.pages {
+            glyphs_of(&page.items, codepoint, &mut found);
+        }
+        found
+    }
+
+    #[test]
+    fn every_column_sits_after_the_bar_lead_and_before_the_next_bar() {
+        let list = laid_out(&[
+            spec((4, 4), NoteValue::Quarter, 4),
+            spec((4, 4), NoteValue::Quarter, 4),
+            spec((4, 4), NoteValue::Quarter, 4),
+        ]);
+        let bars = first_staff(&list);
+        assert_eq!(bars.len(), 3);
+        let mut previous_right = Units::ZERO;
+        for bar in bars {
+            assert_eq!(bar.columns.len(), 4);
+            assert!(bar.columns[0].x >= bar.content);
+            assert!(bar.columns[0].x >= previous_right);
+            for pair in bar.columns.windows(2) {
+                assert!(pair[1].x > pair[0].x);
+            }
+            assert!(bar.columns[3].x < bar.rect.max.x);
+            previous_right = bar.rect.max.x;
+        }
+    }
+
+    #[test]
+    fn an_inline_signature_is_drawn_after_the_start_repeat_sign() {
+        let strokes = crate::barline::strokes();
+        let three = TIME_SIG_DIGITS[3];
+        let offset = |repeat_start: bool| {
+            let list = laid_out(&[
+                spec((4, 4), NoteValue::Quarter, 4),
+                BarSpec {
+                    repeat_start,
+                    ..spec((3, 4), NoteValue::Quarter, 3)
+                },
+            ]);
+            let glyphs = page_glyphs(&list, three.codepoint);
+            assert!(!glyphs.is_empty());
+            glyphs[0].origin.x - first_staff(&list)[1].rect.min.x
+        };
+        assert_eq!(offset(true) - offset(false), strokes.start_repeat_width());
+    }
+
+    #[test]
+    fn a_crowded_first_bar_still_leaves_room_for_its_signature() {
+        let list = laid_out(&[
+            spec((4, 4), NoteValue::Quarter, 4),
+            spec((16, 4), NoteValue::OneTwentyEighth, 512),
+            spec((4, 4), NoteValue::Quarter, 4),
+        ]);
+        assert_eq!(list.crowded, vec![1]);
+        let six = TIME_SIG_DIGITS[6];
+        let glyphs = page_glyphs(&list, six.codepoint);
+        assert!(!glyphs.is_empty());
+        let bbox = Metrics::bravura().bbox(six.name).unwrap();
+        let crowded = first_staff(&list)[1];
+        assert!(glyphs[0].origin.x + bbox.max.x <= crowded.content);
+    }
+}
