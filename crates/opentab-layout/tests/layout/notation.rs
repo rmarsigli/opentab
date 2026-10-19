@@ -257,39 +257,54 @@ fn grace_notes_are_small_slashed_before_the_beat_and_plain_on_it() {
     assert!(sharp.contains(&"accidentalSharp"));
 }
 
-#[test]
-fn tuplets_get_a_bracket_and_their_number() {
-    let triplet = Event::Play(tuplet(NoteValue::Eighth, 3, 2), vec![G4]);
-    let quintuplet = Event::Play(tuplet(NoteValue::Sixteenth, 5, 4), vec![G4]);
-    let mut events = vec![triplet; 3];
-    events.push(play(NoteValue::Quarter, &[G4]));
-    events.extend(vec![quintuplet; 5]);
-    events.push(play(NoteValue::Quarter, &[G4]));
-    let score = build(&[measure((4, 4), 0, vec![(0, events)])]);
-    let list = render(&score, &options(StaffMode::Standard));
-    let bar = group_in(&list, GroupId(score.tracks[0].staves[0].bars[0].id.0.0));
-    let numbers: Vec<_> = bar
-        .items
+fn tuplet_numbers(items: &[Primitive]) -> Vec<&'static str> {
+    items
         .iter()
         .filter_map(|item| match item {
             Primitive::Glyph(glyph) => Some(crate::support::glyph_name(glyph.codepoint)),
             _ => None,
         })
         .filter(|name| name.starts_with("tuplet"))
-        .collect();
-    assert_eq!(numbers, vec!["tuplet3", "tuplet5"]);
-    assert_eq!(beam_count(&list, &score, 0), 3);
-    let top = systems(&list)[0].staves[0].top;
-    let brackets = own_lines(&bar.items)
+        .collect()
+}
+
+fn lines_above(items: &[Primitive], top: Units) -> usize {
+    own_lines(items)
         .into_iter()
         .filter(|line| line.from.y.max(line.to.y) < top)
-        .count();
-    assert_eq!(brackets, 8);
+        .count()
+}
+
+#[test]
+fn tuplets_get_their_number_and_a_bracket_only_when_not_beamed_together() {
+    let triplet = Event::Play(tuplet(NoteValue::Eighth, 3, 2), vec![G4]);
+    let quintuplet = Event::Play(tuplet(NoteValue::Sixteenth, 5, 4), vec![G4]);
+    let slow = Event::Play(tuplet(NoteValue::Quarter, 3, 2), vec![G4]);
+    let mut beamed = vec![triplet; 3];
+    beamed.push(play(NoteValue::Quarter, &[G4]));
+    beamed.extend(vec![quintuplet; 5]);
+    beamed.push(play(NoteValue::Quarter, &[G4]));
+    let mut unbeamed = vec![slow; 3];
+    unbeamed.push(play(NoteValue::Half, &[G4]));
+    let score = build(&[
+        measure((4, 4), 0, vec![(0, beamed)]),
+        measure((4, 4), 0, vec![(0, unbeamed)]),
+    ]);
+    let list = render(&score, &options(StaffMode::Standard));
+    let bars = &score.tracks[0].staves[0].bars;
+    let first = group_in(&list, GroupId(bars[0].id.0.0));
+    let second = group_in(&list, GroupId(bars[1].id.0.0));
+    assert_eq!(tuplet_numbers(&first.items), vec!["tuplet3", "tuplet5"]);
+    assert_eq!(tuplet_numbers(&second.items), vec!["tuplet3"]);
+    assert_eq!(beam_count(&list, &score, 0), 3);
+    let top = systems(&list)[0].staves[0].top;
+    assert_eq!(lines_above(&first.items, top), 0);
+    assert_eq!(lines_above(&second.items, top), 4);
     let highest = (0..3)
         .map(|beat| head_of(&list, note_id(&score, 0, 0, beat, 0)).origin.y)
         .min()
         .unwrap();
-    let number = glyphs(&bar.items)
+    let number = glyphs(&first.items)
         .into_iter()
         .find(|glyph| crate::support::glyph_name(glyph.codepoint) == "tuplet3")
         .unwrap();

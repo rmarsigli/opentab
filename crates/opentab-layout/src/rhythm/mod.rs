@@ -107,6 +107,7 @@ pub struct TupletBracket {
     pub edge: Units,
     pub direction: StemDirection,
     pub number: u8,
+    pub bracket: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -635,6 +636,9 @@ impl RhythmStaff {
                 self.size,
             ));
             pen += advance(digit);
+        }
+        if !bracket.bracket {
+            return;
         }
         let gap = self.length(TUPLET_NUMBER_GAP);
         let thickness = self.length(

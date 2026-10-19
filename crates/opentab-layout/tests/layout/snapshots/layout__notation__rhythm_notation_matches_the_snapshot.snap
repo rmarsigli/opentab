@@ -104,9 +104,5 @@ group 5
       glyph U+E246 106211,16118 size 1024
     shape Fill [MoveTo(Point { x: Units(88929), y: Units(15438) }), LineTo(Point { x: Units(97319), y: Units(14398) }), LineTo(Point { x: Units(97319), y: Units(14910) }), LineTo(Point { x: Units(88929), y: Units(15950) }), Close]
     glyph U+E883 91955,13638 size 1024
-    line 87845,13365 87845,12853 thick 164
-    line 87845,12853 91699,12853 thick 164
-    line 93465,12853 97319,12853 thick 164
-    line 97319,12853 97319,13365 thick 164
 glyph U+ECA5 16010,10998 size 614
 text "= 120" 17185,11345 em 1433 Start Text
