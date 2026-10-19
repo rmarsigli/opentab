@@ -281,6 +281,8 @@ mod tests {
 
     use super::*;
 
+    const DOCUMENTED_LIMIT: usize = 64 << 20;
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Refuse {
         Everything,
@@ -362,9 +364,9 @@ mod tests {
             br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"open","arguments":{"path":""#
                 .to_vec();
         let tail = br#""}}}"#;
-        call.resize(MAX_LINE_BYTES - 1 - tail.len(), b'x');
+        call.resize(DOCUMENTED_LIMIT - 1 - tail.len(), b'x');
         call.extend_from_slice(tail);
-        assert_eq!(call.len(), MAX_LINE_BYTES - 1);
+        assert_eq!(call.len(), DOCUMENTED_LIMIT - 1);
         let mut input = line(&initialize());
         input.extend_from_slice(&call);
         input.push(b'\n');
