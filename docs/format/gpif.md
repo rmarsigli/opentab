@@ -278,6 +278,10 @@ GP's engraving does show one, in the PNG:
 
 So `Linear true` starts a ramp at its own automation and ends it at the next tempo automation of the score. GP labels the ramp by whether the tempo rises or falls.
 
+**Model.** The flag is `TempoChange.linear` (§10). `<Linear>true</Linear>` is written only on a ramp; GP's own `<Linear>false</Linear>` is kept, guarded by the change's position and flag, and dropped when the flag turns on. A `Linear` the model cannot read as `true` or `false` keeps its text under the same guard. A `Linear` on the last tempo of the score ramps to nothing, so playback holds that tempo; it is not diagnosed (3 corpus files have one).
+
+**Exact tempo.** `Tempo` stores the BPM as the `f64` the reader parsed, and the reader never rounds it. `Tempo::exact()` reads the shortest decimal that prints back to that `f64` as an exact rational, with checked arithmetic, and accepts up to six decimals; a value with more (for example a 17-digit JSON tempo) has no exact value and is diagnosed as `inexact_tempo`. Every corpus tempo is exact: the most precise has four decimals. Playback reads tempo only through `exact()`.
+
 **Shape: declared assumption.** No oracle shows how the tempo moves inside the ramp: linear in beats per minute against score time, or anything else. GP's own playback was not measured. OpenTab assumes a linear change in beats per minute over score position from one point to the next. A later harvest's PNG can only confirm the direction again, not the shape.
 
 ## 6. Master bars
@@ -325,7 +329,7 @@ The corpus has 8 master bars with `Directions`, in 2 files: 4 `Target` (`Segno` 
 | Jump back to `SegnoSegno` | `DaSegnoSegno`, `DaSegnoSegnoAlFine`, `DaSegnoSegnoAlCoda`, `DaSegnoSegnoAlDoubleCoda` |
 | Jump forward | `DaCoda` (To Coda), `DaDoubleCoda` (To Double Coda) |
 
-OpenTab models them as `MasterBar.directions` (§10). Diagnostics flag a jump whose destination or `Al…` target is missing from the score (`dangling_jump`, one per missing target), every later copy of a target (`duplicate_target`; GP keeps that later copy and drops the earlier ones, §5.1 rule 11, and a repeated jump name is not diagnosed although GP drops it the same way), and a `DaCoda` or `DaDoubleCoda` with no copy of its target in a later bar (`coda_not_ahead`; GP ignores such a jump, rule 9). GP accepts all three, so the writer refuses none.
+OpenTab models them as `MasterBar.directions` (§10). Diagnostics flag a jump whose destination or `Al…` target is missing from the score (`dangling_jump`, one per missing target), every copy of a target or a jump name except the last one in the score (`duplicate_target` and `duplicate_jump`, each on the bar of a copy GP drops; GP keeps only the last copy, §5.1 rule 11; a name repeated inside one bar counts too), and a `DaCoda` or `DaDoubleCoda` with no copy of its target in a later bar (`coda_not_ahead`; GP ignores such a jump, rule 9). GP accepts all four, so the writer refuses none.
 
 A bar may hold several targets and jumps. GP writes the targets first and orders jumps its own way: we wrote `DaCoda` before `DaSegnoAlCoda`, and the re-save has them the other way round [m3-po21]. Our writer emits GP's order, so none of the 12 `directions-*` fixtures came back reordered [directions-ds-coda]. The play order they produce is in §5.1.
 
@@ -415,7 +419,7 @@ Beat effects the corpus shows. Elements are written `<Name>` and named propertie
 | Slurs across beats | `<Legato origin destination>`. |
 | Free text | `<FreeText>`. |
 
-**Whammy bar.** `<Whammy originValue="V" middleValue="V" destinationValue="V" originOffset="O" middleOffset1="O" middleOffset2="O" destinationOffset="O"/>`, every number written with six decimals. It has the bend's four-point shape (§9): an origin, two middle points sharing one value, and a destination; offsets run from 0 to 100 across the beat. Values count hundredths of a tone, like bends: GP draws 100 as a dive or rise of "1" (a whole tone) and -100 as "-1" [m3-mx07], so the model value in cents is the GPIF value × 2. Negative values dive. As for bends, a value that does not become a whole number of cents, or an offset that is not a whole number, cannot be held by the model and stays opaque. The corpus has 2 whammy beats in 2 files, with values 0, -50 and -100 and offsets 0, 35, 50, 99 and 100. GP re-saves a whammy we wrote unchanged. The separate beat property `VibratoWTremBar` (1 beat) is a vibrato played with the bar.
+**Whammy bar.** `<Whammy originValue="V" middleValue="V" destinationValue="V" originOffset="O" middleOffset1="O" middleOffset2="O" destinationOffset="O"/>`, every number written with six decimals. It has the bend's four-point shape (§9): an origin, two middle points sharing one value, and a destination; offsets run from 0 to 100 across the beat. Values count hundredths of a tone, like bends: GP draws 100 as a dive or rise of "1" (a whole tone) and -100 as "-1" [m3-mx07], so the model value in cents is the GPIF value × 2. Negative values dive. OpenTab types it as `BeatEffects.tremolo_bar` (§10), with the bend's limits (offsets 0 to 100, values -1200 to 1200 cents). A value that does not become a whole number of cents in that range, an offset that is not a whole number from 0 to 100, or a missing attribute cannot be held by the model, so the element stays opaque and is replaced when a tremolo bar is set. An element in another spelling than the writer's (for example `0` instead of `0.000000`) is typed and also kept, guarded by the curve, so it is written back unchanged until the curve changes. The corpus has 2 whammy beats in 2 files, with values 0, -50 and -100 and offsets 0, 35, 50, 99 and 100. GP re-saves a whammy we wrote unchanged. The separate beat property `VibratoWTremBar` (1 beat) is a vibrato played with the bar.
 
 Effects that never occurred in the corpus. We applied each one through GP's Effects menu to a score we built, saved it, and compared the result with a plain re-save [fx-plain]:
 
@@ -493,6 +497,7 @@ Effect properties on notes:
 - `T` is the length of each trill note in ticks at 480 per quarter note. GP's dialog wrote 480 by default [m3-tr02]. We wrote 60, 120, 240 and 480, and GP alternated the notes every 60, 120, 240 and 480 ticks in its MIDI export [m3-tr12, m3-tr13]. The dialog's speed slider shows four note values, from thirty-second to quarter. Without the property GP plays 60 and does not add the property on re-save [m3-tr20].
 - **960 made GP hang** during the MIDI export: the process stopped responding and grew to about 10 GB of memory, and had to be killed [m3-tr13-speed-960]. A writer must write only 60, 120, 240 or 480.
 - The corpus holds no trill.
+- OpenTab types it as `NoteEffects.trill` with the auxiliary `fret` (P − open string − capo of the note's staff) and the `speed` (§10). A trill on a percussion note, one whose `P` lies below the open string plus capo, or one whose speed property holds another number than the four above stays opaque, together with its speed property, and is replaced when a trill is set. An explicit `60` is kept, guarded by the trill, because the writer leaves the default out. The writer refuses a trill whose auxiliary note sounds above MIDI 127 or sits on a percussion note (`TrillPitch`), and diagnose reports it (`trill_out_of_range`).
 
 **Bends** have a fixed shape of four points:
 
@@ -550,7 +555,8 @@ Notation used in this table:
 | `directions.targets` | `Directions/Target`, in order: `Segno`, `SegnoSegno`, `Coda`, `DoubleCoda`, `Fine` (§6.1) | snake_case in JSON (`segno_segno`). |
 | `directions.jumps` | `Directions/Jump`, in order: the 14 names of §6.1 | snake_case in JSON (`da_segno_al_coda`). The writer emits the targets, then the jumps, after `DoubleBar` and before `Bars`; no element when both are empty. A `Directions` element in any other form (jumps before targets, an unknown name, an attribute, padded text, an empty element) is read for its known names and replayed whole while the directions are unchanged (§11.1). |
 | `tempo_changes[].position` | `Automation[Type=Tempo][Bar=index]/Position` × bar length | The model counts every position (tempo changes and automations alike) in **whole notes from the start of its master bar** (`WholeNotes`); a tempo `Position` is a fraction of the bar, proven by the `tempo` golden's `export.mid` (§5). It is written with six significant digits, or more when six do not bring back its 1/3840 tick. |
-| `tempo_changes[].bpm` | first number of `Value` | The number printed on the mark, not converted to quarter notes. `Linear`, `Visible` and `Text` → opaque. |
+| `tempo_changes[].bpm` | first number of `Value` | The number printed on the mark, not converted to quarter notes, kept as read (no rounding). `Tempo::exact()` gives it as an exact rational of at most six decimals (§5.2). `Visible` and `Text` → opaque. |
+| `tempo_changes[].linear` | `Linear` = `true` | A ramp to the next tempo change of the score (§5.2). Written only when true; GP's `false` is kept under a guard. |
 | `tempo_changes[].unit` | second number of `Value`: 1 eighth, 2 quarter, 3 dotted quarter, 4 half, 5 dotted half | Code 0 reads as quarter and is written as 2. Playback converts the mark to quarter notes. |
 
 ### Tracks and staves
@@ -603,6 +609,7 @@ Notation used in this table:
 | `BeatEffects.grace` | `Beat/GraceNotes`: `BeforeBeat` or `OnBeat` | A grace beat has a rhythm but takes no time in the bar. |
 | `BeatEffects.dynamic` | `Beat/Dynamic` | `PPP`, `PP`, `P`, `MP`, `MF`, `F`, `FF`, `FFF`. A missing element reads as `MF`. |
 | `BeatEffects.slap` | `Property Slapped` | — |
+| `BeatEffects.tremolo_bar` | `Beat/Whammy`, seven attributes | Four points like a bend; values in cents (GPIF × 2, negative dives), offsets 0 to 100. Written right after `Rhythm` with six decimals (§8). |
 | `BeatEffects.pop` | `Property Popped` | — |
 
 ### Notes
@@ -630,6 +637,8 @@ Notation used in this table:
 | `tap` | `Property Tapped` → Right, `Property LeftHandTapped` → Left | — |
 | `left_hand_finger` | `LeftFingering` | `Open`, `P` Thumb, `I` Index, `M` Middle, `A` Ring, `C` Little. |
 | `right_hand_finger` | `RightFingering` | `P` Thumb, `I` Index, `M` Middle, `A` Ring, `C` Little. |
+| `trill.fret` | `Note/Trill` − open string − capo | Written as the note's first child (§9). |
+| `trill.speed` | note `XProperty 688062467/Int`: 60 thirty-second, 120 sixteenth, 240 eighth, 480 quarter | Absent reads as thirty-second, which the writer leaves out. The model accepts only these four values (GP hangs on others). |
 
 ## 11. GPIF parts not modelled (opaque)
 
@@ -640,7 +649,7 @@ These stay as opaque payloads of their owner, or of the score:
 - **MasterTrack:**
   - `RSE`;
   - the `SyncPoint` automations;
-  - the tempo automation's `Linear`, `Visible` and `Text`, and the original text of its `Position`.
+  - the tempo automation's `Visible` and `Text`, a `Linear` that is not `true`, and the original text of its `Position`.
 - **MasterBar:**
   - `Key/TransposeAs`, `Fermatas`, `TripletFeel`;
   - `XProperties`;
@@ -662,7 +671,7 @@ These stay as opaque payloads of their owner, or of the score:
 - **Bar:** `SimileMark`, `XProperties`, and any clef other than `G2`, `F4` and `Neutral`.
 - **Beat:**
   - the stem orientation elements;
-  - `Whammy`, `Variation`, `Wah`, `Golpe`, `Slashed`, `Hairpin`, `Legato`, `Arpeggio`, `Lyrics`;
+  - `Variation`, `Wah`, `Golpe`, `Slashed`, `Hairpin`, `Legato`, `Arpeggio`, `Lyrics`, and a `Whammy` the model cannot hold;
   - the pickup properties, `PickStroke`, the barre properties, `Rasgueado`, `VibratoWTremBar`;
   - the brush start time and the remaining `XProperties`;
   - `Fadding` values other than `FadeIn`.
@@ -674,6 +683,7 @@ These stay as opaque payloads of their owner, or of the score:
   - the pseudo string and fret of a drum note;
   - `Midi`, `ConcertPitch` and `TransposedPitch`. These are derived, but must be written back (§9). A writer replays the original values while string, fret, tuning and transpose are unchanged, and computes them otherwise.
   - The note's `InstrumentArticulation` on pitched tracks.
+  - A `Trill` the model cannot hold, an explicit default trill speed, and the note's other `XProperties`.
 
 ### 11.1 Opaque data after an edit
 
@@ -811,6 +821,8 @@ The oracle harness saves every fixture through GP and exports it. The repository
 - `png/*.png`.
 
 The full harvest stays local: the re-saved `.gp` container, `export.pdf` and `export.gpx`. The container and the GPX carry GP's default `BinaryStylesheet` and `Stylesheets/*.gpss`, and the PDF embeds font subsets. `cargo xtask oracle harvest` writes the full set into a directory outside the repository. `cargo xtask oracle publish --from <full> --out goldens/gp` copies the committed set and writes a manifest marked `"set": "published"`. `cargo xtask oracle check` then requires exactly that set.
+
+**Goldens awaiting a harvest.** `sound-change.gp` was regenerated when sound positions became quarter notes (§15): its committed golden was harvested from the earlier file and is kept as GP's evidence for that rule, but `oracle check` reports it stale until T7 harvests it again. `tempo-ramp.gp`, `tremolo-bar.gp` and `trill.gp` have no golden yet. `oracle_fidelity` lists the four in `AWAITING_HARVEST`.
 
 ## 15. Track sound, MIDI channels and the mixer
 
