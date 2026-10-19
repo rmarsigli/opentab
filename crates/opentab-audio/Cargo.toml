@@ -10,6 +10,12 @@ publish.workspace = true
 opentab-model = { path = "../opentab-model" }
 opentab-playback = { path = "../opentab-playback" }
 rustysynth.workspace = true
+hound.workspace = true
+claxon.workspace = true
+lewton.workspace = true
+ogg.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
@@ -19,6 +25,7 @@ num-rational.workspace = true
 proptest.workspace = true
 sha2.workspace = true
 stats_alloc.workspace = true
+tempfile.workspace = true
 
 [[test]]
 name = "memory"
