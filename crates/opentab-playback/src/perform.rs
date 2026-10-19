@@ -106,6 +106,16 @@ fn conductor(
         let Some(bar) = score.master_bars.get(played.source) else {
             return Err(PlaybackError::OrderMismatch);
         };
+        let restated = played
+            .source
+            .checked_sub(1)
+            .and_then(|before| score.master_bars.get(before));
+        if restated.is_none_or(|before| before.time_signature != bar.time_signature) {
+            signature = None;
+        }
+        if restated.is_none_or(|before| before.key_signature != bar.key_signature) {
+            key = None;
+        }
         let time = ConductorKind::TimeSignature {
             numerator: bar.time_signature.numerator(),
             denominator: bar.time_signature.denominator(),
@@ -199,7 +209,7 @@ pub fn perform(score: &Score, options: &PlaybackOptions) -> Result<Performance, 
     for (seq, item) in pending.into_iter().enumerate() {
         events.push(TimedEvent {
             at: ScoreTime::new(item.at.fraction()?)?,
-            seq: u32::try_from(seq).map_err(|_| PlaybackError::TimeOverflow)?,
+            seq: u32::try_from(seq).map_err(|_| PlaybackError::TooManyEvents)?,
             track: item.track,
             channel: item.channel,
             message: item.message,

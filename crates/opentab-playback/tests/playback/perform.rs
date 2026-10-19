@@ -828,7 +828,7 @@ fn guitar_pro_ignored_features_are_listed_and_ramps_only_under_gp() {
 }
 
 #[test]
-fn the_conductor_repeats_the_tempo_after_every_backward_jump() {
+fn the_conductor_restates_tempo_and_bar_zero_signatures_after_a_jump() {
     let mut score = crate::support::score_from(3, "0 [S]; 1 [E2]");
     score.master_bars[1].time_signature = opentab_model::TimeSignature::new(3, 4).expect("time");
     let performance = perform(&score, &GP).expect("perform");
@@ -861,6 +861,7 @@ fn the_conductor_repeats_the_tempo_after_every_backward_jump() {
             (frac(1, 1), three),
             (frac(7, 4), tempo),
             (frac(7, 4), four),
+            (frac(7, 4), key),
             (frac(11, 4), three),
             (frac(7, 2), four),
         ]

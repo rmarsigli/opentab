@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use opentab_model::{Fraction, InstrumentKind, MidiChannel, NoteValue, Score};
 use opentab_playback::{
-    Channel, ChannelState, MidiMessage, PAN_CONTROLLER, Performance, PlaybackError,
-    PlaybackOptions, PlaybackWarning, Profile, ScoreTime, VOLUME_CONTROLLER, perform,
+    Channel, ChannelState, MidiMessage, PAN_CONTROLLER, Performance, PlaybackOptions,
+    PlaybackWarning, Profile, ScoreTime, VOLUME_CONTROLLER, perform,
 };
 use opentab_testkit::arb_score;
 use proptest::prelude::*;
@@ -134,18 +134,20 @@ fn chased(performance: &Performance, track: usize, at: ScoreTime) -> Vec<Channel
     states.into_iter().map(|(_, state)| state).collect()
 }
 
-fn check(score: &Score, profile: Profile) -> Result<bool, TestCaseError> {
+fn check(score: &Score, profile: Profile) -> Result<(), TestCaseError> {
     let options = PlaybackOptions { profile };
     let performance = match perform(score, &options) {
         Ok(performance) => performance,
-        Err(PlaybackError::TimeOverflow) => return Ok(false),
-        Err(other) => return Err(TestCaseError::fail(format!("{other:?}"))),
+        Err(error) => return Err(TestCaseError::fail(format!("{error:?}"))),
     };
     prop_assert_eq!(&performance, &perform(score, &options).expect("second run"));
     for pair in performance.events.windows(2) {
         prop_assert!(pair[0].at <= pair[1].at && pair[0].seq < pair[1].seq);
     }
     paired(&performance)?;
+    if profile == Profile::Musical {
+        shared_only_with_fallback(score, &performance)?;
+    }
     for (index, track) in score.tracks.iter().enumerate() {
         let setup = &performance.tracks[index];
         if track.instrument.kind == InstrumentKind::Percussion {
@@ -170,7 +172,7 @@ fn check(score: &Score, profile: Profile) -> Result<bool, TestCaseError> {
         performance.clicks.len(),
         opentab_playback::beat_grid(score, &performance.order).len()
     );
-    Ok(true)
+    Ok(())
 }
 
 fn shared_only_with_fallback(
@@ -401,15 +403,15 @@ proptest! {
 }
 
 #[test]
-fn most_generated_scores_perform() {
+fn every_generated_score_performs() {
     let mut runner = proptest::test_runner::TestRunner::deterministic();
     let mut performed = 0;
-    let cases = 64;
+    let cases = 512;
     for _ in 0..cases {
         let score = arb_score().new_tree(&mut runner).expect("tree").current();
         if perform(&score, &PlaybackOptions::default()).is_ok() {
             performed += 1;
         }
     }
-    assert!(performed * 10 >= cases * 9, "{performed} of {cases}");
+    assert!(performed == cases, "{performed} of {cases}");
 }

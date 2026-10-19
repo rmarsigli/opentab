@@ -4,6 +4,8 @@ const META: u8 = 0xff;
 const SYSEX: u8 = 0xf0;
 const SYSEX_END: u8 = 0xf7;
 const TEMPO: u8 = 0x51;
+const TIME_SIGNATURE: u8 = 0x58;
+const KEY_SIGNATURE: u8 = 0x59;
 const STATUS_BIT: u8 = 0x80;
 const KIND_MASK: u8 = 0xf0;
 const CHANNEL_MASK: u8 = 0x0f;
@@ -24,6 +26,8 @@ pub enum SmfKind {
     Program { program: u8 },
     PitchBend { value: u16 },
     Tempo { micros: u32 },
+    TimeSignature { numerator: u8, denominator: u8 },
+    KeySignature { accidentals: i8, minor: bool },
     Other,
 }
 
@@ -100,12 +104,19 @@ pub fn read_smf(bytes: &[u8]) -> Smf {
                 let kind = cursor.byte();
                 let size = usize::try_from(cursor.quantity()).expect("size");
                 let data = cursor.take(size);
-                let event = if kind == TEMPO {
-                    SmfKind::Tempo {
+                let event = match kind {
+                    TEMPO => SmfKind::Tempo {
                         micros: u32::try_from(big(data)).expect("tempo"),
-                    }
-                } else {
-                    SmfKind::Other
+                    },
+                    TIME_SIGNATURE => SmfKind::TimeSignature {
+                        numerator: data[0],
+                        denominator: 1 << data[1],
+                    },
+                    KEY_SIGNATURE => SmfKind::KeySignature {
+                        accidentals: i8::from_be_bytes([data[0]]),
+                        minor: data[1] != 0,
+                    },
+                    _ => SmfKind::Other,
                 };
                 events.push(SmfEvent {
                     tick,

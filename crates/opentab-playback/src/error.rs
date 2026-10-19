@@ -12,4 +12,6 @@ pub enum PlaybackError {
     NegativeTime,
     #[error("the play order names a bar the score does not have")]
     OrderMismatch,
+    #[error("the performance holds more events than a 32-bit sequence number counts")]
+    TooManyEvents,
 }
