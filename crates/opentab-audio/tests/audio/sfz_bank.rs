@@ -4,13 +4,14 @@ use opentab_audio::{SampleRate, SfzBank, encode_wav, full_length, render_frames}
 use opentab_gp::read_gp;
 use opentab_playback::Profile;
 
-use crate::support::{bank_voices, performance, root, wav_hash};
+use crate::support::{bank_voices, built_in_voices, performance, root, wav_hash};
 
 const BANK_VARIABLE: &str = "OPENTAB_SFZ";
 const SCORES_VARIABLE: &str = "OPENTAB_SFZ_SCORES";
 const OUT_VARIABLE: &str = "OPENTAB_SFZ_OUT";
 const DEFAULT_SCORE: &str = "fixtures/gp/note-effects.gp";
 const LIMIT_MS: u32 = 40_000;
+const REAL_BANK_WINDOW_DB: f64 = 3.0;
 const BLOCK_FRAMES: usize = 2_400;
 const ACTIVE_FLOOR_DB: f64 = -60.0;
 
@@ -115,4 +116,27 @@ fn a_real_sfz_bank_renders_scores_for_listening() {
         );
     }
     assert!(bank.faults().is_empty(), "{:?}", bank.faults());
+    let reference = performance(
+        &read_gp(&std::fs::read(root().join(DEFAULT_SCORE)).expect("score")).expect("parse"),
+        Profile::Musical,
+    );
+    let frames = full_length(&reference, rate).expect("length");
+    let sfz = render_frames(
+        &reference,
+        bank_voices(&bank, &reference, rate),
+        rate,
+        frames,
+    )
+    .expect("render");
+    let built_in =
+        render_frames(&reference, built_in_voices(&reference, rate), rate, frames).expect("render");
+    let sfz_level = median_active_db(&sfz.left);
+    let built_in_level = median_active_db(&built_in.left);
+    println!(
+        "note-effects median active: SFZ {sfz_level:.1} dBFS, built-in {built_in_level:.1} dBFS"
+    );
+    assert!(
+        (sfz_level - built_in_level).abs() <= REAL_BANK_WINDOW_DB,
+        "SFZ {sfz_level:.1} dBFS against built-in {built_in_level:.1} dBFS"
+    );
 }

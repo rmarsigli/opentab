@@ -26,7 +26,7 @@ const BEND_SPAN: f64 = 8192.0;
 const MAX_LEVEL: f32 = 127.0;
 const PAN_CENTRE: f32 = 64.0;
 const PAN_LEFT_SPAN: f32 = 63.0;
-pub const SFZ_MASTER_GAIN: f32 = 1.0;
+pub const SFZ_MASTER_GAIN: f32 = 2.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ChannelSfz {

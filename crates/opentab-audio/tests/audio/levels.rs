@@ -130,6 +130,7 @@ fn the_limiter_passes_quiet_audio_and_never_reaches_full_scale() {
 
 const PARITY_FIXTURES: [&str; 2] = ["note-effects.gp", "multi-track.gp"];
 const PARITY_WINDOW_DB: f64 = 6.0;
+const SFZ_PARITY_WINDOW_DB: f64 = 3.0;
 
 #[test]
 fn the_tiny_sf2_sits_within_a_fixed_window_of_the_built_in_level() {
@@ -163,7 +164,7 @@ fn the_tiny_sfz_sits_within_a_fixed_window_of_the_built_in_level() {
         let level = loudness(&sfz.left, &sfz.right);
         println!("{name}: built-in {reference:.1} dBFS, tiny SFZ {level:?}");
         assert!(
-            (level.median_active_db - reference).abs() <= PARITY_WINDOW_DB,
+            (level.median_active_db - reference).abs() <= SFZ_PARITY_WINDOW_DB,
             "{name}: tiny SFZ {:.1} dBFS against built-in {reference:.1} dBFS",
             level.median_active_db
         );
