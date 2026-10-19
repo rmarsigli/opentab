@@ -38,7 +38,8 @@ pub use ids::{
 };
 pub use json::{check_sound_overrides, from_json, to_json};
 pub use master_bar::{
-    KeySignature, Marker, MasterBar, Tempo, TempoChange, TempoUnit, TimeSignature,
+    KeySignature, Marker, MasterBar, TRIPLET_FEELS, Tempo, TempoChange, TempoUnit, TimeSignature,
+    TripletFeel,
 };
 pub use midi::{
     AUTOMATION_GRID, Automation, AutomationValue, Balance, InstrumentFamily, InstrumentSet, Level,

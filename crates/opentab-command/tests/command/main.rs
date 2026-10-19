@@ -19,6 +19,7 @@ mod restore_rules;
 mod staff;
 mod support;
 mod tempo;
+mod triplet_feel;
 mod undoable;
 mod voice;
 mod whammy_trill;

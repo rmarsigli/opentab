@@ -1,15 +1,15 @@
 use opentab_model::{
     AutomationValue, Balance, BendPoint, Directions, DrumArticulation, DrumKit, Fraction,
     InstrumentSet, KeySignature, Level, MidiBank, NoteKind, Pitch, TimeSignature, TremoloBar,
-    TrillSpeed,
+    TrillSpeed, TripletFeel,
 };
 
 use crate::codes::{
     DIRECTION_JUMP, DIRECTION_JUMPS, DIRECTION_TARGET, DIRECTION_TARGETS, DRUM_ARTICULATION,
     DRUM_ARTICULATION_FIELDS, DRUM_ELEMENT, DRUM_ELEMENT_FIELDS, DRUM_ELEMENTS, INSTRUMENT_SETS,
     PAN_AUTOMATION, PAN_PARAMETER, SOUND_AUTOMATION, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS,
-    TECHNIQUE_PLACEMENTS, TEMPO_POSITION_GRID, TRILL_SPEED, TRILL_SPEEDS, VOLUME_AUTOMATION,
-    VOLUME_PARAMETER, WHAMMY_ATTRIBUTES, name_of,
+    TECHNIQUE_PLACEMENTS, TEMPO_POSITION_GRID, TRILL_SPEED, TRILL_SPEEDS, TRIPLET_FEEL,
+    TRIPLET_FEELS, VOLUME_AUTOMATION, VOLUME_PARAMETER, WHAMMY_ATTRIBUTES, name_of,
 };
 use crate::dom::{self, Element, Node};
 use crate::guard::PitchInputs;
@@ -73,6 +73,10 @@ pub(crate) fn gp_revision() -> Element {
     Element::leaf(GP_REVISION, REVISION)
         .with_attribute("required", REVISION_REQUIRED)
         .with_attribute("recommended", REVISION_RECOMMENDED)
+}
+
+pub(crate) fn triplet_feel(feel: TripletFeel) -> Option<Element> {
+    (feel != TripletFeel::None).then(|| Element::leaf(TRIPLET_FEEL, name_of(TRIPLET_FEELS, feel)))
 }
 
 pub(crate) fn directions(directions: &Directions) -> Option<Element> {

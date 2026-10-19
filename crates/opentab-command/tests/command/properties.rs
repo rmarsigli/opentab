@@ -12,7 +12,7 @@ const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 512;
 const SHIFTS: [usize; 4] = [0, 1, 2, usize::MAX];
 const MIN_SUCCESS_RATIO: f64 = 0.2;
-const FORWARD_OPS: [&str; 23] = [
+const FORWARD_OPS: [&str; 24] = [
     "set_meta",
     "set_anacrusis",
     "insert_master_bar",
@@ -28,6 +28,7 @@ const FORWARD_OPS: [&str; 23] = [
     "set_trill",
     "set_tempo",
     "set_directions",
+    "set_triplet_feel",
     "set_tempo_linear",
     "pad_staff_bars",
     "trim_staff_bars",

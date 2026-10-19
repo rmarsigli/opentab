@@ -181,6 +181,9 @@ fn master_bar(
             &alternate_endings(master.alternate_endings),
         ));
     }
+    if let Some(feel) = canon::triplet_feel(master.triplet_feel) {
+        element.push(feel);
+    }
     if master.double_bar {
         element.push(Element::new("DoubleBar"));
     }

@@ -93,12 +93,11 @@ fn a_start_only_repeat_with_a_count_is_replayed() {
 
 #[test]
 fn unknown_master_bar_children_keep_their_position() {
-    let score = with_master_bar("<TripletFeel>Triplet8th</TripletFeel><Fermatas/>").read();
+    let score = with_master_bar("<Freeze>On</Freeze><Fermatas/>").read();
     assert_eq!(
         payloads(&score, master_bar(&score).id.0),
         vec![
-            "<Keep parent=\"\" index=\"2\"><TripletFeel>Triplet8th</TripletFeel></Keep>"
-                .to_string(),
+            "<Keep parent=\"\" index=\"2\"><Freeze>On</Freeze></Keep>".to_string(),
             "<Keep parent=\"\" index=\"3\"><Fermatas/></Keep>".to_string(),
         ]
     );

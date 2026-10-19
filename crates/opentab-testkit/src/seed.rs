@@ -1,8 +1,8 @@
 use opentab_model::{
     Balance, Base64Bytes, BeatEffects, Clef, ContainerEntry, DIRECTION_JUMPS, DIRECTION_TARGETS,
     Directions, Fraction, Grace, InstrumentKind, InstrumentSet, KeySignature, Level, MidiBank,
-    MidiChannel, NoteEffects, NoteValue, OpaquePayload, Pitch, ScoreMeta, TechniquePlacement,
-    Tempo, TempoUnit, TimeSignature, TrackMidi, Transpose,
+    MidiChannel, NoteEffects, NoteValue, OpaquePayload, Pitch, ScoreMeta, TRIPLET_FEELS,
+    TechniquePlacement, Tempo, TempoUnit, TimeSignature, TrackMidi, Transpose, TripletFeel,
 };
 use proptest::collection::vec;
 use proptest::option;
@@ -20,6 +20,7 @@ const MAX_TEMPO_CHANGES: usize = 2;
 const MAX_TARGETS: usize = 2;
 const MAX_JUMPS: usize = 2;
 const DIRECTIONS_RATE: f64 = 0.3;
+const TRIPLET_FEEL_RATE: f64 = 0.3;
 const MAX_STRINGS: usize = 8;
 const MAX_FRET: u8 = 24;
 const MAX_MIDI: u8 = 127;
@@ -237,6 +238,7 @@ pub struct MasterBarSeed {
     pub repeat_start: bool,
     pub repeat_end: Option<u8>,
     pub alternate_endings: u8,
+    pub triplet_feel: TripletFeel,
     pub double_bar: bool,
     pub marker: Option<MarkerSeed>,
     pub directions: Directions,
@@ -619,12 +621,18 @@ fn arb_directions() -> impl Strategy<Value = Directions> {
     option::weighted(DIRECTIONS_RATE, present).prop_map(Option::unwrap_or_default)
 }
 
+fn arb_triplet_feel() -> impl Strategy<Value = TripletFeel> {
+    option::weighted(TRIPLET_FEEL_RATE, select(TRIPLET_FEELS[1..].to_vec()))
+        .prop_map(Option::unwrap_or_default)
+}
+
 fn arb_master_bar_seed(gp_writable: bool) -> impl Strategy<Value = MasterBarSeed> {
     (
         arb_time_signature(),
         arb_key_signature(),
         (any::<bool>(), option::of(any::<u8>()), any::<u8>()),
         (
+            arb_triplet_feel(),
             any::<bool>(),
             option::of(
                 (arb_text_for(12, gp_writable), arb_text_for(3, gp_writable))
@@ -639,7 +647,7 @@ fn arb_master_bar_seed(gp_writable: bool) -> impl Strategy<Value = MasterBarSeed
                 time_signature,
                 key_signature,
                 (repeat_start, repeat_end, alternate_endings),
-                (double_bar, marker),
+                (triplet_feel, double_bar, marker),
                 directions,
                 tempo_changes,
             )| MasterBarSeed {
@@ -648,6 +656,7 @@ fn arb_master_bar_seed(gp_writable: bool) -> impl Strategy<Value = MasterBarSeed
                 repeat_start,
                 repeat_end,
                 alternate_endings,
+                triplet_feel,
                 double_bar,
                 marker,
                 directions,

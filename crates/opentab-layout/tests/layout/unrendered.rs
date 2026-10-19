@@ -1,7 +1,7 @@
 use opentab_layout::{BarRange, LayoutOptions, StaffMode, Unrendered};
 use opentab_model::{
     DirectionJump, DirectionTarget, Directions, ElementId, InstrumentKind, NoteKind, OpaquePayload,
-    Score,
+    Score, TripletFeel,
 };
 
 use crate::music::{build, measure, options, render};
@@ -394,6 +394,19 @@ fn typed_directions_are_reported_only_in_the_bars_shown() {
         "<Keep parent=\"\" index=\"2\" guard=\"directions:;\"><Directions><Jump>ToTheEnd</Jump></Directions></Keep>",
     );
     assert!(names(&opaque, &both).is_empty());
+}
+
+#[test]
+fn a_typed_triplet_feel_is_reported_only_in_the_bars_shown() {
+    let both = options(StaffMode::Both);
+    let mut felt = score(2);
+    felt.master_bars[1].triplet_feel = TripletFeel::DottedEighth;
+    assert_eq!(names(&felt, &both), vec!["triplet_feel"]);
+    let first = LayoutOptions {
+        bars: Some(BarRange { first: 0, last: 0 }),
+        ..LayoutOptions::default()
+    };
+    assert!(names(&felt, &first).is_empty());
 }
 
 #[test]

@@ -160,6 +160,7 @@ impl Sketch {
             repeat_start: false,
             repeat_end: None,
             alternate_endings: 0,
+            triplet_feel: Default::default(),
             double_bar: false,
             marker: None,
             directions: Directions::default(),

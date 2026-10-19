@@ -25,5 +25,6 @@ mod sharing;
 mod support;
 mod tempo;
 mod track;
+mod triplet_feel;
 mod whammy_trill;
 mod write;

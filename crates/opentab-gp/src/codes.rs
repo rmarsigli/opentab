@@ -1,6 +1,7 @@
 use opentab_model::{
     Accent, Clef, DirectionJump, DirectionTarget, Dynamic, Finger, Grace, HarmonicKind,
-    InstrumentSet, NoteValue, Slide, StrokeDirection, TechniquePlacement, TempoUnit, Vibrato,
+    InstrumentSet, NoteValue, Slide, StrokeDirection, TechniquePlacement, TempoUnit, TripletFeel,
+    Vibrato,
 };
 
 pub(crate) type Table<T> = [(&'static str, T)];
@@ -184,6 +185,18 @@ pub(crate) const NOTE_ORDER: [&str; 11] = [
     "Properties",
     "XProperties",
 ];
+
+pub(crate) const TRIPLET_FEELS: &Table<TripletFeel> = &[
+    ("None", TripletFeel::None),
+    ("Triplet8th", TripletFeel::TripletEighth),
+    ("Triplet16th", TripletFeel::TripletSixteenth),
+    ("Dotted8th", TripletFeel::DottedEighth),
+    ("Dotted16th", TripletFeel::DottedSixteenth),
+    ("Scottish8th", TripletFeel::ScottishEighth),
+    ("Scottish16th", TripletFeel::ScottishSixteenth),
+];
+
+pub(crate) const TRIPLET_FEEL: &str = "TripletFeel";
 
 pub(crate) const DIRECTION_TARGET: &str = "Target";
 pub(crate) const DIRECTION_JUMP: &str = "Jump";

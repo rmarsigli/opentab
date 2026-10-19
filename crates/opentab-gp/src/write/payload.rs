@@ -253,6 +253,7 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
         ("repeat", Env::MasterBar(bar)) => guard::repeat(bar.repeat_start, bar.repeat_end),
         ("minor", Env::MasterBar(bar)) => guard::minor(bar.key_signature.minor()),
         ("directions", Env::MasterBar(bar)) => guard::directions(&bar.directions),
+        ("triplet-feel", Env::MasterBar(bar)) => guard::triplet_feel(bar.triplet_feel),
         ("tempo-position", Env::Tempo(tempo, time)) => guard::tempo_position(tempo.position, *time),
         ("tempo-linear", Env::Tempo(tempo, time)) => {
             guard::tempo_linear(tempo.position, *time, tempo.linear)

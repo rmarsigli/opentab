@@ -3,8 +3,9 @@ use opentab_model::{
     Automation, AutomationValue, Balance, BarId, Beat, BeatId, BeatPath, BendPoint,
     DIRECTION_JUMPS, DIRECTION_TARGETS, Directions, DrumKit, Duration, ElementId, Fraction,
     InstrumentKind, Level, MasterBarId, MidiBank, MidiChannel, Note, NoteEffects, NoteId, NoteKind,
-    NoteValue, Score, Sound, SoundRef, StaffId, Tempo, TempoChange, TempoUnit, TimeSignature,
-    TrackId, TrackMidi, TremoloBar, Trill, TrillSpeed, Tuplet, VoiceId, VoiceSlot, gm_drum_kit,
+    NoteValue, Score, Sound, SoundRef, StaffId, TRIPLET_FEELS, Tempo, TempoChange, TempoUnit,
+    TimeSignature, TrackId, TrackMidi, TremoloBar, Trill, TrillSpeed, TripletFeel, Tuplet, VoiceId,
+    VoiceSlot, gm_drum_kit,
 };
 use opentab_testkit::arb_score;
 use proptest::collection::vec;
@@ -118,6 +119,10 @@ pub enum Step {
     SetDirections {
         master_bar: Pick,
         directions: Directions,
+    },
+    SetTripletFeel {
+        master_bar: Pick,
+        triplet_feel: TripletFeel,
     },
     SetTempoLinear {
         master_bar: Pick,
@@ -572,6 +577,13 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
             master_bar: existing_index(*master_bar, master_bars),
             directions: directions.clone(),
         },
+        Step::SetTripletFeel {
+            master_bar,
+            triplet_feel,
+        } => Command::SetTripletFeel {
+            master_bar: existing_index(*master_bar, master_bars),
+            triplet_feel: *triplet_feel,
+        },
         Step::SetTempoLinear {
             master_bar,
             index,
@@ -823,6 +835,12 @@ fn arb_step() -> impl Strategy<Value = Step> {
         (arb_pick(), arb_directions()).prop_map(|(master_bar, directions)| Step::SetDirections {
             master_bar,
             directions
+        }),
+        (arb_pick(), select(TRIPLET_FEELS.to_vec())).prop_map(|(master_bar, triplet_feel)| {
+            Step::SetTripletFeel {
+                master_bar,
+                triplet_feel,
+            }
         }),
         (arb_pick(), arb_pick(), any::<bool>()).prop_map(|(master_bar, index, linear)| {
             Step::SetTempoLinear {

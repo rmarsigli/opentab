@@ -7,7 +7,8 @@ use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
     BarId, Beat, BeatId, BendPoint, DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump,
     DirectionTarget, Directions, DrumKit, Duration, ElementId, IdAllocator, InstrumentKind, NoteId,
-    NoteKind, NoteValue, Score, TimeSignature, TremoloBar, Trill, TrillSpeed, VoiceId,
+    NoteKind, NoteValue, Score, TRIPLET_FEELS, TimeSignature, TremoloBar, Trill, TrillSpeed,
+    TripletFeel, VoiceId,
 };
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -50,6 +51,7 @@ enum Op {
     SetFret,
     SetTempo,
     SetDirections,
+    SetTripletFeel,
     SetTempoLinear,
     SetTremoloBar,
     SetTrill,
@@ -57,7 +59,7 @@ enum Op {
     TrimStaffBars,
 }
 
-const OPS: [Op; 19] = [
+const OPS: [Op; 20] = [
     Op::SetMeta,
     Op::SetAnacrusis,
     Op::InsertMasterBar,
@@ -72,6 +74,7 @@ const OPS: [Op; 19] = [
     Op::SetFret,
     Op::SetTempo,
     Op::SetDirections,
+    Op::SetTripletFeel,
     Op::SetTempoLinear,
     Op::SetTremoloBar,
     Op::SetTrill,
@@ -79,7 +82,7 @@ const OPS: [Op; 19] = [
     Op::TrimStaffBars,
 ];
 
-const FORWARD_OPS: [&str; 18] = [
+const FORWARD_OPS: [&str; 19] = [
     "set_meta",
     "set_anacrusis",
     "insert_master_bar",
@@ -93,6 +96,7 @@ const FORWARD_OPS: [&str; 18] = [
     "set_fret",
     "set_tempo",
     "set_directions",
+    "set_triplet_feel",
     "set_tempo_linear",
     "set_tremolo_bar",
     "set_trill",
@@ -283,6 +287,10 @@ fn resolve(edit: Edit, score: &Score) -> Command {
             master_bar: at % bars.max(1),
             directions: directions(value),
         },
+        Op::SetTripletFeel => Command::SetTripletFeel {
+            master_bar: at % bars.max(1),
+            triplet_feel: TRIPLET_FEELS[usize::from(value) % TRIPLET_FEELS.len()],
+        },
         Op::SetTempoLinear => Command::SetTempoLinear {
             master_bar: at % bars.max(1),
             index: usize::from(value % 2),
@@ -330,6 +338,7 @@ fn op_name(command: &Command) -> String {
         Command::SetFret { .. } => "set_fret",
         Command::SetTempo { .. } => "set_tempo",
         Command::SetDirections { .. } => "set_directions",
+        Command::SetTripletFeel { .. } => "set_triplet_feel",
         Command::SetTempoLinear { .. } => "set_tempo_linear",
         Command::SetTremoloBar { .. } => "set_tremolo_bar",
         Command::SetTrill { .. } => "set_trill",
@@ -884,6 +893,14 @@ fn corpus_edits(score: &Score, history: &mut History, edited: &mut Score) -> Vec
         edited,
         history,
     );
+    run(
+        Command::SetTripletFeel {
+            master_bar: edited.master_bars.len() / 3,
+            triplet_feel: TripletFeel::DottedSixteenth,
+        },
+        edited,
+        history,
+    );
     let drums = edited
         .tracks
         .iter()
@@ -993,6 +1010,7 @@ fn corpus_examples_survive_edits_and_undo() {
         "remove_note",
         "remove_master_bar",
         "set_directions",
+        "set_triplet_feel",
         "set_drum_kit",
     ] {
         assert!(

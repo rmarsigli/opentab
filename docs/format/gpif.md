@@ -316,6 +316,7 @@ So the `gp` playback profile does not ramp: it holds each tempo constant until t
 - `AlternateEndings` lists the ending numbers that cover this bar. The corpus only has single values (1 or 2).
 - `Section` is a rehearsal mark: a letter and a text. Either may be empty. The letter is the mark shown beside the text.
 - `DoubleBar` marks a double bar line at the end of the bar.
+- `TripletFeel` swings the bar: `Triplet8th`, `Triplet16th`, `Dotted8th`, `Dotted16th`, `Scottish8th` or `Scottish16th`. GP8 opened a file of ours with each name and re-saved it unchanged [m3-t11-probe]. The corpus holds 177 bars with `Triplet8th` in 6 files and no other name. GP's MIDI export plays the swing (§17).
 - `Directions` holds segno and coda targets and jumps such as `DaCoda`, `DaSegno` and `DaSegnoAlCoda`; see §6.1.
 - Child order, as GP writes it: `Key`, `Time`, `Repeat`, `Section`, `AlternateEndings`, `TripletFeel`, `DoubleBar`, `Directions`, `Bars`, `XProperties`. No pair of master bar children breaks that order in the 1 260 master bars of the corpus. `Fermatas` comes after `Time` and before `Bars`; it never shares a bar with `Repeat`, `Section`, `AlternateEndings`, `TripletFeel`, `DoubleBar` or `Directions`.
 
@@ -570,6 +571,7 @@ Notation used in this table:
 | `marker.text` | `Section/Text` | — |
 | `marker.letter` | `Section/Letter` | — |
 | `double_bar` | `DoubleBar` present | — |
+| `triplet_feel` | `TripletFeel`: `Triplet8th` → `triplet_eighth`, `Triplet16th` → `triplet_sixteenth`, `Dotted8th` → `dotted_eighth`, `Dotted16th` → `dotted_sixteenth`, `Scottish8th` → `scottish_eighth`, `Scottish16th` → `scottish_sixteenth`; absent → `none` | Written after `AlternateEndings` and before `DoubleBar`; no element for `none`. Any other form (`None`, an unknown name, padded text) is read for its known name and replayed whole under a guard while the feel is unchanged (§11.1). |
 | `directions.targets` | `Directions/Target`, in order: `Segno`, `SegnoSegno`, `Coda`, `DoubleCoda`, `Fine` (§6.1) | snake_case in JSON (`segno_segno`). |
 | `directions.jumps` | `Directions/Jump`, in order: the 14 names of §6.1 | snake_case in JSON (`da_segno_al_coda`). The writer emits the targets, then the jumps, after `DoubleBar` and before `Bars`; no element when both are empty. A `Directions` element in any other form (jumps before targets, an unknown name, an attribute, padded text, an empty element) is read for its known names and replayed whole while the directions are unchanged (§11.1). |
 | `tempo_changes[].position` | `Automation[Type=Tempo][Bar=index]/Position` × bar length | The model counts every position (tempo changes and automations alike) in **whole notes from the start of its master bar** (`WholeNotes`); a tempo `Position` is a fraction of the bar, proven by the `tempo` golden's `export.mid` (§5). It is written with six significant digits, or more when six do not bring back its 1/3840 tick. |
@@ -673,7 +675,8 @@ These stay as opaque payloads of their owner, or of the score:
   - the `SyncPoint` automations;
   - the tempo automation's `Visible` and `Text`, a `Linear` that is not `true`, and the original text of its `Position`.
 - **MasterBar:**
-  - `Key/TransposeAs`, `Fermatas`, `TripletFeel`;
+  - `Key/TransposeAs`, `Fermatas`;
+  - a `TripletFeel` element that is not in the writer's form, replayed whole under a guard (§10);
   - `XProperties`;
   - a `Directions` element that is not in the writer's form, replayed whole under a guard (§10);
   - a repeat count on a start-only repeat.

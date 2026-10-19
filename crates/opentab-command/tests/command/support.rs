@@ -44,6 +44,7 @@ pub fn master_bar(score: &mut Score, bpm: Option<f64>) -> MasterBar {
         repeat_start: false,
         repeat_end: None,
         alternate_endings: 0,
+        triplet_feel: Default::default(),
         double_bar: false,
         marker: None,
         directions: Directions::default(),

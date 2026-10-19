@@ -1,12 +1,12 @@
 use opentab_model::{
     Directions, Fraction, KeySignature, Marker, MasterBar, MasterBarId, Tempo, TempoChange,
-    TempoUnit, TimeSignature,
+    TempoUnit, TimeSignature, TripletFeel,
 };
 
 use crate::canon;
 use crate::codes::{
     DIRECTION_JUMP, DIRECTION_JUMPS, DIRECTION_TARGET, DIRECTION_TARGETS, MINOR,
-    TEMPO_POSITION_GRID, TEMPO_UNITS, lookup,
+    TEMPO_POSITION_GRID, TEMPO_UNITS, TRIPLET_FEEL, TRIPLET_FEELS, lookup,
 };
 use crate::dom::{Element, Node};
 use crate::error::GpifProblem;
@@ -71,6 +71,7 @@ fn read_master_bar(
     let mut double_bar = false;
     let mut marker = None;
     let mut directions = Directions::default();
+    let mut triplet_feel = TripletFeel::None;
     let mut bars = None;
     ctx.visit(&scope, element, |ctx, visit| {
         match visit.key.as_str() {
@@ -79,6 +80,10 @@ fn read_master_bar(
             "Repeat" => return read_repeat(visit, &mut repeat),
             "Section" => marker = Some(read_section(ctx, &scope.enter(visit), visit.element)?),
             "AlternateEndings" => alternate_endings = read_alternate_endings(visit)?,
+            TRIPLET_FEEL => {
+                triplet_feel = lookup(TRIPLET_FEELS, &visit.text()).unwrap_or_default();
+                return Ok(triplet_feel_handled(visit.element, triplet_feel));
+            }
             "DoubleBar" => double_bar = true,
             "Directions" => {
                 directions = read_directions(visit.element);
@@ -97,6 +102,7 @@ fn read_master_bar(
         repeat_start: repeat.start,
         repeat_end: repeat.end,
         alternate_endings,
+        triplet_feel,
         double_bar,
         marker,
         directions,
@@ -119,6 +125,14 @@ fn read_directions(element: &Element) -> Directions {
         }
     }
     directions
+}
+
+fn triplet_feel_handled(element: &Element, feel: TripletFeel) -> Handled {
+    if canon::triplet_feel(feel).as_ref() == Some(element) {
+        Handled::Mapped(&[])
+    } else {
+        Handled::Replayed(guard::triplet_feel(feel))
+    }
 }
 
 fn directions_handled(element: &Element, directions: &Directions) -> Handled {

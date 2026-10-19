@@ -152,6 +152,7 @@ impl Builder {
             repeat_start: seed.repeat_start,
             repeat_end: seed.repeat_end,
             alternate_endings: seed.alternate_endings,
+            triplet_feel: seed.triplet_feel,
             double_bar: seed.double_bar,
             marker: seed.marker.map(|marker| Marker {
                 text: marker.text,

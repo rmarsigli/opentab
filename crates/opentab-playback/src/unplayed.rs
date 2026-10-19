@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use opentab_model::{
     AutomationValue, Balance, Beat, InstrumentKind, Level, MidiBank, Note, Score, Track,
+    TripletFeel,
 };
 
 use crate::ScoreTime;
@@ -110,21 +111,6 @@ impl Catalogue {
             })
             .collect()
     }
-}
-
-const TRIPLET_FEEL: &str = "<TripletFeel>";
-const NO_TRIPLET_FEEL: &str = "<TripletFeel>None</TripletFeel>";
-
-fn triplet_feel(score: &Score, bar: &opentab_model::MasterBar) -> bool {
-    score
-        .extensions
-        .0
-        .get(&bar.id.0)
-        .into_iter()
-        .flatten()
-        .any(|payload| {
-            payload.data.contains(TRIPLET_FEEL) && !payload.data.contains(NO_TRIPLET_FEEL)
-        })
 }
 
 pub(crate) fn bend_below_pitch(note: &Note) -> bool {
@@ -244,7 +230,7 @@ fn track_kinds(score: &Score, track: &Track) -> Vec<(UnplayedKind, usize)> {
 pub(crate) fn catalogue(score: &Score, profile: Profile) -> Vec<UnplayedFeature> {
     let mut catalogue = Catalogue::default();
     for (bar, master_bar) in score.master_bars.iter().enumerate() {
-        if triplet_feel(score, master_bar) {
+        if master_bar.triplet_feel != TripletFeel::None {
             catalogue.note(None, UnplayedKind::TripletFeel, bar);
         }
     }

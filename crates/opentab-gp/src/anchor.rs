@@ -254,6 +254,7 @@ mod tests {
                 repeat_start: spec.start,
                 repeat_end: spec.end,
                 alternate_endings: spec.endings,
+                triplet_feel: Default::default(),
                 double_bar: false,
                 marker: None,
                 directions: Directions::default(),

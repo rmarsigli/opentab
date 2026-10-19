@@ -10,12 +10,12 @@ use crate::inventory::{
 };
 use opentab_model::{
     Accent, AutomationValue, Clef, Diagnostic, Dynamic, Fraction, InstrumentKind, Score, TempoUnit,
-    diagnose, from_json, to_json,
+    TripletFeel, diagnose, from_json, to_json,
 };
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
-const EXPECTED_TOTALS: [(&str, usize); 44] = [
+const EXPECTED_TOTALS: [(&str, usize); 46] = [
     ("tracks", 64),
     ("master_bars", 1260),
     ("bars", 2392),
@@ -56,6 +56,8 @@ const EXPECTED_TOTALS: [(&str, usize); 44] = [
     ("jump_da_segno", 1),
     ("jump_da_segno_al_coda", 1),
     ("direction_payloads", 0),
+    ("triplet_feel_bars", 177),
+    ("triplet_feel_payloads", 0),
     ("drum_kits", 10),
     ("drum_elements", 540),
     ("drum_articulations", 950),
@@ -126,6 +128,22 @@ fn tally(score: &Score, totals: &mut BTreeMap<String, usize>) {
                     .count()
             });
         count(totals, "direction_payloads", replayed);
+        count(
+            totals,
+            "triplet_feel_bars",
+            usize::from(master_bar.triplet_feel != TripletFeel::None),
+        );
+        let kept_feel = score
+            .extensions
+            .0
+            .get(&master_bar.id.0)
+            .map_or(0, |payloads| {
+                payloads
+                    .iter()
+                    .filter(|payload| payload.data.contains("<TripletFeel"))
+                    .count()
+            });
+        count(totals, "triplet_feel_payloads", kept_feel);
     }
     for track in &score.tracks {
         if let Some(kit) = &track.drum_kit {

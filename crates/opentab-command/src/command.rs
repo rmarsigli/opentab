@@ -1,7 +1,7 @@
 use opentab_model::{
     Automation, Bar, BarId, Beat, BeatId, Directions, DrumKit, Duration, ElementId, MasterBar,
     Note, NoteId, OpaquePayload, SoundOverride, StaffId, TempoChange, TimeSignature, TrackId,
-    TrackMidi, TremoloBar, Trill, Voice, VoiceId,
+    TrackMidi, TremoloBar, Trill, TripletFeel, Voice, VoiceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -102,6 +102,10 @@ pub enum Command {
     SetDirections {
         master_bar: usize,
         directions: Directions,
+    },
+    SetTripletFeel {
+        master_bar: usize,
+        triplet_feel: TripletFeel,
     },
     PadStaffBars {
         track: TrackId,

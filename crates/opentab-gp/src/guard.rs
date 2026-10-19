@@ -1,13 +1,15 @@
 use opentab_model::{
     Accent, Bar, Beat, Bend, BendPoint, Clef, Directions, DrumKit, Dynamic, Finger, Fraction,
     Grace, Harmonic, InstrumentKind, InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap,
-    TimeSignature, TrackMidi, Transpose, TremoloBar, TremoloPicking, Trill, Vibrato, VoiceSlot,
+    TimeSignature, TrackMidi, Transpose, TremoloBar, TremoloPicking, Trill, TripletFeel, Vibrato,
+    VoiceSlot,
 };
 
 use crate::canon;
 use crate::codes::{
     CLEFS, DIRECTION_JUMPS, DIRECTION_TARGETS, DYNAMICS, FINGERS, GRACES, HARMONICS,
-    INSTRUMENT_SETS, NOTE_VALUES, STROKE_DIRECTIONS, TREMOLOS, VIBRATOS, name_of, slide_bits,
+    INSTRUMENT_SETS, NOTE_VALUES, STROKE_DIRECTIONS, TREMOLOS, TRIPLET_FEELS, VIBRATOS, name_of,
+    slide_bits,
 };
 
 use crate::dom::write_element;
@@ -337,4 +339,8 @@ pub(crate) fn directions(directions: &Directions) -> String {
         .map(|jump| name_of(DIRECTION_JUMPS, *jump))
         .collect();
     format!("directions:{};{}", targets.join(" "), jumps.join(" "))
+}
+
+pub(crate) fn triplet_feel(feel: TripletFeel) -> String {
+    format!("triplet-feel:{}", name_of(TRIPLET_FEELS, feel))
 }

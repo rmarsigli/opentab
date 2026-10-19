@@ -183,6 +183,31 @@ pub struct TempoChange {
     pub linear: bool,
 }
 
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TripletFeel {
+    #[default]
+    None,
+    TripletEighth,
+    TripletSixteenth,
+    DottedEighth,
+    DottedSixteenth,
+    ScottishEighth,
+    ScottishSixteenth,
+}
+
+pub const TRIPLET_FEELS: [TripletFeel; 7] = [
+    TripletFeel::None,
+    TripletFeel::TripletEighth,
+    TripletFeel::TripletSixteenth,
+    TripletFeel::DottedEighth,
+    TripletFeel::DottedSixteenth,
+    TripletFeel::ScottishEighth,
+    TripletFeel::ScottishSixteenth,
+];
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MasterBar {
@@ -192,6 +217,8 @@ pub struct MasterBar {
     pub repeat_start: bool,
     pub repeat_end: Option<u8>,
     pub alternate_endings: u8,
+    #[serde(default)]
+    pub triplet_feel: TripletFeel,
     pub double_bar: bool,
     pub marker: Option<Marker>,
     #[serde(default)]

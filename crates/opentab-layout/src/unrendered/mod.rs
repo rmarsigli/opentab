@@ -3,7 +3,7 @@ mod payload;
 use std::collections::{BTreeSet, HashSet};
 
 use opentab_model::{
-    Bar, Beat, ElementId, HarmonicKind, MasterBar, Note, NoteKind, Score, Staff, Track,
+    Bar, Beat, ElementId, HarmonicKind, MasterBar, Note, NoteKind, Score, Staff, Track, TripletFeel,
 };
 
 pub use payload::{
@@ -440,6 +440,10 @@ pub fn unrendered(score: &Score, selection: &Selection, pages: &[Page]) -> Vec<U
     for master in score.master_bars.iter().take(bars.1 + 1).skip(bars.0) {
         walk.element(master.id.0);
         walk.add(!master.directions.is_empty(), Unrendered::Directions);
+        walk.add(
+            master.triplet_feel != TripletFeel::None,
+            Unrendered::TripletFeel,
+        );
     }
     for index in &selection.tracks {
         let Some(track) = score.tracks.get(*index) else {

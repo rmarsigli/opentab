@@ -99,6 +99,10 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
             master_bar,
             directions,
         } => directions::set(score, *master_bar, directions),
+        Command::SetTripletFeel {
+            master_bar,
+            triplet_feel,
+        } => directions::set_triplet_feel(score, *master_bar, *triplet_feel),
         Command::RestoreTempoChanges {
             master_bar,
             tempo_changes,
