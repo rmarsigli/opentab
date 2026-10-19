@@ -5,7 +5,7 @@ use xtask::mutants::{
 };
 
 #[test]
-fn arguments_select_the_eight_crates_serially_with_a_timeout_and_target_output() {
+fn arguments_select_the_nine_crates_serially_with_a_timeout_and_target_output() {
     let output = output_dir(Path::new("/work"));
     let args = mutants_args(&output, None, false);
     let expected_output = Path::new("/work")
