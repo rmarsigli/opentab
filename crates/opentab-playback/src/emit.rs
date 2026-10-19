@@ -1,12 +1,21 @@
+use opentab_model::MidiBank;
+
 use crate::allocate::{ChannelAllocator, ChannelGrant};
+use crate::bends::BendEvent;
 use crate::channels::ChannelPool;
 use crate::controls::{MUTED_GUITAR_PROGRAM, Timeline};
 use crate::exact::Exact;
-use crate::midi::{
-    BEND_CENTRE, Channel, ChannelSetup, ChannelState, MidiMessage, NOTE_OFF_VELOCITY, TrackSetup,
-};
-use crate::notes::{Lane, Strand, Stream};
+use crate::midi::{BEND_CENTRE, Channel, ChannelSetup, ChannelState, MidiMessage, TrackSetup};
+use crate::notes::{Lane, Strand, Stream, Struck, restrike};
 use crate::{PlaybackError, PlaybackWarning, ScoreTime};
+
+#[derive(Debug, Clone, Copy)]
+struct Placed {
+    index: usize,
+    channel: Channel,
+    fallback: bool,
+    opening: Option<ChannelState>,
+}
 
 #[derive(Debug, Clone, Copy)]
 struct Hold {
@@ -64,17 +73,25 @@ impl Musical<'_> {
         ordered.sort();
         let mut allocator = ChannelAllocator::new(self.pool.clone());
         let mut holds: Vec<Hold> = Vec::new();
+        let mut placed: Vec<Placed> = Vec::with_capacity(ordered.len());
         for (start, track, index) in ordered {
             let Some(strand) = strands.get(index) else {
                 continue;
             };
             let end = strand.end();
-            let grant = allocator.request(track, time_of(start)?, time_of(end)?, strand.need());
+            let grant = allocator.request(track, time_of(start)?, time_of(end)?, strand.need())?;
             let shared = self.shared_channel(track);
-            let (channel, fallback) = match grant {
-                ChannelGrant::Shared => (shared, false),
-                ChannelGrant::Fallback => (shared, true),
+            let mut place = Placed {
+                index,
+                channel: shared,
+                fallback: false,
+                opening: None,
+            };
+            match grant {
+                ChannelGrant::Shared => {}
+                ChannelGrant::Fallback => place.fallback = true,
                 ChannelGrant::Allocated { channel, fresh } => {
+                    place.channel = channel;
                     if fresh {
                         let mut state = self
                             .timelines
@@ -83,11 +100,10 @@ impl Musical<'_> {
                             .unwrap_or_default();
                         if strand.muted {
                             state.program = MUTED_GUITAR_PROGRAM;
+                            state.bank = MidiBank::default();
                         }
                         state.bend = BEND_CENTRE;
-                        for message in opening(state) {
-                            stream.push(start, lane(track, strand.staff, channel), message);
-                        }
+                        place.opening = Some(state);
                         holds.push(Hold {
                             track,
                             channel,
@@ -110,42 +126,76 @@ impl Musical<'_> {
                     {
                         hold.until = hold.until.max(end);
                     }
-                    (channel, false)
                 }
+            }
+            placed.push(place);
+        }
+        let mut struck: Vec<Struck> = Vec::new();
+        let mut owners: Vec<usize> = Vec::new();
+        for (slot, place) in placed.iter().enumerate() {
+            for note in strands
+                .get(place.index)
+                .map_or(&[][..], |strand| &strand.notes)
+            {
+                struck.push(Struck {
+                    channel: place.channel,
+                    key: note.key,
+                    start: note.start,
+                    end: note.end,
+                    dropped: false,
+                });
+                owners.push(slot);
+            }
+        }
+        restrike(&mut struck);
+        let mut cut = struck.iter().zip(&owners);
+        for place in &placed {
+            let Some(strand) = strands.get(place.index) else {
+                continue;
             };
-            let strand_lane = lane(track, strand.staff, channel);
-            for bend in &strand.bends {
+            let track = strand.track;
+            let start = strand.start();
+            let strand_lane = lane(track, strand.staff, place.channel);
+            let mut bends: &[BendEvent] = &strand.bends;
+            if let Some(mut state) = place.opening {
+                if let Some(first) = bends.first().filter(|first| first.at == start) {
+                    state.bend = first.value;
+                    bends = &bends[1..];
+                }
+                for message in opening(state) {
+                    stream.push(start, strand_lane, message);
+                }
+            }
+            let mut end = start;
+            let mut notes: Vec<Struck> = Vec::with_capacity(strand.notes.len());
+            let mut velocities: Vec<u8> = Vec::with_capacity(strand.notes.len());
+            for note in &strand.notes {
+                let Some((kept, _)) = cut.next() else {
+                    continue;
+                };
+                if !kept.dropped {
+                    end = end.max(kept.end);
+                    notes.push(*kept);
+                    velocities.push(note.velocity);
+                }
+            }
+            for bend in bends.iter().filter(|bend| bend.at < end) {
                 stream.push(
                     bend.at,
                     strand_lane,
                     MidiMessage::PitchBend { value: bend.value },
                 );
             }
-            for note in &strand.notes {
-                if fallback {
+            for (note, velocity) in notes.iter().zip(velocities) {
+                if place.fallback {
                     warnings.push(PlaybackWarning::ChannelFallback {
                         track,
                         at: time_of(note.start)?,
                     });
                 }
-                stream.push(
-                    note.start,
-                    strand_lane,
-                    MidiMessage::NoteOn {
-                        key: note.key,
-                        velocity: note.velocity,
-                    },
-                );
-                stream.push(
-                    note.end,
-                    strand_lane,
-                    MidiMessage::NoteOff {
-                        key: note.key,
-                        velocity: NOTE_OFF_VELOCITY,
-                    },
-                );
+                stream.note(note.start, note.end, strand_lane, note.key, velocity);
             }
-            if fallback && !strand.bends.is_empty() {
+            if place.fallback && !strand.bends.is_empty() && !notes.is_empty() {
                 stream.push(
                     end,
                     strand_lane,

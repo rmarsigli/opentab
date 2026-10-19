@@ -148,6 +148,7 @@ fn check(score: &Score, profile: Profile) -> Result<(), TestCaseError> {
         prop_assert!(pair[0].at <= pair[1].at && pair[0].seq < pair[1].seq);
     }
     paired(&performance)?;
+    no_key_sounds_twice_on_a_channel(&performance)?;
     if profile == Profile::Musical {
         shared_only_with_fallback(score, &performance)?;
         bends_reach_only_their_own_note(&performance)?;
@@ -205,6 +206,31 @@ fn shared_only_with_fallback(
             );
         }
     }
+    Ok(())
+}
+
+fn no_key_sounds_twice_on_a_channel(performance: &Performance) -> Result<(), TestCaseError> {
+    let mut sounding: BTreeSet<(Channel, u8)> = BTreeSet::new();
+    for event in &performance.events {
+        match event.message {
+            MidiMessage::NoteOn { key, .. } => prop_assert!(
+                sounding.insert((event.channel, key)),
+                "key {} struck again on {:?} at {:?} while it sounds",
+                key,
+                event.channel,
+                event.at
+            ),
+            MidiMessage::NoteOff { key, .. } => prop_assert!(
+                sounding.remove(&(event.channel, key)),
+                "key {} released on {:?} at {:?} while silent",
+                key,
+                event.channel,
+                event.at
+            ),
+            _ => {}
+        }
+    }
+    prop_assert!(sounding.is_empty());
     Ok(())
 }
 
@@ -279,13 +305,15 @@ fn bends_reach_only_their_own_note(performance: &Performance) -> Result<(), Test
         if sounding(groups) < 2 {
             continue;
         }
-        let reported_own = groups.into_iter().flatten().any(|(group, opened)| {
-            group.track == event.track
-                && opened
-                    .starts
-                    .iter()
-                    .any(|start| fallbacks.contains(&(group.track, *start)))
-        });
+        let striking = fallbacks.contains(&(event.track, event.at));
+        let reported_own = striking
+            || groups.into_iter().flatten().any(|(group, opened)| {
+                group.track == event.track
+                    && opened
+                        .starts
+                        .iter()
+                        .any(|start| fallbacks.contains(&(group.track, *start)))
+            });
         prop_assert!(
             reported_own,
             "a bend at {:?} on {:?} reaches {} notes without a reported fallback",
@@ -484,15 +512,19 @@ proptest! {
         let mut builder = Builder::new(2);
         let track = builder.track(InstrumentKind::Fretted, &tuning, capo);
         let mut expected_drops = 0;
+        let mut unisons = 0;
         let mut total = 0;
         let mut specs = Vec::new();
         for notes in &beats {
             let mut chord = Vec::new();
+            let mut struck: BTreeSet<u16> = BTreeSet::new();
             for note in notes {
                 total += 1;
                 let pitch = u16::from(tuning[usize::from(note.string)]) + u16::from(capo) + u16::from(note.fret);
                 if pitch > u16::from(MAX_KEY) {
                     expected_drops += 1;
+                } else if !struck.insert(pitch) {
+                    unisons += 1;
                 }
                 chord.push(fretted(note.string, note.fret));
             }
@@ -507,7 +539,8 @@ proptest! {
             .filter(|warning| matches!(warning, PlaybackWarning::PitchOutOfRange { pitch, .. } if *pitch > u16::from(MAX_KEY)))
             .count();
         prop_assert_eq!(drops, expected_drops);
-        prop_assert_eq!(sounded.len() + drops, total);
+        prop_assert_eq!(sounded.len() + drops + unisons, total);
+        no_key_sounds_twice_on_a_channel(&performance)?;
     }
 }
 
@@ -665,6 +698,7 @@ proptest! {
         let performance = perform(&score, &options).expect("perform");
         prop_assert_eq!(&performance, &perform(&score, &options).expect("second run"));
         paired(&performance)?;
+        no_key_sounds_twice_on_a_channel(&performance)?;
         shared_only_with_fallback(&score, &performance)?;
         bends_reach_only_their_own_note(&performance)?;
         channels_are_set_up_only_while_idle(&performance)?;

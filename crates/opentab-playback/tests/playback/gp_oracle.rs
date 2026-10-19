@@ -231,6 +231,47 @@ fn expansion(notes: &[Note], bar_ticks: &[u64]) -> Vec<usize> {
     counts
 }
 
+pub fn restruck(notes: &[Note]) -> (Vec<Note>, bool) {
+    let mut order: Vec<usize> = (0..notes.len()).collect();
+    order.sort_by_key(|index| {
+        let onset = notes[*index].onset;
+        (onset.channel, onset.key, onset.tick, onset.track, *index)
+    });
+    let mut kept: Vec<Note> = notes.to_vec();
+    let mut dropped = vec![false; notes.len()];
+    let mut changed = false;
+    let mut previous: Option<usize> = None;
+    for index in order {
+        let current = kept[index].onset;
+        let Some(before) = previous.filter(|before| {
+            let earlier = kept[*before].onset;
+            earlier.channel == current.channel && earlier.key == current.key
+        }) else {
+            previous = Some(index);
+            continue;
+        };
+        let earlier = kept[before];
+        let end = earlier.onset.tick + earlier.length;
+        if end <= current.tick {
+            previous = Some(index);
+        } else if earlier.onset.tick == current.tick {
+            kept[before].length = earlier.length.max(kept[index].length);
+            dropped[index] = true;
+            changed = true;
+        } else {
+            kept[before].length = current.tick - earlier.onset.tick;
+            changed = true;
+            previous = Some(index);
+        }
+    }
+    let notes = kept
+        .into_iter()
+        .zip(dropped)
+        .filter_map(|(note, dropped)| (!dropped).then_some(note))
+        .collect();
+    (notes, changed)
+}
+
 fn compare_notes(context: &Context, ours: &Side, gp: &Side, verdict: &mut Verdict) {
     if !ours.unreleased.is_empty() || !ours.stray_offs.is_empty() {
         differ(
@@ -274,7 +315,12 @@ fn compare_notes(context: &Context, ours: &Side, gp: &Side, verdict: &mut Verdic
             ),
         );
     }
-    let mut theirs = gp.notes.clone();
+    let (mut theirs, cut) = restruck(&gp.notes);
+    if cut {
+        verdict
+            .used
+            .insert(named(|rule| matches!(rule, Rule::RestrikeCut)));
+    }
     mine.sort();
     theirs.sort();
     let counts = expansion(&mine, &context.bar_ticks);

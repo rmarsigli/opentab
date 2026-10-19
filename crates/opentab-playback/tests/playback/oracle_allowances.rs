@@ -32,6 +32,7 @@ pub enum Rule {
     OrderWithinTick,
     TrillAuxiliaryReleasedOnThePrincipal,
     CodaNeverReached,
+    RestrikeCut,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -65,7 +66,7 @@ const fn tempo_event(
     }
 }
 
-pub const ALLOWED_DIFFERENCES: [Allowance; 12] = [
+pub const ALLOWED_DIFFERENCES: [Allowance; 13] = [
     tempo_event(
         "tempo-1920-floor",
         FLOOR_REASON,
@@ -149,6 +150,11 @@ pub const ALLOWED_DIFFERENCES: [Allowance; 12] = [
         name: "coda-never-reached",
         reason: "when a To Coda lies on no played path, GP's export holds only the bars from the Coda on (gpif.md 5.1 rule 12, a GP defect); we play the whole order; no golden triggers it",
         rule: Rule::CodaNeverReached,
+    },
+    Allowance {
+        name: "restrike-cut",
+        reason: "GP lets one key sound twice on one channel (unison tracks or staves sharing a channel), which synths release together; we end the earlier note at the re-strike and keep one note for a same-tick unison (M3 Task 11 ruling I1), so GP's notes are compared after the same cut",
+        rule: Rule::RestrikeCut,
     },
 ];
 

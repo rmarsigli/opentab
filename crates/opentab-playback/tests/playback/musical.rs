@@ -5,8 +5,8 @@ use opentab_model::{
 };
 use opentab_playback::{
     BEND_CENTRE, Channel, ChannelAllocator, ChannelGrant, ChannelNeed, ChannelPool, MidiMessage,
-    PAN_CONTROLLER, PITCH_BEND_RANGE_RPN, Performance, PlaybackOptions, PlaybackWarning, Profile,
-    ScoreTime, UnplayedKind, VOLUME_CONTROLLER, perform, velocity_of,
+    PAN_CONTROLLER, PITCH_BEND_RANGE_RPN, Performance, PlaybackError, PlaybackOptions,
+    PlaybackWarning, Profile, ScoreTime, UnplayedKind, VOLUME_CONTROLLER, perform, velocity_of,
 };
 
 use crate::build::{BeatSpec, Builder, beat, beat_with, fretted, with};
@@ -374,7 +374,6 @@ fn slides_into_and_out_of_a_note_glide_in_score_time() {
         let channel = heard(&performance)[0].channel;
         let curve: Vec<(Fraction, u16)> = bends_on(&performance, channel)
             .into_iter()
-            .skip(1)
             .filter(|(at, _)| *at >= start)
             .collect();
         assert_eq!(
@@ -433,9 +432,7 @@ fn a_bend_plays_its_four_points_including_below_the_pitch() {
             .into_iter()
             .map(|(at, cents)| (at, value(cents)))
             .collect();
-        let found = bends_on(&performance, channel);
-        assert_eq!(found[0], (frac(0, 1), BEND_CENTRE));
-        assert_eq!(found[1..].to_vec(), expected, "{points:?}");
+        assert_eq!(bends_on(&performance, channel), expected, "{points:?}");
     }
 }
 
@@ -461,8 +458,7 @@ fn vibrato_swings_around_the_pitch_eight_times_per_sixteenth_in_score_time() {
             (frac(index, 128), value(cents))
         })
         .collect();
-    assert_eq!(found[0], (frac(0, 1), BEND_CENTRE));
-    assert_eq!(found[1..].to_vec(), expected);
+    assert_eq!(found, expected);
     let mut slow = builder.score.clone();
     slow.master_bars[0].tempo_changes = vec![crate::support::tempo(
         frac(0, 1),
@@ -639,7 +635,6 @@ fn a_bent_note_channel_gets_the_tracks_sound_and_later_automations() {
                 value: RANGE,
             },
             MidiMessage::PitchBend { value: BEND_CENTRE },
-            MidiMessage::PitchBend { value: BEND_CENTRE },
         ]
     );
     for target in [0, channel] {
@@ -687,12 +682,12 @@ fn sixteen_guitars_bending_together_exhaust_the_pool_and_report_the_fallback() {
         })
         .collect();
     let expected: Vec<(usize, ScoreTime)> = std::iter::once(15)
-        .chain(0..16)
+        .chain(0..15)
         .map(|track| (track, ScoreTime::ZERO))
         .collect();
     assert_eq!(fallbacks, expected);
     let heard = heard(&performance);
-    assert_eq!(heard.len(), 16);
+    assert_eq!(heard.len(), 15);
 }
 
 #[test]
@@ -703,12 +698,17 @@ fn the_allocator_shares_muted_groups_reuses_released_channels_and_falls_back() {
         pool.acquire(None);
     }
     let mut allocator = ChannelAllocator::new(pool);
-    let exclusive = ChannelNeed::Exclusive { muted: false };
+    let mut ask = |track, start: ScoreTime, end: ScoreTime, need| {
+        allocator
+            .request(track, start, end, need)
+            .expect("in order")
+    };
+    let exclusive = ChannelNeed::Exclusive;
     assert_eq!(
-        allocator.request(0, time(0, 1), time(1, 4), ChannelNeed::Shared),
+        ask(0, time(0, 1), time(1, 4), ChannelNeed::Shared),
         ChannelGrant::Shared
     );
-    let first = allocator.request(0, time(0, 1), time(1, 2), exclusive);
+    let first = ask(0, time(0, 1), time(1, 2), exclusive);
     let ChannelGrant::Allocated {
         channel,
         fresh: true,
@@ -716,7 +716,7 @@ fn the_allocator_shares_muted_groups_reuses_released_channels_and_falls_back() {
     else {
         panic!("{first:?}");
     };
-    let muted = allocator.request(0, time(0, 1), time(1, 4), ChannelNeed::Muted);
+    let muted = ask(0, time(0, 1), time(1, 4), ChannelNeed::Muted);
     let ChannelGrant::Allocated {
         channel: group,
         fresh: true,
@@ -725,24 +725,63 @@ fn the_allocator_shares_muted_groups_reuses_released_channels_and_falls_back() {
         panic!("{muted:?}");
     };
     assert_eq!(
-        allocator.request(0, time(1, 8), time(3, 8), ChannelNeed::Muted),
+        ask(0, time(1, 8), time(3, 8), ChannelNeed::Muted),
         ChannelGrant::Allocated {
             channel: group,
             fresh: false
         }
     );
     assert_eq!(
-        allocator.request(1, time(1, 8), time(1, 4), exclusive),
+        ask(1, time(1, 8), time(1, 4), exclusive),
         ChannelGrant::Fallback
     );
     assert_eq!(
-        allocator.request(1, time(1, 2), time(1, 1), exclusive),
+        ask(1, time(1, 2), time(1, 1), exclusive),
         ChannelGrant::Allocated {
             channel: channel.min(group),
             fresh: true
         }
     );
     assert_eq!(allocator.pool().free(), 1);
+    assert_eq!(
+        allocator.request(2, time(1, 4), time(1, 1), exclusive),
+        Err(PlaybackError::RequestOutOfOrder)
+    );
+}
+
+#[test]
+fn eight_guitars_with_two_bends_each_fill_the_free_channels_then_fall_back() {
+    let mut builder = Builder::new(1);
+    for _ in 0..8 {
+        let track = builder.guitar();
+        let bent = |string| {
+            with(fretted(string, 5), |effects| {
+                effects.bend = Some(bend([(0, 0), (50, 200), (50, 200), (100, 200)]));
+            })
+        };
+        builder.voice(
+            track,
+            0,
+            0,
+            vec![beat(NoteValue::Whole, vec![bent(2), bent(3)])],
+        );
+    }
+    let performance = musical(&builder);
+    let dedicated: std::collections::BTreeSet<u8> = heard(&performance)
+        .iter()
+        .map(|note| note.channel)
+        .filter(|channel| *channel >= 8)
+        .collect();
+    assert_eq!(
+        dedicated.into_iter().collect::<Vec<u8>>(),
+        vec![8, 10, 11, 12, 13, 14, 15]
+    );
+    let fallbacks = performance
+        .warnings
+        .iter()
+        .filter(|warning| matches!(warning, PlaybackWarning::ChannelFallback { .. }))
+        .count();
+    assert_eq!(fallbacks, 9);
 }
 
 #[test]
@@ -778,4 +817,95 @@ fn musical_lists_only_what_it_cannot_play() {
         .map(|feature| feature.kind)
         .collect();
     assert_eq!(kinds, vec![UnplayedKind::Tap]);
+}
+
+#[test]
+fn a_restrike_ends_the_earlier_note_of_the_same_key_on_its_channel() {
+    let ring = with(fretted(5, 5), |effects| effects.let_ring = true);
+    let builder = one_bar(vec![
+        beat(NoteValue::Quarter, vec![ring]),
+        beat(NoteValue::Quarter, vec![fretted(4, 0)]),
+        beat(NoteValue::Half, vec![fretted(0, 0)]),
+    ]);
+    let shape: Vec<(Fraction, Fraction, u8)> = heard_musical(&builder)
+        .iter()
+        .map(|note| (note.start, note.end, note.key))
+        .collect();
+    assert_eq!(
+        shape,
+        vec![
+            (frac(0, 1), frac(1, 4), 45),
+            (frac(1, 4), frac(1, 2), 45),
+            (frac(1, 2), frac(1, 1), 64),
+        ]
+    );
+    let muted = |note| with(note, |effects| effects.palm_mute = true);
+    let unison = one_bar(vec![beat(
+        NoteValue::Whole,
+        vec![muted(fretted(5, 5)), muted(fretted(4, 0))],
+    )]);
+    let heard = heard_musical(&unison);
+    assert_eq!(heard.len(), 1);
+    assert_eq!((heard[0].key, heard[0].end), (45, frac(3, 4)));
+}
+
+#[test]
+fn two_voices_in_unison_never_sound_one_key_twice_in_either_profile() {
+    let mut builder = one_bar(vec![beat(NoteValue::Whole, vec![fretted(2, 5)])]);
+    builder.voice(
+        0,
+        0,
+        1,
+        vec![
+            beat(NoteValue::Quarter, Vec::new()),
+            beat(NoteValue::Quarter, vec![fretted(1, 1)]),
+            beat(NoteValue::Half, Vec::new()),
+        ],
+    );
+    for options in [GP, MUSICAL] {
+        let performance = perform(&builder.score, &options).expect("perform");
+        let shape: Vec<(Fraction, Fraction, u8)> = heard(&performance)
+            .iter()
+            .map(|note| (note.start, note.end, note.key))
+            .collect();
+        assert_eq!(
+            shape,
+            vec![(frac(0, 1), frac(1, 4), 60), (frac(1, 4), frac(1, 2), 60)],
+            "{:?}",
+            options.profile
+        );
+    }
+}
+
+#[test]
+fn a_tie_from_a_swung_eighth_into_a_straight_sixteenth_sounds_once() {
+    let tied = |edit: Edit| with(fretted(0, 0), edit);
+    let mut builder = one_bar(vec![
+        beat(
+            NoteValue::Eighth,
+            vec![tied(|effects| effects.tie_origin = true)],
+        ),
+        beat(
+            NoteValue::Sixteenth,
+            vec![tied(|effects| effects.tie_destination = true)],
+        ),
+        beat(NoteValue::Sixteenth, vec![fretted(1, 0)]),
+        beat(NoteValue::Quarter, vec![fretted(1, 0)]),
+        beat(NoteValue::Half, vec![fretted(1, 0)]),
+    ]);
+    builder.score.master_bars[0].triplet_feel = opentab_model::TripletFeel::TripletEighth;
+    for options in [GP, MUSICAL] {
+        let performance = perform(&builder.score, &options).expect("perform");
+        let high: Vec<(Fraction, Fraction)> = heard(&performance)
+            .iter()
+            .filter(|note| note.key == 64)
+            .map(|note| (note.start, note.end))
+            .collect();
+        assert_eq!(
+            high,
+            vec![(frac(0, 1), frac(3, 16))],
+            "{:?}",
+            options.profile
+        );
+    }
 }

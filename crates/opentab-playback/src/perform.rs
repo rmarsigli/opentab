@@ -274,7 +274,7 @@ pub fn perform(score: &Score, options: &PlaybackOptions) -> Result<Performance, 
         }
         .emit(strands, &mut stream, &mut warnings, &mut tracks)?;
     }
-    let mut pending = stream.pending;
+    let mut pending = stream.finish();
     pending.sort_by(|left, right| {
         left.at
             .cmp(&right.at)

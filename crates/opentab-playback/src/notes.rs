@@ -48,12 +48,100 @@ pub(crate) struct Lane {
     pub(crate) channel: Channel,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Struck {
+    pub(crate) channel: Channel,
+    pub(crate) key: u8,
+    pub(crate) start: Exact,
+    pub(crate) end: Exact,
+    pub(crate) dropped: bool,
+}
+
+pub(crate) fn restrike(notes: &mut [Struck]) {
+    let mut order: Vec<usize> = (0..notes.len()).collect();
+    order.sort_by(|left, right| {
+        let (a, b) = (&notes[*left], &notes[*right]);
+        (a.channel, a.key, a.start, *left).cmp(&(b.channel, b.key, b.start, *right))
+    });
+    let mut previous: Option<usize> = None;
+    for index in order {
+        let current = notes[index];
+        let Some(before) = previous.filter(|before| {
+            let earlier = &notes[*before];
+            earlier.channel == current.channel && earlier.key == current.key
+        }) else {
+            previous = Some(index);
+            continue;
+        };
+        let earlier = notes[before];
+        if earlier.end <= current.start {
+            previous = Some(index);
+        } else if earlier.start == current.start {
+            notes[before].end = earlier.end.max(current.end);
+            notes[index].dropped = true;
+        } else {
+            notes[before].end = current.start;
+            previous = Some(index);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingNote {
+    struck: Struck,
+    lane: Lane,
+    velocity: u8,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct Stream {
-    pub(crate) pending: Vec<Pending>,
+    pending: Vec<Pending>,
+    notes: Vec<PendingNote>,
 }
 
 impl Stream {
+    pub(crate) fn note(&mut self, start: Exact, end: Exact, lane: Lane, key: u8, velocity: u8) {
+        self.notes.push(PendingNote {
+            struck: Struck {
+                channel: lane.channel,
+                key,
+                start,
+                end,
+                dropped: false,
+            },
+            lane,
+            velocity,
+        });
+    }
+
+    pub(crate) fn finish(mut self) -> Vec<Pending> {
+        let mut struck: Vec<Struck> = self.notes.iter().map(|note| note.struck).collect();
+        restrike(&mut struck);
+        let notes = std::mem::take(&mut self.notes);
+        for (note, struck) in notes.into_iter().zip(struck) {
+            if struck.dropped {
+                continue;
+            }
+            self.push(
+                struck.start,
+                note.lane,
+                MidiMessage::NoteOn {
+                    key: struck.key,
+                    velocity: note.velocity,
+                },
+            );
+            self.push(
+                struck.end,
+                note.lane,
+                MidiMessage::NoteOff {
+                    key: struck.key,
+                    velocity: NOTE_OFF_VELOCITY,
+                },
+            );
+        }
+        self.pending
+    }
+
     pub(crate) fn push(&mut self, at: Exact, lane: Lane, message: MidiMessage) {
         let order = self.pending.len();
         self.pending.push(Pending {
@@ -88,7 +176,7 @@ pub(crate) struct Strand {
 impl Strand {
     pub(crate) fn need(&self) -> ChannelNeed {
         if !self.bends.is_empty() {
-            ChannelNeed::Exclusive { muted: self.muted }
+            ChannelNeed::Exclusive
         } else if self.muted {
             ChannelNeed::Muted
         } else {
@@ -136,6 +224,7 @@ struct TieKey {
 struct OpenTie {
     sounding: usize,
     until: Exact,
+    written_until: Exact,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -158,6 +247,7 @@ struct OpenLink {
     sounding: usize,
     strand: usize,
     until: Exact,
+    written_until: Exact,
     origin: Window,
     base_key: u8,
     cents: i64,
@@ -168,6 +258,18 @@ struct Place {
     staff: usize,
     slot: u8,
     ties: bool,
+    written_start: Exact,
+    written_end: Exact,
+}
+
+impl Place {
+    fn at(self, span: Span) -> Result<Place, PlaybackError> {
+        Ok(Place {
+            written_start: span.start,
+            written_end: span.start.add(span.length)?,
+            ..self
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -354,21 +456,12 @@ impl<'a> TrackWriter<'a> {
             Profile::Gp => {
                 for sounding in &self.soundings {
                     let lane = self.lane(sounding.staff);
-                    stream.push(
+                    stream.note(
                         sounding.start,
-                        lane,
-                        MidiMessage::NoteOn {
-                            key: sounding.key,
-                            velocity: sounding.velocity,
-                        },
-                    );
-                    stream.push(
                         sounding.end,
                         lane,
-                        MidiMessage::NoteOff {
-                            key: sounding.key,
-                            velocity: NOTE_OFF_VELOCITY,
-                        },
+                        sounding.key,
+                        sounding.velocity,
                     );
                 }
                 Ok(TrackOutput {
@@ -471,6 +564,8 @@ impl<'a> TrackWriter<'a> {
             staff,
             slot: voice.slot.get(),
             ties: true,
+            written_start: Exact::ZERO,
+            written_end: Exact::ZERO,
         };
         let mut offset = Exact::ZERO;
         let mut graces: Vec<&Beat> = Vec::new();
@@ -489,7 +584,13 @@ impl<'a> TrackWriter<'a> {
                 start: onset.add(grace_shift)?,
                 length: length.sub(grace_shift)?,
             };
-            self.beat(beat, span, place, stream)?;
+            let written_start = bar_start.add(shift)?.add(offset)?;
+            let beat_place = Place {
+                written_start,
+                written_end: written_start.add(written)?,
+                ..place
+            };
+            self.beat(beat, span, beat_place, stream)?;
             offset = offset.add(written)?;
         }
         let end = bar_start.add(shift)?.add(offset)?;
@@ -532,13 +633,15 @@ impl<'a> TrackWriter<'a> {
         let mut at = onset.sub(total(&plan.before)?)?;
         for beat in &plan.before {
             let length = length_of(beat);
-            self.beat(beat, Span { start: at, length }, grace_place, stream)?;
+            let span = Span { start: at, length };
+            self.beat(beat, span, grace_place.at(span)?, stream)?;
             at = at.add(length)?;
         }
         let mut at = onset;
         for beat in &plan.on {
             let length = length_of(beat);
-            self.beat(beat, Span { start: at, length }, grace_place, stream)?;
+            let span = Span { start: at, length };
+            self.beat(beat, span, grace_place.at(span)?, stream)?;
             at = at.add(length)?;
         }
         let on_total = total(&plan.on)?;
@@ -580,7 +683,8 @@ impl<'a> TrackWriter<'a> {
                 span
             };
             if self.track.instrument.kind == InstrumentKind::Fretted {
-                for event in bend_events(note, sounding.start, sounding.length)? {
+                let window = self.gp_vibrato_window(place, note, key, sounding)?;
+                for event in bend_events(note, window.start, window.length)? {
                     stream.push(
                         event.at,
                         self.lane(place.staff),
@@ -603,6 +707,29 @@ impl<'a> TrackWriter<'a> {
             }
         }
         Ok(())
+    }
+
+    fn gp_vibrato_window(
+        &self,
+        place: Place,
+        note: &Note,
+        key: u8,
+        sounding: Span,
+    ) -> Result<Span, PlaybackError> {
+        if !place.ties || note.effects.vibrato.is_none() || note.effects.bend.is_some() {
+            return Ok(sounding);
+        }
+        let Some(merged) = self
+            .tie_of(place, note, key, sounding.start)
+            .and_then(|index| self.soundings.get(index))
+        else {
+            return Ok(sounding);
+        };
+        let end = sounding.start.add(sounding.length)?;
+        Ok(Span {
+            start: merged.start,
+            length: end.sub(merged.start)?,
+        })
     }
 
     fn pieces(
@@ -662,7 +789,9 @@ impl<'a> TrackWriter<'a> {
             });
             let open = string_key
                 .and_then(|found| self.links.remove(&found))
-                .filter(|open| open.until == span.start);
+                .filter(|open| {
+                    open.until == span.start || open.written_until == place.written_start
+                });
             let auxiliary = self.trill_key(note, span.start)?;
             let simple = auxiliary.is_none() && beat.effects.tremolo_picking.is_none();
             let tie = (place.ties && simple)
@@ -684,7 +813,9 @@ impl<'a> TrackWriter<'a> {
                 && open.link == Link::ShiftSlide
                 && fretted
             {
-                let target = (i64::from(key) - i64::from(open.base_key)) * CENTS_PER_SEMITONE;
+                let reach = i64::from(MUSICAL_BEND_RANGE) * CENTS_PER_SEMITONE;
+                let target = ((i64::from(key) - i64::from(open.base_key)) * CENTS_PER_SEMITONE)
+                    .clamp(-reach, reach);
                 self.glide_into(open, target)?;
             }
             let joined = open.filter(|open| {
@@ -718,6 +849,7 @@ impl<'a> TrackWriter<'a> {
                             sounding: open.sounding,
                             strand: open.strand,
                             until: span.start.add(span.length)?,
+                            written_until: place.written_end,
                             origin: window,
                             base_key: open.base_key,
                             cents,
@@ -758,6 +890,7 @@ impl<'a> TrackWriter<'a> {
                         sounding: sounding_index,
                         strand,
                         until: span.start.add(span.length)?,
+                        written_until: place.written_end,
                         origin: window,
                         base_key: key,
                         cents: 0,
@@ -831,7 +964,7 @@ impl<'a> TrackWriter<'a> {
         };
         self.ties
             .get(&tie_key)
-            .filter(|open| open.until == start)
+            .filter(|open| open.until == start || open.written_until == place.written_start)
             .map(|open| open.sounding)
     }
 
@@ -873,6 +1006,7 @@ impl<'a> TrackWriter<'a> {
                     OpenTie {
                         sounding: index,
                         until,
+                        written_until: place.written_end,
                     },
                 );
             } else {
@@ -887,6 +1021,7 @@ impl<'a> TrackWriter<'a> {
                 OpenTie {
                     sounding: self.soundings.len() - 1,
                     until,
+                    written_until: place.written_end,
                 },
             );
         } else {

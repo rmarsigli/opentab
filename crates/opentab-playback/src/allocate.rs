@@ -1,12 +1,12 @@
-use crate::ScoreTime;
 use crate::channels::ChannelPool;
 use crate::midi::Channel;
+use crate::{PlaybackError, ScoreTime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChannelNeed {
     Shared,
     Muted,
-    Exclusive { muted: bool },
+    Exclusive,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,6 +28,7 @@ struct Held {
 pub struct ChannelAllocator {
     pool: ChannelPool,
     held: Vec<Held>,
+    latest: ScoreTime,
 }
 
 impl ChannelAllocator {
@@ -35,6 +36,7 @@ impl ChannelAllocator {
         ChannelAllocator {
             pool,
             held: Vec::new(),
+            latest: ScoreTime::ZERO,
         }
     }
 
@@ -57,12 +59,16 @@ impl ChannelAllocator {
         start: ScoreTime,
         end: ScoreTime,
         need: ChannelNeed,
-    ) -> ChannelGrant {
+    ) -> Result<ChannelGrant, PlaybackError> {
+        if start < self.latest {
+            return Err(PlaybackError::RequestOutOfOrder);
+        }
+        self.latest = start;
         self.release_until(start);
         let group = match need {
-            ChannelNeed::Shared => return ChannelGrant::Shared,
+            ChannelNeed::Shared => return Ok(ChannelGrant::Shared),
             ChannelNeed::Muted => true,
-            ChannelNeed::Exclusive { .. } => false,
+            ChannelNeed::Exclusive => false,
         };
         if group
             && let Some(held) = self
@@ -71,12 +77,12 @@ impl ChannelAllocator {
                 .find(|held| held.group && held.track == track)
         {
             held.until = held.until.max(end);
-            return ChannelGrant::Allocated {
+            return Ok(ChannelGrant::Allocated {
                 channel: held.channel,
                 fresh: false,
-            };
+            });
         }
-        match self.pool.acquire(None) {
+        Ok(match self.pool.acquire(None) {
             Some(channel) => {
                 self.held.push(Held {
                     channel,
@@ -90,6 +96,6 @@ impl ChannelAllocator {
                 }
             }
             None => ChannelGrant::Fallback,
-        }
+        })
     }
 }

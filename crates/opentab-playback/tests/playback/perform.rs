@@ -919,3 +919,39 @@ fn triplet_feel_swings_each_pair_in_both_profiles() {
         }
     }
 }
+
+#[test]
+fn guitar_pro_starts_the_vibrato_of_a_tie_destination_at_the_tied_onset() {
+    let performance = single_note(|builder, track| {
+        builder.voice(
+            track,
+            0,
+            0,
+            vec![
+                beat(
+                    NoteValue::Eighth,
+                    vec![with(fretted(2, 5), |effects| effects.tie_origin = true)],
+                ),
+                beat(
+                    NoteValue::Quarter,
+                    vec![with(fretted(2, 5), |effects| {
+                        effects.tie_destination = true;
+                        effects.vibrato = Some(opentab_model::Vibrato::Slight);
+                    })],
+                ),
+                beat(NoteValue::Eighth, Vec::new()),
+                beat(NoteValue::Half, Vec::new()),
+            ],
+        );
+    });
+    assert_eq!(
+        bends(&performance),
+        vec![
+            (frac(0, 1), BEND_CENTRE),
+            (frac(3, 8), BEND_CENTRE),
+            (frac(3, 8), BEND_CENTRE)
+        ]
+    );
+    let notes = shape(&heard(&performance, 0));
+    assert_eq!(notes, vec![note(frac(0, 1), frac(3, 8), 60)]);
+}

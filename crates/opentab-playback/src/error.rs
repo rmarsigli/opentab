@@ -14,4 +14,6 @@ pub enum PlaybackError {
     OrderMismatch,
     #[error("the performance holds more events than a 32-bit sequence number counts")]
     TooManyEvents,
+    #[error("a channel request starts before an earlier request")]
+    RequestOutOfOrder,
 }
