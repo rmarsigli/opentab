@@ -222,7 +222,7 @@ We learned GP's order by building scores in which every bar holds one whole note
 
    **The look-ahead** follows the bars that playback would play after this visit. It starts with bar b's own jumps [m3-po21], then follows rules 1 to 8 and the pass counts of this moment, until the end of the score. Jumps on that path fire as they would, including a forward `DaSegno` [m3-po52]. It holds the `DaCoda` back on the first bar it reaches that holds either of these:
    - a return jump of any kind (`…AlCoda`, `…AlDoubleCoda`, `…AlFine` or no suffix) that has not fired, whose target bar exists and lies at b or before it [m3-po44, m3-po54, m3-po56, m3-po59]. The jump only needs to be reached, not to fire there: in [m3-po51] the al-Coda jump sits in ending 1 of a repeat. On pass 1 it is ahead, so the `DaCoda` waits even though rule 5 stops the jump from firing on that pass. On pass 2 the ending is skipped, so the `DaCoda` fires;
-   - a `DaDoubleCoda` that has not fired and whose `DoubleCoda` bar exists [m3-po41]. This applies to `DaCoda` only.
+   - a `DaDoubleCoda` that has not fired and is not ignored, so its `DoubleCoda` bar exists and lies after the `DaDoubleCoda`'s own bar, as the first sentence of this rule requires [m3-po41]. This applies to `DaCoda` only. Whether an ignored `DaDoubleCoda` (its `DoubleCoda` missing or before it) holds a `DaCoda` back was not tested; this definition says it does not.
 
    A jump that merely exists does not count. An al-Coda jump earlier in the score [m3-po42], one jumped over by a forward `DaSegno` [m3-po52], one whose target lies after b [m3-po43] or one without its target [m3-po28] lets the `DaCoda` fire on its first visit.
 
@@ -261,14 +261,17 @@ Selected orders (bar: directions → order played):
 
 `Linear` is a flag on a tempo automation. 4 of the 39 tempo automations in the corpus have it set to `true`, and 3 of those are the last tempo of their score, so nothing follows them. GP keeps the flag on re-save [m3-mx06].
 
-**Declared assumption, not an observation:** OpenTab reads `Linear true` as a ramp from this automation's tempo to the next tempo automation of the score. The flag sits on the automation where the ramp starts, which is why we chose that reading.
+**Direction: seen in GP's notation.** GP's exports carry no ramp:
+- its MIDI export writes one tempo event at each automation and nothing between them;
+- its MusicXML export carries only the tempo at each point [m3-mx06, m3-mx08], so neither shows a direction.
 
-No experiment has shown the direction:
-- GP's MIDI export writes one tempo event at each automation and nothing between them;
-- its MusicXML export carries only the tempo at each point [m3-mx06, m3-mx08];
-- whether GP's own playback ramps at all was not measured.
+GP's engraving does show one, in the PNG:
+- [m3-mx06]: a `Linear` 60 in bar 0 followed by 120 in bar 2 is drawn as the 60 mark, then "accel" with a dashed line running to the 120 mark;
+- [m3-mx08]: `Linear` 100, then `Linear` 200 at the middle of bar 1, then 50 in bar 3. GP drew "accel" dashed from 100 to 200, then "rall" dashed from 200 on to 50.
 
-The only later evidence is the ramp fixture's golden PNG and MusicXML, which the second harvest task produces. Until then a playback rule built on the ramp's direction rests on this assumption.
+So `Linear true` starts a ramp at its own automation and ends it at the next tempo automation of the score. GP labels the ramp by whether the tempo rises or falls.
+
+**Shape: declared assumption.** No oracle shows how the tempo moves inside the ramp: linear in beats per minute against score time, or anything else. GP's own playback was not measured. OpenTab assumes a linear change in beats per minute over score position from one point to the next. A later harvest's PNG can only confirm the direction again, not the shape.
 
 ## 6. Master bars
 
