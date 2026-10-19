@@ -190,6 +190,25 @@ fn the_png_shows_white_paper_and_black_ink() {
 }
 
 #[test]
+fn the_png_scales_both_axes_to_its_pixel_size() {
+    let mut page = small();
+    page.items.clear();
+    page.items.push(Primitive::Line(Line {
+        from: Point::new(5851, 0),
+        to: Point::new(5851, 5851),
+        thickness: Units(1024),
+        dash: None,
+    }));
+    let bytes = to_png(&page, Ratio::from_integer(2)).unwrap();
+    let pixmap = Pixmap::decode_png(&bytes).unwrap();
+    let red = |x: u32, y: u32| pixmap.pixel(x, y).unwrap().red();
+    assert_eq!(red(75, 38), 0);
+    assert_eq!(red(65, 38), 255);
+    assert_eq!(red(85, 38), 255);
+    assert_eq!(red(75, 5), 0);
+}
+
+#[test]
 fn the_png_is_deterministic() {
     let page = small();
     assert_eq!(

@@ -141,6 +141,9 @@ fn a_session_opens_renders_edits_undoes_and_exports_a_gp_that_reads_back_equal()
 
     let undone = server.ok("undo", json!({"session": session}));
     assert_eq!(undone, json!({"undone": true, "commands": 2}));
+    let info = server.ok("info", json!({"session": session}));
+    assert_eq!(info["can_undo"], true);
+    assert_eq!(info["can_redo"], true);
 
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("edited.gp");

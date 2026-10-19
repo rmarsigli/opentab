@@ -53,3 +53,31 @@ fn fail(message: &str) -> ExitCode {
     eprintln!("opentab-mcp: {message}");
     ExitCode::FAILURE
 }
+
+#[cfg(test)]
+mod tests {
+    use std::pin::pin;
+    use std::task::{Context, Poll, Waker};
+
+    use tokio::io::AsyncWriteExt;
+
+    use super::*;
+    use crate::wire::READ_BUFFER_BYTES;
+
+    #[test]
+    fn a_failure_exits_with_the_failure_code() {
+        assert_eq!(fail("stopped"), ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn a_pipe_takes_a_whole_read_buffer_before_its_reader_runs() {
+        let (mut writer, _reader) = duplex(PIPE_BYTES);
+        let chunk = vec![b'x'; READ_BUFFER_BYTES];
+        let mut write = pin!(writer.write_all(&chunk));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(matches!(
+            write.as_mut().poll(&mut context),
+            Poll::Ready(Ok(()))
+        ));
+    }
+}

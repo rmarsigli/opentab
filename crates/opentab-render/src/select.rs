@@ -145,6 +145,31 @@ mod tests {
     }
 
     #[test]
+    fn numbers_take_at_most_nine_digits() {
+        assert_eq!(
+            parse_bars("123456789"),
+            Ok(BarSpan {
+                first: 123_456_789,
+                last: 123_456_789
+            })
+        );
+        assert!(parse_bars("1234567890").is_err());
+        assert!(parse_bars("1-1234567890").is_err());
+        assert_eq!(
+            parse_scale("123456789/1"),
+            Ok(Ratio::from_integer(123_456_789))
+        );
+        assert!(parse_scale("1234567890/1").is_err());
+        assert!(parse_scale("1/1234567890").is_err());
+        assert_eq!(
+            parse_scale("12345.6789"),
+            Ok(Ratio::new(123_456_789, 10_000))
+        );
+        assert_eq!(parse_scale("0.00000001"), Ok(Ratio::new(1, 100_000_000)));
+        assert!(parse_scale("12345.67891").is_err());
+    }
+
+    #[test]
     fn bar_spans_parse_from_one_or_two_numbers() {
         assert_eq!(parse_bars("3-7"), Ok(BarSpan { first: 3, last: 7 }));
         assert_eq!(parse_bars("4"), Ok(BarSpan { first: 4, last: 4 }));

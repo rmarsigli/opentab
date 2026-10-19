@@ -107,3 +107,23 @@ impl ServerHandler for OpenTabServer {
         std::future::ready(self.respond(request).map(CallToolResponse::from))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_tool_is_found_by_its_exact_name_with_its_listed_definition() {
+        let server = OpenTabServer::default();
+        for name in ALL {
+            let found = server.get_tool(name.name()).expect("a listed tool");
+            assert_eq!(found.name, name.name());
+            assert_eq!(
+                serde_json::to_value(&found).unwrap(),
+                serde_json::to_value(tool(name)).unwrap()
+            );
+        }
+        assert!(server.get_tool("Open").is_none());
+        assert!(server.get_tool("").is_none());
+    }
+}
