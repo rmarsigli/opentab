@@ -13,6 +13,14 @@ const COVERAGE_SAMPLES: usize = 256;
 const SHRINK_SEED: [u8; 32] = [7; 32];
 const SHRINK_ITERS: u32 = 100_000;
 const LONG_TEXT_CHARS: usize = 10_000;
+const SMALL_CASES: u32 = 64;
+
+fn unpersisted(cases: u32) -> Config {
+    Config {
+        failure_persistence: None,
+        ..Config::with_cases(cases)
+    }
+}
 
 fn fill_of(voice: &Voice) -> Fraction {
     voice
@@ -33,7 +41,7 @@ fn timed_beats(voice: &Voice) -> usize {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(CASES))]
+    #![proptest_config(unpersisted(CASES))]
 
     #[test]
     fn p1_generated_scores_have_no_diagnostics(score in arb_score()) {
@@ -124,7 +132,7 @@ proptest! {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(CASES))]
+    #![proptest_config(unpersisted(CASES))]
 
     #[test]
     fn max_beats_per_voice_is_a_soft_cap(
@@ -150,7 +158,7 @@ proptest! {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(64))]
+    #![proptest_config(unpersisted(SMALL_CASES))]
 
     #[test]
     fn small_configs_hold_the_same_properties(
