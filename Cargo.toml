@@ -48,6 +48,9 @@ stats_alloc = "=0.1.10"
 [profile.dev.package.rustysynth]
 opt-level = 3
 
+[profile.release.package.rustysynth]
+overflow-checks = true
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 rust_2018_idioms = { level = "warn", priority = -1 }
