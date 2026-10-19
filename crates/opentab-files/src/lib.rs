@@ -216,7 +216,6 @@ fn create(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
     let temp = stage(path, bytes, next_counter).map_err(|error| FileError::io(path, &error))?;
     let outcome = match fs::hard_link(&temp, path) {
         Ok(()) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::AlreadyExists => Err(output_exists(path)),
         Err(_) => create_new_file(path, bytes),
     };
     let _ = fs::remove_file(&temp);
@@ -240,11 +239,8 @@ fn create_new_file(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
 fn resolve_target(path: &Path) -> io::Result<PathBuf> {
     let mut current = path.to_path_buf();
     for _ in 0..MAX_LINK_HOPS {
-        let is_link = match fs::symlink_metadata(&current) {
-            Ok(metadata) => metadata.file_type().is_symlink(),
-            Err(error) if error.kind() == ErrorKind::NotFound => false,
-            Err(error) => return Err(error),
-        };
+        let is_link =
+            fs::symlink_metadata(&current).is_ok_and(|metadata| metadata.file_type().is_symlink());
         if !is_link {
             return anchored(&current);
         }
@@ -313,11 +309,7 @@ fn temp_path(path: &Path, counter: u64) -> PathBuf {
 }
 
 fn truncated(name: &str) -> &str {
-    let mut end = name.len().min(MAX_TEMP_NAME_BYTES);
-    while !name.is_char_boundary(end) {
-        end -= 1;
-    }
-    &name[..end]
+    &name[..name.floor_char_boundary(MAX_TEMP_NAME_BYTES)]
 }
 
 #[cfg(test)]
@@ -362,6 +354,56 @@ mod tests {
         let name = temp.file_name().unwrap().to_string_lossy().into_owned();
         assert!(name.ends_with(&format!(".{}.5.tmp", std::process::id())));
         assert!(name.len() < 130, "{}", name.len());
+    }
+
+    #[test]
+    fn temp_name_stems_are_cut_at_a_character_boundary_within_the_limit() {
+        assert_eq!(truncated("song.opentab.json"), "song.opentab.json");
+        let ascii = "a".repeat(150);
+        assert_eq!(truncated(&ascii), &ascii[..MAX_TEMP_NAME_BYTES]);
+        let split = format!("a{}", "é".repeat(60));
+        assert_eq!(truncated(&split), &split[..MAX_TEMP_NAME_BYTES - 1]);
+    }
+
+    #[test]
+    fn every_temp_counter_value_is_new() {
+        let first = next_counter();
+        let second = next_counter();
+        assert!(second > first, "{first} {second}");
+    }
+
+    #[test]
+    fn a_temp_file_in_a_missing_directory_fails_at_once_with_the_real_error() {
+        let dir = dir();
+        let target = dir.path().join("missing").join("a.opentab.json");
+        let mut attempts = 0;
+        let error = create_temp(&target, || {
+            attempts += 1;
+            attempts
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::NotFound);
+        assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn creating_a_new_file_in_a_missing_directory_is_an_io_error() {
+        let dir = dir();
+        let path = dir.path().join("missing").join("a.opentab.json");
+        let error = create_new_file(&path, b"x").unwrap_err();
+        assert_eq!(error.kind(), "io");
+    }
+
+    #[test]
+    fn targets_are_anchored_to_their_canonical_directory() {
+        let dir = dir();
+        let canonical = fs::canonicalize(dir.path()).unwrap();
+        assert_eq!(
+            anchored(&dir.path().join("a.gp")).unwrap(),
+            canonical.join("a.gp")
+        );
+        let here = fs::canonicalize(".").unwrap();
+        assert_eq!(anchored(Path::new("a.gp")).unwrap(), here.join("a.gp"));
     }
 
     #[test]
