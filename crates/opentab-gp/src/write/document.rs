@@ -179,6 +179,9 @@ fn master_bar(
     if master.double_bar {
         element.push(Element::new("DoubleBar"));
     }
+    if let Some(directions) = canon::directions(&master.directions) {
+        element.push(directions);
+    }
     element.push(Element::leaf("Bars", bars));
     payload::apply(&mut element, own)?;
     let mut tempos = Vec::with_capacity(master.tempo_changes.len());

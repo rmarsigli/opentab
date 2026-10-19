@@ -1,8 +1,8 @@
 use opentab_model::{
-    Bar, Beat, BeatEffects, BeatId, Clef, Duration, ElementId, Instrument, InstrumentKind,
-    KeySignature, MasterBar, Note, NoteEffects, NoteId, NoteKind, NoteValue, OpaquePayload, Pitch,
-    Score, Staff, Tempo, TempoChange, TempoUnit, TimeSignature, Track, TrackId, TrackMidi,
-    Transpose, Tuning, Voice, VoiceId, VoiceSlot,
+    Bar, Beat, BeatEffects, BeatId, Clef, Directions, Duration, ElementId, Instrument,
+    InstrumentKind, KeySignature, MasterBar, Note, NoteEffects, NoteId, NoteKind, NoteValue,
+    OpaquePayload, Pitch, Score, Staff, Tempo, TempoChange, TempoUnit, TimeSignature, Track,
+    TrackId, TrackMidi, Transpose, Tuning, Voice, VoiceId, VoiceSlot,
 };
 
 pub struct Fixture {
@@ -46,6 +46,7 @@ pub fn master_bar(score: &mut Score, bpm: Option<f64>) -> MasterBar {
         alternate_endings: 0,
         double_bar: false,
         marker: None,
+        directions: Directions::default(),
         tempo_changes: bpm
             .map(|bpm| TempoChange {
                 position: opentab_model::Fraction::from_integer(0),

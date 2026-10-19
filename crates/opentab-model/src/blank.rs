@@ -1,7 +1,8 @@
 use crate::{
-    Bar, Beat, BeatEffects, Clef, Duration, ElementId, Fraction, Instrument, InstrumentKind,
-    InstrumentSet, KeySignature, MasterBar, ModelError, NoteValue, Pitch, Score, Staff, Tempo,
-    TempoChange, TempoUnit, TimeSignature, Track, TrackMidi, Transpose, Tuning, Voice, VoiceSlot,
+    Bar, Beat, BeatEffects, Clef, Directions, Duration, ElementId, Fraction, Instrument,
+    InstrumentKind, InstrumentSet, KeySignature, MasterBar, ModelError, NoteValue, Pitch, Score,
+    Staff, Tempo, TempoChange, TempoUnit, TimeSignature, Track, TrackMidi, Transpose, Tuning,
+    Voice, VoiceSlot,
 };
 
 const GUITAR_PROGRAM: u8 = 25;
@@ -24,6 +25,7 @@ pub fn blank_score() -> Result<Score, ModelError> {
         alternate_endings: 0,
         double_bar: false,
         marker: None,
+        directions: Directions::default(),
         tempo_changes: vec![TempoChange {
             position: Fraction::from_integer(0),
             bpm: Tempo::new(DEFAULT_BPM)?,

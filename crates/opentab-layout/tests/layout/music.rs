@@ -5,8 +5,8 @@ use opentab_layout::{
     notehead_glyphs,
 };
 use opentab_model::{
-    Bar, Beat, BeatEffects, BeatId, Clef, Duration, Grace, KeySignature, MasterBar, Note,
-    NoteEffects, NoteId, NoteKind, NoteValue, Score, TimeSignature, Tuplet, Voice, VoiceSlot,
+    Bar, Beat, BeatEffects, BeatId, Clef, Directions, Duration, Grace, KeySignature, MasterBar,
+    Note, NoteEffects, NoteId, NoteKind, NoteValue, Score, TimeSignature, Tuplet, Voice, VoiceSlot,
     blank_score,
 };
 
@@ -88,6 +88,7 @@ pub fn build(measures: &[Measure]) -> Score {
             id: score.ids.next().unwrap().into(),
             time_signature: TimeSignature::new(spec.time.0, spec.time.1).unwrap(),
             key_signature: KeySignature::new(spec.key, false).unwrap(),
+            directions: Directions::default(),
             tempo_changes: Vec::new(),
             ..template.clone()
         })

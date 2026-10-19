@@ -1,10 +1,12 @@
 use opentab_model::{
-    Balance, Fraction, InstrumentSet, KeySignature, Level, MidiBank, NoteKind, Pitch, TimeSignature,
+    Balance, Directions, Fraction, InstrumentSet, KeySignature, Level, MidiBank, NoteKind, Pitch,
+    TimeSignature,
 };
 
 use crate::codes::{
-    INSTRUMENT_SETS, PAN_PARAMETER, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS, TEMPO_POSITION_GRID,
-    VOLUME_PARAMETER, name_of,
+    DIRECTION_JUMP, DIRECTION_JUMPS, DIRECTION_TARGET, DIRECTION_TARGETS, INSTRUMENT_SETS,
+    PAN_PARAMETER, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS, TEMPO_POSITION_GRID, VOLUME_PARAMETER,
+    name_of,
 };
 use crate::dom::{self, Element, Node};
 use crate::guard::PitchInputs;
@@ -66,6 +68,26 @@ pub(crate) fn gp_revision() -> Element {
     Element::leaf(GP_REVISION, REVISION)
         .with_attribute("required", REVISION_REQUIRED)
         .with_attribute("recommended", REVISION_RECOMMENDED)
+}
+
+pub(crate) fn directions(directions: &Directions) -> Option<Element> {
+    if directions.is_empty() {
+        return None;
+    }
+    let mut element = Element::new("Directions");
+    for target in &directions.targets {
+        element.push(Element::leaf(
+            DIRECTION_TARGET,
+            name_of(DIRECTION_TARGETS, *target),
+        ));
+    }
+    for jump in &directions.jumps {
+        element.push(Element::leaf(
+            DIRECTION_JUMP,
+            name_of(DIRECTION_JUMPS, *jump),
+        ));
+    }
+    Some(element)
 }
 
 pub(crate) fn instrument_type(set: InstrumentSet) -> Element {

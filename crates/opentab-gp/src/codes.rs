@@ -1,6 +1,6 @@
 use opentab_model::{
-    Accent, Clef, Dynamic, Finger, Grace, HarmonicKind, InstrumentSet, NoteValue, Slide,
-    StrokeDirection, TempoUnit, Vibrato,
+    Accent, Clef, DirectionJump, DirectionTarget, Dynamic, Finger, Grace, HarmonicKind,
+    InstrumentSet, NoteValue, Slide, StrokeDirection, TempoUnit, Vibrato,
 };
 
 pub(crate) type Table<T> = [(&'static str, T)];
@@ -105,6 +105,37 @@ pub(crate) const INSTRUMENT_SETS: &Table<InstrumentSet> = &[
     ("voice", InstrumentSet::Voice),
     (DRUM_KIT, InstrumentSet::DrumKit),
 ];
+
+pub(crate) const DIRECTION_TARGETS: &Table<DirectionTarget> = &[
+    ("Segno", DirectionTarget::Segno),
+    ("SegnoSegno", DirectionTarget::SegnoSegno),
+    ("Coda", DirectionTarget::Coda),
+    ("DoubleCoda", DirectionTarget::DoubleCoda),
+    ("Fine", DirectionTarget::Fine),
+];
+
+pub(crate) const DIRECTION_JUMPS: &Table<DirectionJump> = &[
+    ("DaCapo", DirectionJump::DaCapo),
+    ("DaCapoAlFine", DirectionJump::DaCapoAlFine),
+    ("DaCapoAlCoda", DirectionJump::DaCapoAlCoda),
+    ("DaCapoAlDoubleCoda", DirectionJump::DaCapoAlDoubleCoda),
+    ("DaSegno", DirectionJump::DaSegno),
+    ("DaSegnoAlFine", DirectionJump::DaSegnoAlFine),
+    ("DaSegnoAlCoda", DirectionJump::DaSegnoAlCoda),
+    ("DaSegnoAlDoubleCoda", DirectionJump::DaSegnoAlDoubleCoda),
+    ("DaSegnoSegno", DirectionJump::DaSegnoSegno),
+    ("DaSegnoSegnoAlFine", DirectionJump::DaSegnoSegnoAlFine),
+    ("DaSegnoSegnoAlCoda", DirectionJump::DaSegnoSegnoAlCoda),
+    (
+        "DaSegnoSegnoAlDoubleCoda",
+        DirectionJump::DaSegnoSegnoAlDoubleCoda,
+    ),
+    ("DaCoda", DirectionJump::DaCoda),
+    ("DaDoubleCoda", DirectionJump::DaDoubleCoda),
+];
+
+pub(crate) const DIRECTION_TARGET: &str = "Target";
+pub(crate) const DIRECTION_JUMP: &str = "Jump";
 
 pub(crate) const SOUND_AUTOMATION: &str = "Sound";
 pub(crate) const VOLUME_AUTOMATION: &str = "DSPParam_12";

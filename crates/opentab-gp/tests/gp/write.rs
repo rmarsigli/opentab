@@ -2,10 +2,10 @@ use std::io::{Cursor, Read};
 
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
-    Bar, Base64Bytes, Beat, BeatEffects, ContainerEntry, Duration, Finger, Fraction, Harmonic,
-    HarmonicKind, Instrument, InstrumentKind, InstrumentSet, KeySignature, Marker, MasterBar, Note,
-    NoteEffects, NoteKind, NoteValue, OpaquePayload, Pitch, Score, Staff, Tempo, TempoChange,
-    TempoUnit, TimeSignature, Track, TrackMidi, Transpose, Tuning, Voice, VoiceSlot,
+    Bar, Base64Bytes, Beat, BeatEffects, ContainerEntry, Directions, Duration, Finger, Fraction,
+    Harmonic, HarmonicKind, Instrument, InstrumentKind, InstrumentSet, KeySignature, Marker,
+    MasterBar, Note, NoteEffects, NoteKind, NoteValue, OpaquePayload, Pitch, Score, Staff, Tempo,
+    TempoChange, TempoUnit, TimeSignature, Track, TrackMidi, Transpose, Tuning, Voice, VoiceSlot,
 };
 use zip::{CompressionMethod, ZipArchive};
 
@@ -32,6 +32,7 @@ impl Scratch {
                 alternate_endings: 0,
                 double_bar: false,
                 marker: None,
+                directions: Directions::default(),
                 tempo_changes: Vec::new(),
             });
         }

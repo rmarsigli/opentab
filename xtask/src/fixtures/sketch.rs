@@ -1,8 +1,8 @@
 use opentab_model::{
-    Bar, Beat, BeatEffects, Clef, Duration, ElementId, IdAllocator, Instrument, InstrumentKind,
-    InstrumentSet, KeySignature, MasterBar, MasterBarId, Note, NoteEffects, NoteKind, NoteValue,
-    Pitch, Score, Staff, TimeSignature, Track, TrackId, TrackMidi, Transpose, Tuning, Tuplet,
-    Voice, VoiceSlot,
+    Bar, Beat, BeatEffects, Clef, Directions, Duration, ElementId, IdAllocator, Instrument,
+    InstrumentKind, InstrumentSet, KeySignature, MasterBar, MasterBarId, Note, NoteEffects,
+    NoteKind, NoteValue, Pitch, Score, Staff, TimeSignature, Track, TrackId, TrackMidi, Transpose,
+    Tuning, Tuplet, Voice, VoiceSlot,
 };
 
 use crate::fixtures::FixtureError;
@@ -162,6 +162,7 @@ impl Sketch {
             alternate_endings: 0,
             double_bar: false,
             marker: None,
+            directions: Directions::default(),
             tempo_changes: Vec::new(),
         });
         Ok(self.score.master_bars.len() - 1)

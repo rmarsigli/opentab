@@ -1,6 +1,7 @@
 use opentab_model::{
-    AutomationValue, Clef, ContainerEntry, Diagnostic, Dynamic, Finger, Fraction, Grace, NoteKind,
-    NoteValue, Score, Tap, TempoUnit, TrackMidi, Transpose, Voice, diagnose, from_json, to_json,
+    AutomationValue, Clef, ContainerEntry, Diagnostic, Dynamic, Finger, Fraction, Grace,
+    JumpDestination, NoteKind, NoteValue, Score, Tap, TempoUnit, TrackMidi, Transpose, Voice,
+    diagnose, from_json, to_json,
 };
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with, min_beats_for_bar};
 use proptest::prelude::*;
@@ -288,6 +289,10 @@ struct Coverage {
     sound_automation: bool,
     automation_at_bar_end: bool,
     sound_override: bool,
+    direction_target: bool,
+    direction_jump_to_target: bool,
+    direction_jump_to_start: bool,
+    two_jumps_in_one_bar: bool,
 }
 
 fn observe(coverage: &mut Coverage, score: &Score) {
@@ -340,6 +345,15 @@ fn observe(coverage: &mut Coverage, score: &Score) {
         coverage.marker |= master_bar.marker.is_some();
         coverage.repeats |= master_bar.repeat_start || master_bar.repeat_end.is_some();
         coverage.tempo_changes |= !master_bar.tempo_changes.is_empty();
+        let directions = &master_bar.directions;
+        coverage.direction_target |= !directions.targets.is_empty();
+        coverage.direction_jump_to_target |=
+            directions.jumps.iter().any(|jump| !jump.needs().is_empty());
+        coverage.direction_jump_to_start |= directions
+            .jumps
+            .iter()
+            .any(|jump| jump.destination() == JumpDestination::Start);
+        coverage.two_jumps_in_one_bar |= directions.jumps.len() >= 2;
     }
     coverage.sound_override |= !score.sound_overrides.is_empty();
     for track in &score.tracks {
@@ -545,6 +559,13 @@ fn generator_covers_every_feature() {
         ("sound_automation", coverage.sound_automation),
         ("automation_at_bar_end", coverage.automation_at_bar_end),
         ("sound_override", coverage.sound_override),
+        ("direction_target", coverage.direction_target),
+        (
+            "direction_jump_to_target",
+            coverage.direction_jump_to_target,
+        ),
+        ("direction_jump_to_start", coverage.direction_jump_to_start),
+        ("two_jumps_in_one_bar", coverage.two_jumps_in_one_bar),
     ];
     let missing: Vec<&str> = checks
         .iter()

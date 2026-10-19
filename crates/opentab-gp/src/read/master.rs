@@ -1,10 +1,13 @@
 use opentab_model::{
-    Fraction, KeySignature, Marker, MasterBar, MasterBarId, Tempo, TempoChange, TempoUnit,
-    TimeSignature,
+    Directions, Fraction, KeySignature, Marker, MasterBar, MasterBarId, Tempo, TempoChange,
+    TempoUnit, TimeSignature,
 };
 
 use crate::canon;
-use crate::codes::{MINOR, TEMPO_POSITION_GRID, TEMPO_UNITS};
+use crate::codes::{
+    DIRECTION_JUMP, DIRECTION_JUMPS, DIRECTION_TARGET, DIRECTION_TARGETS, MINOR,
+    TEMPO_POSITION_GRID, TEMPO_UNITS, lookup,
+};
 use crate::dom::{Element, Node};
 use crate::error::GpifProblem;
 use crate::guard;
@@ -67,6 +70,7 @@ fn read_master_bar(
     let mut alternate_endings = 0u8;
     let mut double_bar = false;
     let mut marker = None;
+    let mut directions = Directions::default();
     let mut bars = None;
     ctx.visit(&scope, element, |ctx, visit| {
         match visit.key.as_str() {
@@ -76,6 +80,10 @@ fn read_master_bar(
             "Section" => marker = Some(read_section(ctx, &scope.enter(visit), visit.element)?),
             "AlternateEndings" => alternate_endings = read_alternate_endings(visit)?,
             "DoubleBar" => double_bar = true,
+            "Directions" => {
+                directions = read_directions(visit.element);
+                return Ok(directions_handled(visit.element, &directions));
+            }
             "Bars" => bars = Some((visit.text(), visit.location.clone())),
             _ => return Ok(Handled::Unknown),
         }
@@ -91,12 +99,34 @@ fn read_master_bar(
         alternate_endings,
         double_bar,
         marker,
+        directions,
         tempo_changes: Vec::new(),
     });
     Ok(MasterFrame {
         bars,
         location: location.clone(),
     })
+}
+
+fn read_directions(element: &Element) -> Directions {
+    let mut directions = Directions::default();
+    for (_, child) in element.elements() {
+        let text = child.text();
+        match child.name.as_str() {
+            DIRECTION_TARGET => directions.targets.extend(lookup(DIRECTION_TARGETS, &text)),
+            DIRECTION_JUMP => directions.jumps.extend(lookup(DIRECTION_JUMPS, &text)),
+            _ => {}
+        }
+    }
+    directions
+}
+
+fn directions_handled(element: &Element, directions: &Directions) -> Handled {
+    if canon::directions(directions).as_ref() == Some(element) {
+        Handled::Mapped(&[])
+    } else {
+        Handled::Replayed(guard::directions(directions))
+    }
 }
 
 fn read_time(visit: &Visit<'_>) -> Result<TimeSignature, Fault> {

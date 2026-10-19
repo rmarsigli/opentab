@@ -1,5 +1,6 @@
 mod blank;
 mod diagnose;
+mod directions;
 mod duration;
 mod ids;
 mod json;

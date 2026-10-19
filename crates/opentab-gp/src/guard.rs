@@ -1,12 +1,12 @@
 use opentab_model::{
-    Accent, Bar, Beat, Bend, Clef, Dynamic, Finger, Fraction, Grace, Harmonic, InstrumentKind,
-    InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature, TrackMidi, Transpose,
-    TremoloPicking, Vibrato, VoiceSlot,
+    Accent, Bar, Beat, Bend, Clef, Directions, Dynamic, Finger, Fraction, Grace, Harmonic,
+    InstrumentKind, InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature, TrackMidi,
+    Transpose, TremoloPicking, Vibrato, VoiceSlot,
 };
 
 use crate::codes::{
-    CLEFS, DYNAMICS, FINGERS, GRACES, HARMONICS, INSTRUMENT_SETS, STROKE_DIRECTIONS, TREMOLOS,
-    VIBRATOS, name_of, slide_bits,
+    CLEFS, DIRECTION_JUMPS, DIRECTION_TARGETS, DYNAMICS, FINGERS, GRACES, HARMONICS,
+    INSTRUMENT_SETS, STROKE_DIRECTIONS, TREMOLOS, VIBRATOS, name_of, slide_bits,
 };
 
 const NONE: &str = "none";
@@ -249,4 +249,18 @@ pub(crate) fn minor(minor: bool) -> String {
 
 pub(crate) fn flag(name: &str, value: bool) -> String {
     format!("flag:{name} {value}")
+}
+
+pub(crate) fn directions(directions: &Directions) -> String {
+    let targets: Vec<&str> = directions
+        .targets
+        .iter()
+        .map(|target| name_of(DIRECTION_TARGETS, *target))
+        .collect();
+    let jumps: Vec<&str> = directions
+        .jumps
+        .iter()
+        .map(|jump| name_of(DIRECTION_JUMPS, *jump))
+        .collect();
+    format!("directions:{};{}", targets.join(" "), jumps.join(" "))
 }

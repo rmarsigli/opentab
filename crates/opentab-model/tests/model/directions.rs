@@ -1,0 +1,296 @@
+use opentab_model::{
+    DIRECTION_JUMPS, DIRECTION_TARGETS, Diagnostic, DirectionJump, DirectionTarget, Directions,
+    JumpDestination, MasterBarId, Score, diagnose, from_json, to_json,
+};
+use serde_json::{Value, json};
+
+use crate::support::{four_four, master_bar, quarters};
+
+const SUBSETS: u32 = 32;
+
+struct Expected {
+    jump: DirectionJump,
+    name: &'static str,
+    destination: JumpDestination,
+    releases: Option<DirectionTarget>,
+}
+
+const fn expected(
+    jump: DirectionJump,
+    name: &'static str,
+    destination: JumpDestination,
+    releases: Option<DirectionTarget>,
+) -> Expected {
+    Expected {
+        jump,
+        name,
+        destination,
+        releases,
+    }
+}
+
+const START: JumpDestination = JumpDestination::Start;
+const SEGNO: JumpDestination = JumpDestination::Target(DirectionTarget::Segno);
+const SEGNO_SEGNO: JumpDestination = JumpDestination::Target(DirectionTarget::SegnoSegno);
+const FINE: Option<DirectionTarget> = Some(DirectionTarget::Fine);
+const CODA: Option<DirectionTarget> = Some(DirectionTarget::Coda);
+const DOUBLE_CODA: Option<DirectionTarget> = Some(DirectionTarget::DoubleCoda);
+
+const JUMPS: [Expected; 14] = [
+    expected(DirectionJump::DaCapo, "da_capo", START, None),
+    expected(DirectionJump::DaCapoAlFine, "da_capo_al_fine", START, FINE),
+    expected(DirectionJump::DaCapoAlCoda, "da_capo_al_coda", START, CODA),
+    expected(
+        DirectionJump::DaCapoAlDoubleCoda,
+        "da_capo_al_double_coda",
+        START,
+        DOUBLE_CODA,
+    ),
+    expected(DirectionJump::DaSegno, "da_segno", SEGNO, None),
+    expected(
+        DirectionJump::DaSegnoAlFine,
+        "da_segno_al_fine",
+        SEGNO,
+        FINE,
+    ),
+    expected(
+        DirectionJump::DaSegnoAlCoda,
+        "da_segno_al_coda",
+        SEGNO,
+        CODA,
+    ),
+    expected(
+        DirectionJump::DaSegnoAlDoubleCoda,
+        "da_segno_al_double_coda",
+        SEGNO,
+        DOUBLE_CODA,
+    ),
+    expected(
+        DirectionJump::DaSegnoSegno,
+        "da_segno_segno",
+        SEGNO_SEGNO,
+        None,
+    ),
+    expected(
+        DirectionJump::DaSegnoSegnoAlFine,
+        "da_segno_segno_al_fine",
+        SEGNO_SEGNO,
+        FINE,
+    ),
+    expected(
+        DirectionJump::DaSegnoSegnoAlCoda,
+        "da_segno_segno_al_coda",
+        SEGNO_SEGNO,
+        CODA,
+    ),
+    expected(
+        DirectionJump::DaSegnoSegnoAlDoubleCoda,
+        "da_segno_segno_al_double_coda",
+        SEGNO_SEGNO,
+        DOUBLE_CODA,
+    ),
+    expected(
+        DirectionJump::DaCoda,
+        "da_coda",
+        JumpDestination::Target(DirectionTarget::Coda),
+        None,
+    ),
+    expected(
+        DirectionJump::DaDoubleCoda,
+        "da_double_coda",
+        JumpDestination::Target(DirectionTarget::DoubleCoda),
+        None,
+    ),
+];
+
+const TARGET_NAMES: [(DirectionTarget, &str); 5] = [
+    (DirectionTarget::Segno, "segno"),
+    (DirectionTarget::SegnoSegno, "segno_segno"),
+    (DirectionTarget::Coda, "coda"),
+    (DirectionTarget::DoubleCoda, "double_coda"),
+    (DirectionTarget::Fine, "fine"),
+];
+
+fn bars(count: usize) -> Score {
+    let mut score = Score::new();
+    for _ in 0..count {
+        let master = master_bar(&mut score, 4, 4);
+        score.master_bars.push(master);
+    }
+    score
+}
+
+fn subset(mask: u32) -> Vec<DirectionTarget> {
+    DIRECTION_TARGETS
+        .iter()
+        .enumerate()
+        .filter(|(bit, _)| mask & (1 << bit) != 0)
+        .map(|(_, target)| *target)
+        .collect()
+}
+
+fn needed(entry: &Expected) -> Vec<DirectionTarget> {
+    let mut needs = Vec::new();
+    if let JumpDestination::Target(target) = entry.destination {
+        needs.push(target);
+    }
+    needs.extend(entry.releases);
+    needs
+}
+
+#[test]
+fn every_jump_names_its_destination_and_the_target_it_releases() {
+    assert_eq!(JUMPS.len(), DIRECTION_JUMPS.len());
+    for (entry, listed) in JUMPS.iter().zip(DIRECTION_JUMPS) {
+        assert_eq!(entry.jump, listed);
+        assert_eq!(
+            entry.jump.destination(),
+            entry.destination,
+            "{}",
+            entry.name
+        );
+        assert_eq!(entry.jump.releases(), entry.releases, "{}", entry.name);
+        assert_eq!(entry.jump.needs(), needed(entry), "{}", entry.name);
+        let to_coda = matches!(
+            entry.jump,
+            DirectionJump::DaCoda | DirectionJump::DaDoubleCoda
+        );
+        assert_eq!(entry.jump.is_return(), !to_coda, "{}", entry.name);
+        assert_eq!(serde_json::to_value(entry.jump).unwrap(), json!(entry.name));
+        assert_eq!(
+            serde_json::from_value::<DirectionJump>(json!(entry.name)).unwrap(),
+            entry.jump
+        );
+    }
+    for ((target, name), listed) in TARGET_NAMES.iter().zip(DIRECTION_TARGETS) {
+        assert_eq!(*target, listed);
+        assert_eq!(serde_json::to_value(target).unwrap(), json!(name));
+    }
+    assert!(serde_json::from_value::<DirectionJump>(json!("da_fine")).is_err());
+    assert!(serde_json::from_value::<DirectionTarget>(json!("Segno")).is_err());
+}
+
+#[test]
+fn a_jump_is_dangling_exactly_when_a_target_it_needs_is_missing() {
+    for entry in &JUMPS {
+        for mask in 0..SUBSETS {
+            for jump_bar in 0..2usize {
+                let mut score = bars(2);
+                let targets = subset(mask);
+                score.master_bars[1 - jump_bar].directions.targets = targets.clone();
+                score.master_bars[jump_bar].directions.jumps = vec![entry.jump];
+                let at = score.master_bars[jump_bar].id;
+                let expected: Vec<Diagnostic> = needed(entry)
+                    .into_iter()
+                    .filter(|target| !targets.contains(target))
+                    .map(|target| Diagnostic::DanglingJump {
+                        master_bar: at,
+                        jump: entry.jump,
+                        target,
+                    })
+                    .collect();
+                assert_eq!(diagnose(&score), expected, "{} with {mask:05b}", entry.name);
+            }
+        }
+    }
+}
+
+#[test]
+fn a_target_in_the_jumps_own_bar_counts() {
+    let mut score = bars(1);
+    score.master_bars[0].directions = Directions {
+        targets: vec![DirectionTarget::Fine, DirectionTarget::Segno],
+        jumps: vec![DirectionJump::DaSegnoAlFine],
+    };
+    assert_eq!(diagnose(&score), Vec::new());
+}
+
+#[test]
+fn every_later_copy_of_a_target_is_a_duplicate() {
+    let placements: [&[usize]; 5] = [&[0], &[0, 1], &[0, 0], &[1, 2], &[0, 1, 2]];
+    for target in DIRECTION_TARGETS {
+        for places in placements {
+            let mut score = bars(3);
+            for place in places {
+                score.master_bars[*place].directions.targets.push(target);
+            }
+            let ids: Vec<MasterBarId> = score.master_bars.iter().map(|bar| bar.id).collect();
+            let expected: Vec<Diagnostic> = places
+                .iter()
+                .skip(1)
+                .map(|place| Diagnostic::DuplicateTarget {
+                    master_bar: ids[*place],
+                    target,
+                })
+                .collect();
+            assert_eq!(diagnose(&score), expected, "{target:?} at {places:?}");
+        }
+    }
+}
+
+#[test]
+fn directions_round_trip_through_json() {
+    let mut score = four_four(&quarters(4));
+    score.master_bars[0].directions = Directions {
+        targets: vec![DirectionTarget::Coda, DirectionTarget::Segno],
+        jumps: vec![DirectionJump::DaSegnoAlCoda, DirectionJump::DaCoda],
+    };
+    let text = to_json(&score).unwrap();
+    let value: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        value["master_bars"][0]["directions"],
+        json!({"targets": ["coda", "segno"], "jumps": ["da_segno_al_coda", "da_coda"]})
+    );
+    assert_eq!(from_json(&text).unwrap(), score);
+}
+
+#[test]
+fn json_directions_are_required_and_closed() {
+    let text = to_json(&four_four(&quarters(4))).unwrap();
+    let value: Value = serde_json::from_str(&text).unwrap();
+    let mut missing = value.clone();
+    missing["master_bars"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("directions");
+    assert!(from_json(&missing.to_string()).is_err());
+    let mut extra = value.clone();
+    extra["master_bars"][0]["directions"]["labels"] = json!([]);
+    assert!(from_json(&extra.to_string()).is_err());
+    let mut unknown = value;
+    unknown["master_bars"][0]["directions"]["jumps"] = json!(["to_the_end"]);
+    assert!(from_json(&unknown.to_string()).is_err());
+}
+
+#[test]
+fn direction_diagnostics_round_trip_through_json() {
+    let diagnostics = [
+        Diagnostic::DanglingJump {
+            master_bar: bars(1).master_bars[0].id,
+            jump: DirectionJump::DaSegnoAlCoda,
+            target: DirectionTarget::Coda,
+        },
+        Diagnostic::DuplicateTarget {
+            master_bar: bars(2).master_bars[1].id,
+            target: DirectionTarget::Fine,
+        },
+    ];
+    for diagnostic in diagnostics {
+        let text = serde_json::to_string(&diagnostic).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Diagnostic>(&text).unwrap(),
+            diagnostic
+        );
+    }
+    let at = bars(1).master_bars[0].id;
+    let value = serde_json::to_value(Diagnostic::DanglingJump {
+        master_bar: at,
+        jump: DirectionJump::DaSegno,
+        target: DirectionTarget::Segno,
+    })
+    .unwrap();
+    assert_eq!(
+        value,
+        json!({"kind": "dangling_jump", "master_bar": at.0.0, "jump": "da_segno", "target": "segno"})
+    );
+}

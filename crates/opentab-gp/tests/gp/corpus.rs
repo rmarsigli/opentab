@@ -12,7 +12,7 @@ use opentab_model::{
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
-const EXPECTED_TOTALS: [(&str, usize); 26] = [
+const EXPECTED_TOTALS: [(&str, usize); 33] = [
     ("tracks", 64),
     ("master_bars", 1260),
     ("bars", 2392),
@@ -39,6 +39,13 @@ const EXPECTED_TOTALS: [(&str, usize); 26] = [
     ("pan_automations", 65),
     ("instrument_sets", 64),
     ("midi_connections_not_default", 54),
+    ("direction_bars", 8),
+    ("target_segno", 2),
+    ("target_coda", 2),
+    ("jump_da_coda", 2),
+    ("jump_da_segno", 1),
+    ("jump_da_segno_al_coda", 1),
+    ("direction_payloads", 0),
 ];
 const EXPECTED_DIAGNOSTICS: [(&str, usize); 1] = [("IncompleteBar", 14)];
 
@@ -49,6 +56,13 @@ fn diagnostic_kind(diagnostic: &Diagnostic) -> String {
         .next()
         .unwrap_or_default()
         .to_string()
+}
+
+fn snake<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 fn count(totals: &mut BTreeMap<String, usize>, name: &str, amount: usize) {
@@ -65,6 +79,29 @@ fn tally(score: &Score, totals: &mut BTreeMap<String, usize>) {
             .filter(|change| change.unit != TempoUnit::Quarter)
             .count();
         count(totals, "tempo_units_not_quarter", units);
+        let directions = &master_bar.directions;
+        count(
+            totals,
+            "direction_bars",
+            usize::from(!directions.is_empty()),
+        );
+        for target in &directions.targets {
+            count(totals, &format!("target_{}", snake(target)), 1);
+        }
+        for jump in &directions.jumps {
+            count(totals, &format!("jump_{}", snake(jump)), 1);
+        }
+        let replayed = score
+            .extensions
+            .0
+            .get(&master_bar.id.0)
+            .map_or(0, |payloads| {
+                payloads
+                    .iter()
+                    .filter(|payload| payload.data.contains("<Directions"))
+                    .count()
+            });
+        count(totals, "direction_payloads", replayed);
     }
     for track in &score.tracks {
         count(totals, "sounds", track.sounds.len());

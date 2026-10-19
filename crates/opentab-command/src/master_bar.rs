@@ -1,6 +1,6 @@
 use std::iter::once;
 
-use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature};
+use opentab_model::{Bar, Directions, KeySignature, MasterBar, Score, TimeSignature};
 
 use crate::ids::{
     bar_ids, check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
@@ -91,6 +91,7 @@ pub(crate) fn insert(
         alternate_endings: 0,
         double_bar: false,
         marker: None,
+        directions: Directions::default(),
         tempo_changes: Vec::new(),
     };
     score.master_bars.insert(index, master_bar);

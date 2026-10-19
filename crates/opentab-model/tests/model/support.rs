@@ -1,7 +1,7 @@
 use opentab_model::{
-    Bar, Beat, BeatEffects, Clef, Duration, Instrument, InstrumentKind, KeySignature, MasterBar,
-    Note, NoteEffects, NoteKind, NoteValue, Pitch, Score, Staff, TimeSignature, Track, TrackMidi,
-    Transpose, Tuning, Voice, VoiceSlot,
+    Bar, Beat, BeatEffects, Clef, Directions, Duration, Instrument, InstrumentKind, KeySignature,
+    MasterBar, Note, NoteEffects, NoteKind, NoteValue, Pitch, Score, Staff, TimeSignature, Track,
+    TrackMidi, Transpose, Tuning, Voice, VoiceSlot,
 };
 
 pub fn standard_tuning() -> Tuning {
@@ -24,6 +24,7 @@ pub fn master_bar(score: &mut Score, numerator: u8, denominator: u8) -> MasterBa
         alternate_endings: 0,
         double_bar: false,
         marker: None,
+        directions: Directions::default(),
         tempo_changes: Vec::new(),
     }
 }

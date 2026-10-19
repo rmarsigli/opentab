@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::fraction::{checked_sum, deserialize_non_negative};
 use crate::{
-    AutomationValue, Bar, BarId, Beat, BeatId, ElementId, Fraction, InstrumentKind, MasterBar,
-    MasterBarId, NoteId, NoteKind, Score, SoundRef, Staff, StaffId, Track, TrackId, Voice, VoiceId,
-    automations_in_order, check_program, on_automation_grid,
+    AutomationValue, Bar, BarId, Beat, BeatId, DirectionJump, DirectionTarget, ElementId, Fraction,
+    InstrumentKind, MasterBar, MasterBarId, NoteId, NoteKind, Score, SoundRef, Staff, StaffId,
+    Track, TrackId, Voice, VoiceId, automations_in_order, check_program, on_automation_grid,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -102,6 +102,15 @@ pub enum Diagnostic {
     AutomationOrder {
         track: TrackId,
     },
+    DanglingJump {
+        master_bar: MasterBarId,
+        jump: DirectionJump,
+        target: DirectionTarget,
+    },
+    DuplicateTarget {
+        master_bar: MasterBarId,
+        target: DirectionTarget,
+    },
 }
 
 pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
@@ -115,6 +124,7 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
         report.id(master_bar.id.0);
         report.tempo_changes(master_bar);
     }
+    report.directions(&score.master_bars);
     for track in &score.tracks {
         report.id(track.id.0);
         report.instrument(track);
@@ -211,6 +221,35 @@ impl Report {
                     master_bar: master_bar.id,
                     position: change.position,
                 });
+            }
+        }
+    }
+
+    fn directions(&mut self, master_bars: &[MasterBar]) {
+        let mut placed: Vec<DirectionTarget> = Vec::new();
+        for master_bar in master_bars {
+            for target in &master_bar.directions.targets {
+                if placed.contains(target) {
+                    self.diagnostics.push(Diagnostic::DuplicateTarget {
+                        master_bar: master_bar.id,
+                        target: *target,
+                    });
+                } else {
+                    placed.push(*target);
+                }
+            }
+        }
+        for master_bar in master_bars {
+            for jump in &master_bar.directions.jumps {
+                for target in jump.needs() {
+                    if !placed.contains(&target) {
+                        self.diagnostics.push(Diagnostic::DanglingJump {
+                            master_bar: master_bar.id,
+                            jump: *jump,
+                            target,
+                        });
+                    }
+                }
             }
         }
     }

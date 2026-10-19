@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
 use opentab_model::{
-    Automation, AutomationValue, Bar, Beat, BeatEffects, ContainerEntry, Duration, ElementId,
-    Extensions, Instrument, InstrumentKind, InstrumentSet, Marker, MasterBar, MidiBank, Note,
-    NoteKind, OpaquePayload, Score, Sound, SoundOverride, SoundRef, Staff, TempoChange,
+    Automation, AutomationValue, Bar, Beat, BeatEffects, ContainerEntry, DirectionTarget, Duration,
+    ElementId, Extensions, Instrument, InstrumentKind, InstrumentSet, Marker, MasterBar, MidiBank,
+    Note, NoteKind, OpaquePayload, Score, Sound, SoundOverride, SoundRef, Staff, TempoChange,
     TimeSignature, Track, Tuning, Voice, VoiceSlot,
 };
 
@@ -120,6 +120,7 @@ impl Builder {
                 text: marker.text,
                 letter: marker.letter,
             }),
+            directions: seed.directions,
             tempo_changes: seed
                 .tempo_changes
                 .into_iter()
@@ -358,6 +359,25 @@ fn push_extras(payloads: &mut Vec<OpaquePayload>, extras: &[String]) {
     }
 }
 
+fn resolve_directions(master_bars: &mut [MasterBar]) {
+    let mut placed: Vec<DirectionTarget> = Vec::new();
+    for master_bar in master_bars.iter_mut() {
+        master_bar.directions.targets.retain(|target| {
+            let fresh = !placed.contains(target);
+            if fresh {
+                placed.push(*target);
+            }
+            fresh
+        });
+    }
+    for master_bar in master_bars.iter_mut() {
+        master_bar
+            .directions
+            .jumps
+            .retain(|jump| jump.needs().iter().all(|target| placed.contains(target)));
+    }
+}
+
 pub fn build_score(seed: ScoreSeed, cfg: ScoreGenConfig) -> Score {
     let mut builder = Builder {
         score: Score::new(),
@@ -372,6 +392,7 @@ pub fn build_score(seed: ScoreSeed, cfg: ScoreGenConfig) -> Score {
         let built = builder.master_bar(master_bar);
         builder.score.master_bars.push(built);
     }
+    resolve_directions(&mut builder.score.master_bars);
     for track in seed.tracks {
         let built = builder.track(track);
         builder.score.tracks.push(built);

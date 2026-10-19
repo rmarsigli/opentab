@@ -8,9 +8,9 @@ use opentab_layout::{
     StaffSpace, SystemLayout, Units, layout,
 };
 use opentab_model::{
-    Bar, Beat, BeatEffects, Clef, Duration, Grace, InstrumentKind, InstrumentSet, KeySignature,
-    MasterBar, Note, NoteEffects, NoteKind, NoteValue, Score, Staff, TimeSignature, Track, Tuplet,
-    Voice, VoiceSlot, blank_score,
+    Bar, Beat, BeatEffects, Clef, Directions, Duration, Grace, InstrumentKind, InstrumentSet,
+    KeySignature, MasterBar, Note, NoteEffects, NoteKind, NoteValue, Score, Staff, TimeSignature,
+    Track, Tuplet, Voice, VoiceSlot, blank_score,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,6 +106,7 @@ pub fn guitar(specs: &[BarSpec]) -> Score {
             id: score.ids.next().unwrap().into(),
             time_signature: TimeSignature::new(spec.time.0, spec.time.1).unwrap(),
             key_signature: KeySignature::default(),
+            directions: Directions::default(),
             tempo_changes: Vec::new(),
             ..template.clone()
         })

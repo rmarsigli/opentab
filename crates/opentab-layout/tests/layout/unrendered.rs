@@ -1,5 +1,8 @@
 use opentab_layout::{BarRange, LayoutOptions, StaffMode, Unrendered};
-use opentab_model::{ElementId, InstrumentKind, NoteKind, OpaquePayload, Score};
+use opentab_model::{
+    DirectionJump, DirectionTarget, Directions, ElementId, InstrumentKind, NoteKind, OpaquePayload,
+    Score,
+};
 
 use crate::music::{build, measure, options, render};
 use crate::support::add_track;
@@ -329,11 +332,7 @@ fn a_second_voice_has_no_rhythm_under_a_lone_tab() {
 #[test]
 fn opaque_guitar_pro_notation_is_named_by_its_element() {
     let both = options(StaffMode::Both);
-    let cases: [(&str, &str); 11] = [
-        (
-            "<Directions><Target>Segno</Target></Directions>",
-            "directions",
-        ),
+    let cases: [(&str, &str); 10] = [
         ("<TripletFeel>Triplet8th</TripletFeel>", "triplet_feel"),
         ("<Arpeggio>Down</Arpeggio>", "arpeggios"),
         ("<Wah>Open</Wah>", "wah"),
@@ -375,18 +374,31 @@ fn opaque_guitar_pro_notation_is_named_by_its_element() {
         );
         assert!(names(&one, &both).is_empty());
     }
-    let mut outside = score(2);
-    let id = outside.master_bars[1].id.0;
-    keep(
-        &mut outside,
-        id,
-        "<Keep parent=\"\" index=\"2\"><Directions><Jump>DaCoda</Jump></Directions></Keep>",
-    );
+}
+
+#[test]
+fn typed_directions_are_reported_only_in_the_bars_shown() {
+    let both = options(StaffMode::Both);
+    let mut marked = score(2);
+    assert!(names(&marked, &both).is_empty());
+    marked.master_bars[1].directions = Directions {
+        targets: vec![DirectionTarget::Coda],
+        jumps: vec![DirectionJump::DaCoda],
+    };
+    assert_eq!(names(&marked, &both), vec!["directions"]);
     let first = LayoutOptions {
         bars: Some(BarRange { first: 0, last: 0 }),
         ..LayoutOptions::default()
     };
-    assert!(names(&outside, &first).is_empty());
+    assert!(names(&marked, &first).is_empty());
+    let mut opaque = score(2);
+    let id = opaque.master_bars[1].id.0;
+    keep(
+        &mut opaque,
+        id,
+        "<Keep parent=\"\" index=\"2\" guard=\"directions:;\"><Directions><Jump>ToTheEnd</Jump></Directions></Keep>",
+    );
+    assert!(names(&opaque, &both).is_empty());
 }
 
 #[test]

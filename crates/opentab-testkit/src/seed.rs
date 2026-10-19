@@ -1,7 +1,8 @@
 use opentab_model::{
-    Balance, Base64Bytes, BeatEffects, Clef, ContainerEntry, Fraction, Grace, InstrumentKind,
-    InstrumentSet, KeySignature, Level, MidiBank, MidiChannel, NoteEffects, NoteValue,
-    OpaquePayload, Pitch, ScoreMeta, Tempo, TempoUnit, TimeSignature, TrackMidi, Transpose,
+    Balance, Base64Bytes, BeatEffects, Clef, ContainerEntry, DIRECTION_JUMPS, DIRECTION_TARGETS,
+    Directions, Fraction, Grace, InstrumentKind, InstrumentSet, KeySignature, Level, MidiBank,
+    MidiChannel, NoteEffects, NoteValue, OpaquePayload, Pitch, ScoreMeta, Tempo, TempoUnit,
+    TimeSignature, TrackMidi, Transpose,
 };
 use proptest::collection::vec;
 use proptest::option;
@@ -16,6 +17,9 @@ const MAX_STAVES_PER_TRACK: usize = 2;
 const MAX_EXTENSION_ENTRIES: usize = 4;
 const MAX_EXTENSION_PAYLOADS: usize = 3;
 const MAX_TEMPO_CHANGES: usize = 2;
+const MAX_TARGETS: usize = 2;
+const MAX_JUMPS: usize = 2;
+const DIRECTIONS_RATE: f64 = 0.3;
 const MAX_STRINGS: usize = 8;
 const MAX_FRET: u8 = 24;
 const MAX_MIDI: u8 = 127;
@@ -191,6 +195,7 @@ pub struct MasterBarSeed {
     pub alternate_endings: u8,
     pub double_bar: bool,
     pub marker: Option<MarkerSeed>,
+    pub directions: Directions,
     pub tempo_changes: Vec<TempoChangeSeed>,
 }
 
@@ -483,6 +488,15 @@ fn arb_key_signature() -> impl Strategy<Value = KeySignature> {
     })
 }
 
+fn arb_directions() -> impl Strategy<Value = Directions> {
+    let present = (
+        vec(select(DIRECTION_TARGETS.to_vec()), 0..=MAX_TARGETS),
+        vec(select(DIRECTION_JUMPS.to_vec()), 0..=MAX_JUMPS),
+    )
+        .prop_map(|(targets, jumps)| Directions { targets, jumps });
+    option::weighted(DIRECTIONS_RATE, present).prop_map(Option::unwrap_or_default)
+}
+
 fn arb_master_bar_seed(gp_writable: bool) -> impl Strategy<Value = MasterBarSeed> {
     (
         arb_time_signature(),
@@ -495,6 +509,7 @@ fn arb_master_bar_seed(gp_writable: bool) -> impl Strategy<Value = MasterBarSeed
                     .prop_map(|(text, letter)| MarkerSeed { text, letter }),
             ),
         ),
+        arb_directions(),
         vec(arb_tempo_change(gp_writable), 0..=MAX_TEMPO_CHANGES),
     )
         .prop_map(
@@ -503,6 +518,7 @@ fn arb_master_bar_seed(gp_writable: bool) -> impl Strategy<Value = MasterBarSeed
                 key_signature,
                 (repeat_start, repeat_end, alternate_endings),
                 (double_bar, marker),
+                directions,
                 tempo_changes,
             )| MasterBarSeed {
                 time_signature,
@@ -512,6 +528,7 @@ fn arb_master_bar_seed(gp_writable: bool) -> impl Strategy<Value = MasterBarSeed
                 alternate_endings,
                 double_bar,
                 marker,
+                directions,
                 tempo_changes,
             },
         )

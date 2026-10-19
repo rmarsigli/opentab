@@ -252,6 +252,7 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
     let value = match (kind, env) {
         ("repeat", Env::MasterBar(bar)) => guard::repeat(bar.repeat_start, bar.repeat_end),
         ("minor", Env::MasterBar(bar)) => guard::minor(bar.key_signature.minor()),
+        ("directions", Env::MasterBar(bar)) => guard::directions(&bar.directions),
         ("tempo-position", Env::Tempo(tempo, time)) => guard::tempo_position(tempo.position, *time),
         ("instrument", Env::Track(track)) => {
             guard::instrument(track.instrument.kind, track.instrument.set)

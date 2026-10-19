@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::fraction::deserialize_non_negative;
-use crate::{Fraction, MasterBarId, ModelError};
+use crate::{Directions, Fraction, MasterBarId, ModelError};
 
 const MIN_BPM: f64 = 1.0;
 const MAX_BPM: f64 = 1000.0;
@@ -169,5 +169,6 @@ pub struct MasterBar {
     pub alternate_endings: u8,
     pub double_bar: bool,
     pub marker: Option<Marker>,
+    pub directions: Directions,
     pub tempo_changes: Vec<TempoChange>,
 }

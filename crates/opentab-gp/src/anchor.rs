@@ -226,7 +226,7 @@ impl Playback {
 
 #[cfg(test)]
 mod tests {
-    use opentab_model::{ElementId, KeySignature, MasterBarId, TimeSignature};
+    use opentab_model::{Directions, ElementId, KeySignature, MasterBarId, TimeSignature};
 
     use super::*;
 
@@ -256,6 +256,7 @@ mod tests {
                 alternate_endings: spec.endings,
                 double_bar: false,
                 marker: None,
+                directions: Directions::default(),
                 tempo_changes: Vec::new(),
             })
             .collect()

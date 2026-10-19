@@ -145,10 +145,9 @@ impl Unrendered {
     }
 }
 
-pub const MARKED: [(&str, Unrendered); 11] = [
+pub const MARKED: [(&str, Unrendered); 10] = [
     ("Fermata", Unrendered::Fermatas),
     ("Hairpin", Unrendered::Hairpins),
-    ("Directions", Unrendered::Directions),
     ("TripletFeel", Unrendered::TripletFeel),
     ("Arpeggio", Unrendered::Arpeggios),
     ("Wah", Unrendered::Wah),
@@ -434,6 +433,7 @@ pub fn unrendered(score: &Score, selection: &Selection, pages: &[Page]) -> Vec<U
     let bars = (selection.first, selection.last);
     for master in score.master_bars.iter().take(bars.1 + 1).skip(bars.0) {
         walk.element(master.id.0);
+        walk.add(!master.directions.is_empty(), Unrendered::Directions);
     }
     for index in &selection.tracks {
         let Some(track) = score.tracks.get(*index) else {
@@ -498,10 +498,6 @@ mod tests {
         assert!(!marked("<Keep><Fermatas/></Keep>", "Fermata"));
         assert!(!marked("<Keep><Wah>None</Wah></Keep>", "Wah"));
         assert!(!marked("<Keep><WahWah>Open</WahWah></Keep>", "Wah"));
-        assert!(marked(
-            "<Keep><Directions><Target>Segno</Target></Directions></Keep>",
-            "Directions"
-        ));
         assert!(!marked("", "Wah"));
     }
 }
