@@ -204,24 +204,36 @@ None of these 5 examples has `Directions`, so the rule ignores them; §5.1 adds 
 
 ### 5.1 Play order with directions
 
-We learned GP's order by building scores in which every bar holds one whole note of its own pitch, adding repeats and `Directions` (§6.1), and reading the note order of GP's MIDI export. Bars below are 0-based master bar indices. The rules hold for every one of the 38 experiments [m3-po01] to [m3-po41]:
+We learned GP's order by building scores in which every bar holds one whole note of its own pitch, adding repeats and `Directions` (§6.1), and reading the note order of GP's MIDI export. Bars below are 0-based master bar indices. The rules hold for every one of the 54 experiments [m3-po01] to [m3-po59]:
 
 1. **Bars and repeats** play as in the rule above.
 2. **Targets** mark the start of their bar. **Jumps** act at the end of their bar, after it is played. GP writes the targets of a bar before its jumps.
-3. **Return jumps** go back and set a mode:
+3. **Return jumps** are every `DaCapo…`, `DaSegno…` and `DaSegnoSegno…` jump, with or without a suffix:
    - `DaCapo…` goes to bar 0, `DaSegno…` to the bar holding `Segno`, `DaSegnoSegno…` to the bar holding `SegnoSegno`;
-   - the suffix `AlFine` arms the `Fine`, `AlCoda` arms `DaCoda` and `AlDoubleCoda` arms `DaDoubleCoda`; no suffix arms nothing and playback runs on to the end.
+   - once fired, the suffix `AlFine` enables the `Fine` (rule 8), `AlCoda` enables every `DaCoda` and `AlDoubleCoda` every `DaDoubleCoda` (rule 9, condition 1).
 4. **Every jump fires at most once** in a play-through, so the expansion is always finite. A jump reached again after it fired is passed over [m3-po01, m3-po05, m3-po25, m3-po37].
 5. **A return jump inside a repeated section fires only on the section's last pass.** The section runs from the repeat start to the repeat end, inclusive. A return jump on the repeat-end bar fires after the last pass [m3-po15, m3-po31, m3-po34]. One in an alternate ending that the last pass skips never fires [m3-po39].
 6. **After a return jump every repeat plays again in full**: pass counts restart, and alternate endings start again from ending 1 [m3-po13, m3-po14, m3-po23, m3-po27].
 7. **A return jump whose target does not exist is ignored**, for example `DaSegno` or `DaSegnoAlCoda` without a `Segno` [m3-po19, m3-po28].
 8. **`Fine`** acts only after an `…AlFine` jump has fired. It then ends playback at the end of its bar, on the first pass that reaches it, even inside a repeated section [m3-po02, m3-po06, m3-po10, m3-po24, m3-po32]. With only a plain `DaCapo`, or with no jump at all, it is ignored [m3-po17, m3-po30].
-9. **`DaCoda` (To Coda) and `DaDoubleCoda` (To Double Coda)** jump to the bar holding `Coda` or `DoubleCoda`:
-   - when the score holds no `…AlCoda` and no `…AlDoubleCoda` jump that can fire, they fire the first time they are reached [m3-po18, m3-po28, m3-po40];
-   - otherwise `DaCoda` waits until an `…AlCoda` jump has fired, and `DaDoubleCoda` until an `…AlDoubleCoda` jump has fired. An armed `DaDoubleCoda` does not arm `DaCoda` [m3-po03, m3-po04, m3-po07, m3-po08, m3-po11, m3-po12, m3-po26, m3-po41];
-   - once armed, it fires on the first pass that reaches it, even inside a repeated section and before that bar's own repeat end [m3-po16, m3-po33, m3-po38];
-   - without its target bar it is ignored [m3-po20].
-10. **Two directions in one bar** follow the same rules one by one. A `DaCoda` that is not armed yet is passed over while a return jump in the same bar fires; on the next visit the armed `DaCoda` fires [m3-po21]. A bar holding `Fine` and an `…AlFine` jump fires the jump first and ends at the `Fine` on the next visit [m3-po22].
+9. **`DaCoda` (To Coda) and `DaDoubleCoda` (To Double Coda)** jump to the bar holding `Coda` or `DoubleCoda`. They are ignored when that bar does not exist [m3-po20] or does not lie after the jump's bar [m3-po46]. Otherwise a `DaCoda` in bar b fires at the end of a visit to b when either condition holds:
+   1. an `…AlCoda` jump has already fired [m3-po03, m3-po07, m3-po11, m3-po16, m3-po26, m3-po33, m3-po37, m3-po38];
+   2. **the look-ahead from b finds nothing that holds it back** [m3-po18, m3-po28, m3-po42, m3-po43, m3-po51, m3-po52, m3-po54, m3-po58, m3-po59].
+
+   **The look-ahead** follows the bars that playback would play after this visit. It starts with bar b's own jumps [m3-po21], then follows rules 1 to 8 and the pass counts of this moment, until the end of the score. Jumps on that path fire as they would, including a forward `DaSegno` [m3-po52]. It holds the `DaCoda` back on the first bar it reaches that holds either of these:
+   - a return jump of any kind (`…AlCoda`, `…AlDoubleCoda`, `…AlFine` or no suffix) that has not fired, whose target bar exists and lies at b or before it [m3-po44, m3-po54, m3-po56, m3-po59]. The jump only needs to be reached, not to fire there: in [m3-po51] the al-Coda jump sits in ending 1 of a repeat. On pass 1 it is ahead, so the `DaCoda` waits even though rule 5 stops the jump from firing on that pass. On pass 2 the ending is skipped, so the `DaCoda` fires;
+   - a `DaDoubleCoda` that has not fired and whose `DoubleCoda` bar exists [m3-po41]. This applies to `DaCoda` only.
+
+   A jump that merely exists does not count. An al-Coda jump earlier in the score [m3-po42], one jumped over by a forward `DaSegno` [m3-po52], one whose target lies after b [m3-po43] or one without its target [m3-po28] lets the `DaCoda` fire on its first visit.
+
+   **`DaDoubleCoda`** follows the same rule with `…AlDoubleCoda` in condition 1 and only the return-jump case in the look-ahead [m3-po04, m3-po12, m3-po26, m3-po40, m3-po55]. An unfired `DaCoda` ahead does not hold it back [m3-po55]. A firing `DaCoda` or `DaDoubleCoda` leaves its bar before that bar's own repeat end [m3-po16, m3-po33, m3-po38].
+
+   **Not tested:** whether a `Fine`, `DaCoda` or `DaDoubleCoda` met on the look-ahead path stops or redirects it. A reference interpreter should treat them as passive on the path and record that choice.
+10. **Two directions in one bar** follow the same rules one by one. A `DaCoda` held back by a return jump in its own bar is passed over while that jump fires; on the next visit it fires [m3-po21]. A bar holding `Fine` and an `…AlFine` jump fires the jump first and ends at the `Fine` on the next visit [m3-po22].
+11. **Unusual placements:**
+    - A `DaSegno` whose `Segno` lies after it jumps forward to it [m3-po45].
+    - With two `Segno` bars, `DaSegno` went to the later one [m3-po47]. With two `Fine` bars, playback after `DaCapoAlFine` passed the first and ended at the later one [m3-po48]. These experiments cannot tell "the last in the score" from "the nearest before the jump"; a duplicated target deserves a diagnostic.
+    - A return jump in a second ending that lies after the repeat end is outside the repeated section, so it fires on its first visit [m3-po49].
 
 Selected orders (bar: directions → order played):
 
@@ -237,11 +249,26 @@ Selected orders (bar: directions → order played):
 | [m3-po26] Coda then Double Coda | 1 `Segno`, 2 `DaCoda`, 3 `DaDoubleCoda`, 4 `DaSegnoAlCoda`, 5 `Coda`, 6 `DaSegnoAlDoubleCoda`, 7 `DoubleCoda` (9 bars) | 0 1 2 3 4 1 2 5 6 1 2 3 7 8 |
 | [m3-po31] D.S. inside a repeat ×3 | 1 `Segno`, repeat 2–4 ×3, 3 `DaSegno` (6 bars) | 0 1 2 3 4 2 3 4 2 3 1 2 3 4 2 3 4 2 3 4 5 |
 | [m3-po33] To Coda inside a repeat | repeat 0–2, 1 `DaCoda`, 3 `DaCapoAlCoda`, 4 `Coda` (6 bars) | 0 1 2 0 1 2 3 0 1 4 5 |
-| [m3-po41] Double Coda arms only itself | 1 `DaCoda`, 2 `DaDoubleCoda`, 3 `DaCapoAlDoubleCoda`, 4 `Coda`, 5 `DoubleCoda` (7 bars) | 0 1 2 3 0 1 2 5 6 |
+| [m3-po41] Double Coda holds To Coda back | 1 `DaCoda`, 2 `DaDoubleCoda`, 3 `DaCapoAlDoubleCoda`, 4 `Coda`, 5 `DoubleCoda` (7 bars) | 0 1 2 3 0 1 2 5 6 |
+| [m3-po42] al Coda behind the To Coda | repeat 0–1, 1 ending 1 + `DaCapoAlCoda`, 2 ending 2, 3 `DaCoda`, 5 `Coda` (7 bars) | 0 1 0 2 3 5 6 |
+| [m3-po44] al Coda after the Coda | 1 `DaCoda`, 3 `Coda`, 5 `DaCapoAlCoda` (7 bars) | 0 1 2 3 4 5 0 1 3 4 5 6 |
+| [m3-po51] al Coda in a skipped ending | repeat 0–2, 1 `DaCoda`, 2 ending 1 + `DaCapoAlCoda`, 3 ending 2, 4 `Coda` (6 bars) | 0 1 2 0 1 4 5 |
+| [m3-po52] al Coda jumped over | 1 `DaCoda`, 2 `DaSegno`, 3 `DaCapoAlCoda`, 4 `Segno`, 5 `Coda` (7 bars) | 0 1 5 6 |
+| [m3-po54] al Fine ahead | 1 `DaCoda`, 3 `Coda`, 4 `Fine`, 5 `DaCapoAlFine` (7 bars) | 0 1 2 3 4 5 0 1 3 4 |
+| [m3-po58] To Coda after al Double Coda | 1 `DaCoda`, 2 `DaCapoAlDoubleCoda`, 3 `Coda`, 4 `DoubleCoda` (6 bars) | 0 1 2 0 1 3 4 5 |
 
 ### 5.2 Tempo ramps
 
-`Linear true` on a tempo automation means a ramp from that tempo to the next tempo automation. 4 of the 39 tempo automations in the corpus are linear; 3 of those are the last tempo of their score, so nothing follows them. GP keeps the flag on re-save. **GP's MIDI export does not ramp**: it writes one tempo event at each automation and nothing between them, and its MusicXML export does the same [m3-mx06, m3-mx08]. A ramp is therefore audible only in GP's own playback.
+`Linear` is a flag on a tempo automation. 4 of the 39 tempo automations in the corpus have it set to `true`, and 3 of those are the last tempo of their score, so nothing follows them. GP keeps the flag on re-save [m3-mx06].
+
+**Declared assumption, not an observation:** OpenTab reads `Linear true` as a ramp from this automation's tempo to the next tempo automation of the score. The flag sits on the automation where the ramp starts, which is why we chose that reading.
+
+No experiment has shown the direction:
+- GP's MIDI export writes one tempo event at each automation and nothing between them;
+- its MusicXML export carries only the tempo at each point [m3-mx06, m3-mx08];
+- whether GP's own playback ramps at all was not measured.
+
+The only later evidence is the ramp fixture's golden PNG and MusicXML, which the second harvest task produces. Until then a playback rule built on the ramp's direction rests on this assumption.
 
 ## 6. Master bars
 
@@ -376,7 +403,7 @@ Beat effects the corpus shows. Elements are written `<Name>` and named propertie
 | Slurs across beats | `<Legato origin destination>`. |
 | Free text | `<FreeText>`. |
 
-**Whammy bar.** `<Whammy originValue="V" middleValue="V" destinationValue="V" originOffset="O" middleOffset1="O" middleOffset2="O" destinationOffset="O"/>`, every number written with six decimals. It has the bend's four-point shape (§9): an origin, two middle points sharing one value, and a destination; offsets run from 0 to 100 across the beat. Values count hundredths of a tone, like bends: GP draws 100 as a dive or rise of "1" (a whole tone) and -100 as "-1" [m3-mx07], so the model value in cents is the GPIF value × 2. Negative values dive. The corpus has 2 whammy beats in 2 files, with values 0, -50 and -100 and offsets 0, 35, 50, 99 and 100. GP re-saves a whammy we wrote unchanged. The separate beat property `VibratoWTremBar` (1 beat) is a vibrato played with the bar.
+**Whammy bar.** `<Whammy originValue="V" middleValue="V" destinationValue="V" originOffset="O" middleOffset1="O" middleOffset2="O" destinationOffset="O"/>`, every number written with six decimals. It has the bend's four-point shape (§9): an origin, two middle points sharing one value, and a destination; offsets run from 0 to 100 across the beat. Values count hundredths of a tone, like bends: GP draws 100 as a dive or rise of "1" (a whole tone) and -100 as "-1" [m3-mx07], so the model value in cents is the GPIF value × 2. Negative values dive. As for bends, a value that does not become a whole number of cents, or an offset that is not a whole number, cannot be held by the model and stays opaque. The corpus has 2 whammy beats in 2 files, with values 0, -50 and -100 and offsets 0, 35, 50, 99 and 100. GP re-saves a whammy we wrote unchanged. The separate beat property `VibratoWTremBar` (1 beat) is a vibrato played with the bar.
 
 Effects that never occurred in the corpus. We applied each one through GP's Effects menu to a score we built, saved it, and compared the result with a plain re-save [fx-plain]:
 
