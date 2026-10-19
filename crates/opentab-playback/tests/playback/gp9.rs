@@ -608,3 +608,122 @@ fn m3_gp9_04_tempo_is_restated_at_backward_jumps_only() {
         assert_eq!(written, expected, "{}: the exported file", case.name);
     }
 }
+
+const M3_GP9_01_PEAK_UNEQUAL_ENDS: [((i64, i64), u16); 17] = [
+    ((0, 1), 8192),
+    ((3, 125), 8519),
+    ((6, 125), 8847),
+    ((9, 125), 9174),
+    ((12, 125), 9502),
+    ((3, 25), 9830),
+    ((18, 125), 10157),
+    ((21, 125), 10485),
+    ((24, 125), 10813),
+    ((1, 5), 10922),
+    ((3, 5), 10922),
+    ((87, 125), 10594),
+    ((99, 125), 10267),
+    ((111, 125), 9939),
+    ((123, 125), 9611),
+    ((1, 1), 9557),
+    ((1, 1), 8192),
+];
+
+#[test]
+fn m3_gp9_01_a_peak_with_unequal_ends_rises_holds_and_falls_event_by_event() {
+    let expected: Vec<BendAt> = M3_GP9_01_PEAK_UNEQUAL_ENDS
+        .iter()
+        .map(|((numer, denom), value)| BendAt {
+            at: frac(*numer, *denom),
+            value: *value,
+        })
+        .collect();
+    assert_eq!(
+        bends(&bent(bend_case(0, 200, 100, Exported::Peak))),
+        expected
+    );
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ChordNote {
+    staccato: bool,
+    accent: Option<Accent>,
+    ticks: i64,
+}
+
+const fn chord_note(staccato: bool, accent: Option<Accent>, ticks: i64) -> ChordNote {
+    ChordNote {
+        staccato,
+        accent,
+        ticks,
+    }
+}
+
+const M3_GP9_02_CHORDS: [[ChordNote; 2]; 4] = [
+    [
+        chord_note(true, Some(Accent::Heavy), 480),
+        chord_note(false, None, 480),
+    ],
+    [
+        chord_note(true, None, 240),
+        chord_note(false, Some(Accent::Heavy), 480),
+    ],
+    [
+        chord_note(true, Some(Accent::Normal), 480),
+        chord_note(true, None, 240),
+    ],
+    [
+        chord_note(true, Some(Accent::Heavy), 480),
+        chord_note(true, Some(Accent::Heavy), 480),
+    ],
+];
+
+fn lengths_by_key(performance: &Performance) -> Vec<(u8, i64)> {
+    let mut started: Vec<(u8, Fraction)> = Vec::new();
+    let mut out = Vec::new();
+    for event in &performance.events {
+        match event.message {
+            MidiMessage::NoteOn { key, .. } => started.push((key, event.at.whole_notes())),
+            MidiMessage::NoteOff { key, .. } => {
+                let index = started
+                    .iter()
+                    .position(|(candidate, _)| *candidate == key)
+                    .expect("a note-on first");
+                let (_, on) = started.remove(index);
+                out.push((
+                    key,
+                    ((event.at.whole_notes() - on) * TICKS_PER_WHOLE).to_integer(),
+                ));
+            }
+            _ => {}
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
+#[test]
+fn m3_gp9_02_in_a_chord_staccato_and_accent_act_per_note() {
+    for chord in M3_GP9_02_CHORDS {
+        let mut builder = Builder::new(1);
+        let track = builder.guitar();
+        let notes = chord
+            .iter()
+            .enumerate()
+            .map(|(string, spec)| {
+                with(
+                    fretted(u8::try_from(string).expect("string"), 0),
+                    |effects| {
+                        effects.staccato = spec.staccato;
+                        effects.accent = spec.accent;
+                    },
+                )
+            })
+            .collect();
+        builder.voice(track, 0, 0, vec![beat(NoteValue::Quarter, notes)]);
+        let performance = perform(&builder.score, &GP).expect("perform");
+        let mut expected = vec![(59, chord[1].ticks), (64, chord[0].ticks)];
+        expected.sort_unstable();
+        assert_eq!(lengths_by_key(&performance), expected, "{chord:?}");
+    }
+}
