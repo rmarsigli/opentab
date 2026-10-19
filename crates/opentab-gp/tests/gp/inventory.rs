@@ -323,3 +323,182 @@ fn the_master_track_is_an_owner_of_its_own() {
         "{entries:?}"
     );
 }
+
+#[derive(Debug, Default, Clone)]
+struct Tree {
+    name: String,
+    attributes: Vec<String>,
+    text: String,
+    children: Vec<Tree>,
+}
+
+impl Tree {
+    fn child(&self, name: &str) -> Option<&Tree> {
+        self.children.iter().find(|child| child.name == name)
+    }
+
+    fn id(&self) -> Option<&str> {
+        self.attributes
+            .iter()
+            .find_map(|attribute| attribute.strip_prefix("id="))
+    }
+
+    fn render(&self) -> String {
+        let inner: Vec<String> = self.children.iter().map(Tree::render).collect();
+        format!(
+            "<{} {}>{}{}</{}>",
+            self.name,
+            self.attributes.join(" "),
+            self.text.trim(),
+            inner.join(""),
+            self.name
+        )
+    }
+}
+
+fn open_tree(start: &BytesStart<'_>) -> Tree {
+    Tree {
+        name: start.name().as_ref().to_string(),
+        attributes: start
+            .attributes()
+            .flatten()
+            .map(|attribute| {
+                let value = attribute
+                    .normalized_value(XmlVersion::Implicit1_0)
+                    .map(|value| value.into_owned())
+                    .unwrap_or_default();
+                format!("{}={value}", attribute.key.as_ref())
+            })
+            .collect(),
+        ..Tree::default()
+    }
+}
+
+fn tree(gpif: &str) -> Tree {
+    let text = gpif.trim_start_matches(BYTE_ORDER_MARK);
+    let mut reader = Reader::from_str(text);
+    let mut stack: Vec<Tree> = vec![Tree::default()];
+    loop {
+        match reader.read_event().expect("well-formed GPIF") {
+            Event::Start(start) => stack.push(open_tree(&start)),
+            Event::Empty(start) => {
+                let done = open_tree(&start);
+                if let Some(parent) = stack.last_mut() {
+                    parent.children.push(done);
+                }
+            }
+            Event::End(_) => {
+                let done = stack.pop().unwrap_or_default();
+                if let Some(parent) = stack.last_mut() {
+                    parent.children.push(done);
+                }
+            }
+            Event::Text(content) => {
+                if let Some(open) = stack.last_mut() {
+                    open.text.push_str(&content.xml10_content());
+                }
+            }
+            Event::CData(content) => {
+                if let Some(open) = stack.last_mut() {
+                    open.text.push_str(&content.into_inner());
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    stack.pop().unwrap_or_default()
+}
+
+fn pool<'t>(root: &'t Tree, name: &str) -> BTreeMap<String, &'t Tree> {
+    root.child(name)
+        .map(|pool| {
+            pool.children
+                .iter()
+                .filter_map(|item| item.id().map(|id| (id.to_string(), item)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn tokens(tree: Option<&Tree>) -> Vec<String> {
+    tree.map(|found| found.text.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+const SPEED_PROPERTY: &str = "id=688062467";
+
+fn note_effects(note: &Tree) -> Option<String> {
+    let trill = note.child("Trill").map(Tree::render);
+    let speed = note.child("XProperties").and_then(|container| {
+        container
+            .children
+            .iter()
+            .find(|property| property.attributes.iter().any(|a| a == SPEED_PROPERTY))
+            .map(Tree::render)
+    });
+    (trill.is_some() || speed.is_some()).then(|| format!("{trill:?} {speed:?}"))
+}
+
+pub fn effect_references(gpif: &str) -> Vec<String> {
+    let document = tree(gpif);
+    let root = document.child("GPIF").unwrap_or(&document);
+    let (bars, voices, beats, notes) = (
+        pool(root, "Bars"),
+        pool(root, "Voices"),
+        pool(root, "Beats"),
+        pool(root, "Notes"),
+    );
+    let mut found = Vec::new();
+    let masters = root
+        .child("MasterBars")
+        .map_or(&[][..], |list| &list.children[..]);
+    for (index, master) in masters.iter().enumerate() {
+        for bar in tokens(master.child("Bars")) {
+            let Some(bar) = bars.get(&bar) else { continue };
+            for voice in tokens(bar.child("Voices")) {
+                let Some(voice) = voices.get(&voice) else {
+                    continue;
+                };
+                for beat in tokens(voice.child("Beats")) {
+                    let Some(beat) = beats.get(&beat) else {
+                        continue;
+                    };
+                    if let Some(whammy) = beat.child("Whammy") {
+                        found.push(format!("{index}: {}", whammy.render()));
+                    }
+                    for note in tokens(beat.child("Notes")) {
+                        if let Some(effects) = notes.get(&note).and_then(|note| note_effects(note))
+                        {
+                            found.push(format!("{index}: {effects}"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn effect_references_follow_shared_beats_and_notes() {
+    let gpif = concat!(
+        "<GPIF><MasterBars><MasterBar><Bars>0</Bars></MasterBar><MasterBar><Bars>0</Bars></MasterBar></MasterBars>",
+        "<Bars><Bar id=\"0\"><Voices>0 -1</Voices></Bar></Bars>",
+        "<Voices><Voice id=\"0\"><Beats>0 1</Beats></Voice></Voices>",
+        "<Beats><Beat id=\"0\"><Whammy originValue=\"0\"/><Notes>0</Notes></Beat><Beat id=\"1\"/></Beats>",
+        "<Notes><Note id=\"0\"><Trill>45</Trill><XProperties><XProperty id=\"688062467\"><Int>120</Int></XProperty></XProperties></Note></Notes>",
+        "</GPIF>"
+    );
+    let found = effect_references(gpif);
+    assert_eq!(found.len(), 4, "{found:?}");
+    assert!(
+        found[0].starts_with("0: <Whammy originValue=0>"),
+        "{found:?}"
+    );
+    assert!(
+        found[1].contains("<Trill >45</Trill>") && found[1].contains("<Int >120</Int>"),
+        "{found:?}"
+    );
+    assert!(found[2].starts_with("1: "), "{found:?}");
+}

@@ -3,8 +3,8 @@ use opentab_model::{
     ElementId, Extensions, Finger, Fraction, Grace, Harmonic, HarmonicKind, Instrument,
     InstrumentKind, Marker, ModelError, Note, NoteEffects, NoteKind, NoteValue, OpaquePayload,
     Pitch, Score, Slide, Staff, Stroke, StrokeDirection, StrokeTicks, Tap, Tempo, TempoChange,
-    TempoUnit, Track, TrackMidi, Transpose, TremoloPicking, Tuning, Tuplet, Vibrato, VoiceSlot,
-    diagnose, from_json, to_json,
+    TempoUnit, Track, TrackMidi, Transpose, TremoloBar, TremoloPicking, Trill, TrillSpeed, Tuning,
+    Tuplet, Vibrato, VoiceSlot, diagnose, from_json, to_json,
 };
 use serde_json::{Value, json};
 
@@ -82,7 +82,20 @@ fn rich_score() -> Score {
         tap: Some(Tap::Left),
         left_hand_finger: Some(Finger::Open),
         right_hand_finger: Some(Finger::Little),
+        trill: Some(Trill {
+            fret: 2,
+            speed: TrillSpeed::new(NoteValue::Sixteenth).unwrap(),
+        }),
     };
+    first_beat.effects.tremolo_bar = Some(
+        TremoloBar::new(
+            BendPoint::new(0, 0).unwrap(),
+            BendPoint::new(35, -100).unwrap(),
+            BendPoint::new(35, -100).unwrap(),
+            BendPoint::new(99, -200).unwrap(),
+        )
+        .unwrap(),
+    );
     first_voice.beats[1].duration =
         Duration::new(NoteValue::Eighth, 2, Some(Tuplet::new(7, 8).unwrap())).unwrap();
     let drum_id = score.alloc().unwrap();

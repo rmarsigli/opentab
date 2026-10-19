@@ -1,10 +1,11 @@
 use opentab_model::{
-    Beat, Bend, BendPoint, Finger, Fraction, Harmonic, KeySignature, Note, NoteEffects, NoteKind,
-    Tap,
+    Beat, Bend, Finger, Fraction, Harmonic, KeySignature, Note, NoteEffects, NoteKind, Tap, Trill,
 };
 
 use crate::canon::{self, CONCERT_PITCH, MIDI, TRANSPOSED_PITCH};
-use crate::codes::{FINGERS, GHOST, HARMONICS, SLIDES, VIBRATOS, accent_bits, name_of};
+use crate::codes::{
+    DEFAULT_TRILL_TICKS, FINGERS, GHOST, HARMONICS, SLIDES, VIBRATOS, accent_bits, name_of,
+};
 use crate::dom::Element;
 use crate::error::Refusal;
 use crate::guard::PitchInputs;
@@ -16,6 +17,7 @@ use crate::write::xml::{Fail, Within};
 const FLOAT_DECIMALS: u32 = 6;
 const MAX_DECIMALS: u32 = 30;
 const PROPERTIES: &str = "Properties";
+const MAX_MIDI: u8 = 127;
 
 fn flag(name: &str) -> Element {
     Element::property(name, Element::new("Enable"))
@@ -25,28 +27,23 @@ fn float(name: &str, text: String) -> Element {
     Element::property(name, Element::leaf("Float", &text))
 }
 
-fn halves(value: i16) -> String {
-    let sign = if value < 0 { "-" } else { "" };
-    let magnitude = value.unsigned_abs();
-    let fraction = if magnitude % 2 == 1 { "5" } else { "0" };
-    format!("{sign}{}.{fraction}00000", magnitude / 2)
-}
-
-fn offset(point: BendPoint) -> String {
-    format!("{}.000000", point.offset())
-}
-
 fn bend_properties(bend: Bend, out: &mut Vec<Element>) {
     out.push(flag("Bended"));
     let destination = bend.destination();
-    out.push(float("BendDestinationOffset", offset(destination)));
-    out.push(float("BendDestinationValue", halves(destination.value())));
-    out.push(float("BendMiddleOffset1", offset(bend.middle_start())));
-    out.push(float("BendMiddleOffset2", offset(bend.middle_end())));
-    out.push(float("BendMiddleValue", halves(bend.middle_value())));
+    out.push(float("BendDestinationOffset", canon::offset(destination)));
+    out.push(float(
+        "BendDestinationValue",
+        canon::halves(destination.value()),
+    ));
+    out.push(float(
+        "BendMiddleOffset1",
+        canon::offset(bend.middle_start()),
+    ));
+    out.push(float("BendMiddleOffset2", canon::offset(bend.middle_end())));
+    out.push(float("BendMiddleValue", canon::halves(bend.middle_value())));
     let origin = bend.origin();
-    out.push(float("BendOriginOffset", offset(origin)));
-    out.push(float("BendOriginValue", halves(origin.value())));
+    out.push(float("BendOriginOffset", canon::offset(origin)));
+    out.push(float("BendOriginValue", canon::halves(origin.value())));
 }
 
 fn decimal(value: Fraction) -> Option<String> {
@@ -197,6 +194,19 @@ fn properties(
     Ok(out)
 }
 
+fn trill_pitch(inputs: &PitchInputs<'_>, trill: Trill) -> Result<u8, Fail> {
+    let refusal = || Fail::new(Refusal::TrillPitch { fret: trill.fret });
+    let NoteKind::Fretted { string, .. } = inputs.kind else {
+        return Err(refusal());
+    };
+    let open = inputs.tuning.get(usize::from(string)).ok_or_else(refusal)?;
+    let pitch = u16::from(open.0) + u16::from(inputs.capo) + u16::from(trill.fret);
+    u8::try_from(pitch)
+        .ok()
+        .filter(|pitch| *pitch <= MAX_MIDI)
+        .ok_or_else(refusal)
+}
+
 fn finger(name: &str, finger: Option<Finger>) -> Option<Element> {
     finger.map(|finger| Element::leaf(name, name_of(FINGERS, finger)))
 }
@@ -238,6 +248,11 @@ pub(crate) fn write_note(
     let inputs = &env.inputs;
     let items = payload::surviving(owners.items(note.id.0)?, &Env::Note(&env))?;
     let mut element = Element::new("Note").with_attribute("id", &id.to_string());
+    if let Some(trill) = effects.trill {
+        element.push(canon::trill(
+            trill_pitch(inputs, trill).within(field("effects.trill"))?,
+        ));
+    }
     if let Some(vibrato) = effects.vibrato {
         element.push(Element::leaf("Vibrato", name_of(VIBRATOS, vibrato)));
     }
@@ -277,6 +292,13 @@ pub(crate) fn write_note(
             container.push(property);
         }
         element.push(container);
+    }
+    let ticks = effects
+        .trill
+        .and_then(|trill| canon::trill_ticks(trill.speed))
+        .filter(|ticks| *ticks != DEFAULT_TRILL_TICKS);
+    if let Some(ticks) = ticks {
+        element.push(Element::new("XProperties").with_child(canon::trill_speed(ticks)));
     }
     apply_own(&mut element, items)?;
     Ok(element)

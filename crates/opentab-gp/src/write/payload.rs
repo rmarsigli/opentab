@@ -271,6 +271,7 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
         ("grace", Env::Beat(effects)) => guard::grace(effects.grace),
         ("dynamic", Env::Beat(effects)) => guard::dynamic(effects.dynamic),
         ("tremolo", Env::Beat(effects)) => guard::tremolo(effects.tremolo_picking),
+        ("tremolo-bar", Env::Beat(effects)) => guard::tremolo_bar(effects.tremolo_bar),
         ("fade-in", Env::Beat(effects)) => guard::fade_in(effects.fade_in),
         ("chord", Env::Beat(effects)) => guard::chord(effects.chord_name.as_deref()),
         ("flag", Env::Beat(effects)) => {
@@ -297,6 +298,7 @@ fn note_expected(kind: &str, guard: &str, env: &NoteEnv<'_>) -> Option<String> {
         "accent" => guard::accent(effects.accent, effects.staccato),
         "slide" => guard::slide(effects.slide),
         "bend" => guard::bend(effects.bend),
+        "trill" => guard::trill(effects.trill),
         "harmonic" => guard::harmonic(effects.harmonic),
         "tap" => guard::tap(effects.tap),
         "vibrato" => guard::vibrato(effects.vibrato),

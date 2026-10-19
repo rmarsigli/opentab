@@ -17,8 +17,6 @@ const DIAGRAMS: &str = "name=\"DiagramCollection\"";
 const ITEM: &str = "<Item ";
 const ITEM_ID: &str = "id=\"";
 const DIAGRAM: &str = "<Diagram";
-const WHAMMY: &str = "<Whammy ";
-const VALUE_ATTRIBUTE: &str = "Value=\"";
 const SYLLABLE_BREAKS: [char; 1] = ['-'];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,24 +130,6 @@ pub fn diagram_ids(data: &str) -> HashSet<String> {
         .collect()
 }
 
-fn nonzero(number: &str) -> bool {
-    number
-        .trim()
-        .trim_start_matches(['-', '+'])
-        .chars()
-        .any(|character| character.is_ascii_digit() && character != '0')
-}
-
-pub fn holds_whammy(data: &str) -> bool {
-    data.split(WHAMMY).skip(1).any(|attributes| {
-        let tag = attributes.split('>').next().unwrap_or_default();
-        tag.split(VALUE_ATTRIBUTE)
-            .skip(1)
-            .filter_map(|value| value.split('"').next())
-            .any(nonzero)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,17 +190,6 @@ mod tests {
         assert!(!holds_legato(
             "<Keep><Property name=\"origin=&quot;true&quot;\"/></Keep>"
         ));
-    }
-
-    #[test]
-    fn a_whammy_counts_only_when_one_of_its_values_moves() {
-        let flat = "<Keep><Whammy originValue=\"0.000000\" middleValue=\"-0.0\" destinationValue=\"0\" originOffset=\"10.000000\"/></Keep>";
-        assert!(!holds_whammy(flat));
-        assert!(holds_whammy(&flat.replace("-0.0", "-50.000000")));
-        assert!(holds_whammy(
-            &flat.replace("destinationValue=\"0\"", "destinationValue=\"0.25\"")
-        ));
-        assert!(!holds_whammy("<Keep><Hairpin>Crescendo</Hairpin></Keep>"));
     }
 
     #[test]

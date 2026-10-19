@@ -119,6 +119,10 @@ pub enum Refusal {
     String { string: u8, strings: usize },
     #[error("the sounding pitch is outside MIDI 0..=127")]
     Pitch,
+    #[error(
+        "the trill's auxiliary fret {fret} sounds outside MIDI 0..=127, or the note has no string"
+    )]
+    TrillPitch { fret: u8 },
     #[error("tempo position {numer}/{denom} is not on the 1/3840 grid within its bar")]
     TempoPosition { numer: i64, denom: i64 },
     #[error("harmonic fret {numer}/{denom} is not a non-negative decimal of at most 30 places")]

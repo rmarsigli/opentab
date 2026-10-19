@@ -114,10 +114,139 @@ pub enum Dynamic {
     Fff,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "TremoloBarRepr")]
+pub struct TremoloBar {
+    origin: BendPoint,
+    middle_start: BendPoint,
+    middle_end: BendPoint,
+    destination: BendPoint,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TremoloBarRepr {
+    origin: BendPoint,
+    middle_start: BendPoint,
+    middle_end: BendPoint,
+    destination: BendPoint,
+}
+
+impl TremoloBar {
+    pub fn new(
+        origin: BendPoint,
+        middle_start: BendPoint,
+        middle_end: BendPoint,
+        destination: BendPoint,
+    ) -> Result<TremoloBar, ModelError> {
+        if middle_start.value() != middle_end.value() {
+            return Err(ModelError::InvalidTremoloBar {
+                start: middle_start.value(),
+                end: middle_end.value(),
+            });
+        }
+        Ok(TremoloBar {
+            origin,
+            middle_start,
+            middle_end,
+            destination,
+        })
+    }
+
+    pub fn origin(&self) -> BendPoint {
+        self.origin
+    }
+
+    pub fn middle_start(&self) -> BendPoint {
+        self.middle_start
+    }
+
+    pub fn middle_end(&self) -> BendPoint {
+        self.middle_end
+    }
+
+    pub fn destination(&self) -> BendPoint {
+        self.destination
+    }
+
+    pub fn middle_value(&self) -> i16 {
+        self.middle_start.value()
+    }
+
+    pub fn moves(&self) -> bool {
+        [self.origin, self.middle_start, self.destination]
+            .iter()
+            .any(|point| point.value() != 0)
+    }
+}
+
+impl TryFrom<TremoloBarRepr> for TremoloBar {
+    type Error = ModelError;
+
+    fn try_from(repr: TremoloBarRepr) -> Result<Self, Self::Error> {
+        TremoloBar::new(
+            repr.origin,
+            repr.middle_start,
+            repr.middle_end,
+            repr.destination,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "NoteValue", into = "NoteValue")]
+pub struct TrillSpeed(NoteValue);
+
+impl TrillSpeed {
+    pub const THIRTY_SECOND: TrillSpeed = TrillSpeed(NoteValue::ThirtySecond);
+
+    pub fn new(value: NoteValue) -> Result<TrillSpeed, ModelError> {
+        match value {
+            NoteValue::ThirtySecond
+            | NoteValue::Sixteenth
+            | NoteValue::Eighth
+            | NoteValue::Quarter => Ok(TrillSpeed(value)),
+            _ => Err(ModelError::InvalidTrillSpeed { value }),
+        }
+    }
+
+    pub fn value(self) -> NoteValue {
+        self.0
+    }
+}
+
+impl Default for TrillSpeed {
+    fn default() -> Self {
+        TrillSpeed::THIRTY_SECOND
+    }
+}
+
+impl TryFrom<NoteValue> for TrillSpeed {
+    type Error = ModelError;
+
+    fn try_from(value: NoteValue) -> Result<Self, Self::Error> {
+        TrillSpeed::new(value)
+    }
+}
+
+impl From<TrillSpeed> for NoteValue {
+    fn from(speed: TrillSpeed) -> Self {
+        speed.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Trill {
+    pub fret: u8,
+    pub speed: TrillSpeed,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BeatEffects {
     pub tremolo_picking: Option<TremoloPicking>,
+    pub tremolo_bar: Option<TremoloBar>,
     pub stroke: Option<Stroke>,
     pub chord_name: Option<String>,
     pub text: Option<String>,
@@ -321,4 +450,5 @@ pub struct NoteEffects {
     pub tap: Option<Tap>,
     pub left_hand_finger: Option<Finger>,
     pub right_hand_finger: Option<Finger>,
+    pub trill: Option<Trill>,
 }

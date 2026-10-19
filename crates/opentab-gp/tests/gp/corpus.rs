@@ -5,7 +5,8 @@ use opentab_gp::{read_gp, write_gp};
 
 use crate::anchors::gpif_text;
 use crate::inventory::{
-    first_difference as subtree_difference, inventory, master_bar_children, ordered_directions,
+    effect_references, first_difference as subtree_difference, inventory, master_bar_children,
+    ordered_directions,
 };
 use opentab_model::{
     Accent, AutomationValue, Clef, Diagnostic, Dynamic, Fraction, Score, TempoUnit, diagnose,
@@ -14,7 +15,7 @@ use opentab_model::{
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
-const EXPECTED_TOTALS: [(&str, usize); 36] = [
+const EXPECTED_TOTALS: [(&str, usize); 40] = [
     ("tracks", 64),
     ("master_bars", 1260),
     ("bars", 2392),
@@ -22,6 +23,10 @@ const EXPECTED_TOTALS: [(&str, usize); 36] = [
     ("beats", 15224),
     ("notes", 17222),
     ("bends", 52),
+    ("tremolo_bars", 2),
+    ("tremolo_bars_moving", 1),
+    ("whammy_payloads", 0),
+    ("trills", 0),
     ("slides", 263),
     ("tie_origins", 932),
     ("strokes", 55),
@@ -53,6 +58,7 @@ const EXPECTED_TOTALS: [(&str, usize); 36] = [
     ("direction_payloads", 0),
 ];
 const THOUSANDTHS: i64 = 1000;
+const CORPUS_WHAMMIES: usize = 2;
 const EXPECTED_DIAGNOSTICS: [(&str, usize); 1] = [("IncompleteBar", 14)];
 
 fn diagnostic_kind(diagnostic: &Diagnostic) -> String {
@@ -150,6 +156,17 @@ fn tally(score: &Score, totals: &mut BTreeMap<String, usize>) {
                     for beat in &voice.beats {
                         let effects = &beat.effects;
                         let chord = effects.chord_name.is_some();
+                        let bar = effects.tremolo_bar;
+                        count(totals, "tremolo_bars", usize::from(bar.is_some()));
+                        let moving = bar.is_some_and(|bar| bar.moves());
+                        count(totals, "tremolo_bars_moving", usize::from(moving));
+                        let kept = score.extensions.0.get(&beat.id.0).map_or(0, |payloads| {
+                            payloads
+                                .iter()
+                                .filter(|payload| payload.data.contains("<Whammy"))
+                                .count()
+                        });
+                        count(totals, "whammy_payloads", kept);
                         count(totals, "strokes", usize::from(effects.stroke.is_some()));
                         count(totals, "chord_names", usize::from(chord));
                         count(totals, "grace_beats", usize::from(effects.grace.is_some()));
@@ -159,6 +176,7 @@ fn tally(score: &Score, totals: &mut BTreeMap<String, usize>) {
                         for note in &beat.notes {
                             let effects = &note.effects;
                             count(totals, "bends", usize::from(effects.bend.is_some()));
+                            count(totals, "trills", usize::from(effects.trill.is_some()));
                             count(totals, "harmonics", usize::from(effects.harmonic.is_some()));
                             count(totals, "slides", usize::from(effects.slide.is_some()));
                             count(totals, "tie_origins", usize::from(effects.tie_origin));
@@ -269,6 +287,7 @@ fn every_corpus_example_survives_a_write() {
     };
     assert_eq!(paths.len(), EXPECTED_FILES);
     let mut failures = Vec::new();
+    let mut whammies = 0;
     for path in &paths {
         let name = path
             .file_name()
@@ -297,6 +316,15 @@ fn every_corpus_example_survives_a_write() {
             failures.push(format!("{name}: the order inside Directions changed"));
             continue;
         }
+        let effects = effect_references(&source);
+        if effects != effect_references(&rewritten) {
+            failures.push(format!("{name}: a whammy or trill changed"));
+            continue;
+        }
+        whammies += effects
+            .iter()
+            .filter(|entry| entry.contains("<Whammy"))
+            .count();
         if master_bar_children(&source) != master_bar_children(&rewritten) {
             failures.push(format!("{name}: the master bar child order changed"));
             continue;
@@ -313,6 +341,7 @@ fn every_corpus_example_survives_a_write() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert_eq!(whammies, CORPUS_WHAMMIES);
 }
 
 const POSITION_HITS: [(&str, usize, usize); 3] =

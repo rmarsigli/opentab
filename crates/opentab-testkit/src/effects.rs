@@ -1,7 +1,7 @@
 use opentab_model::{
     Accent, BeatEffects, Bend, BendPoint, Dynamic, Finger, Fraction, Harmonic, HarmonicKind,
-    NoteEffects, NoteValue, Slide, Stroke, StrokeDirection, StrokeTicks, Tap, TremoloPicking,
-    Vibrato,
+    NoteEffects, NoteValue, Slide, Stroke, StrokeDirection, StrokeTicks, Tap, TremoloBar,
+    TremoloPicking, Trill, TrillSpeed, Vibrato,
 };
 use proptest::option;
 use proptest::prelude::*;
@@ -13,6 +13,13 @@ const MAX_BEND_VALUE: i16 = 1200;
 const MIN_STROKE_TICKS: u16 = 30;
 const MAX_STROKE_TICKS: u16 = 480;
 const TERMINATING_DENOMINATORS: [i64; 6] = [1, 2, 4, 5, 8, 10];
+const MAX_TRILL_FRET: u8 = 24;
+const TRILL_SPEEDS: [NoteValue; 4] = [
+    NoteValue::ThirtySecond,
+    NoteValue::Sixteenth,
+    NoteValue::Eighth,
+    NoteValue::Quarter,
+];
 
 pub fn arb_dynamic() -> impl Strategy<Value = Dynamic> {
     select(vec![
@@ -51,9 +58,35 @@ fn arb_chord_name(gp_writable: bool) -> impl Strategy<Value = Option<String>> {
     option::of(arb_text_for(12, gp_writable))
 }
 
+fn arb_tremolo_bar() -> impl Strategy<Value = TremoloBar> {
+    let value = -MAX_BEND_VALUE..=MAX_BEND_VALUE;
+    (
+        (0u8..=100, value.clone()),
+        (0u8..=100, 0u8..=100, value.clone()),
+        (0u8..=100, value),
+    )
+        .prop_map(|((origin, start), (first, second, middle), (last, end))| {
+            let point = |offset, value| BendPoint::new(offset, value).expect("point in range");
+            TremoloBar::new(
+                point(origin, start),
+                point(first, middle),
+                point(second, middle),
+                point(last, end),
+            )
+            .expect("middle points share one value")
+        })
+}
+
+fn arb_trill() -> impl Strategy<Value = Trill> {
+    (0..=MAX_TRILL_FRET, select(TRILL_SPEEDS.to_vec())).prop_map(|(fret, speed)| Trill {
+        fret,
+        speed: TrillSpeed::new(speed).expect("a trill speed"),
+    })
+}
+
 pub fn arb_beat_effects(gp_writable: bool) -> impl Strategy<Value = BeatEffects> {
     (
-        option::of(arb_tremolo()),
+        (option::of(arb_tremolo()), option::of(arb_tremolo_bar())),
         option::of(arb_stroke()),
         arb_chord_name(gp_writable),
         option::of(arb_text_for(24, gp_writable)),
@@ -61,9 +94,17 @@ pub fn arb_beat_effects(gp_writable: bool) -> impl Strategy<Value = BeatEffects>
         arb_dynamic(),
     )
         .prop_map(
-            |(tremolo_picking, stroke, chord_name, text, (fade_in, slap, pop), dynamic)| {
+            |(
+                (tremolo_picking, tremolo_bar),
+                stroke,
+                chord_name,
+                text,
+                (fade_in, slap, pop),
+                dynamic,
+            )| {
                 BeatEffects {
                     tremolo_picking,
+                    tremolo_bar,
                     stroke,
                     chord_name,
                     text,
@@ -207,6 +248,7 @@ pub fn arb_note_effects(gp_writable: bool) -> impl Strategy<Value = NoteEffects>
             (
                 option::of(arb_finger()),
                 option::of(arb_right_finger(gp_writable)),
+                option::of(arb_trill()),
             ),
         ),
     )
@@ -214,7 +256,7 @@ pub fn arb_note_effects(gp_writable: bool) -> impl Strategy<Value = NoteEffects>
             |(
                 flags,
                 (accent, vibrato, slide),
-                (harmonic, bend, tap, (left_hand_finger, right_hand_finger)),
+                (harmonic, bend, tap, (left_hand_finger, right_hand_finger, trill)),
             )| NoteEffects {
                 tie_origin: flags.tie_origin,
                 tie_destination: flags.tie_destination,
@@ -232,6 +274,7 @@ pub fn arb_note_effects(gp_writable: bool) -> impl Strategy<Value = NoteEffects>
                 tap,
                 left_hand_finger,
                 right_hand_finger,
+                trill,
             },
         )
 }

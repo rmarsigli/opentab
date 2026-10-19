@@ -23,7 +23,8 @@ pub use directions::{
 pub use duration::{Duration, NoteValue, Tuplet};
 pub use effects::{
     Accent, BeatEffects, Bend, BendPoint, Dynamic, Finger, Grace, Harmonic, HarmonicKind,
-    NoteEffects, Slide, Stroke, StrokeDirection, StrokeTicks, Tap, TremoloPicking, Vibrato,
+    NoteEffects, Slide, Stroke, StrokeDirection, StrokeTicks, Tap, TremoloBar, TremoloPicking,
+    Trill, TrillSpeed, Vibrato,
 };
 pub use error::ModelError;
 pub use extensions::{Extensions, OpaquePayload};

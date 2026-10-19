@@ -1,6 +1,6 @@
 use opentab_model::{
-    BarId, Beat, BeatEffects, BeatId, BeatPath, Duration, Score, Voice, VoiceId, VoicePath,
-    VoiceSlot,
+    BarId, Beat, BeatEffects, BeatId, BeatPath, Duration, Score, TremoloBar, Voice, VoiceId,
+    VoicePath, VoiceSlot,
 };
 
 use crate::ids::{
@@ -183,5 +183,19 @@ pub(crate) fn set_duration(
     Ok(Command::SetBeatDuration {
         beat,
         duration: old,
+    })
+}
+
+pub(crate) fn set_tremolo_bar(
+    score: &mut Score,
+    beat: BeatId,
+    tremolo_bar: Option<TremoloBar>,
+) -> Result<Command, CommandError> {
+    let path = find_beat(score, beat)?;
+    let target = beat_in(&mut score.tracks, path).ok_or(not_found(BEAT, beat))?;
+    let old = std::mem::replace(&mut target.effects.tremolo_bar, tremolo_bar);
+    Ok(Command::SetTremoloBar {
+        beat,
+        tremolo_bar: old,
     })
 }

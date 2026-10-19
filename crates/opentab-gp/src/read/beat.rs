@@ -1,18 +1,18 @@
 use opentab_model::{
-    Bar, BarId, Beat, BeatEffects, BeatId, Clef, Duration, NoteValue, Stroke, StrokeTicks,
-    TremoloPicking, Tuplet, Voice, VoiceId, VoiceSlot,
+    Bar, BarId, Beat, BeatEffects, BeatId, BendPoint, Clef, Duration, NoteValue, Stroke,
+    StrokeTicks, TremoloBar, TremoloPicking, Tuplet, Voice, VoiceId, VoiceSlot,
 };
 
 use crate::canon;
 use crate::codes::{
     BRUSH_DURATION, BRUSH_START_TIME, CLEFS, DYNAMICS, FADE_IN, GRACES, NOTE_VALUES,
-    STROKE_DIRECTIONS, TREMOLOS, lookup,
+    STROKE_DIRECTIONS, TREMOLOS, WHAMMY_ATTRIBUTES, lookup,
 };
 use crate::dom::Element;
 use crate::error::GpifProblem;
 use crate::guard;
 use crate::location::Location;
-use crate::number;
+use crate::number::{self, Decimal};
 use crate::opaque::ParentPath;
 use crate::read::context::{Context, Fault, Handled, Owner, Scope, Visit, missing_element};
 use crate::read::note::read_note;
@@ -21,6 +21,8 @@ use crate::read::property::{find, is_flag, single_text};
 use crate::read::track::StaffFrame;
 
 const EMPTY_SLOT: &str = "-1";
+const MAX_WHAMMY_OFFSET: i64 = 100;
+const WHAMMY_VALUE_FACTOR: i128 = 2;
 
 enum BrushState {
     Absent,
@@ -232,6 +234,16 @@ fn read_beat_child(
             });
             return Ok(Handled::Mapped(&["ref"]));
         }
+        "Whammy" => {
+            let bar = whammy(visit.element);
+            effects.tremolo_bar = bar;
+            return Ok(match bar {
+                Some(bar) if canon::whammy(bar) == *visit.element => {
+                    Handled::Mapped(&WHAMMY_ATTRIBUTES)
+                }
+                _ => Handled::Replayed(guard::tremolo_bar(bar)),
+            });
+        }
         "Tremolo" => match lookup(TREMOLOS, &visit.text()).map(TremoloPicking::new) {
             Some(Ok(tremolo)) => effects.tremolo_picking = Some(tremolo),
             _ => return Ok(Handled::Replayed(guard::tremolo(None))),
@@ -297,6 +309,24 @@ fn read_beat_child(
         _ => return Ok(Handled::Unknown),
     }
     Ok(Handled::Mapped(&[]))
+}
+
+fn whammy_point(element: &Element, offset: &str, value: &str) -> Option<BendPoint> {
+    let offset = Decimal::parse(element.attribute(offset)?)?
+        .to_integer()
+        .filter(|offset| (0..=MAX_WHAMMY_OFFSET).contains(offset))?;
+    let value = Decimal::parse(element.attribute(value)?)?.scaled_integer(WHAMMY_VALUE_FACTOR)?;
+    BendPoint::new(u8::try_from(offset).ok()?, i16::try_from(value).ok()?).ok()
+}
+
+fn whammy(element: &Element) -> Option<TremoloBar> {
+    TremoloBar::new(
+        whammy_point(element, "originOffset", "originValue")?,
+        whammy_point(element, "middleOffset1", "middleValue")?,
+        whammy_point(element, "middleOffset2", "middleValue")?,
+        whammy_point(element, "destinationOffset", "destinationValue")?,
+    )
+    .ok()
 }
 
 fn beat_property(property: &Visit<'_>, brush: &BrushState, effects: &mut BeatEffects) -> Handled {

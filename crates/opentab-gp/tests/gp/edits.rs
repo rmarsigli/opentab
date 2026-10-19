@@ -5,9 +5,9 @@ use std::sync::LazyLock;
 use opentab_command::{Command, History, MetaField};
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
-    BarId, Beat, BeatId, DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump, DirectionTarget,
-    Directions, Duration, ElementId, IdAllocator, NoteId, NoteKind, NoteValue, Score,
-    TimeSignature, VoiceId,
+    BarId, Beat, BeatId, BendPoint, DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump,
+    DirectionTarget, Directions, Duration, ElementId, IdAllocator, NoteId, NoteKind, NoteValue,
+    Score, TimeSignature, TremoloBar, Trill, TrillSpeed, VoiceId,
 };
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -47,11 +47,13 @@ enum Op {
     SetTempo,
     SetDirections,
     SetTempoLinear,
+    SetTremoloBar,
+    SetTrill,
     PadStaffBars,
     TrimStaffBars,
 }
 
-const OPS: [Op; 17] = [
+const OPS: [Op; 19] = [
     Op::SetMeta,
     Op::SetAnacrusis,
     Op::InsertMasterBar,
@@ -67,11 +69,13 @@ const OPS: [Op; 17] = [
     Op::SetTempo,
     Op::SetDirections,
     Op::SetTempoLinear,
+    Op::SetTremoloBar,
+    Op::SetTrill,
     Op::PadStaffBars,
     Op::TrimStaffBars,
 ];
 
-const FORWARD_OPS: [&str; 16] = [
+const FORWARD_OPS: [&str; 18] = [
     "set_meta",
     "set_anacrusis",
     "insert_master_bar",
@@ -86,6 +90,8 @@ const FORWARD_OPS: [&str; 16] = [
     "set_tempo",
     "set_directions",
     "set_tempo_linear",
+    "set_tremolo_bar",
+    "set_trill",
     "pad_staff_bars",
     "trim_staff_bars",
 ];
@@ -159,6 +165,39 @@ fn directions(value: u8) -> Directions {
             jumps: vec![jump],
         },
     }
+}
+
+fn tremolo_bar(value: u8) -> Option<TremoloBar> {
+    if value.is_multiple_of(3) {
+        return None;
+    }
+    let depth = -i16::from(value % 7) * 50;
+    let point = |offset, value| BendPoint::new(offset, value).expect("point");
+    Some(
+        TremoloBar::new(
+            point(0, 0),
+            point(30, depth),
+            point(60, depth),
+            point(100, 0),
+        )
+        .expect("tremolo bar"),
+    )
+}
+
+fn trill(value: u8) -> Option<Trill> {
+    if value.is_multiple_of(3) {
+        return None;
+    }
+    let speeds = [
+        NoteValue::ThirtySecond,
+        NoteValue::Sixteenth,
+        NoteValue::Eighth,
+        NoteValue::Quarter,
+    ];
+    Some(Trill {
+        fret: value % MAX_FRET,
+        speed: TrillSpeed::new(speeds[usize::from(value % 4)]).expect("speed"),
+    })
 }
 
 fn check_child_order(text: &str) -> Result<(), TestCaseError> {
@@ -242,6 +281,14 @@ fn resolve(edit: Edit, score: &Score) -> Command {
             index: usize::from(value % 2),
             linear: value % 3 == 0,
         },
+        Op::SetTremoloBar => Command::SetTremoloBar {
+            beat: pick(&found.beats, at, BeatId(nobody)),
+            tremolo_bar: tremolo_bar(value),
+        },
+        Op::SetTrill => Command::SetTrill {
+            note: pick(&found.notes, at, NoteId(nobody)),
+            trill: trill(value),
+        },
         Op::PadStaffBars | Op::TrimStaffBars => {
             let track = &score.tracks[0];
             let staff = &track.staves[0];
@@ -277,6 +324,8 @@ fn op_name(command: &Command) -> String {
         Command::SetTempo { .. } => "set_tempo",
         Command::SetDirections { .. } => "set_directions",
         Command::SetTempoLinear { .. } => "set_tempo_linear",
+        Command::SetTremoloBar { .. } => "set_tremolo_bar",
+        Command::SetTrill { .. } => "set_trill",
         Command::PadStaffBars { .. } => "pad_staff_bars",
         Command::TrimStaffBars { .. } => "trim_staff_bars",
         _ => "restore",

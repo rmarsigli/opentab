@@ -168,6 +168,23 @@ pub(crate) const MINOR: &str = "Minor";
 pub(crate) const BRUSH_DURATION: &str = "687935489";
 pub(crate) const BRUSH_START_TIME: &str = "687935490";
 pub(crate) const TEMPO_POSITION_GRID: i64 = 3840;
+pub(crate) const TRILL_SPEED: &str = "688062467";
+pub(crate) const DEFAULT_TRILL_TICKS: u16 = 60;
+pub(crate) const TRILL_SPEEDS: &[(u16, NoteValue)] = &[
+    (60, NoteValue::ThirtySecond),
+    (120, NoteValue::Sixteenth),
+    (240, NoteValue::Eighth),
+    (480, NoteValue::Quarter),
+];
+pub(crate) const WHAMMY_ATTRIBUTES: [&str; 7] = [
+    "originValue",
+    "middleValue",
+    "destinationValue",
+    "originOffset",
+    "middleOffset1",
+    "middleOffset2",
+    "destinationOffset",
+];
 
 pub(crate) fn accent_bits(accent: Option<Accent>, staccato: bool) -> u32 {
     let accent = match accent {

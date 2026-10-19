@@ -20,3 +20,4 @@ mod support;
 mod tempo;
 mod undoable;
 mod voice;
+mod whammy_trill;

@@ -1,12 +1,12 @@
 use opentab_model::{
-    Balance, Directions, Fraction, InstrumentSet, KeySignature, Level, MidiBank, NoteKind, Pitch,
-    TimeSignature,
+    Balance, BendPoint, Directions, Fraction, InstrumentSet, KeySignature, Level, MidiBank,
+    NoteKind, Pitch, TimeSignature, TremoloBar, TrillSpeed,
 };
 
 use crate::codes::{
     DIRECTION_JUMP, DIRECTION_JUMPS, DIRECTION_TARGET, DIRECTION_TARGETS, INSTRUMENT_SETS,
     PAN_PARAMETER, SOUND_AUTOMATION, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS, TEMPO_POSITION_GRID,
-    VOLUME_PARAMETER, name_of,
+    TRILL_SPEED, TRILL_SPEEDS, VOLUME_PARAMETER, WHAMMY_ATTRIBUTES, name_of,
 };
 use crate::dom::{self, Element, Node};
 use crate::guard::PitchInputs;
@@ -90,6 +90,51 @@ pub(crate) fn directions(directions: &Directions) -> Option<Element> {
         ));
     }
     Some(element)
+}
+
+pub(crate) fn halves(value: i16) -> String {
+    let sign = if value < 0 { "-" } else { "" };
+    let magnitude = value.unsigned_abs();
+    let fraction = if magnitude % 2 == 1 { "5" } else { "0" };
+    format!("{sign}{}.{fraction}00000", magnitude / 2)
+}
+
+pub(crate) fn offset(point: BendPoint) -> String {
+    format!("{}.000000", point.offset())
+}
+
+pub(crate) fn whammy(bar: TremoloBar) -> Element {
+    let values = [
+        halves(bar.origin().value()),
+        halves(bar.middle_value()),
+        halves(bar.destination().value()),
+        offset(bar.origin()),
+        offset(bar.middle_start()),
+        offset(bar.middle_end()),
+        offset(bar.destination()),
+    ];
+    let mut element = Element::new("Whammy");
+    for (name, value) in WHAMMY_ATTRIBUTES.iter().zip(values) {
+        element = element.with_attribute(name, &value);
+    }
+    element
+}
+
+pub(crate) fn trill(pitch: u8) -> Element {
+    Element::leaf("Trill", &pitch.to_string())
+}
+
+pub(crate) fn trill_ticks(speed: TrillSpeed) -> Option<u16> {
+    TRILL_SPEEDS
+        .iter()
+        .find(|(_, value)| *value == speed.value())
+        .map(|(ticks, _)| *ticks)
+}
+
+pub(crate) fn trill_speed(ticks: u16) -> Element {
+    Element::new("XProperty")
+        .with_attribute("id", TRILL_SPEED)
+        .with_child(Element::leaf("Int", &ticks.to_string()))
 }
 
 pub(crate) fn tempo_linear() -> Element {

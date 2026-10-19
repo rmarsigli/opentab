@@ -37,6 +37,9 @@ pub enum Diagnostic {
         string: u8,
         strings: usize,
     },
+    TrillOutOfRange {
+        note: NoteId,
+    },
     DuplicateId {
         id: ElementId,
     },
@@ -416,6 +419,10 @@ impl Report {
             for note in &beat.notes {
                 self.id(note.id.0);
                 self.note(track, note.id, note.kind);
+                if !track.trill_fits(note) {
+                    self.diagnostics
+                        .push(Diagnostic::TrillOutOfRange { note: note.id });
+                }
             }
             self.strings(beat);
         }

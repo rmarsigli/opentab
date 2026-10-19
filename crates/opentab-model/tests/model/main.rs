@@ -12,3 +12,4 @@ mod ranges;
 mod support;
 mod tempo;
 mod time_signature;
+mod whammy_trill;

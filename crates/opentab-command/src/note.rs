@@ -1,13 +1,13 @@
 use std::iter::once;
 
-use opentab_model::{BeatId, Note, NoteEffects, NoteId, NoteKind, Score};
+use opentab_model::{BeatId, Note, NoteEffects, NoteId, NoteKind, Score, Trill};
 
 use crate::beat::find_beat;
 use crate::ids::{
     check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
 };
 use crate::locate::{beat_in, beat_ref, not_found, note_in};
-use crate::rules::{already_broken, check_note_in};
+use crate::rules::{already_broken, check_note_in, check_trill};
 use crate::{Command, CommandError, ExtensionEntry};
 
 const BEAT: &str = "beat";
@@ -61,6 +61,7 @@ pub(crate) fn remove(score: &mut Score, note: NoteId) -> Result<Command, Command
     }
     check_note_in(track, owner.id, before, current.kind).map_err(already_broken)?;
     check_note_in(track, owner.id, after, current.kind).map_err(already_broken)?;
+    check_trill(track, current).map_err(already_broken)?;
     check_removable(score, once(current.id.0))?;
     let target = beat_in(&mut score.tracks, path.beat).ok_or(not_found(NOTE, note))?;
     if path.note >= target.notes.len() {
@@ -96,6 +97,7 @@ pub(crate) fn restore(
         });
     }
     check_note_in(track, beat, &target.notes, note.kind)?;
+    check_trill(track, note)?;
     check_restorable(score, once(note.id.0), extensions)?;
     let target = beat_in(&mut score.tracks, path).ok_or(not_found(BEAT, beat))?;
     target.notes.insert(index, note.clone());
@@ -118,4 +120,25 @@ pub(crate) fn set_fret(score: &mut Score, note: NoteId, fret: u8) -> Result<Comm
         }
         NoteKind::Percussion { .. } => Err(CommandError::WrongInstrument { track }),
     }
+}
+
+pub(crate) fn set_trill(
+    score: &mut Score,
+    note: NoteId,
+    trill: Option<Trill>,
+) -> Result<Command, CommandError> {
+    let path = score.find_note(note).ok_or(not_found(NOTE, note))?;
+    let track = score
+        .tracks
+        .get(path.beat.track)
+        .ok_or(not_found(NOTE, note))?;
+    let owner = beat_ref(&score.tracks, path.beat).ok_or(not_found(NOTE, note))?;
+    let current = owner.notes.get(path.note).ok_or(not_found(NOTE, note))?;
+    check_trill(track, current).map_err(already_broken)?;
+    let mut changed = current.clone();
+    changed.effects.trill = trill;
+    check_trill(track, &changed)?;
+    let target = note_in(&mut score.tracks, path).ok_or(not_found(NOTE, note))?;
+    let old = std::mem::replace(&mut target.effects.trill, trill);
+    Ok(Command::SetTrill { note, trill: old })
 }

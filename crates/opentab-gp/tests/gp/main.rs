@@ -24,4 +24,5 @@ mod sharing;
 mod support;
 mod tempo;
 mod track;
+mod whammy_trill;
 mod write;

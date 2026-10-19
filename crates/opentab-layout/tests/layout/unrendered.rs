@@ -332,7 +332,7 @@ fn a_second_voice_has_no_rhythm_under_a_lone_tab() {
 #[test]
 fn opaque_guitar_pro_notation_is_named_by_its_element() {
     let both = options(StaffMode::Both);
-    let cases: [(&str, &str); 10] = [
+    let cases: [(&str, &str); 9] = [
         ("<TripletFeel>Triplet8th</TripletFeel>", "triplet_feel"),
         ("<Arpeggio>Down</Arpeggio>", "arpeggios"),
         ("<Wah>Open</Wah>", "wah"),
@@ -341,10 +341,6 @@ fn opaque_guitar_pro_notation_is_named_by_its_element() {
         ("<SimileMark>Simple</SimileMark>", "simile_marks"),
         ("<Slashed/>", "slash_notation"),
         ("<LetRingThroughout/>", "let_ring_throughout"),
-        (
-            "<Whammy originValue=\"0.000000\" middleValue=\"-50.000000\" destinationValue=\"0\"/>",
-            "whammy_bar",
-        ),
         ("<Fermatas><Fermata/></Fermatas>", "fermatas"),
     ];
     for (element, name) in cases {
@@ -429,4 +425,48 @@ fn direction_fixtures_report_directions() {
     }
     let plain = crate::snapshots::fixture("repeats.gp");
     assert!(!names(&plain, &both).contains(&"directions"));
+}
+
+#[test]
+fn whammy_and_trill_are_read_from_the_typed_effects_only() {
+    let both = options(StaffMode::Both);
+    let point = |offset, value| opentab_model::BendPoint::new(offset, value).unwrap();
+    let dive = opentab_model::TremoloBar::new(
+        point(0, 0),
+        point(35, -100),
+        point(35, -100),
+        point(99, -200),
+    )
+    .unwrap();
+    let flat =
+        opentab_model::TremoloBar::new(point(0, 0), point(50, 0), point(50, 0), point(100, 0))
+            .unwrap();
+    let mut moving = score(2);
+    moving.tracks[0].staves[0].bars[1].voices[0].beats[0]
+        .effects
+        .tremolo_bar = Some(dive);
+    assert_eq!(names(&moving, &both), vec!["whammy_bar"]);
+    let mut still = score(2);
+    still.tracks[0].staves[0].bars[1].voices[0].beats[0]
+        .effects
+        .tremolo_bar = Some(flat);
+    assert!(names(&still, &both).is_empty());
+    let mut opaque = score(2);
+    let beat = beat_id(&opaque, 1, 0);
+    keep(
+        &mut opaque,
+        beat,
+        "<Keep parent=\"\" index=\"3\"><Whammy originValue=\"0.3\" middleValue=\"-50\"/></Keep>",
+    );
+    assert!(names(&opaque, &both).is_empty());
+    let mut trilled = score(2);
+    trilled.tracks[0].staves[0].bars[1].voices[0].beats[0].notes[0]
+        .effects
+        .trill = Some(opentab_model::Trill {
+        fret: 2,
+        speed: opentab_model::TrillSpeed::default(),
+    });
+    for mode in [StaffMode::Both, StaffMode::Tab, StaffMode::Standard] {
+        assert_eq!(names(&trilled, &options(mode)), vec!["trill"], "{mode:?}");
+    }
 }

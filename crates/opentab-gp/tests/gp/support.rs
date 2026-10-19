@@ -253,6 +253,7 @@ pub fn documented(reason: &Refusal) -> bool {
             | Refusal::NoteKind
             | Refusal::String { .. }
             | Refusal::Pitch
+            | Refusal::TrillPitch { .. }
             | Refusal::TempoPosition { .. }
             | Refusal::HarmonicFret { .. }
             | Refusal::RightHandOpen

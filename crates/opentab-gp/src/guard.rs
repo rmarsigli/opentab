@@ -1,12 +1,12 @@
 use opentab_model::{
-    Accent, Bar, Beat, Bend, Clef, Directions, Dynamic, Finger, Fraction, Grace, Harmonic,
-    InstrumentKind, InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature, TrackMidi,
-    Transpose, TremoloPicking, Vibrato, VoiceSlot,
+    Accent, Bar, Beat, Bend, BendPoint, Clef, Directions, Dynamic, Finger, Fraction, Grace,
+    Harmonic, InstrumentKind, InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature,
+    TrackMidi, Transpose, TremoloBar, TremoloPicking, Trill, Vibrato, VoiceSlot,
 };
 
 use crate::codes::{
     CLEFS, DIRECTION_JUMPS, DIRECTION_TARGETS, DYNAMICS, FINGERS, GRACES, HARMONICS,
-    INSTRUMENT_SETS, STROKE_DIRECTIONS, TREMOLOS, VIBRATOS, name_of, slide_bits,
+    INSTRUMENT_SETS, NOTE_VALUES, STROKE_DIRECTIONS, TREMOLOS, VIBRATOS, name_of, slide_bits,
 };
 
 const NONE: &str = "none";
@@ -133,22 +133,52 @@ pub(crate) fn slide(slide: Option<Slide>) -> String {
     }
 }
 
+fn points(points: [BendPoint; 4]) -> String {
+    let points: Vec<String> = points
+        .iter()
+        .map(|point| format!("{} {}", point.offset(), point.value()))
+        .collect();
+    points.join(";")
+}
+
 pub(crate) fn bend(bend: Option<Bend>) -> String {
     match bend {
-        Some(bend) => {
-            let points = [
+        Some(bend) => format!(
+            "bend:{}",
+            points([
                 bend.origin(),
                 bend.middle_start(),
                 bend.middle_end(),
                 bend.destination(),
-            ];
-            let points: Vec<String> = points
-                .iter()
-                .map(|point| format!("{} {}", point.offset(), point.value()))
-                .collect();
-            format!("bend:{}", points.join(";"))
-        }
+            ])
+        ),
         None => format!("bend:{NONE}"),
+    }
+}
+
+pub(crate) fn tremolo_bar(bar: Option<TremoloBar>) -> String {
+    match bar {
+        Some(bar) => format!(
+            "tremolo-bar:{}",
+            points([
+                bar.origin(),
+                bar.middle_start(),
+                bar.middle_end(),
+                bar.destination(),
+            ])
+        ),
+        None => format!("tremolo-bar:{NONE}"),
+    }
+}
+
+pub(crate) fn trill(trill: Option<Trill>) -> String {
+    match trill {
+        Some(trill) => format!(
+            "trill:{} {}",
+            trill.fret,
+            name_of(NOTE_VALUES, trill.speed.value())
+        ),
+        None => format!("trill:{NONE}"),
     }
 }
 

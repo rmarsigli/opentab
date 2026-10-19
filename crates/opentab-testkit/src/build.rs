@@ -159,7 +159,7 @@ impl Builder {
             .into_iter()
             .map(|staff| self.staff(staff, kind, strings, &master_bars))
             .collect();
-        Track {
+        let mut track = Track {
             id,
             name: seed.name,
             short_name: seed.short_name,
@@ -175,7 +175,9 @@ impl Builder {
             transpose: seed.transpose,
             staves,
             automations,
-        }
+        };
+        drop_unplayable_trills(&mut track);
+        track
     }
 
     fn staff(
@@ -301,10 +303,14 @@ impl Builder {
                     articulation: note_seed.articulation,
                 },
             };
+            let mut effects = note_seed.effects.clone();
+            if kind == InstrumentKind::Percussion {
+                effects.trill = None;
+            }
             notes.push(Note {
                 id: self.id(),
                 kind: note_kind,
-                effects: note_seed.effects.clone(),
+                effects,
             });
         }
         notes
@@ -452,4 +458,24 @@ pub fn build_score(seed: ScoreSeed, cfg: ScoreGenConfig) -> Score {
             .insert(position, ContainerEntry::Score { name: entry.name });
     }
     builder.score
+}
+
+fn drop_unplayable_trills(track: &mut Track) {
+    let probe = Track {
+        staves: Vec::new(),
+        ..track.clone()
+    };
+    for staff in &mut track.staves {
+        for bar in &mut staff.bars {
+            for voice in &mut bar.voices {
+                for beat in &mut voice.beats {
+                    for note in &mut beat.notes {
+                        if !probe.trill_fits(note) {
+                            note.effects.trill = None;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

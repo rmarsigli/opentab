@@ -202,6 +202,9 @@ fn write_beat(
     }
     element.push(Element::leaf("Dynamic", name_of(DYNAMICS, effects.dynamic)));
     element.push(Element::new("Rhythm").with_attribute("ref", &rhythm.to_string()));
+    if let Some(bar) = effects.tremolo_bar {
+        element.push(canon::whammy(bar));
+    }
     if let Some(tremolo) = effects.tremolo_picking {
         element.push(Element::leaf("Tremolo", name_of(TREMOLOS, tremolo.value())));
     }

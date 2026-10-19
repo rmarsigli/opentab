@@ -51,10 +51,27 @@ pub(crate) fn already_broken(error: CommandError) -> CommandError {
     ))
 }
 
+pub(crate) fn check_trill(track: &Track, note: &Note) -> Result<(), CommandError> {
+    let Some(trill) = note.effects.trill else {
+        return Ok(());
+    };
+    if track.instrument.kind == InstrumentKind::Percussion {
+        return Err(CommandError::WrongInstrument { track: track.id });
+    }
+    if !track.trill_fits(note) {
+        return Err(CommandError::invalid(format!(
+            "the trill's auxiliary fret {} on note {} sounds outside MIDI 0..=127",
+            trill.fret, note.id.0.0
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn check_beat(track: &Track, beat: &Beat) -> Result<(), CommandError> {
     for (index, note) in beat.notes.iter().enumerate() {
         let before = beat.notes.get(..index).unwrap_or_default();
         check_note_in(track, beat.id, before, note.kind)?;
+        check_trill(track, note)?;
     }
     Ok(())
 }

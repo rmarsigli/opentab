@@ -8,7 +8,7 @@ use opentab_model::{
 
 pub use payload::{
     LyricLine, chord_reference, diagram_ids, has_visible_text, holds_legato, holds_lyrics,
-    holds_whammy, lyric_lines, syllables, visible_text,
+    lyric_lines, syllables, visible_text,
 };
 
 use crate::display::{Page, Primitive};
@@ -55,13 +55,14 @@ pub enum Unrendered {
     Staccato,
     Strokes,
     Tapping,
+    Trill,
     TripletFeel,
     Vibrato,
     Wah,
     WhammyBar,
 }
 
-pub const UNRENDERED: [Unrendered; 37] = [
+pub const UNRENDERED: [Unrendered; 38] = [
     Unrendered::Accents,
     Unrendered::Arpeggios,
     Unrendered::Bends,
@@ -95,6 +96,7 @@ pub const UNRENDERED: [Unrendered; 37] = [
     Unrendered::Staccato,
     Unrendered::Strokes,
     Unrendered::Tapping,
+    Unrendered::Trill,
     Unrendered::TripletFeel,
     Unrendered::Vibrato,
     Unrendered::Wah,
@@ -137,6 +139,7 @@ impl Unrendered {
             Unrendered::Staccato => "staccato",
             Unrendered::Strokes => "strokes",
             Unrendered::Tapping => "tapping",
+            Unrendered::Trill => "trill",
             Unrendered::TripletFeel => "triplet_feel",
             Unrendered::Vibrato => "vibrato",
             Unrendered::Wah => "wah",
@@ -211,7 +214,6 @@ impl Walk<'_> {
                 self.add(marked(data, tag), feature);
             }
             self.add(holds_legato(data), Unrendered::LegatoSlurs);
-            self.add(holds_whammy(data), Unrendered::WhammyBar);
         }
     }
 
@@ -240,6 +242,7 @@ impl Walk<'_> {
             effects.right_hand_finger.is_some(),
             Unrendered::RightHandFingering,
         );
+        self.add(effects.trill.is_some(), Unrendered::Trill);
         if let NoteKind::Percussion { articulation } = note.kind {
             let lost = kit.is_none_or(|kit| !kit.entry(articulation).fully_drawn());
             self.add(lost, Unrendered::PercussionArticulations);
@@ -257,6 +260,8 @@ impl Walk<'_> {
         }
         let effects = &beat.effects;
         self.add(effects.fade_in, Unrendered::FadeIn);
+        let whammy = effects.tremolo_bar.is_some_and(|bar| bar.moves());
+        self.add(whammy, Unrendered::WhammyBar);
         self.add(effects.slap, Unrendered::Slap);
         self.add(effects.pop, Unrendered::Pop);
         self.add(!staves.tab && effects.stroke.is_some(), Unrendered::Strokes);

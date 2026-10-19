@@ -1,10 +1,10 @@
 use opentab_command::{Command, MetaField};
 use opentab_model::{
-    Automation, AutomationValue, Balance, BarId, Beat, BeatId, BeatPath, DIRECTION_JUMPS,
-    DIRECTION_TARGETS, Directions, Duration, ElementId, Fraction, InstrumentKind, Level,
-    MasterBarId, MidiBank, MidiChannel, Note, NoteEffects, NoteId, NoteKind, NoteValue, Score,
-    Sound, SoundRef, StaffId, Tempo, TempoChange, TempoUnit, TimeSignature, TrackId, TrackMidi,
-    Tuplet, VoiceId, VoiceSlot,
+    Automation, AutomationValue, Balance, BarId, Beat, BeatId, BeatPath, BendPoint,
+    DIRECTION_JUMPS, DIRECTION_TARGETS, Directions, Duration, ElementId, Fraction, InstrumentKind,
+    Level, MasterBarId, MidiBank, MidiChannel, Note, NoteEffects, NoteId, NoteKind, NoteValue,
+    Score, Sound, SoundRef, StaffId, Tempo, TempoChange, TempoUnit, TimeSignature, TrackId,
+    TrackMidi, TremoloBar, Trill, TrillSpeed, Tuplet, VoiceId, VoiceSlot,
 };
 use opentab_testkit::arb_score;
 use proptest::collection::vec;
@@ -24,6 +24,14 @@ const MAX_DROPPED_BARS: usize = 2;
 const SELECTOR_BITS: usize = 32;
 const CLEAR_SHIFT: usize = 16;
 const CORRUPT_RATE: f64 = 0.25;
+const MAX_BEND_VALUE: i16 = 1200;
+const MAX_TRILL_FRET: u8 = 60;
+const TRILL_SPEEDS: [NoteValue; 4] = [
+    NoteValue::ThirtySecond,
+    NoteValue::Sixteenth,
+    NoteValue::Eighth,
+    NoteValue::Quarter,
+];
 const FIELDS: [MetaField; 10] = [
     MetaField::Title,
     MetaField::Subtitle,
@@ -115,6 +123,14 @@ pub enum Step {
         master_bar: Pick,
         index: Pick,
         linear: bool,
+    },
+    SetTremoloBar {
+        beat: Pick,
+        tremolo_bar: Option<TremoloBar>,
+    },
+    SetTrill {
+        note: Pick,
+        trill: Option<Trill>,
     },
     PadStaffBars {
         track: Pick,
@@ -568,6 +584,21 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
                 linear: *linear,
             }
         }
+        Step::SetTremoloBar { beat, tremolo_bar } => Command::SetTremoloBar {
+            beat: catalog.id(*beat, &catalog.beats),
+            tremolo_bar: *tremolo_bar,
+        },
+        Step::SetTrill { note, trill } => {
+            let pool = if note.selector.is_multiple_of(ALL_POOL_EVERY) {
+                &catalog.notes
+            } else {
+                &catalog.fretted_notes
+            };
+            Command::SetTrill {
+                note: catalog.id(*note, pool),
+                trill: *trill,
+            }
+        }
         Step::PadStaffBars { track, staff } => {
             let short: Vec<StaffInfo> = catalog
                 .staves
@@ -698,6 +729,32 @@ fn arb_bpm() -> impl Strategy<Value = f64> {
     ]
 }
 
+fn arb_tremolo_bar() -> impl Strategy<Value = TremoloBar> {
+    let value = -MAX_BEND_VALUE..=MAX_BEND_VALUE;
+    (
+        (0u8..=100, value.clone()),
+        (0u8..=100, 0u8..=100, value.clone()),
+        (0u8..=100, value),
+    )
+        .prop_map(|((origin, start), (first, second, middle), (last, end))| {
+            let point = |offset, value| BendPoint::new(offset, value).expect("point in range");
+            TremoloBar::new(
+                point(origin, start),
+                point(first, middle),
+                point(second, middle),
+                point(last, end),
+            )
+            .expect("middle points share one value")
+        })
+}
+
+fn arb_trill() -> impl Strategy<Value = Trill> {
+    (0u8..=MAX_TRILL_FRET, select(TRILL_SPEEDS.to_vec())).prop_map(|(fret, speed)| Trill {
+        fret,
+        speed: TrillSpeed::new(speed).expect("a trill speed"),
+    })
+}
+
 fn arb_directions() -> impl Strategy<Value = Directions> {
     (
         vec(select(DIRECTION_TARGETS.to_vec()), 0..=2),
@@ -755,6 +812,10 @@ fn arb_step() -> impl Strategy<Value = Step> {
                 linear,
             }
         }),
+        (arb_pick(), option::of(arb_tremolo_bar()))
+            .prop_map(|(beat, tremolo_bar)| Step::SetTremoloBar { beat, tremolo_bar }),
+        (arb_pick(), option::of(arb_trill()))
+            .prop_map(|(note, trill)| Step::SetTrill { note, trill }),
         (arb_pick(), arb_pick()).prop_map(|(track, staff)| Step::PadStaffBars { track, staff }),
         (arb_pick(), arb_pick(), arb_pick()).prop_map(|(track, staff, len)| Step::TrimStaffBars {
             track,

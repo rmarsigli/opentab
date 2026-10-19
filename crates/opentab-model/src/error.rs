@@ -22,6 +22,12 @@ pub enum ModelError {
     InvalidBendPoint { offset: u8, value: i16 },
     #[error("bend middle values {start} and {end} differ; both middle points share one value")]
     InvalidBend { start: i16, end: i16 },
+    #[error(
+        "tremolo bar middle values {start} and {end} differ; both middle points share one value"
+    )]
+    InvalidTremoloBar { start: i16, end: i16 },
+    #[error("trill speed {value:?} is not a thirty-second, sixteenth, eighth or quarter")]
+    InvalidTrillSpeed { value: NoteValue },
     #[error("stroke duration {ticks} ticks is outside 30..=480")]
     InvalidStrokeTicks { ticks: u16 },
     #[error("tremolo picking {value:?} is not an eighth, sixteenth or thirty-second")]

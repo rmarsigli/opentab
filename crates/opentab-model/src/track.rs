@@ -183,6 +183,23 @@ pub struct Track {
 }
 
 impl Track {
+    pub fn trill_pitch_of(&self, note: &Note) -> Option<Pitch> {
+        let trill = note.effects.trill?;
+        let NoteKind::Fretted { string, .. } = note.kind else {
+            return None;
+        };
+        let open = self.tuning.strings.get(usize::from(string))?;
+        let midi = u16::from(open.0) + u16::from(self.capo) + u16::from(trill.fret);
+        u8::try_from(midi)
+            .ok()
+            .filter(|value| *value <= MAX_MIDI_NOTE)
+            .map(Pitch)
+    }
+
+    pub fn trill_fits(&self, note: &Note) -> bool {
+        note.effects.trill.is_none() || self.trill_pitch_of(note).is_some()
+    }
+
     pub fn pitch_of(&self, note: &Note) -> Option<Pitch> {
         let NoteKind::Fretted { string, fret } = note.kind else {
             return None;

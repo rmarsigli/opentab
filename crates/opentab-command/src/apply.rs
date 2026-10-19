@@ -82,6 +82,10 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
             extensions,
         } => note::restore(score, *beat, *index, note, extensions),
         Command::SetFret { note, fret } => note::set_fret(score, *note, *fret),
+        Command::SetTremoloBar { beat, tremolo_bar } => {
+            beat::set_tremolo_bar(score, *beat, *tremolo_bar)
+        }
+        Command::SetTrill { note, trill } => note::set_trill(score, *note, *trill),
         Command::SetTempo { master_bar, bpm } => tempo::set(score, *master_bar, *bpm),
         Command::SetTempoLinear {
             master_bar,

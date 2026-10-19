@@ -293,6 +293,11 @@ struct Coverage {
     direction_jump_to_target: bool,
     direction_jump_to_start: bool,
     two_jumps_in_one_bar: bool,
+    tempo_linear: bool,
+    tempo_fractional: bool,
+    beat_tremolo_bar_dive: bool,
+    note_trill: bool,
+    note_trill_quarter: bool,
 }
 
 fn observe(coverage: &mut Coverage, score: &Score) {
@@ -345,6 +350,10 @@ fn observe(coverage: &mut Coverage, score: &Score) {
         coverage.marker |= master_bar.marker.is_some();
         coverage.repeats |= master_bar.repeat_start || master_bar.repeat_end.is_some();
         coverage.tempo_changes |= !master_bar.tempo_changes.is_empty();
+        for change in &master_bar.tempo_changes {
+            coverage.tempo_linear |= change.linear;
+            coverage.tempo_fractional |= change.bpm.exact().is_some_and(|bpm| !bpm.is_integer());
+        }
         let directions = &master_bar.directions;
         coverage.direction_target |= !directions.targets.is_empty();
         coverage.direction_jump_to_target |=
@@ -434,6 +443,9 @@ fn observe_beat(coverage: &mut Coverage, beat: &opentab_model::Beat) {
     coverage.beat_tremolo_all |= effects
         .tremolo_picking
         .is_some_and(|tremolo| tremolo.value() == NoteValue::ThirtySecond);
+    coverage.beat_tremolo_bar_dive |= effects
+        .tremolo_bar
+        .is_some_and(|bar| bar.destination().value() < 0);
     for note in &beat.notes {
         match note.kind {
             NoteKind::Fretted { .. } => coverage.fretted = true,
@@ -462,6 +474,10 @@ fn observe_beat(coverage: &mut Coverage, beat: &opentab_model::Beat) {
         coverage.note_bend_negative |= effects
             .bend
             .is_some_and(|bend| bend.middle_value() < 0 && bend.destination().value() < 0);
+        coverage.note_trill |= effects.trill.is_some();
+        coverage.note_trill_quarter |= effects
+            .trill
+            .is_some_and(|trill| trill.speed.value() == NoteValue::Quarter);
     }
 }
 
@@ -566,6 +582,11 @@ fn generator_covers_every_feature() {
         ),
         ("direction_jump_to_start", coverage.direction_jump_to_start),
         ("two_jumps_in_one_bar", coverage.two_jumps_in_one_bar),
+        ("tempo_linear", coverage.tempo_linear),
+        ("tempo_fractional", coverage.tempo_fractional),
+        ("beat_tremolo_bar_dive", coverage.beat_tremolo_bar_dive),
+        ("note_trill", coverage.note_trill),
+        ("note_trill_quarter", coverage.note_trill_quarter),
     ];
     let missing: Vec<&str> = checks
         .iter()

@@ -1,7 +1,7 @@
 use opentab_model::{
     Automation, Bar, BarId, Beat, BeatId, Directions, Duration, ElementId, MasterBar, Note, NoteId,
-    OpaquePayload, SoundOverride, StaffId, TempoChange, TimeSignature, TrackId, TrackMidi, Voice,
-    VoiceId,
+    OpaquePayload, SoundOverride, StaffId, TempoChange, TimeSignature, TrackId, TrackMidi,
+    TremoloBar, Trill, Voice, VoiceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -81,6 +81,14 @@ pub enum Command {
     SetFret {
         note: NoteId,
         fret: u8,
+    },
+    SetTremoloBar {
+        beat: BeatId,
+        tremolo_bar: Option<TremoloBar>,
+    },
+    SetTrill {
+        note: NoteId,
+        trill: Option<Trill>,
     },
     SetTempo {
         master_bar: usize,
