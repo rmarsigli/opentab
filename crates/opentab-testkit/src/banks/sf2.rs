@@ -353,3 +353,111 @@ pub fn zone_bomb(bag_entries: u16) -> Vec<u8> {
     riff.extend_from_slice(&[info, sdta, pdta].concat());
     chunk(b"RIFF", &riff)
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BypassRoute {
+    MissingInstrumentGenerators,
+    DuplicateInstrumentBags,
+    HugePresetBags,
+    HugeSampleHeaders,
+}
+
+impl BypassRoute {
+    pub const ALL: [BypassRoute; 4] = [
+        BypassRoute::MissingInstrumentGenerators,
+        BypassRoute::DuplicateInstrumentBags,
+        BypassRoute::HugePresetBags,
+        BypassRoute::HugeSampleHeaders,
+    ];
+}
+
+const BAG_BYTES: usize = 4;
+const SAMPLE_HEADER_BYTES: usize = 46;
+
+fn small_bag() -> Vec<u8> {
+    let mut bag = Vec::new();
+    for generator_index in [0u16, 1] {
+        bag.extend_from_slice(&generator_index.to_le_bytes());
+        bag.extend_from_slice(&0u16.to_le_bytes());
+    }
+    bag
+}
+
+fn single_generator(operator: u16) -> Vec<u8> {
+    let mut list = operator.to_le_bytes().to_vec();
+    list.extend_from_slice(&[0u8; 6]);
+    list
+}
+
+fn bypass_headers(extra: usize) -> Vec<u8> {
+    let mut shdr = vec![0u8; extra * SAMPLE_HEADER_BYTES];
+    shdr.extend_from_slice(&name("S"));
+    for value in [0, BOMB_SAMPLE_END, 0, 0, super::SAMPLE_RATE] {
+        shdr.extend_from_slice(&value.to_le_bytes());
+    }
+    shdr.extend_from_slice(&[BOMB_ROOT_KEY, 0]);
+    shdr.extend_from_slice(&0u16.to_le_bytes());
+    shdr.extend_from_slice(&MONO_SAMPLE.to_le_bytes());
+    shdr.extend_from_slice(&name("EOS"));
+    shdr.extend(std::iter::repeat_n(0u8, 26));
+    shdr
+}
+
+pub fn bypass_bank(route: BypassRoute, records: usize) -> Vec<u8> {
+    let mut version = Vec::new();
+    version.extend_from_slice(&VERSION_MAJOR.to_le_bytes());
+    version.extend_from_slice(&VERSION_MINOR.to_le_bytes());
+    let info = list(
+        b"INFO",
+        &[chunk(b"ifil", &version), chunk(b"INAM", &text("x"))],
+    );
+    let sdta = list(b"sdta", &[chunk(b"smpl", &[0u8; BOMB_SAMPLE_POINTS * 2])]);
+    let mut phdr = Vec::new();
+    phdr.extend_from_slice(&name("P"));
+    phdr.extend(std::iter::repeat_n(0u8, 18));
+    phdr.extend_from_slice(&name("EOP"));
+    phdr.extend(std::iter::repeat_n(0u8, 4));
+    phdr.extend_from_slice(&1u16.to_le_bytes());
+    phdr.extend(std::iter::repeat_n(0u8, 12));
+    let mut inst = name("I").to_vec();
+    inst.extend_from_slice(&0u16.to_le_bytes());
+    inst.extend_from_slice(&name("EOI"));
+    inst.extend_from_slice(&1u16.to_le_bytes());
+    let huge = vec![0u8; records * BAG_BYTES];
+    let pbag = if route == BypassRoute::HugePresetBags {
+        huge.clone()
+    } else {
+        small_bag()
+    };
+    let extra_headers = if route == BypassRoute::HugeSampleHeaders {
+        records
+    } else {
+        0
+    };
+    let mut parts = vec![
+        chunk(b"phdr", &phdr),
+        chunk(b"pbag", &pbag),
+        chunk(b"pmod", &[0u8; MODULATOR_BYTES]),
+        chunk(b"pgen", &single_generator(BOMB_INSTRUMENT_GENERATOR)),
+        chunk(b"inst", &inst),
+    ];
+    match route {
+        BypassRoute::MissingInstrumentGenerators => parts.push(chunk(b"ibag", &huge)),
+        BypassRoute::DuplicateInstrumentBags => {
+            parts.push(chunk(b"ibag", &huge));
+            parts.push(chunk(b"ibag", &small_bag()));
+        }
+        BypassRoute::HugePresetBags | BypassRoute::HugeSampleHeaders => {
+            parts.push(chunk(b"ibag", &small_bag()));
+        }
+    }
+    parts.push(chunk(b"imod", &[0u8; MODULATOR_BYTES]));
+    if route != BypassRoute::MissingInstrumentGenerators {
+        parts.push(chunk(b"igen", &single_generator(BOMB_SAMPLE_GENERATOR)));
+    }
+    parts.push(chunk(b"shdr", &bypass_headers(extra_headers)));
+    let pdta = list(b"pdta", &parts);
+    let mut riff = b"sfbk".to_vec();
+    riff.extend_from_slice(&[info, sdta, pdta].concat());
+    chunk(b"RIFF", &riff)
+}

@@ -4,8 +4,8 @@ mod structural;
 
 pub use samples::SAMPLE_RATE;
 pub use sf2::{
-    Generator, InstrumentDef, PresetDef, SampleDef, SoundFontDef, Zone, generator, write_sf2,
-    zone_bomb,
+    BypassRoute, Generator, InstrumentDef, PresetDef, SampleDef, SoundFontDef, Zone, bypass_bank,
+    generator, write_sf2, zone_bomb,
 };
 pub use structural::{
     FieldValue, PdtaField, PdtaTable, StructuralMutation, apply_structural, arb_structural_mutation,
