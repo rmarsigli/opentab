@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use opentab_gp::{read_gp, write_gp};
 
 use crate::anchors::gpif_text;
-use crate::inventory::{first_difference as subtree_difference, inventory};
+use crate::inventory::{
+    first_difference as subtree_difference, inventory, master_bar_children, ordered_directions,
+};
 use opentab_model::{
     Accent, AutomationValue, Clef, Diagnostic, Dynamic, Score, TempoUnit, diagnose, from_json,
     to_json,
@@ -277,6 +279,15 @@ fn every_corpus_example_survives_a_write() {
             &inventory(&gpif_text(&written)),
         ) {
             failures.push(format!("{name}: typed subtree changed: {difference}"));
+            continue;
+        }
+        let (source, rewritten) = (gpif_text(&bytes), gpif_text(&written));
+        if ordered_directions(&source) != ordered_directions(&rewritten) {
+            failures.push(format!("{name}: the order inside Directions changed"));
+            continue;
+        }
+        if master_bar_children(&source) != master_bar_children(&rewritten) {
+            failures.push(format!("{name}: the master bar child order changed"));
             continue;
         }
         match read_gp(&written) {

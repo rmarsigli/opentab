@@ -5,7 +5,8 @@ use std::sync::LazyLock;
 use opentab_command::{Command, History, MetaField};
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
-    BarId, Beat, BeatId, Duration, ElementId, IdAllocator, NoteId, NoteKind, NoteValue, Score,
+    BarId, Beat, BeatId, DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump, DirectionTarget,
+    Directions, Duration, ElementId, IdAllocator, NoteId, NoteKind, NoteValue, Score,
     TimeSignature, VoiceId,
 };
 use proptest::collection::vec;
@@ -15,6 +16,7 @@ use proptest::test_runner::{Config, FileFailurePersistence, TestRunner};
 
 use crate::anchors::{blocks, field, gpif_text, offsets};
 use crate::corpus::corpus_paths;
+use crate::inventory::{master_bar_children, out_of_order};
 use crate::rich::{
     ACCENT_MARKER, BRUSH_MARKER, FRAME_OFFSETS, HOPO_DESTINATION, INTRO_MARKER, MASTER_MARKER,
     ORNAMENT_MARKER, PITCH_MARKER, ROOT_MARKER, Rich, SECOND_SOUND, SIMILE_MARKER, SOUND_MARKER,
@@ -43,11 +45,12 @@ enum Op {
     RemoveNote,
     SetFret,
     SetTempo,
+    SetDirections,
     PadStaffBars,
     TrimStaffBars,
 }
 
-const OPS: [Op; 15] = [
+const OPS: [Op; 16] = [
     Op::SetMeta,
     Op::SetAnacrusis,
     Op::InsertMasterBar,
@@ -61,11 +64,12 @@ const OPS: [Op; 15] = [
     Op::RemoveNote,
     Op::SetFret,
     Op::SetTempo,
+    Op::SetDirections,
     Op::PadStaffBars,
     Op::TrimStaffBars,
 ];
 
-const FORWARD_OPS: [&str; 14] = [
+const FORWARD_OPS: [&str; 15] = [
     "set_meta",
     "set_anacrusis",
     "insert_master_bar",
@@ -78,6 +82,7 @@ const FORWARD_OPS: [&str; 14] = [
     "remove_note",
     "set_fret",
     "set_tempo",
+    "set_directions",
     "pad_staff_bars",
     "trim_staff_bars",
 ];
@@ -131,6 +136,33 @@ fn duration(value: u8) -> Duration {
         _ => NoteValue::Half,
     };
     Duration::new(note, value % 2, None).expect("duration")
+}
+
+fn directions(value: u8) -> Directions {
+    let target = DIRECTION_TARGETS[usize::from(value) % DIRECTION_TARGETS.len()];
+    let jump = DIRECTION_JUMPS[usize::from(value) % DIRECTION_JUMPS.len()];
+    match value % 4 {
+        0 => Directions::default(),
+        1 => Directions {
+            targets: vec![target],
+            jumps: Vec::new(),
+        },
+        2 => Directions {
+            targets: Vec::new(),
+            jumps: vec![jump],
+        },
+        _ => Directions {
+            targets: vec![target],
+            jumps: vec![jump],
+        },
+    }
+}
+
+fn check_child_order(text: &str) -> Result<(), TestCaseError> {
+    for children in master_bar_children(text) {
+        prop_assert_eq!(out_of_order(&children), None);
+    }
+    Ok(())
 }
 
 fn resolve(edit: Edit, score: &Score) -> Command {
@@ -198,6 +230,10 @@ fn resolve(edit: Edit, score: &Score) -> Command {
             master_bar: at % bars.max(1),
             bpm: 60.0 + f64::from(value),
         },
+        Op::SetDirections => Command::SetDirections {
+            master_bar: at % bars.max(1),
+            directions: directions(value),
+        },
         Op::PadStaffBars | Op::TrimStaffBars => {
             let track = &score.tracks[0];
             let staff = &track.staves[0];
@@ -231,6 +267,7 @@ fn op_name(command: &Command) -> String {
         Command::RemoveNote { .. } => "remove_note",
         Command::SetFret { .. } => "set_fret",
         Command::SetTempo { .. } => "set_tempo",
+        Command::SetDirections { .. } => "set_directions",
         Command::PadStaffBars { .. } => "pad_staff_bars",
         Command::TrimStaffBars { .. } => "trim_staff_bars",
         _ => "restore",
@@ -480,6 +517,7 @@ fn run_edits(edits: &[Edit], tally: &RefCell<Tally>) -> Result<(), TestCaseError
             let again = read_gp(&bytes).map_err(|error| TestCaseError::fail(error.to_string()))?;
             prop_assert_eq!(musical(&again), musical(&score));
             check_markers(&gpif_text(&bytes), &score)?;
+            check_child_order(&gpif_text(&bytes))?;
         }
         Err(GpError::Unsupported { reason, path }) => {
             tally.borrow_mut().refused += 1;
@@ -758,6 +796,17 @@ fn corpus_edits(score: &Score, history: &mut History, edited: &mut Score) -> Vec
     }
     let last = edited.master_bars.len().saturating_sub(1);
     run(Command::RemoveMasterBar { index: last }, edited, history);
+    run(
+        Command::SetDirections {
+            master_bar: edited.master_bars.len() / 2,
+            directions: Directions {
+                targets: vec![DirectionTarget::Coda],
+                jumps: vec![DirectionJump::DaCoda],
+            },
+        },
+        edited,
+        history,
+    );
     applied
 }
 
@@ -768,6 +817,7 @@ fn corpus_examples_survive_edits_and_undo() {
     };
     let mut applied: BTreeMap<String, usize> = BTreeMap::new();
     let mut dropped = 0usize;
+    let mut ordered = 0usize;
     for path in &paths {
         let name = path.display().to_string();
         let score = read_gp(&std::fs::read(path).expect("corpus file")).expect("reads");
@@ -786,6 +836,17 @@ fn corpus_examples_survive_edits_and_undo() {
             destination = full_place(&edited, target);
         }
         let bytes = write_gp(&edited).unwrap_or_else(|error| panic!("{name}: {error}"));
+        let bars = master_bar_children(&gpif_text(&bytes));
+        for children in &bars {
+            assert_eq!(out_of_order(children), None, "{name}");
+        }
+        let directed = bars.get(edited.master_bars.len() / 2);
+        if directed.is_some_and(|children| {
+            children.iter().any(|child| child == "Directions")
+                && children.iter().any(|child| child == "XProperties")
+        }) {
+            ordered += 1;
+        }
         let again = read_gp(&bytes).unwrap_or_else(|error| panic!("{name}: {error}"));
         assert!(musical(&again) == musical(&edited), "{name}: model differs");
         if let Some(place) = destination {
@@ -804,7 +865,13 @@ fn corpus_examples_survive_edits_and_undo() {
             "{name}: undo changes the bytes"
         );
     }
-    println!("corpus edits: {applied:?}, stale destinations checked: {dropped}");
+    println!(
+        "corpus edits: {applied:?}, stale destinations checked: {dropped}, directed bars with XProperties: {ordered}"
+    );
+    assert!(
+        ordered >= 10,
+        "only {ordered} directed bars carry XProperties"
+    );
     for op in [
         "insert_master_bar",
         "set_tempo",
@@ -815,6 +882,7 @@ fn corpus_examples_survive_edits_and_undo() {
         "remove_voice",
         "remove_note",
         "remove_master_bar",
+        "set_directions",
     ] {
         assert!(
             applied.get(op).copied().unwrap_or(0) > 0,

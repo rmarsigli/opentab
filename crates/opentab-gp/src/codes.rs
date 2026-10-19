@@ -134,6 +134,20 @@ pub(crate) const DIRECTION_JUMPS: &Table<DirectionJump> = &[
     ("DaDoubleCoda", DirectionJump::DaDoubleCoda),
 ];
 
+pub(crate) const MASTER_BAR_ORDER: [&str; 11] = [
+    "Key",
+    "Time",
+    "Fermatas",
+    "Repeat",
+    "Section",
+    "AlternateEndings",
+    "TripletFeel",
+    "DoubleBar",
+    "Directions",
+    "Bars",
+    "XProperties",
+];
+
 pub(crate) const DIRECTION_TARGET: &str = "Target";
 pub(crate) const DIRECTION_JUMP: &str = "Jump";
 

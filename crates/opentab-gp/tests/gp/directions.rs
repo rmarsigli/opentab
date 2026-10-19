@@ -1,10 +1,12 @@
+use opentab_command::{Command, apply};
 use opentab_gp::{read_gp, write_gp};
 use opentab_model::{
     DIRECTION_JUMPS, DIRECTION_TARGETS, Diagnostic, DirectionJump, DirectionTarget, Directions,
-    Score, diagnose,
+    Marker, Score, diagnose,
 };
 
 use crate::anchors::gpif_text;
+use crate::inventory::master_bar_children;
 use crate::support::{Doc, master_bar, payloads};
 
 const TARGET_NAMES: [(&str, DirectionTarget); 5] = [
@@ -251,4 +253,77 @@ fn the_ds_coda_fixture_holds_two_jumps_in_gp_order() {
         written(&score)
             .contains("<Directions><Jump>DaSegnoAlCoda</Jump><Jump>DaCoda</Jump></Directions>")
     );
+}
+
+const TRIPLET_FEEL: &str = "<TripletFeel>Triplet8th</TripletFeel>";
+const BARS_THEN_PROPERTIES: &str = "<Bars>0</Bars><XProperties><XProperty id=\"1124139010\"><Int>7</Int></XProperty></XProperties></MasterBar>";
+
+fn with_kept_children() -> Score {
+    let gpif = with_directions(TRIPLET_FEEL)
+        .render()
+        .replace("<Bars>0</Bars></MasterBar>", BARS_THEN_PROPERTIES);
+    crate::support::read_gpif(&gpif)
+}
+
+fn children(score: &Score) -> Vec<String> {
+    let text = gpif_text(&write_gp(score).expect("write"));
+    master_bar_children(&text).remove(0)
+}
+
+#[test]
+fn edits_that_add_a_master_bar_child_keep_the_documented_child_order() {
+    let score = with_kept_children();
+    assert_eq!(
+        children(&score),
+        ["Key", "Time", "TripletFeel", "Bars", "XProperties"]
+    );
+    let mut directed = score.clone();
+    apply(
+        &mut directed,
+        &Command::SetDirections {
+            master_bar: 0,
+            directions: Directions {
+                targets: vec![DirectionTarget::Segno],
+                jumps: Vec::new(),
+            },
+        },
+    )
+    .expect("set_directions");
+    assert_eq!(
+        children(&directed),
+        [
+            "Key",
+            "Time",
+            "TripletFeel",
+            "Directions",
+            "Bars",
+            "XProperties"
+        ]
+    );
+    let mut marked = score.clone();
+    marked.master_bars[0].marker = Some(Marker {
+        text: "Verse".to_string(),
+        letter: "A".to_string(),
+    });
+    marked.master_bars[0].double_bar = true;
+    marked.master_bars[0].repeat_start = true;
+    marked.master_bars[0].alternate_endings = 1;
+    assert_eq!(
+        children(&marked),
+        [
+            "Key",
+            "Time",
+            "Repeat",
+            "Section",
+            "AlternateEndings",
+            "TripletFeel",
+            "DoubleBar",
+            "Bars",
+            "XProperties"
+        ]
+    );
+    for edited in [&directed, &marked] {
+        let again = read_gp(&write_gp(edited).expect("write")).expect("read");
+        assert_eq!(children(&again), children(edited));
+    }
 }

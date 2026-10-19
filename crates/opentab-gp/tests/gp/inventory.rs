@@ -180,3 +180,132 @@ fn the_inventory_counts_paths_attributes_and_text_per_owner() {
     assert!(first_difference(&found, &moved).is_some_and(|text| text.contains("lost")));
     assert_eq!(first_difference(&found, &found), None);
 }
+
+pub const MASTER_BAR_ORDER: [&str; 11] = [
+    "Key",
+    "Time",
+    "Fermatas",
+    "Repeat",
+    "Section",
+    "AlternateEndings",
+    "TripletFeel",
+    "DoubleBar",
+    "Directions",
+    "Bars",
+    "XProperties",
+];
+
+pub fn master_bar_children(gpif: &str) -> Vec<Vec<String>> {
+    let text = gpif.trim_start_matches(BYTE_ORDER_MARK);
+    let mut reader = Reader::from_str(text);
+    let mut stack: Vec<String> = Vec::new();
+    let mut bars: Vec<Vec<String>> = Vec::new();
+    loop {
+        let (start, empty) = match reader.read_event().expect("well-formed GPIF") {
+            Event::Start(start) => (start.name().as_ref().to_string(), false),
+            Event::Empty(start) => (start.name().as_ref().to_string(), true),
+            Event::End(_) => {
+                stack.pop();
+                continue;
+            }
+            Event::Eof => break,
+            _ => continue,
+        };
+        let name = start;
+        let parents: Vec<&str> = stack.iter().map(String::as_str).collect();
+        if parents == MASTER_BAR_ROOT {
+            if let Some(children) = bars.last_mut() {
+                children.push(name.clone());
+            }
+        } else if name == "MasterBar" && parents == MASTER_BAR_ROOT[..2] {
+            bars.push(Vec::new());
+        }
+        if !empty {
+            stack.push(name);
+        }
+    }
+    bars
+}
+
+pub fn out_of_order(children: &[String]) -> Option<String> {
+    let ranks: Vec<usize> = children
+        .iter()
+        .filter_map(|name| MASTER_BAR_ORDER.iter().position(|known| known == name))
+        .collect();
+    let sorted = ranks.windows(2).all(|pair| pair[0] <= pair[1]);
+    (!sorted).then(|| children.join(" "))
+}
+
+#[test]
+fn master_bar_children_are_listed_per_bar_and_checked_against_the_documented_order() {
+    let gpif = "<GPIF><MasterBars><MasterBar><Key><Mode>Major</Mode></Key><Time>4/4</Time><Bars>0</Bars><XProperties/></MasterBar><MasterBar><Time>3/4</Time><XProperties/><Bars>1</Bars></MasterBar></MasterBars></GPIF>";
+    let found = master_bar_children(gpif);
+    assert_eq!(
+        found,
+        vec![
+            vec!["Key", "Time", "Bars", "XProperties"],
+            vec!["Time", "XProperties", "Bars"],
+        ]
+    );
+    assert_eq!(out_of_order(&found[0]), None);
+    assert_eq!(
+        out_of_order(&found[1]),
+        Some("Time XProperties Bars".to_string())
+    );
+}
+
+pub fn ordered_directions(gpif: &str) -> Vec<String> {
+    let text = gpif.trim_start_matches(BYTE_ORDER_MARK);
+    let mut reader = Reader::from_str(text);
+    let mut found: Vec<String> = Vec::new();
+    let mut inside = false;
+    let mut child: Option<String> = None;
+    let mut entries: Vec<String> = Vec::new();
+    loop {
+        match reader.read_event().expect("well-formed GPIF") {
+            Event::Start(start) => {
+                let name = start.name().as_ref().to_string();
+                if name == "Directions" {
+                    inside = true;
+                    entries.clear();
+                } else if inside {
+                    child = Some(name);
+                }
+            }
+            Event::Empty(start) => {
+                let name = start.name().as_ref().to_string();
+                if name == "Directions" {
+                    found.push(String::new());
+                } else if inside {
+                    entries.push(format!("{name}:"));
+                }
+            }
+            Event::Text(content) if inside => {
+                if let Some(name) = &child {
+                    entries.push(format!("{name}:{}", content.xml10_content()));
+                }
+            }
+            Event::End(end) => {
+                let name = end.name().as_ref().to_string();
+                if name == "Directions" {
+                    inside = false;
+                    found.push(entries.join(" "));
+                } else {
+                    child = None;
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    found
+}
+
+#[test]
+fn ordered_directions_keep_the_order_of_targets_and_jumps() {
+    let gpif = "<GPIF><MasterBar><Directions><Jump>DaCoda</Jump><Target>Coda</Target></Directions></MasterBar><MasterBar><Directions/></MasterBar></GPIF>";
+    assert_eq!(
+        ordered_directions(gpif),
+        vec!["Jump:DaCoda Target:Coda".to_string(), String::new()]
+    );
+}

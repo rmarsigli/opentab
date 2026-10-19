@@ -1,5 +1,5 @@
 use opentab_command::{Command, CommandError, MetaField, apply};
-use opentab_model::{BeatId, ElementId, NoteId, NoteValue, Score, VoiceId, diagnose};
+use opentab_model::{BeatId, Directions, ElementId, NoteId, NoteValue, Score, VoiceId, diagnose};
 
 use crate::checks::{rejected, round_trip};
 use crate::support::{duration, fixture, four_four};
@@ -117,6 +117,10 @@ fn every_forward_command() -> Vec<Command> {
         Command::RestoreTempoChanges {
             master_bar: 0,
             tempo_changes: Vec::new(),
+        },
+        Command::SetDirections {
+            master_bar: 0,
+            directions: Directions::default(),
         },
         Command::RestoreNote {
             beat: BeatId(id),
