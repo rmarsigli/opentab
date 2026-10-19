@@ -34,6 +34,378 @@
       ]
     },
     {
+      "fixture": "directions-coda-endings.gp",
+      "sha256": "ee9a828c97906ec3de2a2c50c05d79ccad15142f56103954b2bde705bba072cf",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "2c92bf73fdb23ab107aaa62c764c1d2f49b13d771a0d3289901384af4ffee52e",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "f95a8636c14ce0ff70a520fd8582876ef58983c4e227d643b1ab319b1fc117b7",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-coda-endings#1.png",
+          "sha256": "c541a7b221735c9a42366a6b88e100b9a80683f517c8c4afda531d114aa96ad3",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "717200dae97b0927c94897a266d6b7c8c6af3464bd82399dbe9bbd07b23a80d0",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-coda-free.gp",
+      "sha256": "94b4efa66fbc7a98403666bbe7a65a6bcbf4e0f58a46b787ec4e1bd0e64da27a",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "fb6116ad537e2ec9d98b0a8ea8a93031e6da62bb5fd216f5019a7f03bec581e6",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "4c25ff6829cd72248bb8e628548d697d40d08dfcab3aa2b960b7443131edce89",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-coda-free#1.png",
+          "sha256": "46c6f1455fe596d5cb15f26a2f20d15e5f6052622a6e2a2a5a377b53798fef8a",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "470ef4e09c36b9248355480aa9342d80661333495d96d1756e13784833d1de59",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-coda-held.gp",
+      "sha256": "ff0ae5fdd744c691290b729810d5cd14c8f076afb54ffe58f03e2506192a10dd",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "994810e9edec5ff037c6e5418a8f33072693ee6ac8ecce7d8492bd5283bf1f07",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "ff5eafc309c7cce82e64d440a07933d4d1af0960cc95521b7172e97126585df5",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-coda-held#1.png",
+          "sha256": "dc05be105450ba9f6dfa1e9dfc394423ad2f200fe9ccbd26f294da89d0f14b58",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "ce9c2546732e5677dedb6f5cd98ae87e734a13d8c9a7a2693e9e0648585aeb37",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-dangling.gp",
+      "sha256": "9d049d49c0856ccdb3b5fdcdc4abccb8fcebab4774f948bf5cdb5cd2c672ecdc",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "8a499925a79df6b5704508425967be7ab5b4a0717cbe065bed5095856a277534",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "38d639ea8e275be922d606143200ef0c5d3cc45ebda5e96322d5c7b2d0daf50a",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-dangling#1.png",
+          "sha256": "5df115c82acd169844d46edb3446201de48a6c87246ed0e93fe0eac2bab8cf33",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "30ef7c75dc327b159014c64eb9a75f69d25688b9cf494792eaf1deb34faa171a",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-dc-fine.gp",
+      "sha256": "3a80d80558be49657609b2a09bc6c5ba7c2eed64ea67d0961abaa9d18359d1ee",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "5da8373f29e48530738ce032945c61f1ce8982e40322ffe2e2895c427b9037df",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "0484befa16e293b6fbe8cebc125ee1b0c8835301945d586463ba4f0078cf010b",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-dc-fine#1.png",
+          "sha256": "807ca3a6f66ced58df2015022369c1cc80c3efb18c6054e39c858228d83c1da2",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "2f297e7950a2f3c6bb2f2ef8325ec4d71e802d87fee0b3e329b2e5bebd622798",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-ds-coda.gp",
+      "sha256": "6eee2c32af7191b99ab4d86d224860da3a15fbc5cf686fabf3376e0f09dfa5bc",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "ec00cb29aed0c07cd5acb8d5bc14118bc5f1a75cfc2cd4b6b1826ecf6a7ff16b",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "4cdcf5a15b667b81e5ae46ed4ba70d86ed3a27188d77e3930abde74f6d6491f6",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-ds-coda#1.png",
+          "sha256": "ebb39b2a8930818662ab926c43a9dcb71a6812254eeedd323546103d133d776d",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "aa0a3937c436109c5474551241c4fcb3e714b0c24dd38e63de29876bce49ef70",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-dss-double-coda.gp",
+      "sha256": "e7e3bf9d9e43938b65fc8cca5c38c33ce7ec835cfce32d66d03516738252f88e",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "5dfdb742c713ada44e0fc59c43428c40c47913fabce5a5dbedbf877f9a8237b9",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "a34a71c5e8df20b94bab9d394eff188b3740a76af41a9c7cdaccc1158135f043",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-dss-double-coda#1.png",
+          "sha256": "1c02b3418424de4b875f9a2510c58283359dd4550a9ce33a9e697f7ca83e25f0",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "ad670e7eddf424125281331748146f59c87999f04bd43e146fef981b344fd54b",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-duplicates.gp",
+      "sha256": "1cb90f2d495967ebb894e8a02d0452d7e8160bd8b830d34085384e43dfcb5f5f",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "d54fa3bb0348740e279c11a4be08b94dd553abdbb4f2775d3104380d42003d57",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "af6eb528ba8110a515556e6e4f68b46ac6d121b644ddc32ae0121dc2e8f9655b",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-duplicates#1.png",
+          "sha256": "6ba4ab98ec404699ac45fcb56e7b0d220c63f32b2a17224562fa222437f652bd",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "9511023c946d676416b05d9da963f954bc69d78280a301194bb664b7586eef80",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-endings.gp",
+      "sha256": "0027926609005bf29527808c616da9841393777f3db168e86f9863090677e18c",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "2a10938d9ff95cffe427556ceff9246cbb5d9581c7e43fd9f063c56e4bd8230d",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "ae4f5d244b4b4161d5b3aaf0a525e8e500e15043fb537faea3f837cbc0930788",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-endings#1.png",
+          "sha256": "098f544047952893095faaff2f4979056743dfb3f82ff8d2295892e031473e6a",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "a7a08aee971229196ba41e4140c66f6946962bc05fb619ca9d3a96208d22deb9",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-fine-ahead.gp",
+      "sha256": "e34c7fec867bbdf7750b2260b75b9e4555c193d6944c747b090ba0a9d3efc9fe",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "c39231227da8669c147cbb085842b3287df34fc542278c4a0024b712090e1f83",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "253f8beee5a83b9570ae34679e8520c84a0aed4d6ff3507c2e5c8f0c52838b4d",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-fine-ahead#1.png",
+          "sha256": "be94da5bf97c76d84a6d5ef8f868334c8a05644f8884943dfa9ef8b7c0a9c17d",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "56fdde19521ffd975005d43bbcd56ecda7b141ff0919f622f9a0875c181732c7",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-fine-repeats.gp",
+      "sha256": "f69f42019711cd6dd86496571f9110bffcb97fdb93289a9762f0c006bda15a5a",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "2384fc1eee39b5d3d16fca29fa055e2a102dd40648600b3fa7131a19ebb26310",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "82d0fa215b046b3a57244308530dfdecdd2b5b8572245ddd90928cebbac57160",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-fine-repeats#1.png",
+          "sha256": "af117376affd2a8df642a508474f25ba18c5c26cdb17eade1a95c18fe8d9908b",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "04a17533064d6be439b08b92a79a7333e0e35820303209e8faa789e3ccb7de14",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "directions-repeat-jumps.gp",
+      "sha256": "daac153bddd5ee1a8c24a1af9905aafb9fa6c03652e52bd6e669fc80423361c8",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "1bbee624eb244233206b88a6018fd17473476b516206235cc74b0920899d99d6",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "3a1921c5d17609d0b0431597f3ef1bdd45fbbed68a48ae39ba70293d7dc4effa",
+          "byte_identical": true
+        },
+        {
+          "path": "png/directions-repeat-jumps#1.png",
+          "sha256": "e6cf0685e84bdf29212967b75e6524ea19a7beb2b15bdc90c378f12ed8868695",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "3414bb1b235a2dc6c10a6ea63b5dc9390fc2ae4e1ac6b877e3c1a5743769bc5c",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
       "fixture": "durations.gp",
       "sha256": "58ffb9d8670995356cf3c383634f93793836d9e1c8108eb7b4155d14bbd9e221",
       "outputs": [
@@ -153,6 +525,37 @@
         {
           "path": "resave.gpif",
           "sha256": "1776abc19ca1222234ded54e0c3ba13af3ce1c1e2a00acb308de42c5f6bf190e",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "mixer.gp",
+      "sha256": "fcf28f131f56ebbcf6df4f1887ddeb95507bb75337cb411d01c6d57c108d4935",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "0fc4e8983446b709c1097d2bfd6e06d1b75d82230fcfc7b328491052860d7e82",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "1a9a70a4010d33595e993249734aac4f8aa60fc3cb7f60bf3bd6aa9b7dd0c35d",
+          "byte_identical": true
+        },
+        {
+          "path": "png/mixer#1.png",
+          "sha256": "b1558eda77765af10801578025ed9aef8b62dda75c0f12485ae3b7cf91cf9d95",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "7f995fecfd36512c1c9e889b7067478c17bb25bd1ee6ff6b49503977d8bb4315",
           "byte_identical": true
         }
       ]
@@ -308,6 +711,68 @@
         {
           "path": "resave.gpif",
           "sha256": "a992419216a724cd4b343df052a76773d648ebb7b94984672190b8d68cbcebac",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "sound-change.gp",
+      "sha256": "13354a0af8eee3c8d244cb47269d072fd16a81dcf164943103554c0323055cac",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "edf036cf33b0f9fb6d0b9e8eff60d617fcea50219b303c8bab60fb5fe8c79cff",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "1b218db3b7a980b3bf1502d39f58abbb10bc7794a45a6da9a278e5c3c38f2925",
+          "byte_identical": true
+        },
+        {
+          "path": "png/sound-change#1.png",
+          "sha256": "9078191fa5695dd6924a481c3ce62303762ae56ff04ef95b1f7b62618304ec80",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "a33a8a804f03b1f04fc2787a3f0165513465effca229f61cfc627d9a9a398138",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "sound-override.gp",
+      "sha256": "c362f5bd7c6e6b7fed0bed7d3d90fe195cc11c31a4a18e1cbad7113440542a72",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "0fc360d70f06661fe0022725ce4329efa44294d96819d979e74cf5a2fe5c4652",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "3d7ea584ed7e880388fc97cf01c2556e10d97558d4a3c49acb42f1cf8976e9ea",
+          "byte_identical": true
+        },
+        {
+          "path": "png/sound-override#1.png",
+          "sha256": "24da4beb93a4f9f8ed7b9a71f83f38ecc21a4094f1d5622a2855e075a1848297",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "c21da44d7bdbaab32b3d197edf5b721399b528c0c86c36e75885ddf597d7cdd4",
           "byte_identical": true
         }
       ]

@@ -22,23 +22,19 @@ const SEMITONES: i32 = 12;
 const DEFAULT_BPM: f64 = 120.0;
 const REPLACEMENT: char = '\u{FFFD}';
 const SHOWN_DIFF_LINES: usize = 40;
-const AWAITING_HARVEST: [&str; 15] = [
-    "mixer.gp",
-    "sound-change.gp",
-    "sound-override.gp",
-    "directions-dc-fine.gp",
-    "directions-ds-coda.gp",
-    "directions-dss-double-coda.gp",
-    "directions-repeat-jumps.gp",
-    "directions-endings.gp",
-    "directions-coda-held.gp",
-    "directions-coda-free.gp",
-    "directions-fine-ahead.gp",
-    "directions-dangling.gp",
-    "directions-duplicates.gp",
-    "directions-coda-endings.gp",
-    "directions-fine-repeats.gp",
-];
+const SOUND_CHANGE: &str = "sound-change.gp";
+const SOUND_VARIATION: &str = "/Variation";
+const SOUND_MARKED_BEATS: usize = 8;
+const SOUND_NORMALISATION: &str = "gp_marks_beats_with_their_sound";
+const DIRECTIONS_PREFIX: &str = "directions-";
+const EXPORT_MID: &str = "export.mid";
+const NOTE_ON: u8 = 0x90;
+const STATUS_KIND: u8 = 0xF0;
+const STATUS_BIT: u8 = 0x80;
+const META: u8 = 0xFF;
+const SYSEX: [u8; 2] = [0xF0, 0xF7];
+const ONE_DATA_BYTE: [u8; 2] = [0xC0, 0xD0];
+const TAMPERED_JUMP: &str = "directions-ds-coda.gp";
 
 const GP_DEFAULT_PAYLOADS: [&str; 52] = [
     "/AudioEngineState",
@@ -108,7 +104,7 @@ struct Normalisation {
     apply: Normalise,
 }
 
-const NORMALISATIONS: [Normalisation; 11] = [
+const NORMALISATIONS: [Normalisation; 15] = [
     Normalisation {
         name: "gp_writes_its_own_defaults",
         apply: gp_writes_its_own_defaults,
@@ -148,6 +144,22 @@ const NORMALISATIONS: [Normalisation; 11] = [
     Normalisation {
         name: "gp_starts_every_track_with_its_first_sound",
         apply: gp_starts_every_track_with_its_first_sound,
+    },
+    Normalisation {
+        name: "gp_keeps_only_the_last_copy_of_each_direction",
+        apply: gp_keeps_only_the_last_copy_of_each_direction,
+    },
+    Normalisation {
+        name: "gp_writes_the_pan_lane_before_the_volume_lane",
+        apply: gp_writes_the_pan_lane_before_the_volume_lane,
+    },
+    Normalisation {
+        name: "gp_drops_our_sound_overrides",
+        apply: gp_drops_our_sound_overrides,
+    },
+    Normalisation {
+        name: SOUND_NORMALISATION,
+        apply: gp_marks_beats_with_their_sound,
     },
     Normalisation {
         name: "element_ids_follow_reading_order",
@@ -478,14 +490,116 @@ fn gp_starts_every_track_with_its_first_sound(fixture: &mut Score, golden: &mut 
         value: AutomationValue::Sound(SoundRef(0)),
     };
     for (ours, theirs) in fixture.tracks.iter().zip(golden.tracks.iter_mut()) {
-        let named = ours
-            .automations
-            .iter()
-            .any(|automation| matches!(automation.value, AutomationValue::Sound(_)));
-        if !named && theirs.automations.first() == Some(&opening) {
-            theirs.automations.remove(0);
+        let named = ours.automations.iter().any(is_sound);
+        if named {
+            continue;
+        }
+        if let Some(index) = theirs.automations.iter().position(is_sound)
+            && theirs.automations[index] == opening
+        {
+            theirs.automations.remove(index);
         }
     }
+}
+
+fn is_sound(automation: &Automation) -> bool {
+    matches!(automation.value, AutomationValue::Sound(_))
+}
+
+fn gp_keeps_only_the_last_copy_of_each_direction(fixture: &mut Score, _golden: &mut Score) {
+    let mut targets = BTreeSet::new();
+    let mut jumps = BTreeSet::new();
+    for master_bar in fixture.master_bars.iter_mut().rev() {
+        let directions = &mut master_bar.directions;
+        directions.targets.retain(|target| targets.insert(*target));
+        directions.jumps.retain(|jump| jumps.insert(*jump));
+    }
+}
+
+fn lane(automation: &Automation) -> u8 {
+    match automation.value {
+        AutomationValue::Pan(_) => 0,
+        AutomationValue::Volume(_) => 1,
+        AutomationValue::Sound(_) => 2,
+    }
+}
+
+fn gp_writes_the_pan_lane_before_the_volume_lane(fixture: &mut Score, golden: &mut Score) {
+    for track in &golden.tracks {
+        assert!(
+            track.automations.is_sorted_by_key(lane),
+            "{}: GP's lanes are not pan, volume, sound",
+            track.name
+        );
+    }
+    for track in &mut fixture.tracks {
+        track.automations.sort_by_key(lane);
+    }
+}
+
+fn gp_drops_our_sound_overrides(fixture: &mut Score, golden: &mut Score) {
+    assert!(golden.sound_overrides.is_empty());
+    fixture.sound_overrides.clear();
+}
+
+struct SoundMark {
+    beat: ElementId,
+    sound: usize,
+    sounds: usize,
+}
+
+fn beats_with_tracks(score: &Score) -> BTreeMap<ElementId, &Track> {
+    let mut found = BTreeMap::new();
+    for track in &score.tracks {
+        for staff in &track.staves {
+            for bar in &staff.bars {
+                for voice in &bar.voices {
+                    for beat in &voice.beats {
+                        found.insert(beat.id.0, track);
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+fn sound_marks(golden: &Score) -> Vec<SoundMark> {
+    let beats = beats_with_tracks(golden);
+    let mut found = Vec::new();
+    for (id, payloads) in &golden.extensions.0 {
+        for payload in payloads {
+            if payload_kind(&payload.data) != SOUND_VARIATION {
+                continue;
+            }
+            let track = beats
+                .get(id)
+                .unwrap_or_else(|| panic!("a Variation payload on {id:?}, which is not a beat"));
+            let sound = element_text(&payload.data, "Variation")
+                .and_then(|text| text.parse().ok())
+                .unwrap_or_else(|| panic!("{id:?}: unreadable Variation {}", payload.data));
+            found.push(SoundMark {
+                beat: *id,
+                sound,
+                sounds: track.sounds.len(),
+            });
+        }
+    }
+    found
+}
+
+fn gp_marks_beats_with_their_sound(_fixture: &mut Score, golden: &mut Score) {
+    for mark in sound_marks(golden) {
+        assert!(
+            (1..mark.sounds).contains(&mark.sound),
+            "beat {:?}: Variation {} names no later sound of its track",
+            mark.beat,
+            mark.sound
+        );
+    }
+    retain_payloads(golden, |_, payload| {
+        payload_kind(&payload.data) != SOUND_VARIATION
+    });
 }
 
 fn renumbered(score: &mut Score) {
@@ -568,13 +682,20 @@ fn read_resave(path: &Path) -> Score {
     score
 }
 
+fn fixture_path(name: &str) -> PathBuf {
+    root().join("fixtures").join("gp").join(name)
+}
+
+fn golden_path(name: &str, output: &str) -> PathBuf {
+    root().join("goldens").join("gp").join(name).join(output)
+}
+
 fn pairs() -> Vec<Pair> {
     fixture_names()
         .into_iter()
-        .filter(|name| !AWAITING_HARVEST.contains(&name.as_str()))
         .map(|name| Pair {
-            fixture: read(&root().join("fixtures").join("gp").join(&name)),
-            golden: read_resave(&root().join("goldens").join("gp").join(&name).join(RESAVE)),
+            fixture: read(&fixture_path(&name)),
+            golden: read_resave(&golden_path(&name, RESAVE)),
             name,
         })
         .collect()
@@ -682,15 +803,8 @@ fn every_fixture_has_a_golden_and_reads_without_payloads() {
         .filter(|entry| entry.path().is_dir())
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect();
-    let harvested: BTreeSet<String> = names
-        .iter()
-        .filter(|name| !AWAITING_HARVEST.contains(&name.as_str()))
-        .cloned()
-        .collect();
+    let harvested: BTreeSet<String> = names.iter().cloned().collect();
     assert_eq!(golden_dirs, harvested);
-    for name in AWAITING_HARVEST {
-        assert!(names.iter().any(|fixture| fixture == name), "{name}");
-    }
     for name in &names {
         let fixture = read(&root().join("fixtures").join("gp").join(name));
         assert!(fixture.container.is_empty(), "{name}");
@@ -717,7 +831,7 @@ fn guitar_pro_adds_only_documented_default_payloads() {
     let mut seen = BTreeSet::new();
     for pair in pairs() {
         for kind in golden_payload_kinds(&pair.golden) {
-            if kind == LATER_STAFF_TUNING || kind == RESPELLED_PITCH {
+            if kind == LATER_STAFF_TUNING || kind == RESPELLED_PITCH || kind == SOUND_VARIATION {
                 continue;
             }
             assert!(
@@ -859,4 +973,231 @@ fn guitar_pro_drops_the_ghost_flag_only_on_accented_notes() {
         plain_ghosts,
         theirs.iter().filter(|note| note.effects.ghost).count()
     );
+}
+
+#[test]
+fn guitar_pro_marks_the_beats_after_each_sound_change_with_the_sound_index() {
+    let pair = pairs()
+        .into_iter()
+        .find(|pair| pair.name == SOUND_CHANGE)
+        .expect("the sound-change fixture");
+    let marks = sound_marks(&pair.golden);
+    assert_eq!(marks.len(), SOUND_MARKED_BEATS);
+    let overdrive = marks.iter().filter(|mark| mark.sound == 1).count();
+    let nylon = marks.iter().filter(|mark| mark.sound == 2).count();
+    assert_eq!((overdrive, nylon), (5, 3));
+    let elsewhere: usize = pairs()
+        .iter()
+        .filter(|pair| pair.name != SOUND_CHANGE)
+        .map(|pair| sound_marks(&pair.golden).len())
+        .sum();
+    assert_eq!(elsewhere, 0);
+}
+
+struct NoteOn {
+    tick: usize,
+    key: u8,
+    offset: usize,
+}
+
+struct SmfReader<'b> {
+    bytes: &'b [u8],
+    at: usize,
+}
+
+impl<'b> SmfReader<'b> {
+    fn byte(&mut self) -> u8 {
+        let value = self.bytes[self.at];
+        self.at += 1;
+        value
+    }
+
+    fn take(&mut self, len: usize) -> &'b [u8] {
+        let slice = &self.bytes[self.at..self.at + len];
+        self.at += len;
+        slice
+    }
+
+    fn quantity(&mut self) -> usize {
+        let mut value = 0;
+        loop {
+            let byte = self.byte();
+            value = (value << 7) | usize::from(byte & !STATUS_BIT);
+            if byte & STATUS_BIT == 0 {
+                return value;
+            }
+        }
+    }
+
+    fn length(&mut self) -> usize {
+        self.take(4)
+            .iter()
+            .fold(0, |value, byte| (value << 8) | usize::from(*byte))
+    }
+}
+
+fn track_note_ons(reader: &mut SmfReader<'_>, end: usize, found: &mut Vec<NoteOn>) {
+    let mut tick = 0;
+    let mut status = 0;
+    while reader.at < end {
+        tick += reader.quantity();
+        let first = reader.byte();
+        if first == META {
+            reader.byte();
+            let len = reader.quantity();
+            reader.take(len);
+            continue;
+        }
+        if SYSEX.contains(&first) {
+            let len = reader.quantity();
+            reader.take(len);
+            continue;
+        }
+        let offset = if first & STATUS_BIT == 0 {
+            reader.at - 1
+        } else {
+            status = first;
+            reader.byte();
+            reader.at - 1
+        };
+        let key = reader.bytes[offset];
+        if ONE_DATA_BYTE.contains(&(status & STATUS_KIND)) {
+            continue;
+        }
+        let velocity = reader.byte();
+        if status & STATUS_KIND == NOTE_ON && velocity > 0 {
+            found.push(NoteOn { tick, key, offset });
+        }
+    }
+}
+
+fn note_ons(smf: &[u8]) -> Vec<NoteOn> {
+    let mut reader = SmfReader { bytes: smf, at: 0 };
+    assert_eq!(reader.take(4), b"MThd");
+    let header = reader.length();
+    reader.take(header);
+    let mut found = Vec::new();
+    while reader.at < smf.len() {
+        let id = reader.take(4);
+        let len = reader.length();
+        let end = reader.at + len;
+        if id == b"MTrk" {
+            track_note_ons(&mut reader, end, &mut found);
+        }
+        reader.at = end;
+    }
+    found.sort_by_key(|note| note.tick);
+    found
+}
+
+fn bar_of_each_key(fixture: &Score) -> BTreeMap<u8, usize> {
+    let track = &fixture.tracks[0];
+    let mut keys = BTreeMap::new();
+    for (index, bar) in track.staves[0].bars.iter().enumerate() {
+        let note = &bar.voices[0].beats[0].notes[0];
+        let pitch = track.pitch_of(note).expect("a fretted note");
+        assert_eq!(keys.insert(pitch.0, index), None, "two bars share a key");
+    }
+    keys
+}
+
+fn played_bars(fixture: &Score, smf: &[u8]) -> Vec<usize> {
+    let keys = bar_of_each_key(fixture);
+    note_ons(smf)
+        .iter()
+        .map(|note| {
+            *keys
+                .get(&note.key)
+                .unwrap_or_else(|| panic!("key {} belongs to no bar", note.key))
+        })
+        .collect()
+}
+
+fn predicted_orders() -> BTreeMap<String, Vec<Vec<usize>>> {
+    let path = root()
+        .join("xtask")
+        .join("src")
+        .join("fixtures")
+        .join("play-orders.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    serde_json::from_str(&text).expect("play orders parse")
+}
+
+fn directions_fixtures() -> Vec<String> {
+    fixture_names()
+        .into_iter()
+        .filter(|name| name.starts_with(DIRECTIONS_PREFIX))
+        .collect()
+}
+
+#[test]
+fn guitar_pros_export_plays_every_directions_fixture_in_its_predicted_order() {
+    let predicted = predicted_orders();
+    let names = directions_fixtures();
+    let listed: Vec<String> = predicted.keys().cloned().collect();
+    assert_eq!(names, listed);
+    for name in names {
+        let fixture = read(&fixture_path(&name));
+        let smf = std::fs::read(golden_path(&name, EXPORT_MID)).expect("export.mid");
+        let played = played_bars(&fixture, &smf);
+        assert_eq!(predicted[&name], vec![played], "{name}");
+    }
+}
+
+struct Scratch {
+    dir: PathBuf,
+}
+
+impl Scratch {
+    fn new(label: &str) -> Self {
+        let dir =
+            std::env::temp_dir().join(format!("opentab-fidelity-{label}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch directory");
+        Self { dir }
+    }
+
+    fn copy(&self, bytes: &[u8], file: &str) -> PathBuf {
+        let path = self.dir.join(file);
+        std::fs::write(&path, bytes).expect("scratch copy");
+        path
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn compares_equal(name: &str, golden: &Path) -> bool {
+    let pair = Pair {
+        name: name.to_string(),
+        fixture: read(&fixture_path(name)),
+        golden: read_resave(golden),
+    };
+    let (fixture, golden) = normalised(&pair, None);
+    fixture == golden
+}
+
+#[test]
+fn an_altered_copy_of_a_published_golden_fails_the_fidelity_checks() {
+    let scratch = Scratch::new("tamper");
+    let resave = std::fs::read_to_string(golden_path(TAMPERED_JUMP, RESAVE)).expect("resave");
+    let intact = scratch.copy(resave.as_bytes(), "intact.gpif");
+    assert!(compares_equal(TAMPERED_JUMP, &intact));
+    let altered_text = resave.replacen("<Jump>DaSegnoAlCoda</Jump>", "<Jump>DaSegno</Jump>", 1);
+    assert_ne!(altered_text, resave);
+    let altered = scratch.copy(altered_text.as_bytes(), "altered.gpif");
+    assert!(!compares_equal(TAMPERED_JUMP, &altered));
+
+    let fixture = read(&fixture_path(TAMPERED_JUMP));
+    let predicted = predicted_orders()[TAMPERED_JUMP][0].clone();
+    let mut smf = std::fs::read(golden_path(TAMPERED_JUMP, EXPORT_MID)).expect("export.mid");
+    let intact_smf = std::fs::read(scratch.copy(&smf, "intact.mid")).expect("intact copy");
+    assert_eq!(played_bars(&fixture, &intact_smf), predicted);
+    let notes = note_ons(&smf);
+    smf[notes[0].offset] = notes[1].key;
+    let altered_smf = std::fs::read(scratch.copy(&smf, "altered.mid")).expect("altered copy");
+    assert_ne!(played_bars(&fixture, &altered_smf), predicted);
 }

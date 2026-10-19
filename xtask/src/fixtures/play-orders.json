@@ -5,14 +5,10 @@
   "directions-repeat-jumps.gp": [[0, 1, 2, 3, 1, 2, 1, 2, 3, 1, 2, 3, 4, 5, 4, 5, 4, 5, 4, 5, 6]],
   "directions-endings.gp": [[0, 1, 0, 2, 3, 4, 3, 5, 0, 1, 0, 2, 3, 4, 3, 5, 6]],
   "directions-coda-held.gp": [[0, 1, 2, 3, 4, 5, 0, 1, 3, 4, 5, 6]],
-  "directions-coda-free.gp": [[0, 1, 5, 6, 7]],
+  "directions-coda-free.gp": [[0, 1, 2, 4, 5, 6, 7]],
   "directions-fine-ahead.gp": [[0, 1, 2, 3, 4, 5, 0, 1, 3, 4]],
   "directions-dangling.gp": [[0, 1, 2, 3, 0, 1, 2, 3, 4]],
-  "directions-duplicates.gp": [
-    [0, 1, 2, 3, 4, 5],
-    [0, 1, 2, 3, 1, 2, 3, 4, 5],
-    [0, 1, 2, 3, 1, 2]
-  ],
+  "directions-duplicates.gp": [[0, 1, 2, 3, 4, 5]],
   "directions-coda-endings.gp": [[0, 1, 2, 0, 1, 4, 5]],
   "directions-fine-repeats.gp": [[0, 1, 2, 3, 2, 3, 1, 2, 3]]
 }

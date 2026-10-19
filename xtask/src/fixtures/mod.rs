@@ -139,7 +139,6 @@ mod tests {
         ("directions-coda-endings.gp", 1),
     ];
     const DIRECTIONS_PREFIX: &str = "directions-";
-    const COMPETING_ORDERS: [(&str, usize); 1] = [("directions-duplicates.gp", 3)];
 
     #[test]
     fn every_directions_fixture_has_its_predicted_play_order() {
@@ -157,11 +156,7 @@ mod tests {
         assert_eq!(listed, sorted);
         for family in directed {
             let alternatives = &orders[family.file];
-            let expected = COMPETING_ORDERS
-                .iter()
-                .find(|(file, _)| *file == family.file)
-                .map_or(1, |(_, count)| *count);
-            assert_eq!(alternatives.len(), expected, "{}", family.file);
+            assert_eq!(alternatives.len(), 1, "{}", family.file);
             let bars = family.score.master_bars.len();
             for order in alternatives {
                 assert_eq!(order.first(), Some(&0), "{}", family.file);
