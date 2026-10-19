@@ -5,8 +5,9 @@ use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature};
 use crate::ids::{
     bar_ids, check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
 };
+use crate::midi::{check_restorable_automations, put_automations, take_automations};
 use crate::rules::{already_broken, check_bar, check_tempo_changes, clef_for_new_bar, empty_bar};
-use crate::{Command, CommandError, ExtensionEntry};
+use crate::{AutomationEntry, Command, CommandError, ExtensionEntry};
 
 const WHAT: &str = "master bar";
 
@@ -14,6 +15,7 @@ pub(crate) struct Snapshot<'a> {
     pub(crate) master_bar: &'a MasterBar,
     pub(crate) bars: &'a [Bar],
     pub(crate) extensions: &'a [ExtensionEntry],
+    pub(crate) automations: &'a [AutomationEntry],
 }
 
 fn check_index(score: &Score, index: usize, inserting: bool) -> Result<(), CommandError> {
@@ -130,11 +132,13 @@ pub(crate) fn remove(score: &mut Score, index: usize) -> Result<Command, Command
         .collect();
     let removed = once(master_bar.id.0).chain(bars.iter().flat_map(bar_ids));
     let extensions = take_extensions(&mut score.extensions, removed);
+    let automations = take_automations(score, master_bar.id);
     Ok(Command::RestoreMasterBar {
         index,
         master_bar,
         bars,
         extensions,
+        automations,
     })
 }
 
@@ -154,11 +158,13 @@ pub(crate) fn restore(
     check_contents(score, snapshot.master_bar, snapshot.bars.iter())?;
     let restored = once(snapshot.master_bar.id.0).chain(snapshot.bars.iter().flat_map(bar_ids));
     check_restorable(score, restored, snapshot.extensions)?;
+    check_restorable_automations(score, snapshot.master_bar.id, snapshot.automations)?;
     score.master_bars.insert(index, snapshot.master_bar.clone());
     let staves = score.tracks.iter_mut().flat_map(|track| &mut track.staves);
     for (staff, bar) in staves.zip(snapshot.bars) {
         staff.bars.insert(index, bar.clone());
     }
     put_extensions(&mut score.extensions, snapshot.extensions);
+    put_automations(score, snapshot.automations);
     Ok(Command::RemoveMasterBar { index })
 }

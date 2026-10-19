@@ -135,6 +135,7 @@ fn restore_master_bar_rejects_ids_at_or_above_the_allocator() {
         master_bar,
         bars,
         extensions,
+        ..
     } = inverse
     else {
         panic!("restore_master_bar expected");
@@ -153,6 +154,7 @@ fn restore_master_bar_rejects_ids_at_or_above_the_allocator() {
             master_bar,
             bars,
             extensions,
+            automations: Vec::new(),
         };
         above_allocator(rejected(&mut fx.score, &command));
     }

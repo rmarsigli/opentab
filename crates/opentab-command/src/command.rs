@@ -1,6 +1,7 @@
 use opentab_model::{
-    Bar, BarId, Beat, BeatId, Duration, ElementId, MasterBar, Note, NoteId, OpaquePayload, StaffId,
-    TempoChange, TimeSignature, TrackId, Voice, VoiceId,
+    Automation, Bar, BarId, Beat, BeatId, Duration, ElementId, MasterBar, Note, NoteId,
+    OpaquePayload, SoundOverride, StaffId, TempoChange, TimeSignature, TrackId, TrackMidi, Voice,
+    VoiceId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,14 @@ pub enum MetaField {
 pub struct ExtensionEntry {
     pub id: ElementId,
     pub payloads: Vec<OpaquePayload>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AutomationEntry {
+    pub track: TrackId,
+    pub index: usize,
+    pub automation: Automation,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,11 +95,33 @@ pub enum Command {
         staff: StaffId,
         len: usize,
     },
+    SetTrackMidi {
+        track: TrackId,
+        midi: TrackMidi,
+    },
+    InsertAutomation {
+        track: TrackId,
+        index: usize,
+        automation: Automation,
+    },
+    RemoveAutomation {
+        track: TrackId,
+        index: usize,
+    },
+    SetSoundOverride {
+        track: TrackId,
+        bank: Option<String>,
+    },
+    RestoreSoundOverrides {
+        sound_overrides: Vec<SoundOverride>,
+    },
     RestoreMasterBar {
         index: usize,
         master_bar: MasterBar,
         bars: Vec<Bar>,
         extensions: Vec<ExtensionEntry>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        automations: Vec<AutomationEntry>,
     },
     RestoreBeat {
         voice: VoiceId,

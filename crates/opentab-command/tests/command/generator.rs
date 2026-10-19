@@ -1,8 +1,9 @@
 use opentab_command::{Command, MetaField};
 use opentab_model::{
-    BarId, Beat, BeatId, BeatPath, Duration, ElementId, InstrumentKind, Note, NoteEffects, NoteId,
-    NoteKind, NoteValue, Score, StaffId, Tempo, TempoChange, TempoUnit, TimeSignature, TrackId,
-    Tuplet, VoiceId, VoiceSlot,
+    Automation, AutomationValue, Balance, BarId, Beat, BeatId, BeatPath, Duration, ElementId,
+    Fraction, InstrumentKind, Level, MasterBarId, MidiBank, MidiChannel, Note, NoteEffects, NoteId,
+    NoteKind, NoteValue, Score, Sound, SoundRef, StaffId, Tempo, TempoChange, TempoUnit,
+    TimeSignature, TrackId, TrackMidi, Tuplet, VoiceId, VoiceSlot,
 };
 use opentab_testkit::arb_score;
 use proptest::collection::vec;
@@ -114,6 +115,34 @@ pub enum Step {
         staff: Pick,
         len: Pick,
     },
+    SetTrackMidi {
+        track: Pick,
+        midi: TrackMidi,
+    },
+    InsertAutomation {
+        track: Pick,
+        index: Pick,
+        bar: Pick,
+        share: Fraction,
+        value: ValueSeed,
+        linear: bool,
+        visible: bool,
+    },
+    RemoveAutomation {
+        track: Pick,
+        index: Pick,
+    },
+    SetSoundOverride {
+        track: Pick,
+        bank: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ValueSeed {
+    Volume(u32),
+    Pan(u32),
+    Sound(Pick),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -125,9 +154,10 @@ pub enum Corruption {
     DuplicateId,
     IdAboveAllocator,
     StringOutOfRange,
+    FirstSoundBank,
 }
 
-pub const CORRUPTIONS: [Corruption; 7] = [
+pub const CORRUPTIONS: [Corruption; 8] = [
     Corruption::TempoOutsideBar,
     Corruption::DuplicateString,
     Corruption::PercussionOnFretted,
@@ -135,6 +165,7 @@ pub const CORRUPTIONS: [Corruption; 7] = [
     Corruption::DuplicateId,
     Corruption::IdAboveAllocator,
     Corruption::StringOutOfRange,
+    Corruption::FirstSoundBank,
 ];
 
 #[derive(Debug, Clone)]
@@ -340,6 +371,57 @@ fn pick_string(pick: Pick, strings: &Strings) -> u8 {
     u8::try_from(strings.count + pick.selector % 3).unwrap_or(u8::MAX)
 }
 
+fn automations_of(score: &Score, track: TrackId) -> usize {
+    score
+        .find_track(track)
+        .map_or(0, |track| track.automations.len())
+}
+
+fn sounds_of(score: &Score, track: TrackId) -> usize {
+    score
+        .find_track(track)
+        .map_or(0, |track| track.sounds.len())
+}
+
+fn automation(score: &Score, step: &Step, track: TrackId) -> Automation {
+    let Step::InsertAutomation {
+        bar,
+        share,
+        value,
+        linear,
+        visible,
+        ..
+    } = step
+    else {
+        unreachable!("only insert_automation builds an automation");
+    };
+    let masters: Vec<MasterBarId> = score.master_bars.iter().map(|master| master.id).collect();
+    let (master_bar, length) = if bar.valid && !masters.is_empty() {
+        let index = bar.selector % masters.len();
+        (
+            masters[index],
+            score.master_bars[index].time_signature.bar_length(),
+        )
+    } else {
+        (MasterBarId(ElementId(bar.raw)), Fraction::from_integer(1))
+    };
+    let value = match value {
+        ValueSeed::Volume(level) => AutomationValue::Volume(Level::new(*level).expect("in range")),
+        ValueSeed::Pan(balance) => AutomationValue::Pan(Balance::new(*balance).expect("in range")),
+        ValueSeed::Sound(pick) => {
+            let sounds = sounds_of(score, track);
+            AutomationValue::Sound(SoundRef(existing_index(*pick, sounds)))
+        }
+    };
+    Automation {
+        master_bar,
+        position: share * length,
+        linear: *linear,
+        visible: *visible,
+        value,
+    }
+}
+
 pub fn resolve(step: &Step, score: &Score) -> Command {
     let catalog = Catalog::of(score);
     let master_bars = score.master_bars.len();
@@ -467,7 +549,64 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
                 len,
             }
         }
+        Step::SetTrackMidi { track, midi } => Command::SetTrackMidi {
+            track: catalog.id(*track, &catalog.tracks),
+            midi: *midi,
+        },
+        Step::InsertAutomation { track, index, .. } => {
+            let track = catalog.id(*track, &catalog.tracks);
+            Command::InsertAutomation {
+                track,
+                index: insert_index(*index, automations_of(score, track)),
+                automation: automation(score, step, track),
+            }
+        }
+        Step::RemoveAutomation { track, index } => {
+            let track = catalog.id(*track, &catalog.tracks);
+            Command::RemoveAutomation {
+                track,
+                index: existing_index(*index, automations_of(score, track)),
+            }
+        }
+        Step::SetSoundOverride { track, bank } => Command::SetSoundOverride {
+            track: catalog.id(*track, &catalog.tracks),
+            bank: bank.clone(),
+        },
     }
+}
+
+fn arb_track_midi() -> impl Strategy<Value = TrackMidi> {
+    (
+        (0u8..=3, 0u8..=15, 0u8..=15, any::<bool>()),
+        (0u8..=127, 0u8..=127),
+        (0u32..=1_000_000, 0u32..=1_000_000),
+    )
+        .prop_map(
+            |((port, primary, secondary, per_string), (msb, lsb), (volume, pan))| TrackMidi {
+                port,
+                primary: MidiChannel::new(primary).expect("channel in range"),
+                secondary: MidiChannel::new(secondary).expect("channel in range"),
+                per_string,
+                bank: MidiBank::new(msb, lsb).expect("bank in range"),
+                volume: Level::new(volume).expect("volume in range"),
+                pan: Balance::new(pan).expect("pan in range"),
+            },
+        )
+}
+
+fn arb_value_seed() -> impl Strategy<Value = ValueSeed> {
+    prop_oneof![
+        (0u32..=1_000_000).prop_map(ValueSeed::Volume),
+        (0u32..=1_000_000).prop_map(ValueSeed::Pan),
+        arb_pick().prop_map(ValueSeed::Sound),
+    ]
+}
+
+fn arb_share() -> impl Strategy<Value = Fraction> {
+    prop_oneof![
+        4 => (0i64..=16, 1i64..=16).prop_map(|(numer, denom)| Fraction::new(numer % (denom + 1), denom)),
+        1 => (17i64..=40, 1i64..=16).prop_map(|(numer, denom)| Fraction::new(numer, denom)),
+    ]
 }
 
 fn arb_pick() -> impl Strategy<Value = Pick> {
@@ -547,6 +686,27 @@ fn arb_step() -> impl Strategy<Value = Step> {
             staff,
             len
         }),
+        (arb_pick(), arb_track_midi()).prop_map(|(track, midi)| Step::SetTrackMidi { track, midi }),
+        (
+            (arb_pick(), arb_pick(), arb_pick()),
+            arb_share(),
+            arb_value_seed(),
+            (any::<bool>(), any::<bool>()),
+        )
+            .prop_map(|((track, index, bar), share, value, (linear, visible))| {
+                Step::InsertAutomation {
+                    track,
+                    index,
+                    bar,
+                    share,
+                    value,
+                    linear,
+                    visible,
+                }
+            }),
+        (arb_pick(), arb_pick()).prop_map(|(track, index)| Step::RemoveAutomation { track, index }),
+        (arb_pick(), option::of(".{0,8}"))
+            .prop_map(|(track, bank)| Step::SetSoundOverride { track, bank }),
     ]
 }
 
@@ -708,6 +868,22 @@ fn corrupt(score: &mut Score, corruption: Corruption, pick: usize) {
             }
             let above = ElementId(score.ids.peek().0.saturating_add(3));
             beat_at(score, paths[pick % paths.len()]).notes[0].id = NoteId(above);
+        }
+        Corruption::FirstSoundBank => {
+            let len = score.tracks.len();
+            let Some(track) = score.tracks.get_mut(pick % len.max(1)) else {
+                return;
+            };
+            let bank = track.midi.bank;
+            let other = MidiBank::new((bank.msb() + 1) % 128, bank.lsb()).expect("bank in range");
+            match track.sounds.first_mut() {
+                Some(first) => first.bank = other,
+                None => track.sounds.push(Sound {
+                    name: "corrupt".to_owned(),
+                    program: track.instrument.midi_program,
+                    bank: other,
+                }),
+            }
         }
         Corruption::StringOutOfRange => {
             let paths = fretted_paths_with_notes(score);

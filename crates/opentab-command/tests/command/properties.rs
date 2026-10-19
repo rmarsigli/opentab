@@ -12,7 +12,7 @@ const CASES: u32 = 256;
 const COVERAGE_SAMPLES: usize = 256;
 const SHIFTS: [usize; 4] = [0, 1, 2, usize::MAX];
 const MIN_SUCCESS_RATIO: f64 = 0.2;
-const FORWARD_OPS: [&str; 14] = [
+const FORWARD_OPS: [&str; 18] = [
     "set_meta",
     "set_anacrusis",
     "insert_master_bar",
@@ -27,6 +27,10 @@ const FORWARD_OPS: [&str; 14] = [
     "set_tempo",
     "pad_staff_bars",
     "trim_staff_bars",
+    "set_track_midi",
+    "insert_automation",
+    "remove_automation",
+    "set_sound_override",
 ];
 
 fn execute_all(case: &Case) -> (opentab_model::Score, History, usize) {
@@ -95,6 +99,7 @@ fn is_restore(command: &Command) -> bool {
             | Command::RestoreNote { .. }
             | Command::RestoreTempoChanges { .. }
             | Command::RestoreStaffBars { .. }
+            | Command::RestoreSoundOverrides { .. }
     )
 }
 

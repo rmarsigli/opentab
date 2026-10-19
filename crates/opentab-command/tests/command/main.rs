@@ -10,6 +10,7 @@ mod json_shape;
 mod jsonl;
 mod master_bar;
 mod meta;
+mod midi;
 mod note;
 mod properties;
 mod restore_rules;

@@ -154,6 +154,7 @@ fn restore_master_bar_rejects_voice_slots_out_of_order() {
             master_bar,
             mut bars,
             extensions,
+            ..
         } = apply(&mut fx.score, &Command::RemoveMasterBar { index: 1 }).unwrap()
         else {
             panic!("restore_master_bar expected");
@@ -168,6 +169,7 @@ fn restore_master_bar_rejects_voice_slots_out_of_order() {
             master_bar,
             bars,
             extensions,
+            automations: Vec::new(),
         };
         let CommandError::InvalidValue { message } = rejected(&mut fx.score, &restore) else {
             panic!("invalid value expected");

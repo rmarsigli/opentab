@@ -10,6 +10,7 @@ mod jsonl;
 mod locate;
 mod master_bar;
 mod meta;
+mod midi;
 mod note;
 mod rules;
 mod staff;
@@ -17,7 +18,7 @@ mod tempo;
 mod voice;
 
 pub use apply::apply;
-pub use command::{Command, ExtensionEntry, MetaField};
+pub use command::{AutomationEntry, Command, ExtensionEntry, MetaField};
 pub use error::{CommandError, ParseError};
 pub use history::History;
 pub use id_tree::{BarIds, BeatIds, IdTree, StaffIds, TrackIds, VoiceIds, element_ids};

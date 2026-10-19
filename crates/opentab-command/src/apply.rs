@@ -1,6 +1,6 @@
 use opentab_model::Score;
 
-use crate::{Command, CommandError, beat, master_bar, meta, note, staff, tempo, voice};
+use crate::{Command, CommandError, beat, master_bar, meta, midi, note, staff, tempo, voice};
 
 pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandError> {
     match command {
@@ -16,6 +16,7 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
             master_bar,
             bars,
             extensions,
+            automations,
         } => master_bar::restore(
             score,
             *index,
@@ -23,8 +24,24 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
                 master_bar,
                 bars,
                 extensions,
+                automations,
             },
         ),
+        Command::SetTrackMidi { track, midi } => midi::set_track_midi(score, *track, *midi),
+        Command::InsertAutomation {
+            track,
+            index,
+            automation,
+        } => midi::insert_automation(score, *track, *index, automation),
+        Command::RemoveAutomation { track, index } => {
+            midi::remove_automation(score, *track, *index)
+        }
+        Command::SetSoundOverride { track, bank } => {
+            midi::set_sound_override(score, *track, bank.as_deref())
+        }
+        Command::RestoreSoundOverrides { sound_overrides } => {
+            Ok(midi::restore_sound_overrides(score, sound_overrides))
+        }
         Command::InsertBeat {
             voice,
             bar,

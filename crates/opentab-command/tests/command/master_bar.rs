@@ -119,6 +119,7 @@ fn remove_master_bar_takes_its_bars_and_extensions() {
         master_bar,
         bars,
         extensions,
+        ..
     } = &inverse
     else {
         panic!("inverse of remove_master_bar is restore_master_bar");
@@ -177,6 +178,7 @@ fn restore_master_bar_rejects_a_bar_count_that_does_not_match_the_staves() {
         master_bar,
         mut bars,
         extensions,
+        ..
     } = inverse
     else {
         panic!("restore expected");
@@ -187,6 +189,7 @@ fn restore_master_bar_rejects_a_bar_count_that_does_not_match_the_staves() {
         master_bar,
         bars,
         extensions,
+        automations: Vec::new(),
     };
     assert!(matches!(
         rejected(&mut fx.score, &command),
@@ -202,6 +205,7 @@ fn restore_master_bar_rejects_ids_already_in_the_score() {
         mut master_bar,
         bars,
         extensions,
+        ..
     } = inverse
     else {
         panic!("restore expected");
@@ -212,6 +216,7 @@ fn restore_master_bar_rejects_ids_already_in_the_score() {
         master_bar,
         bars,
         extensions,
+        automations: Vec::new(),
     };
     assert!(matches!(
         rejected(&mut fx.score, &command),
@@ -240,6 +245,7 @@ fn restore_master_bar_rejects_foreign_extensions() {
         master_bar,
         bars,
         extensions,
+        automations: Vec::new(),
     };
     assert!(matches!(
         rejected(&mut fx.score, &command),
@@ -264,6 +270,7 @@ fn restore_master_bar_out_of_range() {
         master_bar,
         bars,
         extensions,
+        automations: Vec::new(),
     };
     assert_eq!(
         rejected(&mut fx.score, &command),
