@@ -92,7 +92,7 @@ A tool that fails returns a tool result marked as an error whose text is `{"erro
 
 ## Mutation testing
 
-`cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model`, `opentab-command`, `opentab-gp`, `opentab-layout`, `opentab-render`, `opentab-mcp`, `opentab-files` and `opentab-playback` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.
+`cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model`, `opentab-command`, `opentab-gp`, `opentab-layout`, `opentab-render`, `opentab-mcp`, `opentab-files`, `opentab-playback` and `opentab-audio` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.
 
 ```
 cargo install cargo-mutants --version 27.1.0 --locked

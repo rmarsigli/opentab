@@ -32,6 +32,8 @@ fn arguments_select_the_eight_crates_serially_with_a_timeout_and_target_output()
             "opentab-files",
             "--package",
             "opentab-playback",
+            "--package",
+            "opentab-audio",
             "--jobs",
             "1",
             "--timeout",
@@ -50,7 +52,8 @@ fn arguments_select_the_eight_crates_serially_with_a_timeout_and_target_output()
             "opentab-render",
             "opentab-mcp",
             "opentab-files",
-            "opentab-playback"
+            "opentab-playback",
+            "opentab-audio"
         ]
     );
 }

@@ -26,7 +26,7 @@ enum TopCommand {
     #[command(about = "Guitar Pro 8 oracle: harvest goldens and check their freshness")]
     Oracle(OracleArgs),
     #[command(
-        about = "Run cargo-mutants on opentab-model, opentab-command, opentab-gp, opentab-layout, opentab-render, opentab-mcp, opentab-files and opentab-playback"
+        about = "Run cargo-mutants on opentab-model, opentab-command, opentab-gp, opentab-layout, opentab-render, opentab-mcp, opentab-files, opentab-playback and opentab-audio"
     )]
     Mutants(MutantsArgs),
     #[command(about = "Run a command inside the memory cap (5G memory, 1G swap)")]
