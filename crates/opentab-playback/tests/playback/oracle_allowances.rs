@@ -32,7 +32,6 @@ pub enum Rule {
     OrderWithinTick,
     TrillAuxiliaryReleasedOnThePrincipal,
     CodaNeverReached,
-    TripletFeel,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -66,7 +65,7 @@ const fn tempo_event(
     }
 }
 
-pub const ALLOWED_DIFFERENCES: [Allowance; 13] = [
+pub const ALLOWED_DIFFERENCES: [Allowance; 12] = [
     tempo_event(
         "tempo-1920-floor",
         FLOOR_REASON,
@@ -150,11 +149,6 @@ pub const ALLOWED_DIFFERENCES: [Allowance; 13] = [
         name: "coda-never-reached",
         reason: "when a To Coda lies on no played path, GP's export holds only the bars from the Coda on (gpif.md 5.1 rule 12, a GP defect); we play the whole order; no golden triggers it",
         rule: Rule::CodaNeverReached,
-    },
-    Allowance {
-        name: "triplet-feel",
-        reason: "GP swings eighths under triplet feel; the model keeps triplet feel opaque until M3-T11, so note times of such scores are not compared; no golden carries it",
-        rule: Rule::TripletFeel,
     },
 ];
 

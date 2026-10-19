@@ -11,6 +11,7 @@ use crate::harmonics;
 use crate::midi::{Channel, MidiMessage, NOTE_OFF_VELOCITY, velocity_of};
 use crate::order::{PlayOrder, PlayedBar};
 use crate::perform::Profile;
+use crate::swing::Swing;
 use crate::{PlaybackError, PlaybackWarning, ScoreTime};
 
 const MAX_KEY: u16 = 127;
@@ -222,7 +223,15 @@ impl<'a> TrackWriter<'a> {
         voice: &Voice,
         stream: &mut Stream,
     ) -> Result<(), PlaybackError> {
-        let start = Exact::of(played.start.whole_notes()).add(self.pickup_shift(played, voice)?)?;
+        let bar_start = Exact::of(played.start.whole_notes());
+        let shift = self.pickup_shift(played, voice)?;
+        let swing = Swing::of(
+            self.score
+                .master_bars
+                .get(played.source)
+                .map(|bar| bar.triplet_feel)
+                .unwrap_or_default(),
+        )?;
         let place = Place {
             staff,
             slot: voice.slot.get(),
@@ -235,18 +244,20 @@ impl<'a> TrackWriter<'a> {
                 graces.push(beat);
                 continue;
             }
-            let onset = start.add(offset)?;
-            let length = length_of(beat);
-            let shift = self.graces(&graces, onset, length, place, stream)?;
+            let written = length_of(beat);
+            let swung = Swing::apply(swing, shift.add(offset)?, written)?;
+            let onset = bar_start.add(swung.start)?;
+            let length = swung.length;
+            let grace_shift = self.graces(&graces, onset, length, place, stream)?;
             graces.clear();
             let span = Span {
-                start: onset.add(shift)?,
-                length: length.sub(shift)?,
+                start: onset.add(grace_shift)?,
+                length: length.sub(grace_shift)?,
             };
             self.beat(beat, span, place, stream)?;
-            offset = offset.add(length)?;
+            offset = offset.add(written)?;
         }
-        let end = start.add(offset)?;
+        let end = bar_start.add(shift)?.add(offset)?;
         self.graces(&graces, end, Exact::ZERO, place, stream)?;
         Ok(())
     }

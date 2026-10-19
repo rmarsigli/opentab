@@ -2,10 +2,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use opentab_gp::read_gp;
-use opentab_model::{DirectionJump, DirectionTarget, Score};
+use opentab_model::{DirectionJump, DirectionTarget, Score, TRIPLET_FEELS, TripletFeel};
 use opentab_playback::{
-    MidiMessage, Performance, PlaybackOptions, Profile, TrackLayout, UnplayedKind, export_midi,
-    perform, to_ticks,
+    MidiMessage, Performance, PlaybackOptions, Profile, TrackLayout, export_midi, perform, to_ticks,
 };
 
 use crate::oracle_allowances::{
@@ -50,7 +49,6 @@ pub struct Context {
     pub name: String,
     pub off_grid: BTreeSet<GridKey>,
     pub bar_ticks: Vec<u64>,
-    pub triplet_feel: bool,
     pub coda_never_reached: bool,
 }
 
@@ -189,10 +187,6 @@ pub fn context(name: &str, score: &Score, performance: &Performance) -> Context 
             .iter()
             .map(|bar| to_ticks(bar.start, ppq))
             .collect(),
-        triplet_feel: performance
-            .unplayed
-            .iter()
-            .any(|feature| feature.kind == UnplayedKind::TripletFeel),
         coda_never_reached: coda_never_reached(score, &played),
     }
 }
@@ -281,34 +275,6 @@ fn compare_notes(context: &Context, ours: &Side, gp: &Side, verdict: &mut Verdic
         );
     }
     let mut theirs = gp.notes.clone();
-    if context.triplet_feel {
-        verdict
-            .used
-            .insert(named(|rule| matches!(rule, Rule::TripletFeel)));
-        let pitches = |notes: &[Note]| -> Vec<(usize, u8, u8, u8)> {
-            let mut out: Vec<(usize, u8, u8, u8)> = notes
-                .iter()
-                .map(|note| {
-                    (
-                        note.onset.track,
-                        note.onset.channel,
-                        note.onset.key,
-                        note.onset.velocity,
-                    )
-                })
-                .collect();
-            out.sort();
-            out
-        };
-        if pitches(&mine) != pitches(&theirs) {
-            differ(
-                verdict,
-                Aspect::Onsets,
-                "pitches under triplet feel".to_string(),
-            );
-        }
-        return;
-    }
     mine.sort();
     theirs.sort();
     let counts = expansion(&mine, &context.bar_ticks);
@@ -473,9 +439,13 @@ pub struct Case {
 
 pub fn case(name: &str) -> Case {
     let bytes = std::fs::read(root().join("fixtures/gp").join(name)).expect("fixture");
-    let score = read_gp(&bytes).expect("fixture reads");
     let golden =
         std::fs::read(root().join("goldens/gp").join(name).join("export.mid")).expect("golden");
+    case_of(name, &bytes, &golden)
+}
+
+pub fn case_of(name: &str, bytes: &[u8], golden: &[u8]) -> Case {
+    let score = read_gp(bytes).expect("fixture reads");
     let performance = perform(
         &score,
         &PlaybackOptions {
@@ -487,7 +457,7 @@ pub fn case(name: &str) -> Case {
     Case {
         context: context(name, &score, &performance),
         ours: side(&ours),
-        gp: side(&golden),
+        gp: side(golden),
     }
 }
 
@@ -508,7 +478,7 @@ fn profile_gp_exports_what_guitar_pro_exports_for_every_golden() {
     }
     for allowance in &ALLOWED_DIFFERENCES {
         assert!(!allowance.reason.is_empty());
-        let declared_only = matches!(allowance.rule, Rule::CodaNeverReached | Rule::TripletFeel);
+        let declared_only = matches!(allowance.rule, Rule::CodaNeverReached);
         assert_eq!(
             used.contains(allowance.name),
             !declared_only,
@@ -535,6 +505,54 @@ fn profile_gp_exports_what_guitar_pro_exports_for_every_golden() {
         .map(|allowance| allowance.name)
         .collect();
     assert_eq!(unique.len(), ALLOWED_DIFFERENCES.len());
+}
+
+fn swing_experiment() -> (Vec<u8>, Vec<u8>) {
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+    (
+        std::fs::read(data.join("m3-t11-swing.gp")).expect("experiment score"),
+        std::fs::read(data.join("m3-t11-swing.mid")).expect("GP export of the experiment"),
+    )
+}
+
+#[test]
+fn m3_t11_profile_gp_swings_every_feel_and_rhythm_as_guitar_pro_exports_it() {
+    let (bytes, golden) = swing_experiment();
+    let case = case_of("m3-t11-swing.gp", &bytes, &golden);
+    let verdict = compare(&case.context, &case.ours, &case.gp);
+    assert!(verdict.differences.is_empty(), "{:#?}", verdict.differences);
+    let score = read_gp(&bytes).expect("experiment reads");
+    let feels: BTreeSet<TripletFeel> = score
+        .master_bars
+        .iter()
+        .map(|bar| bar.triplet_feel)
+        .collect();
+    assert_eq!(feels.len(), TRIPLET_FEELS.len());
+    let mut straight = score.clone();
+    for bar in &mut straight.master_bars {
+        bar.triplet_feel = TripletFeel::None;
+    }
+    let performance = perform(
+        &straight,
+        &PlaybackOptions {
+            profile: Profile::Gp,
+        },
+    )
+    .expect("perform");
+    let unswung = export_midi(&straight, Profile::Gp).expect("export");
+    let verdict = compare(
+        &context("m3-t11-swing.gp", &straight, &performance),
+        &side(&unswung),
+        &case.gp,
+    );
+    assert!(
+        verdict
+            .differences
+            .iter()
+            .any(|difference| difference.aspect == Aspect::Onsets),
+        "{:#?}",
+        verdict.differences
+    );
 }
 
 fn aspects(case: &Case, ours: &Side) -> BTreeSet<Aspect> {

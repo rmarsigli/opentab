@@ -11,6 +11,7 @@ mod notes;
 mod order;
 mod perform;
 mod smf;
+mod swing;
 mod tempo;
 mod time;
 mod unplayed;

@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use opentab_model::{
     AutomationValue, Balance, Beat, InstrumentKind, Level, MidiBank, Note, Score, Track,
-    TripletFeel,
 };
 
 use crate::ScoreTime;
@@ -30,7 +29,6 @@ pub enum UnplayedKind {
     Slap,
     Pop,
     TempoRamp,
-    TripletFeel,
     SoundChange,
     Volume,
     Pan,
@@ -229,11 +227,6 @@ fn track_kinds(score: &Score, track: &Track) -> Vec<(UnplayedKind, usize)> {
 
 pub(crate) fn catalogue(score: &Score, profile: Profile) -> Vec<UnplayedFeature> {
     let mut catalogue = Catalogue::default();
-    for (bar, master_bar) in score.master_bars.iter().enumerate() {
-        if master_bar.triplet_feel != TripletFeel::None {
-            catalogue.note(None, UnplayedKind::TripletFeel, bar);
-        }
-    }
     if profile == Profile::Gp {
         for (bar, master_bar) in score.master_bars.iter().enumerate() {
             for _ in master_bar

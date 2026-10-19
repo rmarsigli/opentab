@@ -1,6 +1,7 @@
 use opentab_model::{
     Bend, BendPoint, Dynamic, Fraction, Grace, Harmonic, HarmonicKind, InstrumentKind, MidiBank,
     MidiChannel, NoteValue, OpaquePayload, Transpose, TremoloPicking, Trill, TrillSpeed,
+    TripletFeel,
 };
 use opentab_playback::{
     BEND_CENTRE, Channel, ChannelState, ConductorKind, MidiMessage, PAN_CONTROLLER,
@@ -874,4 +875,49 @@ fn the_conductor_restates_tempo_and_bar_zero_signatures_after_a_jump() {
         ]
     );
     assert_eq!(performance.clicks, beat_grid(&score, &performance.order));
+}
+
+#[test]
+fn triplet_feel_swings_each_pair_in_both_profiles() {
+    let cases: [(TripletFeel, NoteValue, (i64, i64)); 3] = [
+        (TripletFeel::TripletEighth, NoteValue::Eighth, (1, 6)),
+        (TripletFeel::DottedSixteenth, NoteValue::Sixteenth, (3, 32)),
+        (TripletFeel::ScottishEighth, NoteValue::Eighth, (1, 16)),
+    ];
+    for (feel, value, long) in cases {
+        let mut builder = Builder::new(1);
+        let track = builder.guitar();
+        builder.score.master_bars[0].triplet_feel = feel;
+        let count = 2 * value.denominator() / 4;
+        let pair = Fraction::new(2, value.denominator());
+        let long = Fraction::new(long.0, long.1);
+        let notes: Vec<_> = (0..count)
+            .map(|_| beat(value, vec![fretted(0, 0)]))
+            .chain([beat(NoteValue::Half, vec![fretted(1, 0)])])
+            .collect();
+        builder.voice(track, 0, 0, notes);
+        for options in [GP, MUSICAL] {
+            let performance = perform(&builder.score, &options).expect("perform");
+            let expected: Vec<(Fraction, Fraction, u8)> = (0..count / 2)
+                .flat_map(|index| {
+                    let start = pair * index;
+                    [
+                        note(start, start + long, 64),
+                        note(start + long, start + pair, 64),
+                    ]
+                })
+                .chain([note(frac(1, 2), frac(1, 1), 59)])
+                .collect();
+            let mut heard_notes = shape(&heard(&performance, track));
+            heard_notes.sort();
+            let mut expected = expected;
+            expected.sort();
+            assert_eq!(heard_notes, expected, "{feel:?} {:?}", options.profile);
+            assert!(
+                performance.unplayed.is_empty(),
+                "{feel:?}: {:?}",
+                performance.unplayed
+            );
+        }
+    }
 }
