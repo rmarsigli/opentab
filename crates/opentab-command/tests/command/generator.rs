@@ -1,9 +1,10 @@
 use opentab_command::{Command, MetaField};
 use opentab_model::{
-    Automation, AutomationValue, Balance, BarId, Beat, BeatId, BeatPath, Duration, ElementId,
-    Fraction, InstrumentKind, Level, MasterBarId, MidiBank, MidiChannel, Note, NoteEffects, NoteId,
-    NoteKind, NoteValue, Score, Sound, SoundRef, StaffId, Tempo, TempoChange, TempoUnit,
-    TimeSignature, TrackId, TrackMidi, Tuplet, VoiceId, VoiceSlot,
+    Automation, AutomationValue, Balance, BarId, Beat, BeatId, BeatPath, DIRECTION_JUMPS,
+    DIRECTION_TARGETS, Directions, Duration, ElementId, Fraction, InstrumentKind, Level,
+    MasterBarId, MidiBank, MidiChannel, Note, NoteEffects, NoteId, NoteKind, NoteValue, Score,
+    Sound, SoundRef, StaffId, Tempo, TempoChange, TempoUnit, TimeSignature, TrackId, TrackMidi,
+    Tuplet, VoiceId, VoiceSlot,
 };
 use opentab_testkit::arb_score;
 use proptest::collection::vec;
@@ -105,6 +106,10 @@ pub enum Step {
     SetTempo {
         master_bar: Pick,
         bpm: f64,
+    },
+    SetDirections {
+        master_bar: Pick,
+        directions: Directions,
     },
     PadStaffBars {
         track: Pick,
@@ -517,6 +522,13 @@ pub fn resolve(step: &Step, score: &Score) -> Command {
             master_bar: existing_index(*master_bar, master_bars),
             bpm: *bpm,
         },
+        Step::SetDirections {
+            master_bar,
+            directions,
+        } => Command::SetDirections {
+            master_bar: existing_index(*master_bar, master_bars),
+            directions: directions.clone(),
+        },
         Step::PadStaffBars { track, staff } => {
             let short: Vec<StaffInfo> = catalog
                 .staves
@@ -642,6 +654,14 @@ fn arb_bpm() -> impl Strategy<Value = f64> {
     ]
 }
 
+fn arb_directions() -> impl Strategy<Value = Directions> {
+    (
+        vec(select(DIRECTION_TARGETS.to_vec()), 0..=2),
+        vec(select(DIRECTION_JUMPS.to_vec()), 0..=2),
+    )
+        .prop_map(|(targets, jumps)| Directions { targets, jumps })
+}
+
 fn arb_step() -> impl Strategy<Value = Step> {
     prop_oneof![
         (0usize..10, ".{0,12}").prop_map(|(field, value)| Step::SetMeta { field, value }),
@@ -680,6 +700,10 @@ fn arb_step() -> impl Strategy<Value = Step> {
         (arb_pick(), 0u8..=30).prop_map(|(note, fret)| Step::SetFret { note, fret }),
         any::<bool>().prop_map(|value| Step::SetAnacrusis { value }),
         (arb_pick(), arb_bpm()).prop_map(|(master_bar, bpm)| Step::SetTempo { master_bar, bpm }),
+        (arb_pick(), arb_directions()).prop_map(|(master_bar, directions)| Step::SetDirections {
+            master_bar,
+            directions
+        }),
         (arb_pick(), arb_pick()).prop_map(|(track, staff)| Step::PadStaffBars { track, staff }),
         (arb_pick(), arb_pick(), arb_pick()).prop_map(|(track, staff, len)| Step::TrimStaffBars {
             track,

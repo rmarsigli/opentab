@@ -1,6 +1,7 @@
 mod beat;
 mod checks;
 mod defaults;
+mod directions;
 mod focus;
 mod generator;
 mod history;

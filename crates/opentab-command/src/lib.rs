@@ -1,6 +1,7 @@
 mod apply;
 mod beat;
 mod command;
+mod directions;
 mod error;
 mod history;
 mod id_tree;

@@ -1,5 +1,5 @@
 use opentab_model::{
-    Automation, Bar, BarId, Beat, BeatId, Duration, ElementId, MasterBar, Note, NoteId,
+    Automation, Bar, BarId, Beat, BeatId, Directions, Duration, ElementId, MasterBar, Note, NoteId,
     OpaquePayload, SoundOverride, StaffId, TempoChange, TimeSignature, TrackId, TrackMidi, Voice,
     VoiceId,
 };
@@ -85,6 +85,10 @@ pub enum Command {
     SetTempo {
         master_bar: usize,
         bpm: f64,
+    },
+    SetDirections {
+        master_bar: usize,
+        directions: Directions,
     },
     PadStaffBars {
         track: TrackId,

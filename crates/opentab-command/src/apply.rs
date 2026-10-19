@@ -1,6 +1,8 @@
 use opentab_model::Score;
 
-use crate::{Command, CommandError, beat, master_bar, meta, midi, note, staff, tempo, voice};
+use crate::{
+    Command, CommandError, beat, directions, master_bar, meta, midi, note, staff, tempo, voice,
+};
 
 pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandError> {
     match command {
@@ -81,6 +83,10 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
         } => note::restore(score, *beat, *index, note, extensions),
         Command::SetFret { note, fret } => note::set_fret(score, *note, *fret),
         Command::SetTempo { master_bar, bpm } => tempo::set(score, *master_bar, *bpm),
+        Command::SetDirections {
+            master_bar,
+            directions,
+        } => directions::set(score, *master_bar, directions),
         Command::RestoreTempoChanges {
             master_bar,
             tempo_changes,
