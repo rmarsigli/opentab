@@ -320,7 +320,7 @@ The corpus has 8 master bars with `Directions`, in 2 files: 4 `Target` (`Segno` 
 | Jump back to `SegnoSegno` | `DaSegnoSegno`, `DaSegnoSegnoAlFine`, `DaSegnoSegnoAlCoda`, `DaSegnoSegnoAlDoubleCoda` |
 | Jump forward | `DaCoda` (To Coda), `DaDoubleCoda` (To Double Coda) |
 
-OpenTab models them as `MasterBar.directions` (§10). Diagnostics flag a jump whose destination or `Al…` target is missing from the score (`dangling_jump`, one per missing target) and every later copy of a target (`duplicate_target`); GP accepts both, so the writer refuses neither.
+OpenTab models them as `MasterBar.directions` (§10). Diagnostics flag a jump whose destination or `Al…` target is missing from the score (`dangling_jump`, one per missing target), every later copy of a target (`duplicate_target`), and a `DaCoda` or `DaDoubleCoda` with no copy of its target in a later bar (`coda_not_ahead`; GP ignores such a jump, rule 9). GP accepts all three, so the writer refuses none.
 
 A bar may hold several targets and jumps. GP writes the targets first and orders jumps its own way: we wrote `DaCoda` before `DaSegnoAlCoda`, and the re-save has them the other way round [m3-po21]. The play order they produce is in §5.1.
 
@@ -693,7 +693,9 @@ When an anchored master bar has been removed:
 - a sync point is dropped when its master bar or its pass no longer exists;
 - a lyrics line starts at the next remaining master bar instead, or at the last one when none follows.
 
-So the writer never writes an index to a bar that does not exist. Undoing the removal restores the bar's id, and the anchor finds it again. Data that is not in the plain integer form GP writes is kept as it is, without an anchor.
+So the writer never writes an index to a bar that does not exist.
+
+After the kept children of a master bar are inserted, the writer puts the children in GP's order of §6 (`Key`, `Time`, `Fermatas`, `Repeat`, `Section`, `AlternateEndings`, `TripletFeel`, `DoubleBar`, `Directions`, `Bars`, `XProperties`). A child with another name stays right after the child it followed. A bar read in that order is written unchanged; an edit that adds a child (directions, a marker, a double bar, a repeat or an ending) cannot push a kept `XProperties` before `Bars`. A source bar in another order is written in GP's order. Undoing the removal restores the bar's id, and the anchor finds it again. Data that is not in the plain integer form GP writes is kept as it is, without an anchor.
 
 ### 11.2 Opaque data the writer refuses
 
