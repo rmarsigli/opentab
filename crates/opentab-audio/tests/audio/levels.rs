@@ -1,7 +1,7 @@
-use opentab_audio::{Limiter, LimiterSettings, SampleRate, encode_wav, pcm16};
+use opentab_audio::{Limiter, LimiterSettings, SampleRate, encode_wav, pcm16, render_all};
 use opentab_playback::Profile;
 
-use crate::support::{PROFILES, fixture, performance, render};
+use crate::support::{PROFILES, bank_voices, fixture, performance, render, tiny_bank};
 
 const BLOCK_FRAMES: usize = 2_400;
 const ACTIVE_FLOOR_DB: f64 = -60.0;
@@ -124,4 +124,26 @@ fn the_limiter_passes_quiet_audio_and_never_reaches_full_scale() {
             .all(|sample| sample.abs() < settings.ceiling)
     );
     assert!(loud_left.iter().any(|sample| sample.abs() > settings.knee));
+}
+
+const PARITY_FIXTURES: [&str; 2] = ["note-effects.gp", "multi-track.gp"];
+const PARITY_WINDOW_DB: f64 = 6.0;
+
+#[test]
+fn the_tiny_sf2_sits_within_a_fixed_window_of_the_built_in_level() {
+    let bank = tiny_bank();
+    let rate = SampleRate::STUDIO;
+    for name in PARITY_FIXTURES {
+        let performance = performance(&fixture(name), Profile::Musical);
+        let built_in = render(&performance, rate);
+        let sf2 =
+            render_all(&performance, bank_voices(&bank, &performance, rate), rate).expect("render");
+        let reference = loudness(&built_in.left, &built_in.right).median_active_db;
+        let level = loudness(&sf2.left, &sf2.right).median_active_db;
+        println!("{name}: built-in {reference:.1} dBFS, tiny SF2 {level:.1} dBFS");
+        assert!(
+            (level - reference).abs() <= PARITY_WINDOW_DB,
+            "{name}: tiny SF2 {level:.1} dBFS against built-in {reference:.1} dBFS"
+        );
+    }
 }
