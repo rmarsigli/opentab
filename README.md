@@ -92,7 +92,7 @@ A tool that fails returns a tool result marked as an error whose text is `{"erro
 
 ## Mutation testing
 
-`cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model`, `opentab-command`, `opentab-gp`, `opentab-layout`, `opentab-render` and `opentab-mcp` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.
+`cargo xtask mutants` runs [cargo-mutants](https://mutants.rs) on `opentab-model`, `opentab-command`, `opentab-gp`, `opentab-layout`, `opentab-render`, `opentab-mcp` and `opentab-files` and checks that the tests catch every change it makes to the code. It runs one job at a time with a 120 second timeout, reads the shared settings from `.cargo/mutants.toml`, and writes its results under `target/mutants/mutants.out/`.
 
 ```
 cargo install cargo-mutants --version 27.1.0 --locked
@@ -101,7 +101,7 @@ cargo xtask mutants
 
 A full run takes several hours: with `opentab-gp` in the list it took about five hours on an 8 GB WSL machine. It uses most of that machine's memory, so do not start other builds or test runs while it works. It exits with 0 when no mutant was missed and none timed out, with 1 when any was, and with 2 when cargo-mutants is not installed or could not start. The missed and timed-out mutants are printed at the end.
 
-To spread the work over several sittings, run one shard at a time. `--shard K/N` is passed to cargo-mutants, which splits the list of mutants of all six crates into N parts and tests only part K, counting from 0. The four runs below together cover every mutant:
+To spread the work over several sittings, run one shard at a time. `--shard K/N` is passed to cargo-mutants, which splits the list of mutants of all seven crates into N parts and tests only part K, counting from 0. The four runs below together cover every mutant:
 
 ```
 cargo xtask mutants --shard 0/4
