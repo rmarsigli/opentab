@@ -293,11 +293,35 @@ fn sounding(groups: Option<&BTreeMap<Group, Opened>>) -> usize {
 fn bends_reach_only_their_own_note(performance: &Performance) -> Result<(), TestCaseError> {
     let fallbacks = reported(performance);
     let mut channels = Channels::new();
+    let mut bent: BTreeMap<Channel, u16> = BTreeMap::new();
     for event in &performance.events {
+        if let MidiMessage::NoteOn { .. } = event.message
+            && event.channel != Channel::DRUMS
+            && bent
+                .get(&event.channel)
+                .is_some_and(|value| *value != BEND_CENTRE)
+        {
+            let groups = channels.get(&event.channel);
+            let excused = sounding(groups) == 0
+                || fallbacks.contains(&(event.track, event.at))
+                || groups.into_iter().flatten().any(|(group, opened)| {
+                    opened
+                        .starts
+                        .iter()
+                        .any(|start| fallbacks.contains(&(group.track, *start)))
+                });
+            prop_assert!(
+                excused,
+                "a note struck at {:?} on {:?} inherits another note's bend",
+                event.at,
+                event.channel
+            );
+        }
         track_notes(&mut channels, event);
         let MidiMessage::PitchBend { value } = event.message else {
             continue;
         };
+        bent.insert(event.channel, value);
         if value == BEND_CENTRE || event.channel == Channel::DRUMS {
             continue;
         }
@@ -623,6 +647,44 @@ fn dense_score(tracks: &[Vec<Vec<DenseNote>>]) -> Score {
         builder.voice(track, 1, 0, specs);
     }
     builder.score
+}
+
+const DENSE_COVERAGE_CASES: usize = 64;
+const MELODIC_CHANNELS: usize = 15;
+
+#[test]
+fn the_dense_generator_allocates_dedicated_channels_and_exhausts_the_pool() {
+    let mut runner = proptest::test_runner::TestRunner::deterministic();
+    let mut dedicated = 0;
+    let mut exhausted = 0;
+    for _ in 0..DENSE_COVERAGE_CASES {
+        let tracks = arb_dense().new_tree(&mut runner).expect("tree").current();
+        let score = dense_score(&tracks);
+        let performance = perform(
+            &score,
+            &PlaybackOptions {
+                profile: Profile::Musical,
+            },
+        )
+        .expect("perform");
+        let shared: BTreeSet<Channel> = performance
+            .tracks
+            .iter()
+            .map(|setup| setup.channel)
+            .collect();
+        if performance.events.iter().any(|event| {
+            matches!(event.message, MidiMessage::NoteOn { .. }) && !shared.contains(&event.channel)
+        }) {
+            dedicated += 1;
+        }
+        let homeless = tracks.len().saturating_sub(MELODIC_CHANNELS);
+        if reported(&performance).len() > homeless {
+            exhausted += 1;
+        }
+    }
+    let floor = DENSE_COVERAGE_CASES / 4;
+    assert!(dedicated >= floor, "{dedicated} cases allocate");
+    assert!(exhausted >= floor, "{exhausted} cases fall back");
 }
 
 #[derive(Debug, Default)]
