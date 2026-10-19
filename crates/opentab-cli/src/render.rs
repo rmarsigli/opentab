@@ -10,9 +10,9 @@ use opentab_render::{
 use serde::Serialize;
 
 use crate::error::CliError;
-use crate::files::{self, Format};
 use crate::output::Rendered;
 use crate::text::escape_controls;
+use opentab_files::{self as files, Format};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, clap::ValueEnum)]
 pub enum ImageFormat {

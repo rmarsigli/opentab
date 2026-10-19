@@ -1,12 +1,12 @@
 use std::path::Path;
 
 use opentab_command::{Command, Info};
+use opentab_files::{Overwrite, format_of, read_score, require_regular_file, write_score};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::args::{self, ApplyArgs, ExportArgs, OpenArgs, RenderArgs, SessionArgs};
 use crate::error::ToolError;
-use crate::files;
 use crate::render::{RenderedPage, render};
 use crate::session::{Session, Sessions};
 use crate::tools::ToolName;
@@ -109,7 +109,10 @@ impl Engine {
     }
 
     fn open(&mut self, args: OpenArgs) -> Result<Reply, ToolError> {
-        let score = files::read_score(Path::new(&args.path))?;
+        let path = Path::new(&args.path);
+        format_of(path)?;
+        require_regular_file(path)?;
+        let score = read_score(path)?;
         let info = Info::of(&score);
         let tracks = info
             .tracks
@@ -183,7 +186,9 @@ impl Engine {
 
     fn export(&mut self, args: ExportArgs) -> Result<Reply, ToolError> {
         let session = self.sessions.get(&args.session)?;
-        let format = files::write_score(Path::new(&args.path), &session.score)?;
+        let path = Path::new(&args.path);
+        let format = format_of(path)?;
+        write_score(path, &session.score, Overwrite::Allowed)?;
         json(&Exported {
             exported: args.path,
             format: format.name(),

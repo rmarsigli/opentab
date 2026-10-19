@@ -14,6 +14,7 @@ path = "src/main.rs"
 opentab-model = { path = "../opentab-model" }
 opentab-command = { path = "../opentab-command" }
 opentab-gp = { path = "../opentab-gp" }
+opentab-files = { path = "../opentab-files" }
 opentab-layout = { path = "../opentab-layout" }
 opentab-render = { path = "../opentab-render" }
 rmcp.workspace = true

@@ -2,7 +2,6 @@ mod apply;
 mod cli;
 mod convert;
 mod error;
-mod files;
 mod ids;
 mod info;
 mod new;

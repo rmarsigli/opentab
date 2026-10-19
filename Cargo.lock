@@ -700,6 +700,7 @@ dependencies = [
  "clap",
  "insta",
  "opentab-command",
+ "opentab-files",
  "opentab-gp",
  "opentab-layout",
  "opentab-model",
@@ -718,6 +719,16 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "opentab-files"
+version = "0.1.0"
+dependencies = [
+ "opentab-gp",
+ "opentab-model",
+ "tempfile",
  "thiserror",
 ]
 
@@ -756,6 +767,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "opentab-command",
+ "opentab-files",
  "opentab-gp",
  "opentab-layout",
  "opentab-model",
