@@ -8,11 +8,12 @@ use opentab_playback::{
 use opentab_testkit::arb_score;
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
-use proptest::test_runner::FileFailurePersistence;
+use proptest::test_runner::{FileFailurePersistence, RngSeed};
 
 use crate::build::{BeatSpec, Builder, beat, fretted, rest, with};
 
 const PROFILES: [Profile; 2] = [Profile::Gp, Profile::Musical];
+const PROPERTY_SEED: u64 = 0x0074_3109;
 const MAX_TRACKS: usize = 24;
 const MAX_KEY: u8 = 127;
 const MAX_CHAIN: usize = 16;
@@ -21,6 +22,7 @@ const BEATS_PER_BAR: usize = 4;
 fn config() -> ProptestConfig {
     ProptestConfig {
         failure_persistence: Some(Box::new(FileFailurePersistence::Off)),
+        rng_seed: RngSeed::Fixed(PROPERTY_SEED),
         ..ProptestConfig::default()
     }
 }
