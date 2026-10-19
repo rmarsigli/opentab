@@ -86,8 +86,13 @@ impl Server {
     }
 
     pub fn send_line(&mut self, line: &str) {
+        self.send_bytes(line.as_bytes());
+    }
+
+    pub fn send_bytes(&mut self, line: &[u8]) {
         let stdin = self.stdin.as_mut().expect("stdin is open");
-        writeln!(stdin, "{line}").expect("the server reads stdin");
+        stdin.write_all(line).expect("the server reads stdin");
+        stdin.write_all(b"\n").expect("the server reads stdin");
         stdin.flush().expect("flush");
     }
 

@@ -171,8 +171,8 @@ fn an_unknown_tool_is_a_json_rpc_invalid_params_error() {
     still_serves(&mut server);
 }
 
-fn replies_before_a_ping(server: &mut Server, garbage: &str) -> Vec<Value> {
-    server.send_line(garbage);
+fn replies_before_a_ping(server: &mut Server, garbage: &[u8]) -> Vec<Value> {
+    server.send_bytes(garbage);
     server.send_line(&json!({"jsonrpc": "2.0", "id": "after", "method": "ping"}).to_string());
     let mut before = Vec::new();
     loop {
@@ -185,23 +185,42 @@ fn replies_before_a_ping(server: &mut Server, garbage: &str) -> Vec<Value> {
     }
 }
 
+fn one_error(server: &mut Server, garbage: &[u8]) -> Value {
+    let replies = replies_before_a_ping(server, garbage);
+    let shown = String::from_utf8_lossy(garbage)
+        .chars()
+        .take(80)
+        .collect::<String>();
+    assert_eq!(replies.len(), 1, "{shown}: {replies:?}");
+    replies[0].clone()
+}
+
 #[test]
 fn garbage_on_the_wire_gets_a_json_rpc_error_and_the_server_keeps_serving() {
     let mut server = Server::start();
-    for garbage in [
-        "this is not json",
-        "{\"unterminated\":",
-        "\u{1}\u{2}",
-        "}{",
-        "\"just a string",
-    ] {
-        let replies = replies_before_a_ping(&mut server, garbage);
-        assert_eq!(replies.len(), 1, "{garbage}: {replies:?}");
-        assert_eq!(replies[0]["error"]["code"], -32700, "{garbage}");
-        assert_eq!(replies[0]["id"], Value::Null, "{garbage}");
+    let nested = format!("{}{}", "[".repeat(200), "]".repeat(200));
+    let nested_in_a_request = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{{\"name\":\"apply\",\"arguments\":{{\"commands\":{}{}}}}}}}",
+        "[".repeat(500),
+        "]".repeat(500)
+    );
+    let not_json: [&[u8]; 9] = [
+        b"this is not json",
+        b"{\"unterminated\":",
+        b"\x01\x02",
+        b"}{",
+        b"\"just a string",
+        b"\xff\xfe\xfd",
+        b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\x80\"}",
+        nested.as_bytes(),
+        nested_in_a_request.as_bytes(),
+    ];
+    for garbage in not_json {
+        let reply = one_error(&mut server, garbage);
+        assert_eq!(reply["error"]["code"], -32700, "{reply}");
+        assert_eq!(reply["id"], Value::Null);
     }
     for (garbage, id) in [
-        (json!([]), Value::Null),
         (json!({"foo": 1}), Value::Null),
         (json!(42), Value::Null),
         (
@@ -213,19 +232,64 @@ fn garbage_on_the_wire_gets_a_json_rpc_error_and_the_server_keeps_serving() {
             json!(901),
         ),
     ] {
-        let replies = replies_before_a_ping(&mut server, &garbage.to_string());
-        assert_eq!(replies.len(), 1, "{garbage}: {replies:?}");
-        assert_eq!(replies[0]["error"]["code"], -32600, "{garbage}");
-        assert_eq!(replies[0]["id"], id, "{garbage}");
+        let reply = one_error(&mut server, garbage.to_string().as_bytes());
+        assert_eq!(reply["error"]["code"], -32600, "{garbage}");
+        assert_eq!(reply["id"], id, "{garbage}");
     }
+    for batch in [
+        json!([]),
+        json!([{"jsonrpc": "2.0", "id": 1, "method": "ping"}]),
+    ] {
+        let reply = one_error(&mut server, batch.to_string().as_bytes());
+        assert_eq!(reply["error"]["code"], -32600, "{batch}");
+        assert!(
+            reply["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("batches are not supported")
+        );
+    }
+    for id in [Value::Null, json!(1.5), json!(true), json!({"a": 1})] {
+        let request = json!({"jsonrpc": "2.0", "id": id, "method": "tools/list"});
+        let reply = one_error(&mut server, request.to_string().as_bytes());
+        assert_eq!(reply["error"]["code"], -32600, "{id}");
+        assert_eq!(reply["id"], Value::Null, "{id}");
+    }
+    let huge_id = b"{\"jsonrpc\":\"2.0\",\"id\":99999999999999999999,\"method\":\"tools/list\"}";
+    let reply = one_error(&mut server, huge_id);
+    assert_eq!(reply["error"]["code"], -32600);
+    assert_eq!(reply["id"], Value::Null);
     let reply = server.request("no/such/method", json!({}));
-    assert!(reply["error"]["code"].is_i64(), "{reply}");
-    let reply = server.request("tools/call", json!(5));
-    assert!(reply["error"]["code"].is_i64(), "{reply}");
-    let reply = server.request("tools/call", json!({"name": "open", "arguments": [1, 2]}));
-    assert!(reply["error"]["code"].is_i64(), "{reply}");
+    assert_eq!(reply["error"]["code"], -32601, "{reply}");
+    for params in [
+        json!(5),
+        json!({"name": 5}),
+        json!({"name": "open", "arguments": [1, 2]}),
+    ] {
+        let reply = server.request("tools/call", params.clone());
+        assert_eq!(reply["error"]["code"], -32602, "{params}: {reply}");
+    }
     let reply = server.request("tools/call", json!({"name": "open"}));
     assert_eq!(reply["result"]["isError"], true, "{reply}");
+    assert_eq!(server.call("open", json!({})).error()["kind"], "usage");
+    still_serves(&mut server);
+}
+
+#[test]
+fn a_line_longer_than_64_mib_is_refused_and_the_server_keeps_serving() {
+    let mut server = Server::start();
+    let mut long =
+        b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":{\"x\":\"".to_vec();
+    long.resize(64 * 1024 * 1024 + 16, b'x');
+    let reply = one_error(&mut server, &long);
+    assert_eq!(reply["error"]["code"], -32600, "{reply}");
+    assert_eq!(reply["id"], Value::Null);
+    assert!(
+        reply["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("64 MiB")
+    );
     still_serves(&mut server);
 }
 
@@ -237,8 +301,10 @@ fn requests_before_initialize_are_refused_until_the_handshake() {
         json!({"name": "open", "arguments": {"path": fixture(FIXTURE)}}),
     );
     assert_eq!(early["error"]["code"], -32002, "{early}");
+    let bad_initialize = server.request("initialize", json!(5));
+    assert_eq!(bad_initialize["error"]["code"], -32602, "{bad_initialize}");
     server.send_line(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}).to_string());
-    let replies = replies_before_a_ping(&mut server, "garbage before the handshake");
+    let replies = replies_before_a_ping(&mut server, b"garbage before the handshake");
     assert_eq!(replies.len(), 1);
     assert_eq!(replies[0]["error"]["code"], -32700);
     server.initialize();
