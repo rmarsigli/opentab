@@ -571,8 +571,14 @@ fn note_children_are_listed_and_checked_against_the_writer_order() {
 
 const KIT_ROOT: [&str; 5] = ["GPIF", "Tracks", "Track", "InstrumentSet", "Elements"];
 
+struct KitOpen {
+    name: String,
+    text: String,
+    parent: bool,
+}
+
 struct KitWalk {
-    stack: Vec<Open>,
+    stack: Vec<KitOpen>,
     tracks: Vec<Vec<String>>,
 }
 
@@ -590,9 +596,13 @@ impl KitWalk {
         if self.stack.len() == 2 && name == "Track" {
             self.tracks.push(Vec::new());
         }
-        self.stack.push(Open {
+        if let Some(open) = self.stack.last_mut() {
+            open.parent = true;
+        }
+        self.stack.push(KitOpen {
             name,
             text: String::new(),
+            parent: false,
         });
     }
 
@@ -608,7 +618,12 @@ impl KitWalk {
             && inside
             && let Some(entries) = self.tracks.last_mut()
         {
-            entries.push(format!("{}={}", path.join("/"), open.text.trim()));
+            let text = if open.parent {
+                open.text.trim()
+            } else {
+                open.text.as_str()
+            };
+            entries.push(format!("{}={text}", path.join("/")));
         }
     }
 }

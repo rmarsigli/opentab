@@ -975,7 +975,7 @@ fn a_kept_gp_version_replaces_the_generated_one() {
 }
 
 #[test]
-fn a_kept_kit_is_written_as_kept_and_reads_back_typed() {
+fn an_empty_drum_kit_is_refused() {
     let mut drums = Scratch::new(1);
     drums.track(
         InstrumentKind::Percussion,
@@ -984,27 +984,47 @@ fn a_kept_kit_is_written_as_kept_and_reads_back_typed() {
             vec![NoteKind::Percussion { articulation: 3 }],
         )]],
     );
-    let id = drums.score.tracks[0].id.0;
-    drums.score.extensions.0.insert(
-        id,
-        vec![OpaquePayload {
-            format: "gpif".to_string(),
-            data: "<Keep parent=\"InstrumentSet\" index=\"1\"><Elements/></Keep>".to_string(),
-        }],
-    );
-    let bytes = written(&drums.score);
-    assert_eq!(gpif_of(&bytes).matches("<Elements").count(), 1);
-    assert!(gpif_of(&bytes).contains("<Elements/>"));
-    let mut expected = drums.score.clone();
-    expected.extensions.0.clear();
-    expected.tracks[0].drum_kit = Some(DrumKit::new(Vec::new(), Vec::new()).expect("kit"));
-    let again = read_gp(&bytes).expect("read");
-    assert_eq!(again, expected);
+    let path = "tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].kind".to_string();
+    let cases = [
+        (
+            Some(DrumKit::new(Vec::new(), Vec::new()).expect("kit")),
+            3,
+            0,
+        ),
+        (
+            Some(
+                DrumKit::new(
+                    gm_drum_kit().elements()[..3].to_vec(),
+                    gm_drum_kit().articulations()[..3].to_vec(),
+                )
+                .expect("kit"),
+            ),
+            3,
+            3,
+        ),
+        (None, 47, 47),
+    ];
+    for (kit, articulation, articulations) in cases {
+        let mut score = drums.score.clone();
+        score.tracks[0].drum_kit = kit;
+        score.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].kind =
+            NoteKind::Percussion { articulation };
+        assert!(!opentab_model::diagnose(&score).is_empty());
+        assert_eq!(
+            refusal(&score),
+            (
+                path.clone(),
+                Refusal::ArticulationOutsideKit {
+                    articulation,
+                    articulations
+                }
+            )
+        );
+    }
+    let mut fitting = drums.score.clone();
+    fitting.tracks[0].drum_kit = None;
     assert_eq!(
-        opentab_model::diagnose(&again),
-        vec![opentab_model::Diagnostic::ArticulationOutsideKit {
-            note: again.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].id,
-            articulation: 3
-        }]
+        read_gp(&written(&fitting)).expect("read").tracks[0].drum_kit,
+        Some(gm_drum_kit())
     );
 }

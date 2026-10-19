@@ -133,7 +133,7 @@ pub fn select(score: &Score, options: &LayoutOptions) -> Result<Selection, Layou
     let kits = score
         .tracks
         .iter()
-        .map(|track| track.kit().map(|kit| DrumStaffKit::of(&kit)))
+        .map(|track| track.kit().map(DrumStaffKit::of))
         .collect();
     Ok(Selection {
         tracks: drawn,

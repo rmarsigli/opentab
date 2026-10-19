@@ -261,7 +261,7 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
             guard::instrument(track.instrument.kind, track.instrument.set)
         }
         ("drum-kit", Env::Track(track)) => {
-            guard::drum_kit(track.instrument.kind, track.drum_kit.is_some())
+            guard::drum_kit(track.instrument.kind, track.drum_kit.as_ref())
         }
         ("midi-connection", Env::Track(track)) => guard::midi_connection(&track.midi),
         ("sound-label", Env::Track(track)) => {

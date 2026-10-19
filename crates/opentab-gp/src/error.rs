@@ -131,6 +131,13 @@ pub enum Refusal {
     RightHandOpen,
     #[error("a drum kit belongs only to a percussion track")]
     DrumKitOnFretted,
+    #[error(
+        "articulation {articulation} is outside the track's drum kit of {articulations} articulations"
+    )]
+    ArticulationOutsideKit {
+        articulation: u16,
+        articulations: usize,
+    },
     #[error("the instrument set belongs to another instrument kind than the track's")]
     InstrumentSet,
     #[error("MIDI program {program} is outside 0..=127")]

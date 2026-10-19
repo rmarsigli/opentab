@@ -6,8 +6,8 @@ use opentab_command::{Command, History, MetaField};
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
     BarId, Beat, BeatId, BendPoint, DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump,
-    DirectionTarget, Directions, Duration, ElementId, IdAllocator, InstrumentKind, NoteId,
-    NoteKind, NoteValue, Score, TimeSignature, TremoloBar, Trill, TrillSpeed, VoiceId, gm_drum_kit,
+    DirectionTarget, Directions, DrumKit, Duration, ElementId, IdAllocator, InstrumentKind, NoteId,
+    NoteKind, NoteValue, Score, TimeSignature, TremoloBar, Trill, TrillSpeed, VoiceId,
 };
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -779,6 +779,14 @@ fn hopo_destination(score: &Score) -> Option<(NoteId, NoteId)> {
     })
 }
 
+const EDITED_SUFFIX: &str = " (edited)";
+
+fn edited_kit(kit: &DrumKit) -> Option<DrumKit> {
+    let mut elements = kit.elements().to_vec();
+    elements.first_mut()?.name.push_str(EDITED_SUFFIX);
+    DrumKit::new(elements, kit.articulations().to_vec()).ok()
+}
+
 fn corpus_edits(score: &Score, history: &mut History, edited: &mut Score) -> Vec<String> {
     let mut applied = Vec::new();
     let mut run = |command: Command, edited: &mut Score, history: &mut History| {
@@ -880,12 +888,12 @@ fn corpus_edits(score: &Score, history: &mut History, edited: &mut Score) -> Vec
         .tracks
         .iter()
         .find(|track| track.instrument.kind == InstrumentKind::Percussion)
-        .map(|track| track.id);
-    if let Some(track) = drums {
+        .and_then(|track| Some((track.id, edited_kit(track.drum_kit.as_ref()?)?)));
+    if let Some((track, kit)) = drums {
         run(
             Command::SetDrumKit {
                 track,
-                drum_kit: Some(gm_drum_kit()),
+                drum_kit: Some(kit),
             },
             edited,
             history,
@@ -936,7 +944,9 @@ fn corpus_examples_survive_edits_and_undo() {
             assert_eq!(out_of_set_order(&children), None, "{name}");
             if track.instrument.kind == InstrumentKind::Percussion {
                 assert_eq!(children, INSTRUMENT_SET_ORDER.to_vec(), "{name}");
-                assert_eq!(track.drum_kit, Some(gm_drum_kit()), "{name}");
+                let kit = track.drum_kit.as_ref().expect("typed kit");
+                assert!(kit.elements()[0].name.ends_with(EDITED_SUFFIX), "{name}");
+                assert!(gpif_text(&bytes).contains(EDITED_SUFFIX), "{name}");
                 kits += 1;
             }
         }

@@ -13,7 +13,7 @@ use crate::number;
 use crate::opaque::ParentPath;
 use crate::read::beat::read_bar;
 use crate::read::context::{Context, Fault, Handled, Owner, Scope, Visit, missing_element};
-use crate::read::drums::typed_kit;
+use crate::read::drums::{KitRead, read_kit};
 use crate::read::master::{MasterFrame, TrackOrder};
 use crate::read::mixer::{
     Lane, MidiFields, Sounds, Strip, connection, read_lane, read_midi_connection, read_rse,
@@ -322,15 +322,22 @@ fn read_instrument_set(
         }
         DRUM_ELEMENTS if !elements_seen => {
             elements_seen = true;
-            let typed = (hint == InstrumentKind::Percussion)
-                .then(|| typed_kit(visit.element))
-                .flatten();
-            match typed {
-                Some(kit) => {
+            let read = if hint == InstrumentKind::Percussion {
+                read_kit(visit.element)
+            } else {
+                KitRead::Untyped
+            };
+            match read {
+                KitRead::Canonical(kit) => {
                     fields.drum_kit = Some(kit);
                     Ok(Handled::Mapped(&[]))
                 }
-                None => Ok(Handled::Replayed(guard::drum_kit(hint, false))),
+                KitRead::Lenient(kit) => {
+                    let guard = guard::drum_kit(hint, Some(&kit));
+                    fields.drum_kit = Some(kit);
+                    Ok(Handled::Replayed(guard))
+                }
+                KitRead::Untyped => Ok(Handled::Replayed(guard::drum_kit(hint, None))),
             }
         }
         _ => Ok(Handled::Unknown),

@@ -1,5 +1,5 @@
 use opentab_command::{Command, CommandError, History, apply, parse_jsonl};
-use opentab_model::{Diagnostic, DrumKit, ElementId, TrackId, diagnose, gm_drum_kit};
+use opentab_model::{Diagnostic, DrumKit, ElementId, NoteKind, TrackId, diagnose, gm_drum_kit};
 use serde_json::json;
 
 use crate::support::{Fixture, fixture};
@@ -37,11 +37,15 @@ fn set_drum_kit_returns_the_old_kit_and_undoes_exactly() {
     let drums = fx.score.find_track(fx.drums).unwrap();
     assert_eq!(drums.drum_kit, Some(gm_drum_kit()));
     assert_eq!(diagnose(&fx.score), Vec::new());
+    let mut wide = gm_drum_kit().articulations().to_vec();
+    wide.truncate(39);
+    let wide_elements = gm_drum_kit().elements()[..39].to_vec();
+    let fitting = DrumKit::new(wide_elements, wide).unwrap();
     let inverse = apply(
         &mut fx.score,
         &Command::SetDrumKit {
             track: fx.drums,
-            drum_kit: Some(small_kit()),
+            drum_kit: Some(fitting),
         },
     )
     .unwrap();
@@ -52,13 +56,7 @@ fn set_drum_kit_returns_the_old_kit_and_undoes_exactly() {
             drum_kit: Some(gm_drum_kit()),
         }
     );
-    assert_eq!(
-        diagnose(&fx.score),
-        vec![Diagnostic::ArticulationOutsideKit {
-            note: fx.drum_note,
-            articulation: 38
-        }]
-    );
+    assert_eq!(diagnose(&fx.score), Vec::new());
     apply(&mut fx.score, &inverse).unwrap();
     assert!(history.undo(&mut fx.score).unwrap());
     assert_eq!(fx.score, original);
@@ -67,6 +65,71 @@ fn set_drum_kit_returns_the_old_kit_and_undoes_exactly() {
         fx.score.find_track(fx.drums).unwrap().drum_kit,
         Some(gm_drum_kit())
     );
+}
+
+#[test]
+fn a_kit_that_leaves_a_note_outside_it_is_refused() {
+    let mut fx = fixture();
+    for kit in [small_kit(), DrumKit::new(Vec::new(), Vec::new()).unwrap()] {
+        let shrink = Command::SetDrumKit {
+            track: fx.drums,
+            drum_kit: Some(kit),
+        };
+        let CommandError::InvalidValue { message } = rejected(&mut fx, &shrink) else {
+            panic!("invalid value expected");
+        };
+        assert!(message.contains("articulation 38"), "{message}");
+        assert!(!message.contains("run diagnose"), "{message}");
+    }
+    let drums = fx
+        .score
+        .tracks
+        .iter_mut()
+        .find(|track| track.id == fx.drums)
+        .unwrap();
+    drums.drum_kit = Some(small_kit());
+    assert_eq!(
+        diagnose(&fx.score),
+        vec![Diagnostic::ArticulationOutsideKit {
+            note: fx.drum_note,
+            articulation: 38
+        }]
+    );
+    let back = Command::SetDrumKit {
+        track: fx.drums,
+        drum_kit: None,
+    };
+    let CommandError::InvalidValue { message } = rejected(&mut fx, &back) else {
+        panic!("invalid value expected");
+    };
+    assert!(message.contains("run diagnose"), "{message}");
+}
+
+#[test]
+fn a_restored_drum_note_outside_the_kit_is_refused() {
+    let mut fx = fixture();
+    let inverse = apply(&mut fx.score, &Command::RemoveNote { note: fx.drum_note }).unwrap();
+    let Command::RestoreNote {
+        beat,
+        index,
+        mut note,
+        extensions,
+    } = inverse.clone()
+    else {
+        panic!("restore_note expected");
+    };
+    note.kind = NoteKind::Percussion { articulation: 47 };
+    let outside = Command::RestoreNote {
+        beat,
+        index,
+        note,
+        extensions,
+    };
+    let CommandError::InvalidValue { message } = rejected(&mut fx, &outside) else {
+        panic!("invalid value expected");
+    };
+    assert!(message.contains("articulation 47"), "{message}");
+    apply(&mut fx.score, &inverse).unwrap();
 }
 
 #[test]

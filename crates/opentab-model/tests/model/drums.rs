@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use opentab_model::{
     Diagnostic, DrumArticulation, DrumElement, DrumKit, Instrument, InstrumentKind, InstrumentSet,
     ModelError, NoteKind, Score, TechniquePlacement, Tuning, diagnose, from_json, gm_drum_kit,
@@ -11,6 +9,55 @@ use crate::support::{four_four, quarters};
 
 const FIRST_GM_KEY: u16 = 35;
 const LAST_GM_KEY: u16 = 81;
+const LEVEL_ONE_NAMES: [&str; 47] = [
+    "Acoustic Bass Drum",
+    "Bass Drum 1",
+    "Side Stick",
+    "Acoustic Snare",
+    "Hand Clap",
+    "Electric Snare",
+    "Low Floor Tom",
+    "Closed Hi-Hat",
+    "High Floor Tom",
+    "Pedal Hi-Hat",
+    "Low Tom",
+    "Open Hi-Hat",
+    "Low-Mid Tom",
+    "Hi-Mid Tom",
+    "Crash Cymbal 1",
+    "High Tom",
+    "Ride Cymbal 1",
+    "Chinese Cymbal",
+    "Ride Bell",
+    "Tambourine",
+    "Splash Cymbal",
+    "Cowbell",
+    "Crash Cymbal 2",
+    "Vibraslap",
+    "Ride Cymbal 2",
+    "Hi Bongo",
+    "Low Bongo",
+    "Mute Hi Conga",
+    "Open Hi Conga",
+    "Low Conga",
+    "High Timbale",
+    "Low Timbale",
+    "High Agogo",
+    "Low Agogo",
+    "Cabasa",
+    "Maracas",
+    "Short Whistle",
+    "Long Whistle",
+    "Short Guiro",
+    "Long Guiro",
+    "Claves",
+    "Hi Wood Block",
+    "Low Wood Block",
+    "Mute Cuica",
+    "Open Cuica",
+    "Mute Triangle",
+    "Open Triangle",
+];
 
 fn articulation(name: &str, output_key: u8) -> DrumArticulation {
     DrumArticulation {
@@ -97,15 +144,12 @@ fn the_general_midi_kit_holds_every_level_one_key_in_order() {
         );
         assert!(element.soundbank.is_empty());
     }
-    let named = |key: u8| {
-        kit.articulations()
-            .iter()
-            .find(|found| found.output_key == key)
-            .map(|found| found.name.as_str())
-    };
-    assert_eq!(named(35), Some("Acoustic Bass Drum"));
-    assert_eq!(named(42), Some("Closed Hi-Hat"));
-    assert_eq!(named(81), Some("Open Triangle"));
+    let named: Vec<&str> = kit
+        .articulations()
+        .iter()
+        .map(|found| found.name.as_str())
+        .collect();
+    assert_eq!(named, LEVEL_ONE_NAMES.to_vec());
     assert_eq!(
         DrumKit::new(kit.elements().to_vec(), kit.articulations().to_vec()),
         Ok(kit)
@@ -189,9 +233,9 @@ fn a_kit_round_trips_through_json_and_invalid_kits_are_refused() {
 #[test]
 fn a_percussion_track_without_a_kit_plays_the_general_midi_kit() {
     let mut score = drum_score(&[0]);
-    assert_eq!(score.tracks[0].kit(), Some(Cow::Owned(gm_drum_kit())));
+    assert_eq!(score.tracks[0].kit(), Some(&gm_drum_kit()));
     score.tracks[0].drum_kit = Some(small_kit());
-    assert_eq!(score.tracks[0].kit(), Some(Cow::Borrowed(&small_kit())));
+    assert_eq!(score.tracks[0].kit(), Some(&small_kit()));
     score.tracks[0].instrument.kind = InstrumentKind::Fretted;
     assert_eq!(score.tracks[0].kit(), None);
 }

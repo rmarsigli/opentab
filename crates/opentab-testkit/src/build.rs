@@ -4,11 +4,12 @@ use opentab_model::{
     Automation, AutomationValue, Bar, Beat, BeatEffects, ContainerEntry, DirectionJump,
     DirectionTarget, DrumArticulation, DrumElement, DrumKit, Duration, ElementId, Extensions,
     Instrument, InstrumentKind, InstrumentSet, JumpDestination, Marker, MasterBar, MidiBank, Note,
-    NoteKind, OpaquePayload, Score, Sound, SoundOverride, SoundRef, Staff, TempoChange,
+    NoteKind, OpaquePayload, Pitch, Score, Sound, SoundOverride, SoundRef, Staff, TempoChange,
     TimeSignature, Track, Tuning, Voice, VoiceSlot, gm_drum_kit,
 };
 
 const EXTRA_FORMAT: &str = "gpif";
+const PERCUSSION_STRINGS: usize = 6;
 const EXTRA_ELEMENT: &str = "OpenTabExtra";
 
 use crate::ScoreGenConfig;
@@ -171,9 +172,12 @@ impl Builder {
             InstrumentKind::Fretted => seed.tuning.len(),
             InstrumentKind::Percussion => 0,
         };
-        let tuning = Tuning {
+        let mut tuning = Tuning {
             strings: seed.tuning.into_iter().take(strings).collect(),
         };
+        if seed.kind == InstrumentKind::Percussion && self.gp_writable {
+            tuning.strings = vec![Pitch(0); PERCUSSION_STRINGS];
+        }
         let kind = seed.kind;
         let drum_kit = drum_kit(seed.drum_kit, kind, self.gp_writable);
         let articulations = drum_kit.as_ref().map_or_else(

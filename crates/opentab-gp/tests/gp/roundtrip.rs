@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
     AutomationValue, Balance, DrumArticulation, DrumElement, DrumKit, InstrumentKind,
-    InstrumentSet, Level, NoteKind, OpaquePayload, Score, TrackMidi, gm_drum_kit,
+    InstrumentSet, Level, NoteKind, OpaquePayload, Pitch, Score, TrackMidi, gm_drum_kit,
 };
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
 use proptest::prelude::*;
@@ -13,6 +13,7 @@ use proptest::test_runner::{Config, FileFailurePersistence, TestRunner};
 use crate::support::documented;
 
 const CASES: u32 = 256;
+const PERCUSSION_STRINGS: usize = 6;
 
 fn config() -> Config {
     Config {
@@ -390,6 +391,9 @@ fn with_writer_defaults(score: &Score) -> Score {
     for track in &mut expected.tracks {
         if track.instrument.kind == InstrumentKind::Percussion && track.drum_kit.is_none() {
             track.drum_kit = Some(gm_drum_kit());
+        }
+        if track.instrument.kind == InstrumentKind::Percussion && track.tuning.strings.is_empty() {
+            track.tuning.strings = vec![Pitch(0); PERCUSSION_STRINGS];
         }
         let instrument = &mut track.instrument;
         instrument.set =

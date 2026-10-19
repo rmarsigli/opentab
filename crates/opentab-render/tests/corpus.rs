@@ -2,7 +2,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
 use opentab_gp::read_gp;
-use opentab_layout::{DisplayList, LayoutError, LayoutOptions, layout};
+use opentab_layout::{DisplayList, LayoutError, LayoutOptions, StaffMode, layout};
 use opentab_model::{InstrumentKind, Score};
 use opentab_render::{Ratio, to_png, to_svg};
 use resvg::tiny_skia::Pixmap;
@@ -12,6 +12,138 @@ const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
 const EXPECTED_DRUM_TRACKS: usize = 10;
 const PNG_PAGE_ONE: (u32, u32) = (794, 1123);
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+struct DrumLayout {
+    file: &'static str,
+    track: usize,
+    both: bool,
+    digest: u64,
+}
+
+const DRUM_LAYOUTS: [DrumLayout; 20] = [
+    DrumLayout {
+        file: "all-of-them-witches.gp",
+        track: 3,
+        both: false,
+        digest: 0x2e24_3431_f724_2f4d,
+    },
+    DrumLayout {
+        file: "all-of-them-witches.gp",
+        track: 3,
+        both: true,
+        digest: 0x2e24_3431_f724_2f4d,
+    },
+    DrumLayout {
+        file: "anatole.gp",
+        track: 3,
+        both: false,
+        digest: 0xa974_594e_cabb_4f6f,
+    },
+    DrumLayout {
+        file: "anatole.gp",
+        track: 3,
+        both: true,
+        digest: 0xa974_594e_cabb_4f6f,
+    },
+    DrumLayout {
+        file: "blueberry.gp",
+        track: 4,
+        both: false,
+        digest: 0x5f48_3cd0_3417_c093,
+    },
+    DrumLayout {
+        file: "blueberry.gp",
+        track: 4,
+        both: true,
+        digest: 0x5f48_3cd0_3417_c093,
+    },
+    DrumLayout {
+        file: "blues.gp",
+        track: 3,
+        both: false,
+        digest: 0x461c_e00e_8f6b_2773,
+    },
+    DrumLayout {
+        file: "blues.gp",
+        track: 3,
+        both: true,
+        digest: 0x461c_e00e_8f6b_2773,
+    },
+    DrumLayout {
+        file: "empty-room.gp",
+        track: 3,
+        both: false,
+        digest: 0x6d44_8233_d0a2_4cbe,
+    },
+    DrumLayout {
+        file: "empty-room.gp",
+        track: 3,
+        both: true,
+        digest: 0x6d44_8233_d0a2_4cbe,
+    },
+    DrumLayout {
+        file: "funky-horn.gp",
+        track: 7,
+        both: false,
+        digest: 0x7604_86c4_f726_c304,
+    },
+    DrumLayout {
+        file: "funky-horn.gp",
+        track: 7,
+        both: true,
+        digest: 0x7604_86c4_f726_c304,
+    },
+    DrumLayout {
+        file: "hard-rock.gp",
+        track: 2,
+        both: false,
+        digest: 0xdebe_93b2_3802_646c,
+    },
+    DrumLayout {
+        file: "hard-rock.gp",
+        track: 2,
+        both: true,
+        digest: 0xdebe_93b2_3802_646c,
+    },
+    DrumLayout {
+        file: "keystone.gp",
+        track: 5,
+        both: false,
+        digest: 0xa6aa_dedd_994f_b5c4,
+    },
+    DrumLayout {
+        file: "keystone.gp",
+        track: 5,
+        both: true,
+        digest: 0xa6aa_dedd_994f_b5c4,
+    },
+    DrumLayout {
+        file: "pentatonic-patterns.gp",
+        track: 1,
+        both: false,
+        digest: 0xc185_5a06_f69c_04da,
+    },
+    DrumLayout {
+        file: "pentatonic-patterns.gp",
+        track: 1,
+        both: true,
+        digest: 0xc185_5a06_f69c_04da,
+    },
+    DrumLayout {
+        file: "slow-blues.gp",
+        track: 2,
+        both: false,
+        digest: 0x3264_ff6a_55f2_ffd2,
+    },
+    DrumLayout {
+        file: "slow-blues.gp",
+        track: 2,
+        both: true,
+        digest: 0x3264_ff6a_55f2_ffd2,
+    },
+];
 
 struct Row {
     name: String,
@@ -172,4 +304,46 @@ fn every_corpus_example_lays_out_and_renders_every_page() {
     }
     assert!(failures.is_empty(), "{failures:#?}");
     assert_eq!(rows.len(), EXPECTED_FILES + EXPECTED_DRUM_TRACKS);
+}
+
+fn digest(text: &str) -> u64 {
+    text.bytes().fold(FNV_OFFSET, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
+    })
+}
+
+#[test]
+fn every_corpus_drum_track_keeps_the_layout_it_had_before_typed_kits() {
+    let Some(directory) = std::env::var_os(CORPUS_VARIABLE) else {
+        println!("drum layout check skipped: set {CORPUS_VARIABLE} to the examples directory");
+        return;
+    };
+    let directory = PathBuf::from(directory);
+    let mut checked = 0;
+    for expected in &DRUM_LAYOUTS {
+        let score = read(&directory.join(expected.file)).expect("corpus file reads");
+        assert_eq!(
+            score.tracks[expected.track].instrument.kind,
+            InstrumentKind::Percussion,
+            "{}",
+            expected.file
+        );
+        let options = LayoutOptions {
+            tracks: Some(vec![expected.track]),
+            staff_mode: expected.both.then_some(StaffMode::Both),
+            ..LayoutOptions::default()
+        };
+        let list = layout(&score, &options).expect("drum track lays out");
+        let svg: String = list.pages.iter().map(to_svg).collect();
+        assert_eq!(
+            digest(&svg),
+            expected.digest,
+            "{} track {} both {}",
+            expected.file,
+            expected.track,
+            expected.both
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 2 * EXPECTED_DRUM_TRACKS);
 }

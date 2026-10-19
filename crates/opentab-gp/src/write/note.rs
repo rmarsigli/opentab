@@ -236,6 +236,16 @@ pub(crate) fn write_note(
     let key = site.key;
     let percussion = matches!(note.kind, NoteKind::Percussion { .. });
     check_kind(staff.kind, percussion).within(field("kind"))?;
+    if let (NoteKind::Percussion { articulation }, Some(articulations)) =
+        (note.kind, staff.articulations)
+        && usize::from(articulation) >= articulations
+    {
+        return Err(Fail::new(Refusal::ArticulationOutsideKit {
+            articulation,
+            articulations,
+        }))
+        .within(field("kind"));
+    }
     let effects = &note.effects;
     if effects.right_hand_finger == Some(Finger::Open) {
         return Err(Fail::new(Refusal::RightHandOpen)).within(field("effects.right_hand_finger"));

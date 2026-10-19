@@ -32,7 +32,9 @@ pub(crate) fn check_note_in(
             }
             Ok(())
         }
-        (InstrumentKind::Percussion, NoteKind::Percussion { .. }) => Ok(()),
+        (InstrumentKind::Percussion, NoteKind::Percussion { articulation }) => {
+            check_articulation(track, articulation)
+        }
         (InstrumentKind::Percussion, NoteKind::Fretted { .. }) => {
             Err(CommandError::WrongInstrument { track: track.id })
         }
@@ -43,6 +45,17 @@ pub(crate) fn check_note_in(
             )))
         }
     }
+}
+
+pub(crate) fn check_articulation(track: &Track, articulation: u16) -> Result<(), CommandError> {
+    let size = track.kit().map_or(0, |kit| kit.articulations().len());
+    if usize::from(articulation) >= size {
+        return Err(CommandError::invalid(format!(
+            "articulation {articulation} is outside the drum kit of track {}, which has {size} articulations",
+            track.id.0.0
+        )));
+    }
+    Ok(())
 }
 
 pub(crate) fn already_broken(error: CommandError) -> CommandError {

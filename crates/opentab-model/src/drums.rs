@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use serde::{Deserialize, Serialize};
 
 use crate::ModelError;
@@ -224,7 +226,17 @@ const GENERAL_MIDI_DRUMS: [GeneralDrum; 47] = [
     drum(81, "Open Triangle", UNKNOWN, MIDDLE_LINE, PLAIN_HEADS),
 ];
 
+static GENERAL_MIDI_KIT: OnceLock<DrumKit> = OnceLock::new();
+
 pub fn gm_drum_kit() -> DrumKit {
+    general_midi_kit().clone()
+}
+
+pub(crate) fn general_midi_kit() -> &'static DrumKit {
+    GENERAL_MIDI_KIT.get_or_init(build_general_midi_kit)
+}
+
+fn build_general_midi_kit() -> DrumKit {
     let elements = GENERAL_MIDI_DRUMS
         .iter()
         .map(|drum| DrumElement {

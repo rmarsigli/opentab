@@ -1,13 +1,16 @@
 use opentab_model::{
-    Accent, Bar, Beat, Bend, BendPoint, Clef, Directions, Dynamic, Finger, Fraction, Grace,
-    Harmonic, InstrumentKind, InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature,
-    TrackMidi, Transpose, TremoloBar, TremoloPicking, Trill, Vibrato, VoiceSlot,
+    Accent, Bar, Beat, Bend, BendPoint, Clef, Directions, DrumKit, Dynamic, Finger, Fraction,
+    Grace, Harmonic, InstrumentKind, InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap,
+    TimeSignature, TrackMidi, Transpose, TremoloBar, TremoloPicking, Trill, Vibrato, VoiceSlot,
 };
 
+use crate::canon;
 use crate::codes::{
     CLEFS, DIRECTION_JUMPS, DIRECTION_TARGETS, DYNAMICS, FINGERS, GRACES, HARMONICS,
     INSTRUMENT_SETS, NOTE_VALUES, STROKE_DIRECTIONS, TREMOLOS, VIBRATOS, name_of, slide_bits,
 };
+
+use crate::dom::write_element;
 
 const NONE: &str = "none";
 
@@ -219,13 +222,26 @@ pub(crate) fn instrument(kind: InstrumentKind, set: Option<InstrumentSet>) -> St
     format!("instrument:{kind} {set}")
 }
 
-pub(crate) fn drum_kit(kind: InstrumentKind, typed: bool) -> String {
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn kit_digest(kit: &DrumKit) -> u64 {
+    let mut text = String::new();
+    write_element(&canon::drum_elements(kit), &mut text);
+    text.bytes().fold(FNV_OFFSET, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
+    })
+}
+
+pub(crate) fn drum_kit(kind: InstrumentKind, kit: Option<&DrumKit>) -> String {
     let kind = match kind {
         InstrumentKind::Fretted => "fretted",
         InstrumentKind::Percussion => "percussion",
     };
-    let typed = if typed { "typed" } else { NONE };
-    format!("drum-kit:{kind} {typed}")
+    match kit {
+        Some(kit) => format!("drum-kit:{kind} kit {:016x}", kit_digest(kit)),
+        None => format!("drum-kit:{kind} {NONE}"),
+    }
 }
 
 pub(crate) fn midi_connection(midi: &TrackMidi) -> String {

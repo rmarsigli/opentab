@@ -3,8 +3,8 @@ use opentab_layout::{
     LayoutOptions, StaffKind, StaffMode, Unrendered, drum_entry,
 };
 use opentab_model::{
-    DrumArticulation, DrumElement, DrumKit, InstrumentKind, KeySignature, NoteKind, NoteValue,
-    Score, TechniquePlacement, Tuning, gm_drum_kit,
+    DrumArticulation, DrumElement, DrumKit, InstrumentKind, InstrumentSet, KeySignature, NoteKind,
+    NoteValue, OpaquePayload, Score, TechniquePlacement, Tuning, gm_drum_kit,
 };
 
 use crate::music::{
@@ -232,7 +232,7 @@ pub fn check_drum_positions(
     if track.instrument.kind != InstrumentKind::Percussion {
         return 0;
     }
-    let Some(kit) = track.kit().map(|kit| DrumStaffKit::of(&kit)) else {
+    let Some(kit) = track.kit().map(DrumStaffKit::of) else {
         return 0;
     };
     let Some(model) = track.staves[row.staff.staff].bars.get(bar.index) else {
@@ -314,6 +314,40 @@ fn without_a_kit_the_general_midi_kit_places_the_notes() {
         list.unrendered
             .contains(&Unrendered::PercussionArticulations)
     );
+}
+
+#[test]
+fn a_minimal_guitar_pro_kit_draws_its_own_keys() {
+    let mut score = drum_score(&[0, 1, 2, 3], 1);
+    let minimal = concat!(
+        "<Keep parent=\"InstrumentSet\" index=\"1\"><Elements><Element><Articulations>",
+        "<Articulation><OutputMidiNumber>36</OutputMidiNumber></Articulation>",
+        "<Articulation><OutputMidiNumber>49</OutputMidiNumber></Articulation>",
+        "<Articulation><OutputMidiNumber>38</OutputMidiNumber></Articulation>",
+        "<Articulation><OutputMidiNumber>42</OutputMidiNumber></Articulation>",
+        "</Articulations></Element></Elements></Keep>"
+    );
+    score.tracks[0].drum_kit = None;
+    score.tracks[0].instrument.set = Some(InstrumentSet::DrumKit);
+    score.extensions.0.insert(
+        score.tracks[0].id.0,
+        vec![OpaquePayload {
+            format: "gpif".to_string(),
+            data: minimal.to_string(),
+        }],
+    );
+    let bytes = opentab_gp::write_gp(&score).unwrap();
+    let read = opentab_gp::read_gp(&bytes).unwrap();
+    let kit = read.tracks[0].drum_kit.clone().expect("typed leniently");
+    let keys: Vec<Option<u8>> = (0..5).map(|index| kit.key_of(index)).collect();
+    assert_eq!(keys, vec![Some(36), Some(49), Some(38), Some(42), None]);
+    assert_eq!(opentab_model::diagnose(&read), Vec::new());
+    let list = render(&read, &options(StaffMode::Both));
+    let positions: Vec<i64> = (0..4)
+        .map(|beat| head_position(&read, &list, 0, beat))
+        .collect();
+    assert_eq!(positions, vec![7, -2, 3, -1]);
+    assert!(list.unrendered.is_empty());
 }
 
 #[test]

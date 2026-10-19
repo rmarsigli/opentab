@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use opentab_model::{
     AUTOMATION_GRID, Automation, AutomationValue, DrumKit, Fraction, InstrumentKind, MasterBar,
-    MasterBarId, Score, SoundOverride, Track, TrackId, TrackMidi, automations_in_order,
+    MasterBarId, NoteKind, Score, SoundOverride, Track, TrackId, TrackMidi, automations_in_order,
     on_automation_grid,
 };
 
-use crate::rules::already_broken;
+use crate::rules::{already_broken, check_articulation};
 use crate::{AutomationEntry, Command, CommandError};
 
 const AUTOMATION: &str = "automation";
@@ -71,7 +71,32 @@ pub(crate) fn set_drum_kit(
     if !percussion && drum_kit.is_some() {
         return Err(not_percussion(track));
     }
+    let articulations: Vec<u16> = target
+        .staves
+        .iter()
+        .flat_map(|staff| &staff.bars)
+        .flat_map(|bar| &bar.voices)
+        .flat_map(|voice| &voice.beats)
+        .flat_map(|beat| &beat.notes)
+        .filter_map(|note| match note.kind {
+            NoteKind::Percussion { articulation } => Some(articulation),
+            NoteKind::Fretted { .. } => None,
+        })
+        .collect();
+    if percussion {
+        for articulation in &articulations {
+            check_articulation(target, *articulation).map_err(already_broken)?;
+        }
+    }
     let old = std::mem::replace(&mut target.drum_kit, drum_kit.cloned());
+    if percussion {
+        for articulation in &articulations {
+            if let Err(error) = check_articulation(target, *articulation) {
+                target.drum_kit = old;
+                return Err(error);
+            }
+        }
+    }
     Ok(Command::SetDrumKit {
         track,
         drum_kit: old,

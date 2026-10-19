@@ -59,7 +59,7 @@ fn staff_context(
     staff_index: usize,
     items: &[Item],
 ) -> Result<StaffContext, Refusal> {
-    let mut tuning = track.tuning.strings.clone();
+    let mut tuning = written_tuning(track);
     let mut capo = track.capo;
     if staff_index > 0 {
         if let Some(property) = staff_property(items, "Property@Tuning")
@@ -82,11 +82,12 @@ fn staff_context(
         kind: track.instrument.kind,
         tuning,
         capo,
-        track_tuning: track.tuning.strings.clone(),
+        track_tuning: written_tuning(track),
         track_capo: track.capo,
         transpose: track.transpose,
         chords,
         generated_chords: Vec::new(),
+        articulations: None,
     })
 }
 
@@ -142,12 +143,16 @@ pub(crate) fn staff_contexts(
 ) -> Result<Vec<StaffContext>, Fail> {
     let mut contexts = Vec::new();
     for (track_index, track) in score.tracks.iter().enumerate() {
+        let track_items = payload::surviving(owners.items(track.id.0)?, &Env::Track(track))
+            .within(|| format!("tracks[{track_index}]"))?;
+        let articulations = kit_plan(track, &track_items).articulations;
         for (staff_index, staff) in track.staves.iter().enumerate() {
             let items = owners
                 .items(staff.id.0)
                 .within(|| format!("tracks[{track_index}].staves[{staff_index}]"))?;
             let mut context = staff_context(track, track_index, staff_index, &items)
                 .within(|| format!("tracks[{track_index}].staves[{staff_index}]"))?;
+            context.articulations = articulations;
             generate_chords(&mut context, staff)
                 .within(|| format!("tracks[{track_index}].staves[{staff_index}]"))?;
             contexts.push(context);
@@ -200,6 +205,15 @@ fn add_chords(properties: &mut Element, items: &mut [Item], context: Option<&Sta
     }
 }
 
+const PERCUSSION_STRINGS: usize = 6;
+
+pub(crate) fn written_tuning(track: &Track) -> Vec<Pitch> {
+    if track.tuning.strings.is_empty() && track.instrument.kind == InstrumentKind::Percussion {
+        return vec![Pitch(0); PERCUSSION_STRINGS];
+    }
+    track.tuning.strings.clone()
+}
+
 fn staff_element(
     track: &Track,
     staff: &Staff,
@@ -213,8 +227,9 @@ fn staff_element(
     if !kept("Property@CapoFret") {
         properties.push(canon::capo_property(track.capo));
     }
-    if !track.tuning.strings.is_empty() && !kept("Property@Tuning") {
-        properties.push(canon::tuning_property(&track.tuning.strings));
+    let tuning = written_tuning(track);
+    if !tuning.is_empty() && !kept("Property@Tuning") {
+        properties.push(canon::tuning_property(&tuning));
     }
     add_chords(&mut properties, &mut items, context);
     let mut element = Element::new("Staff").with_child(properties);
@@ -239,21 +254,46 @@ fn kept_kit(item: &Item) -> bool {
             .is_some_and(|element| element.name == DRUM_ELEMENTS)
 }
 
-fn drum_elements(track: &Track, items: &[Item]) -> Result<Option<Element>, Fail> {
+struct KitPlan<'k> {
+    generated: Option<&'k DrumKit>,
+    articulations: Option<usize>,
+}
+
+fn kit_plan<'t>(track: &'t Track, items: &[Item]) -> KitPlan<'t> {
+    let none = KitPlan {
+        generated: None,
+        articulations: None,
+    };
     if track.instrument.kind != InstrumentKind::Percussion {
-        if track.drum_kit.is_some() {
-            return Err(Fail::new(Refusal::DrumKitOnFretted)).within(|| "drum_kit".to_string());
-        }
-        return Ok(None);
+        return none;
     }
-    if track.drum_kit.is_none() && items.iter().any(kept_kit) {
-        return Ok(None);
+    let replayed = items
+        .iter()
+        .any(|item| kept_kit(item) && item.guard.is_some());
+    let kept = items.iter().any(kept_kit);
+    match (&track.drum_kit, track.kit()) {
+        (Some(kit), _) if replayed => KitPlan {
+            generated: None,
+            articulations: Some(kit.articulations().len()),
+        },
+        (None, _) if kept => none,
+        (_, Some(kit)) => KitPlan {
+            generated: Some(kit),
+            articulations: Some(kit.articulations().len()),
+        },
+        (_, None) => none,
     }
-    let Some(kit) = track.kit() else {
+}
+
+fn drum_elements(track: &Track, items: &[Item]) -> Result<Option<Element>, Fail> {
+    if track.instrument.kind != InstrumentKind::Percussion && track.drum_kit.is_some() {
+        return Err(Fail::new(Refusal::DrumKitOnFretted)).within(|| "drum_kit".to_string());
+    }
+    let Some(kit) = kit_plan(track, items).generated else {
         return Ok(None);
     };
-    check_kit_text(&kit).within(|| "drum_kit".to_string())?;
-    Ok(Some(canon::drum_elements(&kit)))
+    check_kit_text(kit).within(|| "drum_kit".to_string())?;
+    Ok(Some(canon::drum_elements(kit)))
 }
 
 fn check_kit_text(kit: &DrumKit) -> Result<(), Refusal> {

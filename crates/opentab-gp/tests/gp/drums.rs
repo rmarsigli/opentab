@@ -284,24 +284,180 @@ fn a_canonical_kit_is_typed_and_the_set_keeps_its_child_order() {
     assert_eq!(read_gp(&bytes).expect("read"), score);
 }
 
+fn as_fretted(score: &Score) -> String {
+    let mut fretted = score.clone();
+    fretted.tracks[0].instrument.kind = InstrumentKind::Fretted;
+    fretted.tracks[0].instrument.set = Some(InstrumentSet::ElectricGuitar);
+    fretted.tracks[0].drum_kit = None;
+    fretted.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].kind =
+        NoteKind::Fretted { string: 0, fret: 0 };
+    gpif_text(&write_gp(&fretted).expect("write"))
+}
+
+fn replaced_by_the_general_midi_kit(score: &Score) {
+    let mut typed = score.clone();
+    typed.tracks[0].drum_kit = Some(gm_drum_kit());
+    let bytes = write_gp(&typed).expect("write");
+    let gpif = gpif_text(&bytes);
+    assert_eq!(gpif.matches("<Elements>").count(), 1);
+    assert_eq!(gpif.matches("<Articulation>").count(), 47);
+    assert_eq!(
+        set_children(&gpif),
+        ["Name", "Type", "LineCount", "Elements"]
+    );
+    assert_eq!(
+        read_gp(&bytes).expect("read").tracks[0].drum_kit,
+        Some(gm_drum_kit())
+    );
+    assert!(!as_fretted(score).contains("<Elements"));
+}
+
+#[test]
+fn a_kit_in_a_lenient_form_is_typed_with_defaults_and_written_back_unchanged() {
+    let canonical = canonical_elements();
+    let variants = [
+        (
+            canonical.replace("<OutputRSESound>kick.hit</OutputRSESound>", ""),
+            "<Name>Kick hit</Name>",
+        ),
+        (
+            canonical.replace("<Name>Kick</Name>", "<Name><![CDATA[Kick]]></Name>"),
+            "<![CDATA[Kick]]>",
+        ),
+        (
+            canonical.replace("<StaffLine>7</StaffLine>", "<StaffLine>+7</StaffLine>"),
+            "+7",
+        ),
+        (
+            canonical.replace("<Element>", "<Element kind=\"x\">"),
+            "kind=\"x\"",
+        ),
+        (
+            canonical.replace("</Element></Elements>", "<Extra/></Element></Elements>"),
+            "<Extra/>",
+        ),
+    ];
+    let strict = read_gpif(&drum_doc(&canonical));
+    let expected = track(&strict).drum_kit.clone().expect("typed");
+    for (variant, mark) in variants {
+        let score = read_gpif(&drum_doc(&variant));
+        let kit = track(&score).drum_kit.clone().expect("typed leniently");
+        if mark.starts_with("<Name>Kick hit") {
+            let mut articulations = expected.articulations().to_vec();
+            articulations[0].rse_sound = String::new();
+            assert_eq!(
+                kit,
+                DrumKit::new(expected.elements().to_vec(), articulations).expect("kit")
+            );
+        } else {
+            assert_eq!(kit, expected, "{variant}");
+        }
+        let kept = payloads(&score, track(&score).id.0);
+        assert_eq!(
+            kept.iter()
+                .filter(|payload| payload.contains("guard=\"drum-kit:percussion kit "))
+                .count(),
+            1,
+            "{kept:?}"
+        );
+        let bytes = write_gp(&score).expect("write");
+        let gpif = gpif_text(&bytes);
+        assert!(gpif.contains(mark), "{variant}");
+        assert_eq!(gpif.matches("<Elements>").count(), 1);
+        assert_eq!(
+            set_children(&gpif),
+            ["Name", "Type", "LineCount", "Elements"]
+        );
+        assert_eq!(read_gp(&bytes).expect("read"), score);
+        let mut same = score.clone();
+        same.tracks[0].drum_kit = Some(kit.clone());
+        assert_eq!(write_gp(&same).expect("write"), bytes);
+        replaced_by_the_general_midi_kit(&score);
+    }
+}
+
+#[test]
+fn the_documented_minimal_kit_takes_guitar_pro_defaults() {
+    let minimal = concat!(
+        "<Elements><Element><Articulations>",
+        "<Articulation><OutputMidiNumber>36</OutputMidiNumber></Articulation>",
+        "<Articulation><OutputMidiNumber>49</OutputMidiNumber></Articulation>",
+        "</Articulations></Element><Element/>",
+        "<Element><Articulations><Articulation><OutputMidiNumber>38</OutputMidiNumber>",
+        "</Articulation><Articulation/></Articulations></Element></Elements>"
+    );
+    let score = read_gpif(&drum_doc(minimal));
+    let kit = track(&score).drum_kit.clone().expect("typed leniently");
+    let keys: Vec<Option<u8>> = (0..5).map(|index| kit.key_of(index)).collect();
+    assert_eq!(keys, vec![Some(36), Some(49), Some(38), Some(0), None]);
+    let counts: Vec<usize> = kit.elements().iter().map(|element| element.count).collect();
+    assert_eq!(counts, vec![2, 0, 2]);
+    for element in kit.elements() {
+        assert_eq!(
+            (
+                element.name.as_str(),
+                element.kind.as_str(),
+                element.soundbank.as_str()
+            ),
+            ("", "unknown", "")
+        );
+    }
+    for articulation in kit.articulations() {
+        assert_eq!(articulation.name, "");
+        assert_eq!(articulation.staff_line, 0);
+        assert_eq!(
+            articulation.noteheads.each_ref().map(String::as_str),
+            ["noteheadBlack", "noteheadHalf", "noteheadWhole"]
+        );
+        assert_eq!(
+            articulation.technique_placement,
+            TechniquePlacement::Outside
+        );
+        assert!(articulation.technique_symbol.is_empty() && articulation.rse_sound.is_empty());
+        assert!(articulation.input_keys.is_empty());
+    }
+    assert_eq!(diagnose(&score), Vec::new());
+    let bytes = write_gp(&score).expect("write");
+    assert!(gpif_text(&bytes).contains("<Element/>"));
+    assert_eq!(read_gp(&bytes).expect("read"), score);
+    let mut outside = score.clone();
+    outside.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].kind =
+        NoteKind::Percussion { articulation: 4 };
+    assert_eq!(
+        diagnose(&outside),
+        vec![Diagnostic::ArticulationOutsideKit {
+            note: outside.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].id,
+            articulation: 4
+        }]
+    );
+    match write_gp(&outside) {
+        Err(GpError::Unsupported { reason, .. }) => assert_eq!(
+            reason,
+            Refusal::ArticulationOutsideKit {
+                articulation: 4,
+                articulations: 4
+            }
+        ),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
 #[test]
 fn an_untypeable_kit_stays_opaque_until_a_kit_is_set() {
     let canonical = canonical_elements();
     let variants = [
-        canonical.replace("<OutputRSESound>kick.hit</OutputRSESound>", ""),
         canonical.replace(
             "noteheadBlack noteheadHalf noteheadWhole",
             "noteheadBlack noteheadHalf",
         ),
-        canonical.replace("<Name>Kick</Name>", "<Name><![CDATA[Kick]]></Name>"),
-        canonical.replace("<StaffLine>7</StaffLine>", "<StaffLine>+7</StaffLine>"),
-        canonical.replace("<Element>", "<Element kind=\"x\">"),
-        canonical.replace("</Element></Elements>", "<Extra/></Element></Elements>"),
         canonical.replace(
             "<OutputMidiNumber>42</OutputMidiNumber>",
             "<OutputMidiNumber>300</OutputMidiNumber>",
         ),
         canonical.replace("below", "sideways"),
+        canonical.replace("<StaffLine>7</StaffLine>", "<StaffLine>low</StaffLine>"),
+        canonical.replace("<Elements>", "<Elements><Group/>"),
+        canonical.replace("<Articulations>", "<Articulations><Hit/>"),
     ];
     for variant in variants {
         let score = read_gpif(&drum_doc(&variant));
@@ -322,25 +478,7 @@ fn an_untypeable_kit_stays_opaque_until_a_kit_is_set() {
             ["Name", "Type", "LineCount", "Elements"]
         );
         assert_eq!(read_gp(&bytes).expect("read"), score);
-        let mut typed = score.clone();
-        typed.tracks[0].drum_kit = Some(gm_drum_kit());
-        let bytes = write_gp(&typed).expect("write");
-        let gpif = gpif_text(&bytes);
-        assert_eq!(gpif.matches("<Elements>").count(), 1);
-        assert_eq!(gpif.matches("<Articulation>").count(), 47);
-        assert_eq!(
-            set_children(&gpif),
-            ["Name", "Type", "LineCount", "Elements"]
-        );
-        let again = read_gp(&bytes).expect("read");
-        assert_eq!(again.tracks[0].drum_kit, Some(gm_drum_kit()));
-        let mut fretted = score.clone();
-        fretted.tracks[0].instrument.kind = InstrumentKind::Fretted;
-        fretted.tracks[0].instrument.set = Some(InstrumentSet::ElectricGuitar);
-        fretted.tracks[0].staves[0].bars[0].voices[0].beats[0].notes[0].kind =
-            NoteKind::Fretted { string: 0, fret: 0 };
-        let gpif = gpif_text(&write_gp(&fretted).expect("write"));
-        assert!(!gpif.contains("<Elements"), "{gpif}");
+        replaced_by_the_general_midi_kit(&score);
     }
 }
 
