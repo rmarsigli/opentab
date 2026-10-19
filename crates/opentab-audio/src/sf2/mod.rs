@@ -1,5 +1,9 @@
 #[deny(clippy::float_arithmetic)]
+mod limits;
+#[deny(clippy::float_arithmetic)]
 mod map;
+#[deny(clippy::float_arithmetic)]
+mod pdta;
 #[deny(clippy::float_arithmetic)]
 mod riff;
 
@@ -15,9 +19,19 @@ use opentab_model::MidiBank;
 use opentab_playback::{Channel, MidiMessage};
 use rustysynth::{SoundFont, SoundFontError, Synthesizer, SynthesizerSettings};
 
+pub use limits::{
+    MAX_FILE_BYTES, MAX_LAYERS_PER_NOTE, MAX_LOADER_BYTES, MAX_PAIRS_PER_PRESET, MAX_REGION_PAIRS,
+    MAX_VOICES_PER_NOTE, Sf2Limits,
+};
+pub use pdta::BankShape;
+
+use map::{ChannelPresets, RawBatch};
+use pdta::LayerTable;
+
 use crate::error::SF3_UNSUPPORTED;
 use crate::{Bank, BankError, BankFormat, BankInstrument, SampleRate, Synth, TRACK_HEADROOM};
 
+pub const FAULT_LOG_LIMIT: usize = 256;
 const UNKNOWN_PANIC: &str = "the sound engine stopped without a message";
 const BYTES_PER_POINT: usize = 2;
 const MAX_PROGRAM: u8 = 127;
@@ -29,6 +43,7 @@ pub enum SynthStage {
     Reset,
     Handle,
     Render,
+    Layers,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -45,9 +60,12 @@ struct FaultLog {
 
 impl FaultLog {
     fn push(&self, fault: SynthFault) {
-        match self.entries.lock() {
-            Ok(mut entries) => entries.push(fault),
-            Err(poisoned) => poisoned.into_inner().push(fault),
+        let mut entries = match self.entries.lock() {
+            Ok(entries) => entries,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if entries.len() < FAULT_LOG_LIMIT {
+            entries.push(fault);
         }
     }
 
@@ -125,6 +143,9 @@ pub struct Sf2Bank {
     instruments: Vec<BankInstrument>,
     faults: Arc<FaultLog>,
     next_instance: AtomicU32,
+    table: Arc<LayerTable>,
+    shape: BankShape,
+    limits: Sf2Limits,
 }
 
 impl fmt::Debug for Sf2Bank {
@@ -139,8 +160,18 @@ impl fmt::Debug for Sf2Bank {
 }
 
 impl Sf2Bank {
+    pub fn check(bytes: &[u8], limits: &Sf2Limits) -> Result<BankShape, BankError> {
+        let chunks = riff::check(bytes, limits)?;
+        Ok(pdta::analyse(bytes, &chunks, limits)?.shape)
+    }
+
     pub fn load(bytes: &[u8]) -> Result<Sf2Bank, BankError> {
-        riff::check(bytes)?;
+        Sf2Bank::load_with_limits(bytes, &Sf2Limits::DEFAULT)
+    }
+
+    pub fn load_with_limits(bytes: &[u8], limits: &Sf2Limits) -> Result<Sf2Bank, BankError> {
+        let chunks = riff::check(bytes, limits)?;
+        let analysis = pdta::analyse(bytes, &chunks, limits)?;
         let loaded =
             catch_unwind(|| SoundFont::new(&mut Cursor::new(bytes))).map_err(|payload| {
                 BankError::Panicked {
@@ -154,7 +185,14 @@ impl Sf2Bank {
             instruments,
             faults: Arc::new(FaultLog::default()),
             next_instance: AtomicU32::new(0),
+            table: Arc::new(analysis.table),
+            shape: analysis.shape,
+            limits: *limits,
         })
+    }
+
+    pub fn shape(&self) -> BankShape {
+        self.shape
     }
 
     pub fn name(&self) -> &str {
@@ -175,12 +213,14 @@ impl Sf2Bank {
 
     pub fn synth(&self, rate: SampleRate) -> Sf2Synth {
         let instance = self.next_instance.fetch_add(1, Ordering::Relaxed);
-        Sf2Synth::new(
-            Arc::clone(&self.font),
+        Sf2Synth::new(Sf2Parts {
+            font: Arc::clone(&self.font),
+            table: Arc::clone(&self.table),
+            voice_cap: self.limits.voices_per_note,
             rate,
             instance,
-            Arc::clone(&self.faults),
-        )
+            log: Arc::clone(&self.faults),
+        })
     }
 }
 
@@ -198,13 +238,26 @@ impl Bank for Sf2Bank {
     }
 }
 
+struct Sf2Parts {
+    font: Arc<SoundFont>,
+    table: Arc<LayerTable>,
+    voice_cap: u32,
+    rate: SampleRate,
+    instance: u32,
+    log: Arc<FaultLog>,
+}
+
 pub struct Sf2Synth {
     font: Arc<SoundFont>,
+    table: Arc<LayerTable>,
+    voice_cap: u32,
     rate: SampleRate,
     engine: Option<Synthesizer>,
     instance: u32,
     log: Arc<FaultLog>,
     fault: Option<SynthFault>,
+    presets: ChannelPresets,
+    skipped: u64,
 }
 
 impl fmt::Debug for Sf2Synth {
@@ -220,14 +273,18 @@ impl fmt::Debug for Sf2Synth {
 }
 
 impl Sf2Synth {
-    fn new(font: Arc<SoundFont>, rate: SampleRate, instance: u32, log: Arc<FaultLog>) -> Sf2Synth {
+    fn new(parts: Sf2Parts) -> Sf2Synth {
         let mut synth = Sf2Synth {
-            font,
-            rate,
+            font: parts.font,
+            table: parts.table,
+            voice_cap: parts.voice_cap,
+            rate: parts.rate,
             engine: None,
-            instance,
-            log,
+            instance: parts.instance,
+            log: parts.log,
             fault: None,
+            presets: ChannelPresets::default(),
+            skipped: 0,
         };
         synth.build();
         synth
@@ -239,6 +296,10 @@ impl Sf2Synth {
 
     pub fn is_silenced(&self) -> bool {
         self.engine.is_none()
+    }
+
+    pub fn skipped_notes(&self) -> u64 {
+        self.skipped
     }
 
     fn build(&mut self) {
@@ -257,6 +318,7 @@ impl Sf2Synth {
     }
 
     fn apply_defaults(&mut self) {
+        self.presets = ChannelPresets::default();
         let range = map::default_bend_range();
         for channel in map::channels() {
             self.send(channel, &range);
@@ -287,8 +349,47 @@ impl Sf2Synth {
         }
     }
 
+    fn skip_note(&mut self, layers: u32) {
+        self.skipped += 1;
+        if self.skipped == 1 {
+            self.log.push(SynthFault {
+                instance: self.instance,
+                stage: SynthStage::Layers,
+                message: format!(
+                    "a note that starts {layers} voices was skipped (at most {} are allowed)",
+                    self.voice_cap
+                ),
+            });
+        }
+    }
+
+    fn admit(&mut self, channel: u8, mut batch: RawBatch) -> RawBatch {
+        let mut refused: Option<u32> = None;
+        let presets = &mut self.presets;
+        let table = &self.table;
+        let cap = self.voice_cap;
+        batch.retain(|raw| {
+            let Some(note) = presets.observe(channel, raw) else {
+                return true;
+            };
+            let layers = table.layers(table.resolve(note.bank, note.patch), note.key);
+            if layers > cap {
+                refused = Some(layers);
+                return false;
+            }
+            true
+        });
+        if let Some(layers) = refused {
+            self.skip_note(layers);
+        }
+        batch
+    }
+
     fn send(&mut self, channel: u8, message: &MidiMessage) {
-        let batch = map::translate(channel, message);
+        if self.engine.is_none() {
+            return;
+        }
+        let batch = self.admit(channel, map::translate(channel, message));
         let channel = i32::from(channel);
         self.guarded(SynthStage::Handle, |engine| {
             for raw in batch.messages() {

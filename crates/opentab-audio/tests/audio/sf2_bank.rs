@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use opentab_audio::{Bank, SampleRate, Sf2Bank, encode_wav, full_length, render_frames};
+use opentab_audio::{Bank, SampleRate, Sf2Bank, Sf2Limits, encode_wav, full_length, render_frames};
 use opentab_gp::read_gp;
 use opentab_playback::Profile;
 
@@ -56,12 +56,21 @@ fn a_real_sf2_bank_renders_scores_for_listening() {
     };
     let out = std::env::var_os(OUT_VARIABLE).map_or_else(std::env::temp_dir, PathBuf::from);
     std::fs::create_dir_all(&out).expect("output directory");
-    let bank = Sf2Bank::load(&std::fs::read(&bank_path).expect("bank file")).expect("bank loads");
+    let bytes = std::fs::read(&bank_path).expect("bank file");
+    let exact = Sf2Limits {
+        voices_per_note: 1,
+        ..Sf2Limits::DEFAULT
+    };
+    let measured = Sf2Bank::check(&bytes, &exact).expect("passes the guard");
+    println!("exact layer peak {}", measured.layer_bound);
+    let bank = Sf2Bank::load(&bytes).expect("bank loads");
+    drop(bytes);
     println!(
-        "bank {:?}: {} instruments, {} sample bytes",
+        "bank {:?}: {} instruments, {} sample bytes, {:?}",
         bank.name(),
         bank.instruments().len(),
-        bank.sample_bytes()
+        bank.sample_bytes(),
+        bank.shape()
     );
     let rate = SampleRate::STUDIO;
     for path in scores() {

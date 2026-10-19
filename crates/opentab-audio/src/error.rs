@@ -25,4 +25,34 @@ pub enum BankError {
     Invalid { reason: String },
     #[error("the sound engine failed while reading this SoundFont: {message}")]
     Panicked { message: String },
+    #[error(
+        "this SoundFont was not loaded because {reason}. The file may be damaged or built to crash programs."
+    )]
+    Unsafe { reason: UnsafeBank },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Error)]
+pub enum UnsafeBank {
+    #[error("the file is larger than OpenTab accepts")]
+    FileTooLarge,
+    #[error("a section claims more bytes than the file holds")]
+    ChunkOverflow,
+    #[error("a section has no type")]
+    ListType,
+    #[error("a version field has the wrong size")]
+    VersionSize,
+    #[error("the sample data has an odd or tiny size")]
+    OddSamples,
+    #[error("preset or instrument zone numbers run backwards or past the end")]
+    ZoneOrder,
+    #[error("zone generator numbers run backwards or past the end")]
+    GeneratorOrder,
+    #[error("zone modulator numbers run backwards or past the end")]
+    ModulatorOrder,
+    #[error("reading it would need more memory than OpenTab allows")]
+    LoaderBudget,
+    #[error("a preset layers too many regions to play in real time")]
+    RegionPairs,
+    #[error("one key would start too many voices at once")]
+    Layers,
 }

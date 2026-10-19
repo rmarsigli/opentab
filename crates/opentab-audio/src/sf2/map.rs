@@ -46,8 +46,73 @@ impl RawBatch {
         }
     }
 
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(&RawMessage) -> bool) {
+        let mut kept = RawBatch::default();
+        for raw in self.messages() {
+            if keep(raw) {
+                kept.push(raw.command, raw.data1, raw.data2);
+            }
+        }
+        *self = kept;
+    }
+
     pub(crate) fn messages(&self) -> &[RawMessage] {
         &self.messages[..self.count]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NoteStart {
+    pub(crate) bank: i32,
+    pub(crate) patch: i32,
+    pub(crate) key: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ChannelPresets {
+    banks: [i32; CHANNELS as usize],
+    patches: [i32; CHANNELS as usize],
+}
+
+impl Default for ChannelPresets {
+    fn default() -> ChannelPresets {
+        let mut banks = [0; CHANNELS as usize];
+        banks[usize::from(DRUM_CHANNEL)] = PERCUSSION_BANK;
+        ChannelPresets {
+            banks,
+            patches: [0; CHANNELS as usize],
+        }
+    }
+}
+
+impl ChannelPresets {
+    pub(crate) fn observe(&mut self, channel: u8, raw: &RawMessage) -> Option<NoteStart> {
+        let slot = usize::from(channel);
+        match raw.command {
+            CONTROL if raw.data1 == i32::from(BANK_SELECT) => {
+                let offset = if channel == DRUM_CHANNEL {
+                    PERCUSSION_BANK
+                } else {
+                    0
+                };
+                if let Some(bank) = self.banks.get_mut(slot) {
+                    *bank = raw.data2 + offset;
+                }
+                None
+            }
+            PROGRAM => {
+                if let Some(patch) = self.patches.get_mut(slot) {
+                    *patch = raw.data1;
+                }
+                None
+            }
+            NOTE_ON if raw.data2 > 0 => Some(NoteStart {
+                bank: self.banks.get(slot).copied().unwrap_or(0),
+                patch: self.patches.get(slot).copied().unwrap_or(0),
+                key: u8::try_from(raw.data1).unwrap_or(u8::MAX),
+            }),
+            _ => None,
+        }
     }
 }
 

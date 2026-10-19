@@ -1,8 +1,12 @@
 use std::alloc::System;
 
-use opentab_audio::{Bank, SampleRate, Sf2Bank, Synth};
+use opentab_audio::{Bank, BankError, SampleRate, Sf2Bank, Synth, UnsafeBank};
 use opentab_playback::{Channel, MidiMessage};
-use opentab_testkit::banks::{PAD_PROGRAM, padded_sf2};
+use opentab_testkit::banks::{
+    PAD_PROGRAM, apply_structural, arb_structural_mutation, padded_sf2, tiny_sf2, zone_bomb,
+};
+use proptest::prelude::*;
+use proptest::test_runner::{Config, TestRunner};
 use stats_alloc::{INSTRUMENTED_SYSTEM, Region, Stats, StatsAlloc};
 
 #[global_allocator]
@@ -15,13 +19,20 @@ const PER_TRACK_BUDGET: usize = 1024 * 1024;
 const REFERENCES_PER_TRACK: usize = 2;
 const COPY_FRACTION: usize = 4;
 const RENDER_FRAMES: usize = 512;
+const BOMB_BAGS: u16 = 512;
+const INPUT_FACTOR: usize = 4;
+const SLACK_BYTES: usize = 1024 * 1024;
+const MAX_MUTATIONS: usize = 5;
 
 fn retained(change: Stats) -> usize {
     let grown = change.bytes_allocated as isize + change.bytes_reallocated;
     usize::try_from(grown - change.bytes_deallocated as isize).unwrap_or(0)
 }
 
-#[test]
+fn bounded(input: usize) -> usize {
+    INPUT_FACTOR * input + SLACK_BYTES
+}
+
 fn twenty_tracks_of_one_multi_megabyte_sf2_add_no_copy_of_its_sample_data() {
     let bytes = padded_sf2(PAD_FRAMES);
     let loading = Region::new(GLOBAL);
@@ -79,4 +90,64 @@ fn twenty_tracks_of_one_multi_megabyte_sf2_add_no_copy_of_its_sample_data() {
     drop(voices);
     assert_eq!(bank.shared_count(), 1);
     assert!(bank.faults().is_empty());
+}
+
+fn the_zone_bomb_is_refused_before_it_allocates() {
+    let bomb = zone_bomb(BOMB_BAGS);
+    let loading = Region::new(GLOBAL);
+    let result = Sf2Bank::load(&bomb).map(|bank| bank.sample_bytes());
+    let allocated = loading.change().bytes_allocated;
+    assert_eq!(
+        result,
+        Err(BankError::Unsafe {
+            reason: UnsafeBank::GeneratorOrder
+        })
+    );
+    assert!(
+        allocated <= bounded(bomb.len()),
+        "{allocated} bytes for a {}-byte bomb",
+        bomb.len()
+    );
+}
+
+fn the_loader_estimate_covers_what_loading_allocates() {
+    for bytes in [tiny_sf2(), padded_sf2(100_000)] {
+        let loading = Region::new(GLOBAL);
+        let bank = Sf2Bank::load(&bytes).expect("loads");
+        let allocated = loading.change().bytes_allocated;
+        let structures = allocated - bank.sample_bytes();
+        assert!(
+            structures as u64 <= bank.shape().loader_bytes,
+            "{structures} bytes against an estimate of {}",
+            bank.shape().loader_bytes
+        );
+    }
+}
+
+fn structural_mutations_allocate_in_proportion_to_the_input() {
+    let tiny = tiny_sf2();
+    let mut runner = TestRunner::new(Config::default());
+    let strategy = prop::collection::vec(arb_structural_mutation(), 1..MAX_MUTATIONS);
+    runner
+        .run(&strategy, |mutations| {
+            let bytes = apply_structural(&tiny, &mutations);
+            let loading = Region::new(GLOBAL);
+            let loaded = Sf2Bank::load(&bytes).map(|bank| bank.sample_bytes());
+            let allocated = loading.change().bytes_allocated;
+            prop_assert!(
+                allocated <= bounded(bytes.len()),
+                "{allocated} bytes for {} input bytes ({loaded:?})",
+                bytes.len()
+            );
+            Ok(())
+        })
+        .expect("bounded allocation");
+}
+
+fn main() {
+    twenty_tracks_of_one_multi_megabyte_sf2_add_no_copy_of_its_sample_data();
+    the_zone_bomb_is_refused_before_it_allocates();
+    the_loader_estimate_covers_what_loading_allocates();
+    structural_mutations_allocate_in_proportion_to_the_input();
+    println!("memory: 4 checks passed");
 }

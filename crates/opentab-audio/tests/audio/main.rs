@@ -10,6 +10,7 @@ mod schedule;
 mod sf2;
 mod sf2_bank;
 mod sf2_fuzz;
+mod sf2_guard;
 mod sf2_hashes;
 mod support;
 mod synth;

@@ -3,6 +3,8 @@ use opentab_model::MidiBank;
 use opentab_playback::{Channel, MidiMessage, PITCH_BEND_RANGE_RPN};
 use proptest::prelude::*;
 
+use opentab_testkit::banks::{apply_structural, arb_structural_mutation};
+
 use crate::sf2::{engine_panic_bank, engine_render_panic_bank};
 use crate::support::tiny_bytes;
 
@@ -150,6 +152,15 @@ proptest! {
         mutations in prop::collection::vec(mutation(), 1..6),
     ) {
         exercise(&apply(&mutations));
+    }
+}
+
+proptest! {
+    #[test]
+    fn a_structurally_mutated_tiny_bank_never_panics_and_never_emits_nan(
+        mutations in prop::collection::vec(arb_structural_mutation(), 1..6),
+    ) {
+        exercise(&apply_structural(tiny_bytes(), &mutations));
     }
 }
 

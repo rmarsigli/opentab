@@ -20,5 +20,10 @@ proptest.workspace = true
 sha2.workspace = true
 stats_alloc.workspace = true
 
+[[test]]
+name = "memory"
+path = "tests/memory/main.rs"
+harness = false
+
 [lints]
 workspace = true

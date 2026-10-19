@@ -1,5 +1,7 @@
-use crate::BankError;
+use std::ops::Range;
+
 use crate::error::SF3_UNSUPPORTED;
+use crate::{BankError, Sf2Limits, UnsafeBank};
 
 const HEADER_BYTES: usize = 8;
 const FORM_BYTES: usize = 4;
@@ -13,6 +15,39 @@ struct ChunkHeader {
     id: [u8; 4],
     body: usize,
     size: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct PdtaChunks {
+    pub(crate) phdr: Option<Range<usize>>,
+    pub(crate) pbag: Option<Range<usize>>,
+    pub(crate) pmod: Option<Range<usize>>,
+    pub(crate) pgen: Option<Range<usize>>,
+    pub(crate) inst: Option<Range<usize>>,
+    pub(crate) ibag: Option<Range<usize>>,
+    pub(crate) imod: Option<Range<usize>>,
+    pub(crate) igen: Option<Range<usize>>,
+}
+
+impl PdtaChunks {
+    fn record(&mut self, id: &[u8; 4], body: Range<usize>) {
+        let slot = match id {
+            b"phdr" => &mut self.phdr,
+            b"pbag" => &mut self.pbag,
+            b"pmod" => &mut self.pmod,
+            b"pgen" => &mut self.pgen,
+            b"inst" => &mut self.inst,
+            b"ibag" => &mut self.ibag,
+            b"imod" => &mut self.imod,
+            b"igen" => &mut self.igen,
+            _ => return,
+        };
+        *slot = Some(body);
+    }
+}
+
+fn refuse(reason: UnsafeBank) -> BankError {
+    BankError::Unsafe { reason }
 }
 
 fn invalid(reason: &str) -> BankError {
@@ -32,16 +67,16 @@ fn header(bytes: &[u8], at: usize, end: usize) -> Result<ChunkHeader, BankError>
         .checked_add(HEADER_BYTES)
         .filter(|fields| *fields <= end)
         .and_then(|fields| bytes.get(at..fields))
-        .ok_or_else(|| invalid("a chunk header is cut short"))?;
+        .ok_or(refuse(UnsafeBank::ChunkOverflow))?;
     let mut id = [0u8; 4];
     id.copy_from_slice(&fields[..4]);
     let mut size = [0u8; 4];
     size.copy_from_slice(&fields[4..]);
-    let size = usize::try_from(u32::from_le_bytes(size))
-        .map_err(|_| invalid("a chunk is larger than this machine can address"))?;
+    let size =
+        usize::try_from(u32::from_le_bytes(size)).map_err(|_| refuse(UnsafeBank::ChunkOverflow))?;
     let body = at + HEADER_BYTES;
     if size > end - body {
-        return Err(invalid("a chunk claims more bytes than the file holds"));
+        return Err(refuse(UnsafeBank::ChunkOverflow));
     }
     Ok(ChunkHeader { id, body, size })
 }
@@ -51,7 +86,7 @@ fn check_info(bytes: &[u8], chunk: &ChunkHeader) -> Result<(), BankError> {
         return Ok(());
     }
     if chunk.size != VERSION_BYTES {
-        return Err(invalid("a version chunk has the wrong size"));
+        return Err(refuse(UnsafeBank::VersionSize));
     }
     if &chunk.id == b"iver" {
         return Ok(());
@@ -71,32 +106,35 @@ fn check_samples(bytes: &[u8], chunk: &ChunkHeader) -> Result<(), BankError> {
         return Err(unsupported());
     }
     if !chunk.size.is_multiple_of(2) || chunk.size < MIN_SAMPLE_BYTES {
-        return Err(invalid("the sample data has an odd or tiny size"));
+        return Err(refuse(UnsafeBank::OddSamples));
     }
     Ok(())
 }
 
-fn check_list(bytes: &[u8], list: &ChunkHeader) -> Result<(), BankError> {
+fn check_list(bytes: &[u8], list: &ChunkHeader, pdta: &mut PdtaChunks) -> Result<(), BankError> {
     if list.size < FORM_BYTES {
-        return Err(invalid("a list chunk has no type"));
+        return Err(refuse(UnsafeBank::ListType));
     }
     let kind = &bytes[list.body..list.body + FORM_BYTES];
     let end = list.body + list.size;
     let mut at = list.body + FORM_BYTES;
     while at < end {
         let chunk = header(bytes, at, end)?;
-        if kind == b"INFO" {
-            check_info(bytes, &chunk)?;
-        }
-        if kind == b"sdta" {
-            check_samples(bytes, &chunk)?;
+        match kind {
+            b"INFO" => check_info(bytes, &chunk)?,
+            b"sdta" => check_samples(bytes, &chunk)?,
+            b"pdta" => pdta.record(&chunk.id, chunk.body..chunk.body + chunk.size),
+            _ => {}
         }
         at = chunk.body + chunk.size;
     }
     Ok(())
 }
 
-pub(crate) fn check(bytes: &[u8]) -> Result<(), BankError> {
+pub(crate) fn check(bytes: &[u8], limits: &Sf2Limits) -> Result<PdtaChunks, BankError> {
+    if u64::try_from(bytes.len()).map_or(true, |length| length > limits.file_bytes) {
+        return Err(refuse(UnsafeBank::FileTooLarge));
+    }
     if bytes.get(..FORM_BYTES) != Some(b"RIFF")
         || bytes.get(HEADER_BYTES..HEADER_BYTES + FORM_BYTES) != Some(b"sfbk")
     {
@@ -104,13 +142,14 @@ pub(crate) fn check(bytes: &[u8]) -> Result<(), BankError> {
     }
     let end = bytes.len();
     let mut at = HEADER_BYTES + FORM_BYTES;
+    let mut pdta = PdtaChunks::default();
     for _ in 0..TOP_LISTS {
         let chunk = header(bytes, at, end)?;
         if &chunk.id != b"LIST" {
             return Err(invalid("a SoundFont section is missing"));
         }
-        check_list(bytes, &chunk)?;
+        check_list(bytes, &chunk, &mut pdta)?;
         at = chunk.body + chunk.size;
     }
-    Ok(())
+    Ok(pdta)
 }
