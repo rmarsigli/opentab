@@ -194,15 +194,17 @@ Parent references are normal in real banks: six libraries keep the `.sfz` in a `
 
 ### 6.2 Confinement
 
-The resolved path must stay inside the bank root. After step 3, the path is checked lexically against the root, then the file is opened and its canonical path (symbolic links resolved) must still start with the canonical bank root. A region whose path escapes is dropped and listed as "path outside bank"; it is never an error that aborts the bank. The same check applies to every file the loader opens, includes included.
+The resolved path must stay inside the bank root. After step 3, the path is canonicalised and must start with the canonical bank root; the lexical form is not checked on its own. A region whose path escapes is dropped and listed as "path outside bank"; it is never an error that aborts the bank. The same check applies to every file the loader opens, includes included, and only regular files are opened (never a named pipe or a device).
+
+Symbolic links, our rule: a bank is untrusted user data, so a symbolic link anywhere in the bank tree (to a folder, a file, the program map, or nowhere) refuses the whole bank. The folder walk sees every entry before any `.sfz` is read, so no link is ever followed. No surveyed library contains one.
 
 ### 6.3 Case
 
-Libraries are written on systems where case does not matter, and OpenTab runs on case-sensitive file systems. When the exact path does not exist, the loader looks in the directory for entries that match ignoring case (ASCII and Unicode simple case folding), component by component. Exactly one match is used; zero or several is "missing". One surveyed library has a case mismatch (`TIP` against `Tip`). The lookup runs once per directory and is cached.
+Libraries are written on systems where case does not matter, and OpenTab runs on case-sensitive file systems. When the exact path does not exist, the loader looks in the directory for entries that match ignoring case (both names lowered with Unicode lower-casing), component by component. Exactly one match is used; zero or several is "missing". One surveyed library has a case mismatch (`TIP` against `Tip`). Each directory is listed once, keyed by its canonical path, only after it is confined to the bank, and the entries listed for the whole bank are capped (section 11).
 
 ### 6.4 Include paths
 
-An include path follows steps 1 and 2 above. It is resolved first against the directory of the root `.sfz` file, then, if no such file exists, against the directory of the file that contains the include. The surveyed libraries (eight use includes, 2,875 in total) resolve every nested include against the root file's directory, so the first rule is the one that matters. The result is confined to the bank root exactly as in 6.2.
+An include path is normally quoted; an unquoted path runs to the next white space. It follows steps 1 and 2 above. It is resolved first against the directory of the root `.sfz` file, then, if no such file exists, against the directory of the file that contains the include. The surveyed libraries (eight use includes, 2,875 in total) resolve every nested include against the root file's directory, so the first rule is the one that matters. The result is confined to the bank root exactly as in 6.2.
 
 ### 6.5 Audio files
 
@@ -211,7 +213,7 @@ WAV, FLAC and Ogg Vorbis are decoded (M3-D2). The survey found 51,754 `.wav`, 9,
 - At load, a sample whose extension is not `.wav`, `.flac`, `.ogg` or `.oga` (any case) is dropped and listed as "unsupported audio format"; `.aif` is in this group. At decode time the format is told by the file's first bytes, not by its name.
 - WAV: integer samples of 8 to 32 bits and 32-bit float, plain or WAVE_FORMAT_EXTENSIBLE. FLAC: any depth the format allows. Ogg Vorbis: the first logical stream. Values become 32-bit floats in -1..1.
 - Samples are shared between regions, and between every track that uses the bank, by canonical path: each file is decoded once per bank.
-- Decoding never trusts a declared size: memory grows only with frames actually decoded, under the caps of section 11, so a header that announces hours of audio costs nothing. A truncated or damaged file is invalid. Ogg Vorbis headers are checked before the decoder reads them: their declared comment lengths must fit in the packet and their codebook tables must stay under a fixed size.
+- Decoding never trusts a declared size: memory grows only with frames actually decoded, under the caps of section 11, so a header that announces hours of audio costs nothing. A truncated or damaged file is invalid. Ogg Vorbis headers are checked before the decoder reads them: their declared comment lengths must fit in the packet, the codebook entries of the file are capped, and an estimate of the memory the decoder will build for its codebooks (lengths, Huffman tree nodes, lookup values and vectors, all from the declared counts) must fit a fixed budget. A WAV whose data chunk claims more bytes than the file holds (some streaming writers leave it at its maximum) is invalid.
 - A sample that breaks a cap or does not decode makes its regions silent, and the failure is reported once per bank with its reason. Loading never decodes audio, so such a file does not stop the bank from loading.
 
 ## 7. Note names
@@ -233,7 +235,7 @@ Anything not in section 5 is parsed, discarded and recorded, so a user can see w
 
 ## 9. What the backend does with a bank
 
-- `SfzBank::load` finds every `.sfz` file under the bank root (symbolic links to folders are not followed), preprocesses each one to learn which files others include, and parses every file that no other file includes, without decoding audio. Each such root file is an instrument named after its path relative to the root, without extension. A root that is not UTF-8 is reported and skipped.
+- `SfzBank::load` walks the bank root (refusing any symbolic link), finds every `.sfz` file, preprocesses each one to learn which files others include, and parses every file that no other file includes, without decoding audio. Each such root file is an instrument named after its path relative to the root, without extension. A root that is not UTF-8 is reported and skipped.
 - Audio is decoded on a region's first note-on. For live output, an instrument can be decoded ahead of time (`preload`), so the audio thread never has to open a file or decode.
 - Voices are limited to 128 per backend instance and 32 per note-on event. When the limit is reached, the oldest voice that is releasing, else the oldest voice, is stolen.
 - Voices are keyed by MIDI channel: a note-off, pitch bend, all-notes-off or all-sound-off acts on the voices of its channel only.
@@ -244,22 +246,25 @@ Anything not in section 5 is parsed, discarded and recorded, so a user can see w
 SFZ files carry no program numbers, so a bank maps General MIDI programs to its instruments (M3 preflight F12).
 
 - When the bank root holds `opentab-bank.json`, written when the bank is imported, it is the map. It is a JSON object with `version` (1), `programs` (a list of objects with `program` 0..127 and `file`, a root `.sfz` path relative to the bank root with `/` separators), and optional `drums` and `default` files. Unknown fields, another version, a program above 127 or a file that is not an instrument of the bank make the map invalid, and the bank is refused with that reason.
-- Without the file, our rule: the first instrument in path order whose path does not contain `drum`, `kit` or `perc` (any case) serves every program, and drums use the first instrument whose path contains one of them. If there is no such instrument, the other rule's choice is used.
+- Without the file, our rule: the first instrument in path order whose path does not contain `drum`, `kit` or `perc` (any case) serves every program, and drums use the first instrument whose path contains one of them. A bank with no such file plays no drums, so the bank manager can fall back to the built-in kit; a bank with only drum-named files serves programs from its first file.
 - A program the map does not list uses `default`, else the first-instrument rule. A channel plays drums when it is channel 10 or its bank select MSB is 120, as everywhere in OpenTab.
 - The bank lists each instrument once: the drum instrument under bank 120, the others under bank 0, each with the lowest program the map gives it, else program 0.
 
 ## 11. Limits
 
-Every limit is a named constant and refuses the bank, before the memory it guards is allocated, with a message that names it. Real libraries sit far below each one: the survey's largest file is 210 KB, its largest instrument 8,902 regions and 0.95 MB of expanded text, its deepest include chain 3 levels, and its longest samples a few tens of seconds.
+Every limit is a named constant and refuses the bank with a message that names it. Sizes are checked before the memory they guard is allocated; counts are checked as each item is added. Loading work is linear in the text read: comments are removed in one pass, and a variable is looked up only among the lengths of defined names, each at most 64 bytes. Real libraries sit far below each one: the survey's largest file is 210 KB, its largest instrument 8,902 regions and 0.95 MB of expanded text, its deepest include chain 3 levels, and its longest samples a few tens of seconds.
 
 | Limit | Value |
 |---|---|
 | Instrument text file (`.sfz` or included) | 4 MiB |
 | Expanded text per instrument | 16 MiB |
-| Expanded text per bank, every file counted | 512 MiB |
+| Text read and expanded per bank, every file counted | 512 MiB |
 | Regions per instrument | 100,000 |
 | Include depth, includes per instrument | 8, 4,096 |
-| Definitions per instrument, their text | 16,384, 1 MiB |
+| Definitions per instrument, their text, one name | 16,384, 1 MiB, 64 bytes (a longer name is ignored and listed) |
+| One line of text | 64 KiB |
+| Text read per instrument, includes counted each time | 32 MiB |
+| Folder entries listed for case-insensitive lookups, per bank | 1,048,576 |
 | Entries in the bank folder, folder depth | 200,000, 16 |
 | `.sfz` files in the bank | 8,192 |
 | Memory kept for regions and lists, per bank | 256 MiB |
@@ -268,6 +273,7 @@ Every limit is a named constant and refuses the bank, before the memory it guard
 | Decoded sample length | 16,777,216 frames (about 6 minutes at 44.1 kHz) |
 | Sample channels, sample rate | 1 or 2, 8,000 to 192,000 Hz |
 | Decoded audio per bank | 1 GiB |
-| Ogg Vorbis codebook table values per file | 4,194,304 |
+| Ogg Vorbis codebook entries per file | 262,144 |
+| Ogg Vorbis codebook memory estimate per file | 32 MiB |
 
 The sample limits are checked when a sample is decoded; a breach silences its regions and is reported, as in section 6.5.
