@@ -4,9 +4,9 @@ use opentab_model::blank_score;
 use serde::Serialize;
 
 use crate::error::CliError;
-use crate::files::{self, Overwrite};
 use crate::output::Rendered;
 use crate::text::escape_controls;
+use opentab_files::{self as files, Overwrite};
 
 #[derive(Serialize)]
 pub struct Created {

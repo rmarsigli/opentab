@@ -6,6 +6,7 @@ members = [
     "crates/opentab-command",
     "crates/opentab-cli",
     "crates/opentab-gp",
+    "crates/opentab-files",
     "crates/opentab-layout",
     "crates/opentab-render",
     "crates/opentab-mcp",

@@ -1,6 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use opentab_command::CommandError;
+use opentab_files::FileError;
 use opentab_model::ModelError;
 use serde::Serialize;
 
@@ -17,17 +18,7 @@ pub enum CliError {
         path: PathBuf,
         supported: &'static str,
     },
-    Unsupported {
-        path: PathBuf,
-        message: String,
-    },
-    InvalidScore {
-        path: PathBuf,
-        message: String,
-    },
-    OutputExists {
-        path: PathBuf,
-    },
+    File(FileError),
     InvalidInput {
         message: String,
     },
@@ -50,6 +41,12 @@ pub enum CliError {
     },
 }
 
+impl From<FileError> for CliError {
+    fn from(error: FileError) -> CliError {
+        CliError::File(error)
+    }
+}
+
 #[derive(Serialize)]
 pub struct ErrorBody {
     pub kind: &'static str,
@@ -66,13 +63,6 @@ pub struct ErrorEnvelope {
 }
 
 impl CliError {
-    pub fn io(path: &Path, source: &std::io::Error) -> CliError {
-        CliError::Io {
-            path: path.to_path_buf(),
-            message: source.to_string(),
-        }
-    }
-
     pub fn internal(error: ModelError) -> CliError {
         CliError::Internal {
             message: error.to_string(),
@@ -96,21 +86,9 @@ impl CliError {
                 sub_kind: None,
                 line: None,
             },
-            CliError::Unsupported { path, message } => ErrorBody {
-                kind: "unsupported",
-                message: format!("{}: {message}", path.display()),
-                sub_kind: None,
-                line: None,
-            },
-            CliError::InvalidScore { path, message } => ErrorBody {
-                kind: "invalid_score",
-                message: format!("{}: {message}", path.display()),
-                sub_kind: None,
-                line: None,
-            },
-            CliError::OutputExists { path } => ErrorBody {
-                kind: "output_exists",
-                message: format!("{} already exists, refusing to overwrite", path.display()),
+            CliError::File(error) => ErrorBody {
+                kind: error.kind(),
+                message: error.to_string(),
                 sub_kind: None,
                 line: None,
             },

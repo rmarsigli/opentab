@@ -1,4 +1,5 @@
 use opentab_command::CommandError;
+use opentab_files::FileError;
 use serde::Serialize;
 
 pub const MAX_MESSAGE_CHARS: usize = 1_000;
@@ -79,6 +80,12 @@ fn command_sub_kind(source: &CommandError) -> Option<String> {
         .get("kind")?
         .as_str()
         .map(str::to_owned)
+}
+
+impl From<FileError> for ToolError {
+    fn from(error: FileError) -> ToolError {
+        ToolError::new(error.kind(), error.to_string())
+    }
 }
 
 pub fn bounded(text: &str, limit: usize) -> String {

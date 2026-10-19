@@ -6,7 +6,47 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use opentab_gp::{GpError, read_gp, write_gp};
 use opentab_model::{Score, from_json, to_json};
 
-use crate::error::CliError;
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FileError {
+    #[error("{}: {message}", path.display())]
+    Io { path: PathBuf, message: String },
+    #[error("{}: unsupported file type, supported formats: {supported}", path.display())]
+    UnsupportedFormat {
+        path: PathBuf,
+        supported: &'static str,
+    },
+    #[error("{}: {message}", path.display())]
+    Unsupported { path: PathBuf, message: String },
+    #[error("{}: {message}", path.display())]
+    InvalidScore { path: PathBuf, message: String },
+    #[error("{} already exists, refusing to overwrite", path.display())]
+    OutputExists { path: PathBuf },
+    #[error("{message}")]
+    InvalidInput { message: String },
+    #[error("{message}")]
+    Internal { message: String },
+}
+
+impl FileError {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            FileError::Io { .. } => "io",
+            FileError::UnsupportedFormat { .. } => "unsupported_format",
+            FileError::Unsupported { .. } => "unsupported",
+            FileError::InvalidScore { .. } => "invalid_score",
+            FileError::OutputExists { .. } => "output_exists",
+            FileError::InvalidInput { .. } => "invalid_input",
+            FileError::Internal { .. } => "internal",
+        }
+    }
+
+    pub fn io(path: &Path, source: &io::Error) -> FileError {
+        FileError::Io {
+            path: path.to_path_buf(),
+            message: source.to_string(),
+        }
+    }
+}
 
 pub const SUFFIX: &str = ".opentab.json";
 pub const GP_SUFFIX: &str = ".gp";
@@ -30,7 +70,16 @@ pub enum Format {
     Gp,
 }
 
-pub fn format_of(path: &Path) -> Result<Format, CliError> {
+impl Format {
+    pub fn name(self) -> &'static str {
+        match self {
+            Format::Json => "opentab.json",
+            Format::Gp => "gp",
+        }
+    }
+}
+
+pub fn format_of(path: &Path) -> Result<Format, FileError> {
     let name = path.file_name().map(|name| name.as_encoded_bytes());
     let has = |suffix: &str| {
         name.is_some_and(|name| {
@@ -49,50 +98,62 @@ pub fn format_of(path: &Path) -> Result<Format, CliError> {
     }
 }
 
-pub fn require_json(path: &Path) -> Result<(), CliError> {
+pub fn require_json(path: &Path) -> Result<(), FileError> {
     match format_of(path) {
         Ok(Format::Json) => Ok(()),
         _ => Err(unsupported_format(path, SUFFIX)),
     }
 }
 
-fn unsupported_format(path: &Path, supported: &'static str) -> CliError {
-    CliError::UnsupportedFormat {
+fn unsupported_format(path: &Path, supported: &'static str) -> FileError {
+    FileError::UnsupportedFormat {
         path: path.to_path_buf(),
         supported,
     }
 }
 
-pub fn read_score(path: &Path) -> Result<Score, CliError> {
+pub fn read_score(path: &Path) -> Result<Score, FileError> {
     let format = format_of(path)?;
-    let bytes = fs::read(path).map_err(|error| CliError::io(path, &error))?;
+    let bytes = fs::read(path).map_err(|error| FileError::io(path, &error))?;
     match format {
         Format::Json => parse_json(path, bytes),
-        Format::Gp => read_gp(&bytes).map_err(|error| CliError::InvalidInput {
+        Format::Gp => read_gp(&bytes).map_err(|error| FileError::InvalidInput {
             message: format!("{}: {error}", path.display()),
         }),
     }
 }
 
-fn parse_json(path: &Path, bytes: Vec<u8>) -> Result<Score, CliError> {
-    let text = String::from_utf8(bytes).map_err(|_| CliError::InvalidScore {
+fn parse_json(path: &Path, bytes: Vec<u8>) -> Result<Score, FileError> {
+    let text = String::from_utf8(bytes).map_err(|_| FileError::InvalidScore {
         path: path.to_path_buf(),
         message: "file is not valid UTF-8".to_string(),
     })?;
-    from_json(&text).map_err(|error| CliError::InvalidScore {
+    from_json(&text).map_err(|error| FileError::InvalidScore {
         path: path.to_path_buf(),
         message: error.to_string(),
     })
 }
 
-pub fn read_text(path: &Path) -> Result<String, CliError> {
-    let bytes = fs::read(path).map_err(|error| CliError::io(path, &error))?;
-    String::from_utf8(bytes).map_err(|_| CliError::InvalidInput {
+pub fn require_regular_file(path: &Path) -> Result<(), FileError> {
+    let metadata = fs::metadata(path).map_err(|error| FileError::io(path, &error))?;
+    if metadata.is_file() {
+        Ok(())
+    } else {
+        Err(FileError::Io {
+            path: path.to_path_buf(),
+            message: "not a regular file".to_string(),
+        })
+    }
+}
+
+pub fn read_text(path: &Path) -> Result<String, FileError> {
+    let bytes = fs::read(path).map_err(|error| FileError::io(path, &error))?;
+    String::from_utf8(bytes).map_err(|_| FileError::InvalidInput {
         message: format!("{} is not valid UTF-8", path.display()),
     })
 }
 
-pub fn write_score(path: &Path, score: &Score, overwrite: Overwrite) -> Result<(), CliError> {
+pub fn write_score(path: &Path, score: &Score, overwrite: Overwrite) -> Result<(), FileError> {
     let format = format_of(path)?;
     if overwrite == Overwrite::Refused && fs::symlink_metadata(path).is_ok() {
         return Err(output_exists(path));
@@ -104,51 +165,55 @@ pub fn write_score(path: &Path, score: &Score, overwrite: Overwrite) -> Result<(
     }
 }
 
-pub fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+pub fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
     replace(path, bytes)
 }
 
-fn encode(path: &Path, score: &Score, format: Format) -> Result<Vec<u8>, CliError> {
+fn encode(path: &Path, score: &Score, format: Format) -> Result<Vec<u8>, FileError> {
     match format {
-        Format::Json => to_json(score)
-            .map(String::into_bytes)
-            .map_err(CliError::internal),
+        Format::Json => {
+            to_json(score)
+                .map(String::into_bytes)
+                .map_err(|error| FileError::Internal {
+                    message: error.to_string(),
+                })
+        }
         Format::Gp => write_gp(score).map_err(|error| refusal(path, error)),
     }
 }
 
-fn refusal(path: &Path, error: GpError) -> CliError {
+fn refusal(path: &Path, error: GpError) -> FileError {
     match error {
         GpError::Unsupported {
             path: model,
             reason,
-        } => CliError::Unsupported {
+        } => FileError::Unsupported {
             path: path.to_path_buf(),
             message: format!("{model}: {reason}"),
         },
-        other => CliError::Internal {
+        other => FileError::Internal {
             message: other.to_string(),
         },
     }
 }
 
-fn output_exists(path: &Path) -> CliError {
-    CliError::OutputExists {
+fn output_exists(path: &Path) -> FileError {
+    FileError::OutputExists {
         path: path.to_path_buf(),
     }
 }
 
-fn replace(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
-    let target = resolve_target(path).map_err(|error| CliError::io(path, &error))?;
-    let temp = stage(&target, bytes, next_counter).map_err(|error| CliError::io(path, &error))?;
+fn replace(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
+    let target = resolve_target(path).map_err(|error| FileError::io(path, &error))?;
+    let temp = stage(&target, bytes, next_counter).map_err(|error| FileError::io(path, &error))?;
     fs::rename(&temp, &target).map_err(|error| {
         let _ = fs::remove_file(&temp);
-        CliError::io(path, &error)
+        FileError::io(path, &error)
     })
 }
 
-fn create(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
-    let temp = stage(path, bytes, next_counter).map_err(|error| CliError::io(path, &error))?;
+fn create(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
+    let temp = stage(path, bytes, next_counter).map_err(|error| FileError::io(path, &error))?;
     let outcome = match fs::hard_link(&temp, path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == ErrorKind::AlreadyExists => Err(output_exists(path)),
@@ -158,17 +223,17 @@ fn create(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
     outcome
 }
 
-fn create_new_file(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+fn create_new_file(path: &Path, bytes: &[u8]) -> Result<(), FileError> {
     let mut file = match OpenOptions::new().write(true).create_new(true).open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::AlreadyExists => return Err(output_exists(path)),
-        Err(error) => return Err(CliError::io(path, &error)),
+        Err(error) => return Err(FileError::io(path, &error)),
     };
     let written = file.write_all(bytes).and_then(|()| file.sync_all());
     written.map_err(|error| {
         drop(file);
         let _ = fs::remove_file(path);
-        CliError::io(path, &error)
+        FileError::io(path, &error)
     })
 }
 
@@ -306,7 +371,95 @@ mod tests {
         create_new_file(&path, b"fresh").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "fresh");
         let error = create_new_file(&path, b"second").unwrap_err();
-        assert!(matches!(error, CliError::OutputExists { .. }));
+        assert!(matches!(error, FileError::OutputExists { .. }));
         assert_eq!(fs::read_to_string(&path).unwrap(), "fresh");
+    }
+
+    #[test]
+    fn only_regular_files_pass_the_regular_file_check() {
+        let dir = dir();
+        let file = dir.path().join("a.gp");
+        fs::write(&file, b"x").unwrap();
+        assert_eq!(require_regular_file(&file), Ok(()));
+        let link = dir.path().join("link.gp");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        assert_eq!(require_regular_file(&link), Ok(()));
+        for special in [dir.path().to_path_buf(), PathBuf::from("/dev/null")] {
+            let error = require_regular_file(&special).unwrap_err();
+            assert_eq!(error.kind(), "io");
+            assert_eq!(
+                error.to_string(),
+                format!("{}: not a regular file", special.display())
+            );
+        }
+        let device = dir.path().join("zero.gp");
+        std::os::unix::fs::symlink("/dev/zero", &device).unwrap();
+        assert!(require_regular_file(&device).is_err());
+        let missing = require_regular_file(&dir.path().join("missing.gp")).unwrap_err();
+        assert_eq!(missing.kind(), "io");
+    }
+
+    #[test]
+    fn errors_name_their_kind_and_print_the_cli_messages() {
+        let path = PathBuf::from("dir/a.gp");
+        let cases = [
+            (
+                FileError::Io {
+                    path: path.clone(),
+                    message: "denied".to_string(),
+                },
+                "io",
+                "dir/a.gp: denied",
+            ),
+            (
+                FileError::UnsupportedFormat {
+                    path: path.clone(),
+                    supported: SUPPORTED,
+                },
+                "unsupported_format",
+                "dir/a.gp: unsupported file type, supported formats: .gp, .opentab.json",
+            ),
+            (
+                FileError::Unsupported {
+                    path: path.clone(),
+                    message: "no track".to_string(),
+                },
+                "unsupported",
+                "dir/a.gp: no track",
+            ),
+            (
+                FileError::InvalidScore {
+                    path: path.clone(),
+                    message: "bad".to_string(),
+                },
+                "invalid_score",
+                "dir/a.gp: bad",
+            ),
+            (
+                FileError::OutputExists { path: path.clone() },
+                "output_exists",
+                "dir/a.gp already exists, refusing to overwrite",
+            ),
+            (
+                FileError::InvalidInput {
+                    message: "m".to_string(),
+                },
+                "invalid_input",
+                "m",
+            ),
+            (
+                FileError::Internal {
+                    message: "i".to_string(),
+                },
+                "internal",
+                "i",
+            ),
+        ];
+        for (error, kind, message) in cases {
+            assert_eq!(error.kind(), kind);
+            assert_eq!(error.to_string(), message);
+        }
+        assert_eq!(Format::Gp.name(), "gp");
+        assert_eq!(Format::Json.name(), "opentab.json");
     }
 }

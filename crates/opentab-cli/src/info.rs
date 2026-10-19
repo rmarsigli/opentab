@@ -3,10 +3,10 @@ use std::path::Path;
 use opentab_command::Info;
 
 use crate::error::CliError;
-use crate::files;
 use crate::ids;
 use crate::output::Rendered;
 use crate::text::escape_controls;
+use opentab_files as files;
 
 pub fn run(path: &Path, show_ids: bool) -> Result<Rendered<Info>, CliError> {
     let score = files::read_score(path)?;
