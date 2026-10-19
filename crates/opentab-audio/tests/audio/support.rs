@@ -84,3 +84,24 @@ pub fn bank_voices(
         .map(|_| bank.instantiate(rate))
         .collect()
 }
+
+pub fn scratch_dir() -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix("sfz-")
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .expect("a scratch folder")
+}
+
+pub fn tiny_sfz_root() -> &'static Path {
+    static ROOT: OnceLock<(tempfile::TempDir, PathBuf)> = OnceLock::new();
+    let (_, root) = ROOT.get_or_init(|| {
+        let dir = scratch_dir();
+        let root = opentab_testkit::banks::tiny_sfz(dir.path());
+        (dir, root)
+    });
+    root
+}
+
+pub fn tiny_sfz_bank() -> opentab_audio::SfzBank {
+    opentab_audio::SfzBank::load(tiny_sfz_root()).expect("the tiny SFZ bank loads")
+}

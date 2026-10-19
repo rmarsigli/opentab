@@ -1,3 +1,5 @@
+mod sfz;
+
 use std::alloc::System;
 
 use opentab_audio::{Bank, BankError, SampleRate, Sf2Bank, Sf2Limits, Synth, UnsafeBank};
@@ -194,5 +196,9 @@ fn main() {
     every_bypass_route_is_refused_before_it_allocates();
     the_loader_estimate_covers_what_loading_allocates();
     structural_mutations_allocate_in_proportion_to_the_input();
-    println!("memory: 5 checks passed");
+    sfz::twenty_tracks_of_one_sfz_bank_decode_each_sample_once();
+    sfz::hostile_samples_never_allocate_what_they_declare();
+    sfz::text_bombs_stop_at_the_expansion_cap();
+    sfz::a_huge_declared_file_is_refused_before_it_is_read();
+    println!("memory: 9 checks passed");
 }

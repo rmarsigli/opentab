@@ -329,7 +329,7 @@ fn every_refusal_reads_as_a_sentence_for_the_user() {
     };
     assert_eq!(
         error.to_string(),
-        "this SoundFont was not loaded because one key would start too many voices at once. The file may be damaged or built to crash programs."
+        "this sound bank was not loaded because one key would start too many voices at once. The file may be damaged or built to crash programs."
     );
 }
 

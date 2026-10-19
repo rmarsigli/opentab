@@ -4,7 +4,7 @@ use opentab_audio::{Bank, BuiltInBank, SampleRate, frame_at, render_frames};
 use opentab_gp::read_gp;
 use opentab_playback::Speed;
 
-use crate::support::{PROFILES, bank_voices, performance, profile_name, tiny_bank};
+use crate::support::{PROFILES, bank_voices, performance, profile_name, tiny_bank, tiny_sfz_bank};
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
@@ -30,6 +30,13 @@ fn every_corpus_example_renders_its_opening_bars_in_both_profiles() {
 #[test]
 fn every_corpus_example_renders_its_opening_bars_with_the_tiny_sf2() {
     let bank = tiny_bank();
+    render_corpus(&bank);
+    assert!(bank.faults().is_empty(), "{:?}", bank.faults());
+}
+
+#[test]
+fn every_corpus_example_renders_its_opening_bars_with_the_tiny_sfz() {
+    let bank = tiny_sfz_bank();
     render_corpus(&bank);
     assert!(bank.faults().is_empty(), "{:?}", bank.faults());
 }

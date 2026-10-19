@@ -54,12 +54,12 @@ pub struct SynthFault {
 }
 
 #[derive(Debug, Default)]
-struct FaultLog {
+pub(crate) struct FaultLog {
     entries: Mutex<Vec<SynthFault>>,
 }
 
 impl FaultLog {
-    fn push(&self, fault: SynthFault) {
+    pub(crate) fn push(&self, fault: SynthFault) {
         let mut entries = match self.entries.lock() {
             Ok(entries) => entries,
             Err(poisoned) => poisoned.into_inner(),
@@ -69,7 +69,7 @@ impl FaultLog {
         }
     }
 
-    fn snapshot(&self) -> Vec<SynthFault> {
+    pub(crate) fn snapshot(&self) -> Vec<SynthFault> {
         match self.entries.lock() {
             Ok(entries) => entries.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),

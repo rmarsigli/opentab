@@ -21,12 +21,12 @@ pub const SF3_UNSUPPORTED: &str = "This is an SF3 SoundFont, which keeps its sou
 pub enum BankError {
     #[error("{message}")]
     Unsupported { message: String },
-    #[error("this file is not a usable SoundFont: {reason}")]
+    #[error("this file is not a usable sound bank: {reason}")]
     Invalid { reason: String },
-    #[error("the sound engine failed while reading this SoundFont: {message}")]
+    #[error("the sound engine failed while reading this sound bank: {message}")]
     Panicked { message: String },
     #[error(
-        "this SoundFont was not loaded because {reason}. The file may be damaged or built to crash programs."
+        "this sound bank was not loaded because {reason}. The file may be damaged or built to crash programs."
     )]
     Unsafe { reason: UnsafeBank },
 }
@@ -65,4 +65,46 @@ pub enum UnsafeBank {
     Layers,
     #[error("too many presets stack many layers")]
     LayeredPresets,
+    #[error("an instrument text file is larger than {limit_kib} KiB")]
+    SfzFileTooLarge { limit_kib: u64 },
+    #[error(
+        "an instrument grows past {limit_mib} MiB of text once its includes and variables are expanded"
+    )]
+    ExpandedTextTooLarge { limit_mib: u64 },
+    #[error("the bank holds more than {limit_mib} MiB of instrument text")]
+    BankTextTooLarge { limit_mib: u64 },
+    #[error("an instrument has more than {limit} regions")]
+    TooManyRegions { limit: u64 },
+    #[error("includes are nested more than {limit} levels deep")]
+    IncludeTooDeep { limit: u64 },
+    #[error("an instrument includes more than {limit} files")]
+    TooManyIncludes { limit: u64 },
+    #[error("files include each other in a loop")]
+    IncludeCycle,
+    #[error("an instrument defines more than {limit} variables")]
+    TooManyDefines { limit: u64 },
+    #[error("variable definitions hold more than {limit_kib} KiB")]
+    DefineTextTooLarge { limit_kib: u64 },
+    #[error("the bank folder holds more than {limit} entries")]
+    TooManyFiles { limit: u64 },
+    #[error("the bank folders are nested more than {limit} levels deep")]
+    FolderTooDeep { limit: u64 },
+    #[error("the bank has more than {limit} instrument files")]
+    TooManyInstruments { limit: u64 },
+    #[error("its program map file is larger than {limit_kib} KiB")]
+    SidecarTooLarge { limit_kib: u64 },
+    #[error("a sample file is larger than {limit_mib} MiB")]
+    AudioFileTooLarge { limit_mib: u64 },
+    #[error("a sample is longer than {limit} frames")]
+    SampleTooLong { limit: u64 },
+    #[error("a sample has {channels} channels, and OpenTab plays mono and stereo samples only")]
+    SampleChannels { channels: u32 },
+    #[error("a sample runs at {hz} Hz, outside the rates OpenTab plays")]
+    SampleRate { hz: u32 },
+    #[error("its decoded samples would need more than {limit_mib} MiB")]
+    DecodedAudioBudget { limit_mib: u64 },
+    #[error("an Ogg Vorbis sample declares decoding tables larger than OpenTab allows")]
+    VorbisTables,
+    #[error("an Ogg Vorbis sample declares text longer than the file")]
+    VorbisComments,
 }
