@@ -370,8 +370,10 @@ mod tests {
         let mut input = line(&initialize());
         input.extend_from_slice(&call);
         input.push(b'\n');
+        let (errors, replies) = unbounded_channel();
+        drop(replies);
         let mut forwarded = Vec::new();
-        assert_eq!(pumped_in(&input, &mut forwarded), Vec::<String>::new());
+        run(pump_in(input.as_slice(), &mut forwarded, errors));
         assert!(
             forwarded == input,
             "{} of {} bytes",
