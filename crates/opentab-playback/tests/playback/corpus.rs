@@ -5,9 +5,11 @@ use std::path::PathBuf;
 use opentab_gp::read_gp;
 use opentab_playback::{
     MidiMessage, PlaybackOptions, Profile, RampGrid, ScoreTime, Speed, TempoMap, beat_grid,
-    perform, play_order,
+    export_midi, perform, play_order,
 };
 use zip::ZipArchive;
+
+use crate::smf_writer::{pair_notes, reparse};
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const SCORE_ENTRY: &str = "Content/score.gpif";
@@ -167,4 +169,36 @@ fn every_corpus_score_performs_with_every_note_paired() {
         }
     }
     assert!(notes > 0);
+}
+
+#[test]
+fn every_corpus_example_exports_reparses_and_pairs_every_note() {
+    let Some(paths) = corpus() else {
+        return;
+    };
+    assert_eq!(paths.len(), EXPECTED_FILES);
+    for profile in [Profile::Gp, Profile::Musical] {
+        let mut notes = 0;
+        let mut shortest = u64::MAX;
+        let mut bytes_written = 0;
+        for path in &paths {
+            let bytes = std::fs::read(path).expect("corpus file");
+            let score =
+                read_gp(&bytes).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            let file = export_midi(&score, profile)
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            let reparsed = reparse(&file);
+            assert_eq!(reparsed.division, profile.ppq().get(), "{}", path.display());
+            let pairing = pair_notes(&reparsed)
+                .unwrap_or_else(|error| panic!("{} {profile:?}: {error}", path.display()));
+            assert!(pairing.notes > 0, "{}", path.display());
+            notes += pairing.notes;
+            shortest = shortest.min(pairing.shortest.unwrap_or(u64::MAX));
+            bytes_written += file.len();
+        }
+        println!(
+            "corpus {profile:?}: {} files, {notes} notes paired, shortest {shortest} ticks, {bytes_written} bytes",
+            paths.len()
+        );
+    }
 }

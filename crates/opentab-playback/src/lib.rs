@@ -10,6 +10,7 @@ mod midi;
 mod notes;
 mod order;
 mod perform;
+mod smf;
 mod tempo;
 mod time;
 mod unplayed;
@@ -24,9 +25,10 @@ pub use midi::{
 };
 pub use order::{MAX_PLAYED_BARS, PlayOrder, PlayedBar, PlayedPosition, play_order};
 pub use perform::{Performance, PlaybackOptions, Profile, perform};
+pub use smf::{Ppq, TrackLayout, export_midi, to_ticks, write_smf};
 pub use tempo::{
-    DEFAULT_QUARTERS_PER_MINUTE, MAX_PLAYBACK_DECIMALS, RampGrid, RampStep, TempoMap, TempoSegment,
-    playback_bpm, quarters_per_minute, quarters_per_unit,
+    DEFAULT_QUARTERS_PER_MINUTE, JumpTempo, MAX_PLAYBACK_DECIMALS, RampGrid, RampStep, TempoMap,
+    TempoSegment, playback_bpm, quarters_per_minute, quarters_per_unit,
 };
 pub use time::{MAX_SPEED, MIN_SPEED, ScoreTime, Seconds, Speed};
 pub use unplayed::{PlaybackWarning, UnplayedFeature, UnplayedKind};

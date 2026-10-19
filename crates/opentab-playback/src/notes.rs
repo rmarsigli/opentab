@@ -5,11 +5,12 @@ use opentab_model::{
     gm_drum_kit,
 };
 
-use crate::bends::gp_bend;
+use crate::bends::bend_events;
 use crate::exact::Exact;
 use crate::harmonics;
 use crate::midi::{Channel, MidiMessage, NOTE_OFF_VELOCITY, velocity_of};
 use crate::order::{PlayOrder, PlayedBar};
+use crate::perform::Profile;
 use crate::{PlaybackError, PlaybackWarning, ScoreTime};
 
 const MAX_KEY: u16 = 127;
@@ -20,8 +21,16 @@ pub(crate) struct Pending {
     pub(crate) rank: u8,
     pub(crate) order: usize,
     pub(crate) track: usize,
+    pub(crate) staff: usize,
     pub(crate) channel: Channel,
     pub(crate) message: MidiMessage,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Lane {
+    pub(crate) track: usize,
+    pub(crate) staff: usize,
+    pub(crate) channel: Channel,
 }
 
 #[derive(Debug, Default)]
@@ -30,14 +39,15 @@ pub(crate) struct Stream {
 }
 
 impl Stream {
-    pub(crate) fn push(&mut self, at: Exact, track: usize, channel: Channel, message: MidiMessage) {
+    pub(crate) fn push(&mut self, at: Exact, lane: Lane, message: MidiMessage) {
         let order = self.pending.len();
         self.pending.push(Pending {
             at,
             rank: message.rank(),
             order,
-            track,
-            channel,
+            track: lane.track,
+            staff: lane.staff,
+            channel: lane.channel,
             message,
         });
     }
@@ -45,6 +55,7 @@ impl Stream {
 
 #[derive(Debug, Clone, Copy)]
 struct Sounding {
+    staff: usize,
     start: Exact,
     end: Exact,
     key: u8,
@@ -88,6 +99,7 @@ pub(crate) struct TrackWriter<'a> {
     track: &'a Track,
     index: usize,
     channel: Channel,
+    profile: Profile,
     kit: Option<DrumKit>,
     soundings: Vec<Sounding>,
     ties: BTreeMap<TieKey, OpenTie>,
@@ -130,12 +142,14 @@ impl<'a> TrackWriter<'a> {
         index: usize,
         track: &'a Track,
         channel: Channel,
+        profile: Profile,
     ) -> TrackWriter<'a> {
         TrackWriter {
             score,
             track,
             index,
             channel,
+            profile,
             kit: track.kit().cloned(),
             soundings: Vec::new(),
             ties: BTreeMap::new(),
@@ -159,10 +173,10 @@ impl<'a> TrackWriter<'a> {
             }
         }
         for sounding in &self.soundings {
+            let lane = self.lane(sounding.staff);
             stream.push(
                 sounding.start,
-                self.index,
-                self.channel,
+                lane,
                 MidiMessage::NoteOn {
                     key: sounding.key,
                     velocity: sounding.velocity,
@@ -170,8 +184,7 @@ impl<'a> TrackWriter<'a> {
             );
             stream.push(
                 sounding.end,
-                self.index,
-                self.channel,
+                lane,
                 MidiMessage::NoteOff {
                     key: sounding.key,
                     velocity: NOTE_OFF_VELOCITY,
@@ -179,6 +192,14 @@ impl<'a> TrackWriter<'a> {
             );
         }
         Ok(self.warnings)
+    }
+
+    fn lane(&self, staff: usize) -> Lane {
+        Lane {
+            track: self.index,
+            staff,
+            channel: self.channel,
+        }
     }
 
     fn pickup_shift(&self, played: &PlayedBar, voice: &Voice) -> Result<Exact, PlaybackError> {
@@ -303,11 +324,10 @@ impl<'a> TrackWriter<'a> {
                 span
             };
             if self.track.instrument.kind == InstrumentKind::Fretted {
-                for event in gp_bend(note, sounding.start, sounding.length)? {
+                for event in bend_events(note, sounding.start, sounding.length, self.profile)? {
                     stream.push(
                         event.at,
-                        self.index,
-                        self.channel,
+                        self.lane(place.staff),
                         MidiMessage::PitchBend { value: event.value },
                     );
                 }
@@ -323,22 +343,29 @@ impl<'a> TrackWriter<'a> {
                     .enumerate()
                 {
                     let key = if index % 2 == 0 { key } else { auxiliary };
-                    self.sound(piece, key, velocity, None);
+                    self.sound(piece, key, velocity, place.staff, None);
                 }
             } else if let Some(tremolo) = beat.effects.tremolo_picking {
                 let value = Fraction::new(1, tremolo.value().denominator());
                 for piece in pieces(sounding, value)? {
-                    self.sound(piece, key, velocity, None);
+                    self.sound(piece, key, velocity, place.staff, None);
                 }
             } else {
                 let tie = place.ties.then_some((place, note, span));
-                self.sound(sounding, key, velocity, tie);
+                self.sound(sounding, key, velocity, place.staff, tie);
             }
         }
         Ok(())
     }
 
-    fn sound(&mut self, span: Span, key: u8, velocity: u8, tie: Option<(Place, &Note, Span)>) {
+    fn sound(
+        &mut self,
+        span: Span,
+        key: u8,
+        velocity: u8,
+        staff: usize,
+        tie: Option<(Place, &Note, Span)>,
+    ) {
         let Ok(end) = span.start.add(span.length) else {
             return;
         };
@@ -347,6 +374,7 @@ impl<'a> TrackWriter<'a> {
         }
         let Some((place, note, written)) = tie else {
             self.soundings.push(Sounding {
+                staff,
                 start: span.start,
                 end,
                 key,
@@ -380,6 +408,7 @@ impl<'a> TrackWriter<'a> {
             return;
         }
         self.soundings.push(Sounding {
+            staff,
             start: span.start,
             end,
             key,
@@ -432,7 +461,7 @@ impl<'a> TrackWriter<'a> {
                 };
                 let fretted = open + u16::from(fret);
                 let pitch = note.effects.harmonic.map_or(fretted, |harmonic| {
-                    harmonics::sounding(open, fretted, harmonic)
+                    harmonics::sounding(open, fretted, harmonic, self.profile)
                 });
                 self.out_of_range(at, pitch)
             }

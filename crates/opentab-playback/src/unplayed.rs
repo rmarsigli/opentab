@@ -5,6 +5,8 @@ use opentab_model::{
 };
 
 use crate::ScoreTime;
+use crate::bends::gp_drops;
+use crate::harmonics::semitones;
 use crate::perform::Profile;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,6 +21,8 @@ pub enum UnplayedKind {
     Slide,
     Tap,
     BendBelowPitch,
+    DipBend,
+    OffNodeHarmonic,
     TremoloBar,
     Stroke,
     FadeIn,
@@ -136,7 +140,7 @@ pub(crate) fn bend_below_pitch(note: &Note) -> bool {
     })
 }
 
-fn note_kinds(note: &Note) -> Vec<UnplayedKind> {
+fn note_kinds(note: &Note, profile: Profile) -> Vec<UnplayedKind> {
     let effects = &note.effects;
     let flags = [
         (effects.ghost, UnplayedKind::Ghost),
@@ -149,6 +153,16 @@ fn note_kinds(note: &Note) -> Vec<UnplayedKind> {
         (effects.slide.is_some(), UnplayedKind::Slide),
         (effects.tap.is_some(), UnplayedKind::Tap),
         (bend_below_pitch(note), UnplayedKind::BendBelowPitch),
+        (
+            profile == Profile::Gp && effects.bend.is_some_and(gp_drops),
+            UnplayedKind::DipBend,
+        ),
+        (
+            effects
+                .harmonic
+                .is_some_and(|harmonic| semitones(harmonic.fret, profile).is_none()),
+            UnplayedKind::OffNodeHarmonic,
+        ),
     ];
     flags
         .into_iter()
@@ -253,7 +267,7 @@ pub(crate) fn catalogue(score: &Score, profile: Profile) -> Vec<UnplayedFeature>
                         catalogue.note(Some(index), kind, bar_index);
                     }
                     for note in &beat.notes {
-                        for kind in note_kinds(note) {
+                        for kind in note_kinds(note, profile) {
                             catalogue.note(Some(index), kind, bar_index);
                         }
                     }

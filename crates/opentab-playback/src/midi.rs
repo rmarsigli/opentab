@@ -66,6 +66,7 @@ pub struct TimedEvent {
     pub at: ScoreTime,
     pub seq: u32,
     pub track: usize,
+    pub staff: usize,
     pub channel: Channel,
     pub message: MidiMessage,
 }
@@ -150,6 +151,7 @@ pub struct ChannelSetup {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TrackSetup {
     pub name: String,
+    pub staves: usize,
     pub channel: Channel,
     pub channels: Vec<ChannelSetup>,
 }

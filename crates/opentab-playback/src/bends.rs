@@ -3,6 +3,7 @@ use opentab_model::{Bend, BendPoint, Note};
 use crate::PlaybackError;
 use crate::exact::Exact;
 use crate::midi::{BEND_CENTRE, BEND_MAX, BEND_RANGE_SEMITONES};
+use crate::perform::Profile;
 use crate::unplayed::bend_below_pitch;
 
 const CENTS_PER_UNIT: i32 = 2;
@@ -14,6 +15,18 @@ const PERCENT: i128 = 100;
 pub(crate) struct BendEvent {
     pub(crate) at: Exact,
     pub(crate) value: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Contour {
+    Line,
+    Peak,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Shaped {
+    bend: Bend,
+    contour: Contour,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -86,7 +99,8 @@ fn line(out: &mut Vec<BendEvent>, from: Knot, to: Knot) -> Result<(), PlaybackEr
     Ok(())
 }
 
-fn shape(out: &mut Vec<BendEvent>, window: Window, bend: Bend) -> Result<(), PlaybackError> {
+fn shape(out: &mut Vec<BendEvent>, window: Window, shaped: Shaped) -> Result<(), PlaybackError> {
+    let bend = shaped.bend;
     let origin = window.knot(bend.origin())?;
     let middle_start = window.knot(bend.middle_start())?;
     let middle_end = window.knot(bend.middle_end())?;
@@ -95,37 +109,86 @@ fn shape(out: &mut Vec<BendEvent>, window: Window, bend: Bend) -> Result<(), Pla
         at: window.start,
         value: bend_value(origin.units),
     });
-    if origin.units == destination.units && middle_start.units != origin.units {
-        line(out, origin, middle_start)?;
-        out.push(BendEvent {
-            at: middle_end.at.max(middle_start.at),
-            value: bend_value(middle_end.units),
-        });
-        line(
-            out,
-            Knot {
-                at: middle_end.at.max(middle_start.at),
-                units: middle_end.units,
-            },
-            destination,
-        )?;
-    } else {
-        line(out, origin, destination)?;
+    match shaped.contour {
+        Contour::Peak => {
+            line(out, origin, middle_start)?;
+            let held = middle_end.at.max(middle_start.at);
+            out.push(BendEvent {
+                at: held,
+                value: bend_value(middle_end.units),
+            });
+            line(
+                out,
+                Knot {
+                    at: held,
+                    units: middle_end.units,
+                },
+                destination,
+            )?;
+        }
+        Contour::Line => line(out, origin, destination)?,
     }
     Ok(())
 }
 
-pub(crate) fn gp_bend(
+fn at_pitch_or_above(point: BendPoint) -> BendPoint {
+    BendPoint::new(point.offset(), point.value().max(0)).unwrap_or(point)
+}
+
+fn gp_contour(bend: Bend) -> Option<Shaped> {
+    let origin = at_pitch_or_above(bend.origin());
+    let destination = at_pitch_or_above(bend.destination());
+    let middle = bend.middle_value();
+    if middle < origin.value().min(destination.value()) {
+        return None;
+    }
+    let contour = if middle > origin.value().max(destination.value()) {
+        Contour::Peak
+    } else {
+        Contour::Line
+    };
+    let bend = Bend::new(origin, bend.middle_start(), bend.middle_end(), destination).ok()?;
+    Some(Shaped { bend, contour })
+}
+
+pub(crate) fn gp_drops(bend: Bend) -> bool {
+    gp_contour(bend).is_none()
+}
+
+fn musical_contour(note: &Note, bend: Bend) -> Option<Shaped> {
+    if bend_below_pitch(note) {
+        return None;
+    }
+    let origin = units_of(bend.origin().value());
+    let middle = units_of(bend.middle_value());
+    let contour = if origin == units_of(bend.destination().value()) && middle != origin {
+        Contour::Peak
+    } else {
+        Contour::Line
+    };
+    Some(Shaped { bend, contour })
+}
+
+pub(crate) fn bend_events(
     note: &Note,
     start: Exact,
     length: Exact,
+    profile: Profile,
 ) -> Result<Vec<BendEvent>, PlaybackError> {
     let window = Window { start, length };
-    let bend = note.effects.bend.filter(|_| !bend_below_pitch(note));
+    let bent = note.effects.bend.and_then(|bend| match profile {
+        Profile::Gp => gp_contour(bend),
+        Profile::Musical => musical_contour(note, bend),
+    });
     let flat = BendPoint::default();
-    let shaped = match (bend, note.effects.vibrato) {
-        (Some(bend), _) => Some(bend),
-        (None, Some(_)) => Bend::new(flat, flat, flat, BendPoint::new(100, 0).unwrap_or(flat)).ok(),
+    let shaped = match (bent, note.effects.vibrato) {
+        (Some(shaped), _) => Some(shaped),
+        (None, Some(_)) => Bend::new(flat, flat, flat, BendPoint::new(100, 0).unwrap_or(flat))
+            .ok()
+            .map(|bend| Shaped {
+                bend,
+                contour: Contour::Line,
+            }),
         (None, None) => None,
     };
     let Some(shaped) = shaped else {

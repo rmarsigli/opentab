@@ -27,6 +27,7 @@ serde_json = "1"
 num-rational = { version = "0.4", default-features = false, features = ["serde"] }
 thiserror = "2"
 proptest = "1"
+midly = { version = "=0.5.3", default-features = false, features = ["alloc", "std", "strict"] }
 clap = { version = "4", features = ["derive"] }
 sha2 = "0.10"
 toml = "0.8"

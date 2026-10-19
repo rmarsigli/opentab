@@ -11,6 +11,7 @@ opentab-model = { path = "../opentab-model" }
 thiserror.workspace = true
 
 [dev-dependencies]
+midly.workspace = true
 opentab-gp = { path = "../opentab-gp" }
 opentab-testkit = { path = "../opentab-testkit" }
 num-rational.workspace = true

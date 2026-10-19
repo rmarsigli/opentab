@@ -41,6 +41,13 @@ impl RampGrid {
     pub const GP: RampGrid = RampGrid::Hold;
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum JumpTempo {
+    #[default]
+    SourcePlace,
+    HeldUntilBackward,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TempoSegment {
     pub start: ScoreTime,
@@ -225,6 +232,15 @@ impl TempoMap {
         order: &PlayOrder,
         ramp: RampGrid,
     ) -> Result<TempoMap, PlaybackError> {
+        TempoMap::build_with(score, order, ramp, JumpTempo::SourcePlace)
+    }
+
+    pub fn build_with(
+        score: &Score,
+        order: &PlayOrder,
+        ramp: RampGrid,
+        jumps: JumpTempo,
+    ) -> Result<TempoMap, PlaybackError> {
         let profile = Profile::new(score, ramp)?;
         let mut map = TempoMap {
             segments: Vec::new(),
@@ -236,6 +252,8 @@ impl TempoMap {
                 Exact::integer(i128::from(DEFAULT_QUARTERS_PER_MINUTE)),
             )?;
         }
+        let mut previous: Option<usize> = None;
+        let mut held: Option<Exact> = None;
         for played in &order.bars {
             let source_start = *profile
                 .bar_starts
@@ -243,11 +261,30 @@ impl TempoMap {
                 .ok_or(PlaybackError::OrderMismatch)?;
             let source_end = source_start.add(Exact::of(played.length))?;
             let played_start = Exact::of(played.start.whole_notes());
+            let resets = previous.is_none_or(|source| played.source < source);
+            previous = Some(played.source);
+            let first_point = profile
+                .points
+                .get(
+                    profile
+                        .points
+                        .partition_point(|point| point.at < source_start),
+                )
+                .map(|point| point.at);
             let mut x = source_start;
             while x < source_end {
                 let piece = profile.piece(x)?;
                 let at = played_start.add(x.sub(source_start)?)?;
-                map.push(at, piece.qpm)?;
+                let keep = match (jumps, held) {
+                    (JumpTempo::HeldUntilBackward, Some(qpm))
+                        if !resets && first_point.is_none_or(|point| x < point) =>
+                    {
+                        qpm
+                    }
+                    _ => piece.qpm,
+                };
+                map.push(at, keep)?;
+                held = Some(keep);
                 x = piece
                     .until
                     .map_or(source_end, |until| until.min(source_end));

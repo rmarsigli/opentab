@@ -7,9 +7,10 @@ use crate::midi::{
     BEND_RANGE_SEMITONES, Channel, ChannelSetup, ChannelState, ConductorEvent, ConductorKind,
     MidiMessage, PITCH_BEND_RANGE_RPN, TimedEvent, TrackSetup,
 };
-use crate::notes::{Stream, TrackWriter};
+use crate::notes::{Lane, Stream, TrackWriter};
 use crate::order::{PlayOrder, play_order};
-use crate::tempo::{RampGrid, TempoMap};
+use crate::smf::{Ppq, TrackLayout};
+use crate::tempo::{JumpTempo, RampGrid, TempoMap};
 use crate::unplayed::{UnplayedFeature, catalogue};
 use crate::{PlaybackError, PlaybackWarning, ScoreTime};
 
@@ -29,6 +30,27 @@ impl Profile {
             Profile::Musical => RampGrid::MUSICAL,
         }
     }
+
+    pub fn jump_tempo(self) -> JumpTempo {
+        match self {
+            Profile::Gp => JumpTempo::HeldUntilBackward,
+            Profile::Musical => JumpTempo::SourcePlace,
+        }
+    }
+
+    pub fn ppq(self) -> Ppq {
+        match self {
+            Profile::Gp => Ppq::GP,
+            Profile::Musical => Ppq::MUSICAL,
+        }
+    }
+
+    pub fn track_layout(self) -> TrackLayout {
+        match self {
+            Profile::Gp => TrackLayout::PerStaff,
+            Profile::Musical => TrackLayout::PerTrack,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -38,6 +60,7 @@ pub struct PlaybackOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Performance {
+    pub profile: Profile,
     pub order: PlayOrder,
     pub tempo: TempoMap,
     pub tracks: Vec<TrackSetup>,
@@ -143,7 +166,12 @@ fn conductor(
     Ok(events)
 }
 
-fn setup(score: &Score, channels: &[Channel], stream: &mut Stream) -> Vec<TrackSetup> {
+fn setup(
+    score: &Score,
+    channels: &[Channel],
+    layout: TrackLayout,
+    stream: &mut Stream,
+) -> Vec<TrackSetup> {
     score
         .tracks
         .iter()
@@ -155,25 +183,35 @@ fn setup(score: &Score, channels: &[Channel], stream: &mut Stream) -> Vec<TrackS
                 bend_range: BEND_RANGE_SEMITONES,
                 ..ChannelState::default()
             };
-            stream.push(
-                Exact::ZERO,
-                index,
-                *channel,
-                MidiMessage::Program {
-                    program: state.program,
-                },
-            );
-            stream.push(
-                Exact::ZERO,
-                index,
-                *channel,
-                MidiMessage::Rpn {
-                    parameter: PITCH_BEND_RANGE_RPN,
-                    value: state.bend_range,
-                },
-            );
+            let lanes = match layout {
+                TrackLayout::PerStaff => track.staves.len(),
+                TrackLayout::PerTrack => 1,
+            };
+            for staff in 0..lanes {
+                let lane = Lane {
+                    track: index,
+                    staff,
+                    channel: *channel,
+                };
+                stream.push(
+                    Exact::ZERO,
+                    lane,
+                    MidiMessage::Program {
+                        program: state.program,
+                    },
+                );
+                stream.push(
+                    Exact::ZERO,
+                    lane,
+                    MidiMessage::Rpn {
+                        parameter: PITCH_BEND_RANGE_RPN,
+                        value: state.bend_range,
+                    },
+                );
+            }
             TrackSetup {
                 name: track.name.clone(),
+                staves: track.staves.len(),
                 channel: *channel,
                 channels: vec![ChannelSetup {
                     channel: *channel,
@@ -186,16 +224,26 @@ fn setup(score: &Score, channels: &[Channel], stream: &mut Stream) -> Vec<TrackS
 
 pub fn perform(score: &Score, options: &PlaybackOptions) -> Result<Performance, PlaybackError> {
     let order = play_order(score);
-    let tempo = TempoMap::build(score, &order, options.profile.ramp_grid())?;
+    let tempo = TempoMap::build_with(
+        score,
+        &order,
+        options.profile.ramp_grid(),
+        options.profile.jump_tempo(),
+    )?;
     let mut warnings = Vec::new();
     let channels = match options.profile {
         Profile::Gp => gp_channels(&score.tracks),
         Profile::Musical => pooled_channels(&score.tracks, &mut warnings),
     };
     let mut stream = Stream::default();
-    let tracks = setup(score, &channels, &mut stream);
+    let tracks = setup(
+        score,
+        &channels,
+        options.profile.track_layout(),
+        &mut stream,
+    );
     for ((index, track), channel) in score.tracks.iter().enumerate().zip(&channels) {
-        let writer = TrackWriter::new(score, index, track, *channel);
+        let writer = TrackWriter::new(score, index, track, *channel, options.profile);
         warnings.extend(writer.write(&order, &mut stream)?);
     }
     let mut pending = stream.pending;
@@ -211,11 +259,13 @@ pub fn perform(score: &Score, options: &PlaybackOptions) -> Result<Performance, 
             at: ScoreTime::new(item.at.fraction()?)?,
             seq: u32::try_from(seq).map_err(|_| PlaybackError::TooManyEvents)?,
             track: item.track,
+            staff: item.staff,
             channel: item.channel,
             message: item.message,
         });
     }
     Ok(Performance {
+        profile: options.profile,
         conductor: conductor(score, &order, &tempo)?,
         clicks: beat_grid(score, &order),
         unplayed: catalogue(score, options.profile),
@@ -253,6 +303,7 @@ impl Performance {
                     at,
                     seq: u32::try_from(out.len()).unwrap_or(u32::MAX),
                     track,
+                    staff: 0,
                     channel: channel.channel,
                     message,
                 });
