@@ -265,6 +265,27 @@ fn open_failures_carry_the_cli_error_kinds() {
     std::fs::write(&broken_gp, b"not a zip").unwrap();
     let error = server.fails("open", json!({"path": broken_gp.display().to_string()}));
     assert_eq!(error["kind"], "invalid_input");
+    for special in [
+        dir.path().join("folder.gp"),
+        dir.path().join("fifo.gp"),
+        dir.path().join("zero.gp"),
+    ] {
+        let name = special.file_name().unwrap().to_string_lossy().into_owned();
+        match name.as_str() {
+            "folder.gp" => std::fs::create_dir(&special).unwrap(),
+            "fifo.gp" => assert!(
+                std::process::Command::new("mkfifo")
+                    .arg(&special)
+                    .status()
+                    .unwrap()
+                    .success()
+            ),
+            _ => std::os::unix::fs::symlink("/dev/zero", &special).unwrap(),
+        }
+        let error = server.fails("open", json!({"path": special.display().to_string()}));
+        assert_eq!(error["kind"], "io", "{name}");
+        assert!(message(&error).ends_with("not a regular file"), "{error}");
+    }
     let broken_json = dir.path().join("broken.opentab.json");
     std::fs::write(&broken_json, b"{}").unwrap();
     let error = server.fails("open", json!({"path": broken_json.display().to_string()}));

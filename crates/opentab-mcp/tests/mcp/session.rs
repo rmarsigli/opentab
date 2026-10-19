@@ -243,3 +243,42 @@ fn several_sessions_stay_independent() {
     assert_eq!(untouched["title"], json!(read_fixture(FIXTURE).meta.title));
     assert_eq!(untouched["can_undo"], false);
 }
+
+#[test]
+fn exporting_onto_the_source_replaces_it_atomically_and_reads_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("song.gp");
+    std::fs::copy(crate::support::fixture_path(FIXTURE), &source).unwrap();
+    let mut permissions = std::fs::metadata(&source).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&source, permissions).unwrap();
+    let mut server = Server::start();
+    let session = server.open(&source.display().to_string());
+    let title = Command::SetMeta {
+        field: MetaField::Title,
+        value: "Saved over the source".to_owned(),
+    };
+    server.ok(
+        "apply",
+        json!({"session": session, "commands": commands(std::slice::from_ref(&title))}),
+    );
+    let exported = server.ok(
+        "export",
+        json!({"session": session, "path": source.display().to_string()}),
+    );
+    assert_eq!(exported["format"], "gp");
+    let mut expected = read_fixture(FIXTURE);
+    apply(&mut expected, &title).unwrap();
+    let reread = read_gp(&std::fs::read(&source).unwrap()).unwrap();
+    assert_eq!(reread, normalised(&expected));
+    let names: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["song.gp"]);
+    let again = server.open(&source.display().to_string());
+    assert_eq!(
+        server.ok("info", json!({"session": again}))["title"],
+        "Saved over the source"
+    );
+}
