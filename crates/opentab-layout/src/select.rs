@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 
-use opentab_model::{Bar, Clef, InstrumentKind, Score, Track};
+use opentab_model::{Bar, Clef, InstrumentFamily, InstrumentKind, Score, Track};
 
 use crate::drums::DrumKit;
 use crate::furniture::StaffShape;
@@ -31,9 +31,16 @@ pub struct Selection {
 pub const TAB_PROGRAMS: [RangeInclusive<u8>; 2] = [24..=39, 104..=107];
 
 pub fn tab_by_default(track: &Track) -> bool {
-    let program = track.instrument.midi_program;
-    (MIN_TAB_STRINGS..=MAX_TAB_STRINGS).contains(&track.tuning.strings.len())
-        && TAB_PROGRAMS.iter().any(|range| range.contains(&program))
+    let instrument = &track.instrument;
+    let program = instrument.midi_program;
+    let fretted = match InstrumentFamily::of(instrument.kind, instrument.set, program) {
+        InstrumentFamily::Guitar | InstrumentFamily::Bass => true,
+        InstrumentFamily::Ethnic => {
+            instrument.set.is_none() && TAB_PROGRAMS.iter().any(|range| range.contains(&program))
+        }
+        _ => false,
+    };
+    (MIN_TAB_STRINGS..=MAX_TAB_STRINGS).contains(&track.tuning.strings.len()) && fretted
 }
 
 pub fn staff_kinds(track: &Track, mode: Option<StaffMode>) -> Vec<StaffKind> {

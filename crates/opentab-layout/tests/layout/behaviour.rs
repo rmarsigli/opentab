@@ -3,7 +3,7 @@ use opentab_layout::{
     MIN_STAFF_SPACE, Micrometres, PageSize, Primitive, StaffKind, StaffMode, TAB_LINE_SPACING,
     Units, layout,
 };
-use opentab_model::{Clef, InstrumentKind, KeySignature, NoteValue, Score};
+use opentab_model::{Clef, InstrumentKind, InstrumentSet, KeySignature, NoteValue, Score};
 
 use crate::support::{
     BarSpec, Item, add_track, bar_glyphs, bar_of, check, content, guitar, lines, note, notehead,
@@ -357,8 +357,61 @@ fn staff_modes_follow_the_string_count_unless_forced() {
     assert_eq!(kinds(Some(StaffMode::Standard)).len(), 4);
 }
 
+fn tab_tracks(score: &Score) -> Vec<usize> {
+    let list = laid_out(score);
+    let mut tracks: Vec<usize> = list
+        .pages
+        .iter()
+        .flat_map(|page| &page.systems)
+        .flat_map(|system| &system.staves)
+        .filter(|staff| staff.kind == StaffKind::Tab)
+        .map(|staff| staff.track)
+        .collect();
+    tracks.sort_unstable();
+    tracks.dedup();
+    tracks
+}
+
 #[test]
-fn only_guitar_family_programs_get_a_tab_staff_by_default() {
+fn the_instrument_set_decides_the_tab_staff_before_the_program() {
+    let mut score = guitar(&whole_bars(1));
+    score.tracks[0].instrument.set = Some(InstrumentSet::Voice);
+    score.tracks[0].instrument.midi_program = 25;
+    let cases = [
+        (Some(InstrumentSet::SteelGuitar), 53),
+        (Some(InstrumentSet::ElectricBass), 0),
+        (Some(InstrumentSet::AcousticPiano), 25),
+        (Some(InstrumentSet::Violin), 40),
+        (None, 25),
+        (None, 105),
+        (None, 53),
+    ];
+    for (set, program) in cases {
+        let index = add_track(&mut score, "T", 6, InstrumentKind::Fretted);
+        score.tracks[index].instrument.set = set;
+        score.tracks[index].instrument.midi_program = program;
+    }
+    assert_eq!(tab_tracks(&score), vec![1, 2, 5, 6]);
+}
+
+#[test]
+fn amazing_grace_draws_its_singer_without_tab_and_its_guitar_with_tab() {
+    let Ok(directory) = std::env::var("OPENTAB_CORPUS") else {
+        println!("amazing-grace check skipped: set OPENTAB_CORPUS to the examples directory");
+        return;
+    };
+    let path = std::path::Path::new(&directory).join("amazing-grace.gp");
+    let score = opentab_gp::read_gp(&std::fs::read(path).unwrap()).unwrap();
+    assert_eq!(score.tracks[0].instrument.set, Some(InstrumentSet::Voice));
+    assert_eq!(
+        score.tracks[1].instrument.set,
+        Some(InstrumentSet::SteelGuitar)
+    );
+    assert_eq!(tab_tracks(&score), vec![1]);
+}
+
+#[test]
+fn without_a_set_only_guitar_family_programs_get_a_tab_staff_by_default() {
     let mut score = guitar(&whole_bars(1));
     let programs: [u8; 9] = [4, 16, 23, 24, 39, 40, 103, 104, 107];
     for program in programs {
@@ -369,6 +422,7 @@ fn only_guitar_family_programs_get_a_tab_staff_by_default() {
             InstrumentKind::Fretted,
         );
         score.tracks[index].instrument.midi_program = program;
+        score.tracks[index].instrument.set = None;
     }
     let kinds = |mode: Option<StaffMode>| {
         let options = LayoutOptions {

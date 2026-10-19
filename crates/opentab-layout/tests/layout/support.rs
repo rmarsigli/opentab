@@ -205,6 +205,22 @@ fn inside(outer: Rect, inner: Rect) -> bool {
         && inner.max.y <= outer.max.y
 }
 
+fn fretted_instrument(track: &opentab_model::Track) -> bool {
+    use opentab_model::InstrumentSet;
+    let program = track.instrument.midi_program;
+    match track.instrument.set {
+        Some(set) => matches!(
+            set,
+            InstrumentSet::ElectricGuitar
+                | InstrumentSet::SteelGuitar
+                | InstrumentSet::NylonGuitar
+                | InstrumentSet::ElectricBass
+                | InstrumentSet::AcousticBass
+        ),
+        None => (24..=39).contains(&program) || (104..=107).contains(&program),
+    }
+}
+
 pub fn expected_staves(score: &Score, options: &LayoutOptions) -> Vec<(usize, usize, StaffKind)> {
     let tracks: BTreeSet<usize> = match &options.tracks {
         Some(chosen) => chosen.iter().copied().collect(),
@@ -219,11 +235,7 @@ pub fn expected_staves(score: &Score, options: &LayoutOptions) -> Vec<(usize, us
             (false, _) | (true, Some(StaffMode::Standard)) => vec![StaffKind::Standard],
             (true, Some(StaffMode::Tab)) => vec![StaffKind::Tab],
             (true, Some(StaffMode::Both)) => vec![StaffKind::Standard, StaffKind::Tab],
-            (true, None)
-                if (4..=8).contains(&strings)
-                    && ((24..=39).contains(&track.instrument.midi_program)
-                        || (104..=107).contains(&track.instrument.midi_program)) =>
-            {
+            (true, None) if (4..=8).contains(&strings) && fretted_instrument(track) => {
                 vec![StaffKind::Standard, StaffKind::Tab]
             }
             (true, None) => vec![StaffKind::Standard],
