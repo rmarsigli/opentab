@@ -212,3 +212,33 @@ fn set_tempo_linear_reads_from_json() {
         .is_err()
     );
 }
+
+#[test]
+fn tempo_commands_refuse_a_tempo_without_an_exact_value() {
+    let mut fx = fixture();
+    let seven = Command::SetTempo {
+        master_bar: 0,
+        bpm: 120.123_456_7,
+    };
+    match rejected(&mut fx.score, &seven) {
+        CommandError::InvalidValue { message } => {
+            assert!(message.contains("six decimals"), "{message}")
+        }
+        other => panic!("{other:?}"),
+    }
+    round_trip(
+        &mut fx.score,
+        &Command::SetTempo {
+            master_bar: 0,
+            bpm: 120.123_456,
+        },
+    );
+    let restore = Command::RestoreTempoChanges {
+        master_bar: 0,
+        tempo_changes: vec![change(Fraction::new(1, 4), 128.488_062_080_115_01)],
+    };
+    assert!(matches!(
+        rejected(&mut fx.score, &restore),
+        CommandError::InvalidValue { .. }
+    ));
+}

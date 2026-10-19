@@ -1,6 +1,6 @@
 use opentab_model::{Fraction, Score, Tempo, TempoChange, TempoUnit};
 
-use crate::rules::{already_broken, check_tempo_changes};
+use crate::rules::{already_broken, check_exact, check_tempo_changes};
 use crate::{Command, CommandError};
 
 const WHAT: &str = "master bar";
@@ -19,6 +19,7 @@ pub(crate) fn set(score: &mut Score, master_bar: usize, bpm: f64) -> Result<Comm
         return Err(out_of_range(score, master_bar));
     }
     let tempo = Tempo::new(bpm).map_err(CommandError::model)?;
+    check_exact(tempo)?;
     let error = out_of_range(score, master_bar);
     let target = score.master_bars.get_mut(master_bar).ok_or(error)?;
     check_tempo_changes(target.time_signature, &target.tempo_changes).map_err(already_broken)?;

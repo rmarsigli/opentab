@@ -724,8 +724,8 @@ fn arb_duration() -> impl Strategy<Value = Duration> {
 
 fn arb_bpm() -> impl Strategy<Value = f64> {
     prop_oneof![
-        4 => 1.0f64..=1000.0,
-        1 => select(vec![0.0, 0.5, 1000.5, -3.0, 5000.0]),
+        4 => (100u32..=100_000).prop_map(|hundredths| f64::from(hundredths) / 100.0),
+        1 => select(vec![0.0, 0.5, 1000.5, -3.0, 5000.0, 120.123_456_7]),
     ]
 }
 

@@ -1,6 +1,6 @@
 use opentab_model::{
-    Bar, Beat, BeatId, Clef, Fraction, IdAllocator, InstrumentKind, Note, NoteKind, TempoChange,
-    TimeSignature, Track, Voice, VoiceSlot,
+    Bar, Beat, BeatId, Clef, Fraction, IdAllocator, InstrumentKind, Note, NoteKind, Tempo,
+    TempoChange, TimeSignature, Track, Voice, VoiceSlot,
 };
 
 use crate::CommandError;
@@ -136,6 +136,7 @@ pub(crate) fn check_tempo_changes(
     let start = Fraction::from_integer(0);
     let end = time_signature.bar_length();
     for change in tempo_changes {
+        check_exact(change.bpm)?;
         let position = change.position;
         if *position.denom() <= 0 || position < start || position >= end {
             return Err(CommandError::invalid(format!(
@@ -146,6 +147,16 @@ pub(crate) fn check_tempo_changes(
                 end.denom()
             )));
         }
+    }
+    Ok(())
+}
+
+pub(crate) fn check_exact(tempo: Tempo) -> Result<(), CommandError> {
+    if tempo.exact().is_none() {
+        return Err(CommandError::invalid(format!(
+            "tempo {} has more than six decimals, so it has no exact value",
+            tempo.bpm()
+        )));
     }
     Ok(())
 }

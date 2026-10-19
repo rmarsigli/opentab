@@ -146,7 +146,7 @@ fn removing_a_subtree_with_a_shared_or_unallocated_id_is_rejected() {
 }
 
 const CASES: u32 = 256;
-const COVERAGE_SAMPLES: usize = 256;
+const COVERAGE_SAMPLES: usize = 512;
 const MAX_COMMANDS_PER_CASE: usize = 48;
 const RUN_DIAGNOSE: &str = "run diagnose";
 const GUARDS: [&str; 8] = [
