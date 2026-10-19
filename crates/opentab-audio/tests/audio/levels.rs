@@ -125,4 +125,3 @@ fn the_limiter_passes_quiet_audio_and_never_reaches_full_scale() {
     );
     assert!(loud_left.iter().any(|sample| sample.abs() > settings.knee));
 }
-

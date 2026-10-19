@@ -101,7 +101,7 @@ cargo xtask mutants
 
 A full run takes several hours: with `opentab-gp` in the list it took about five hours on an 8 GB WSL machine. It uses most of that machine's memory, so do not start other builds or test runs while it works. It exits with 0 when no mutant was missed and none timed out, with 1 when any was, and with 2 when cargo-mutants is not installed or could not start. The missed and timed-out mutants are printed at the end.
 
-To spread the work over several sittings, run one shard at a time. `--shard K/N` is passed to cargo-mutants, which splits the list of mutants of all eight crates into N parts and tests only part K, counting from 0. The four runs below together cover every mutant:
+To spread the work over several sittings, run one shard at a time. `--shard K/N` is passed to cargo-mutants, which splits the list of mutants of the nine crates (`opentab-model`, `opentab-command`, `opentab-gp`, `opentab-layout`, `opentab-render`, `opentab-mcp`, `opentab-files`, `opentab-playback` and `opentab-audio`) into N parts and tests only part K, counting from 0. The four runs below together cover every mutant:
 
 ```
 cargo xtask mutants --shard 0/4

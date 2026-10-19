@@ -19,7 +19,8 @@ pub use bus::{BUS_FRACTION_BITS, Limiter, LimiterSettings};
 pub use error::AudioError;
 pub use rate::SampleRate;
 pub use render::{
-    BLOCK_FRAMES, MAX_FRAMES, RENDER_TAIL_MS, RenderedAudio, full_length, render_all, render_frames,
+    BLOCK_FRAMES, MAX_FRAMES, RENDER_TAIL_MS, RenderedAudio, TRACK_HEADROOM, full_length,
+    render_all, render_frames,
 };
 pub use schedule::{SampledEvent, Scheduler, frame_at};
 pub use synth::{Bank, BankFormat, BankInstrument, Synth};

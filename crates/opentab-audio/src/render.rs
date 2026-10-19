@@ -8,9 +8,13 @@ pub const BLOCK_FRAMES: usize = 512;
 pub const RENDER_TAIL_MS: u32 = 3000;
 pub const MAX_FRAMES: u64 = (u32::MAX as u64 - 36) / 4;
 const BUS_UNITY: f32 = (1u32 << BUS_FRACTION_BITS) as f32;
+pub const TRACK_HEADROOM: f32 = 8.0;
 
 fn to_bus(sample: f32) -> i64 {
-    let scaled = sample * BUS_UNITY;
+    if !sample.is_finite() {
+        return 0;
+    }
+    let scaled = sample.clamp(-TRACK_HEADROOM, TRACK_HEADROOM) * BUS_UNITY;
     let truncated = scaled as i64;
     if (truncated as f32) > scaled {
         truncated.saturating_sub(1)
@@ -105,10 +109,10 @@ pub fn render_frames(
         for voice in &mut voices {
             voice.render(&mut scratch_left[..count], &mut scratch_right[..count]);
             for (target, sample) in bus_left.iter_mut().zip(&scratch_left[..count]) {
-                *target += to_bus(*sample);
+                *target = target.saturating_add(to_bus(*sample));
             }
             for (target, sample) in bus_right.iter_mut().zip(&scratch_right[..count]) {
-                *target += to_bus(*sample);
+                *target = target.saturating_add(to_bus(*sample));
             }
         }
         limiter.process(bus_left, bus_right);

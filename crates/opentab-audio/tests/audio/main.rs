@@ -1,4 +1,5 @@
 mod arb;
+mod bus;
 mod corpus;
 mod export;
 mod floats;
