@@ -123,6 +123,11 @@ fn metadata() {
 }
 
 #[test]
+fn mixer() {
+    check("mixer", "", &default_options());
+}
+
+#[test]
 fn multi_track() {
     check("multi-track", "", &default_options());
 }
@@ -160,6 +165,16 @@ fn signatures() {
 }
 
 #[test]
+fn sound_change() {
+    check("sound-change", "", &default_options());
+}
+
+#[test]
+fn sound_override() {
+    check("sound-override", "", &default_options());
+}
+
+#[test]
 fn tempo() {
     check("tempo", "", &default_options());
 }
@@ -188,5 +203,5 @@ fn every_committed_fixture_has_a_snapshot_test() {
         let test = format!("fn {}() {{", name.replace('-', "_"));
         assert!(source.contains(&test), "no snapshot test for {name}");
     }
-    assert_eq!(names.len(), 12);
+    assert_eq!(names.len(), 15);
 }

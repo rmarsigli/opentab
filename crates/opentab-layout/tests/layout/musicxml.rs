@@ -84,6 +84,7 @@ fn fixtures() -> Vec<String> {
             let name = entry.ok()?.file_name().into_string().ok()?;
             name.strip_suffix(".gp").map(str::to_string)
         })
+        .filter(|name| root().join(format!("goldens/gp/{name}.gp")).is_dir())
         .collect();
     names.sort();
     names

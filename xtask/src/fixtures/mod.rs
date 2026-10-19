@@ -1,4 +1,5 @@
 mod effects;
+mod midi;
 mod music;
 mod sketch;
 
@@ -48,7 +49,7 @@ pub struct Family {
 
 type Builder = fn() -> Result<Score, FixtureError>;
 
-const BUILDERS: [(&str, Builder); 12] = [
+const BUILDERS: [(&str, Builder); 15] = [
     ("metadata.gp", music::metadata),
     ("signatures.gp", music::signatures),
     ("repeats.gp", music::repeats),
@@ -61,6 +62,9 @@ const BUILDERS: [(&str, Builder); 12] = [
     ("multi-voice.gp", music::multi_voice),
     ("multi-track.gp", music::multi_track),
     ("from-scratch.gp", music::from_scratch),
+    ("sound-change.gp", midi::sound_change),
+    ("mixer.gp", midi::mixer),
+    ("sound-override.gp", midi::sound_override),
 ];
 
 pub fn families() -> Result<Vec<Family>, FixtureError> {
