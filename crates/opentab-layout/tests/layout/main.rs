@@ -1,6 +1,7 @@
 mod beams;
 mod behaviour;
 mod capo;
+mod cases;
 mod dropped;
 mod marks;
 mod marks_beats;

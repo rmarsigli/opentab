@@ -13,7 +13,6 @@ use crate::music::{
 };
 use crate::support::glyph_name;
 
-const CASES: u32 = 256;
 const MIN_SHARED_BARS: usize = 150;
 const MIN_CHECKED_PAIRS: usize = 20_000;
 const G3: (u8, u8) = (5, 3);
@@ -170,9 +169,8 @@ pub fn check_voices(score: &Score, list: &DisplayList) -> VoiceTally {
 #[test]
 fn no_voice_draws_over_another_voice() {
     let mut runner = TestRunner::new(ProptestConfig {
-        cases: CASES,
         failure_persistence: None,
-        ..ProptestConfig::default()
+        ..crate::cases::config()
     });
     let total = RefCell::new(VoiceTally::default());
     let strategy = (
@@ -194,8 +192,14 @@ fn no_voice_draws_over_another_voice() {
         })
         .unwrap();
     let total = total.into_inner();
-    assert!(total.shared_bars >= MIN_SHARED_BARS, "{total:?}");
-    assert!(total.checked_pairs >= MIN_CHECKED_PAIRS, "{total:?}");
+    assert!(
+        total.shared_bars >= crate::cases::scaled(MIN_SHARED_BARS),
+        "{total:?}"
+    );
+    assert!(
+        total.checked_pairs >= crate::cases::scaled(MIN_CHECKED_PAIRS),
+        "{total:?}"
+    );
 }
 
 fn rest_glyph(list: &DisplayList, id: opentab_model::BeatId) -> opentab_layout::PlacedGlyph {

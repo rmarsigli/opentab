@@ -657,7 +657,7 @@ const MIN_CASES: usize = 200;
 fn every_text_and_mark_stays_inside_the_page_content_whatever_its_length() {
     let mut runner = TestRunner::new(ProptestConfig {
         failure_persistence: None,
-        ..ProptestConfig::default()
+        ..crate::cases::config()
     });
     let total = RefCell::new(MarkTally::default());
     runner
@@ -683,14 +683,14 @@ fn every_text_and_mark_stays_inside_the_page_content_whatever_its_length() {
         })
         .unwrap();
     let total = total.into_inner();
-    assert!(total.cases >= MIN_CASES, "{total:?}");
-    assert!(total.titles >= 200, "{total:?}");
-    assert!(total.names >= 200, "{total:?}");
-    assert!(total.sections >= 700, "{total:?}");
-    assert!(total.chords >= 3000, "{total:?}");
-    assert!(total.texts >= 1800, "{total:?}");
-    assert!(total.tempi >= 400, "{total:?}");
-    assert!(total.dropped >= 1000, "{total:?}");
-    assert!(total.many_systems >= 200, "{total:?}");
-    assert!(total.many_pages >= 100, "{total:?}");
+    assert!(total.cases >= crate::cases::scaled(MIN_CASES), "{total:?}");
+    assert!(total.titles >= crate::cases::scaled(200), "{total:?}");
+    assert!(total.names >= crate::cases::scaled(200), "{total:?}");
+    assert!(total.sections >= crate::cases::scaled(700), "{total:?}");
+    assert!(total.chords >= crate::cases::scaled(3000), "{total:?}");
+    assert!(total.texts >= crate::cases::scaled(1800), "{total:?}");
+    assert!(total.tempi >= crate::cases::scaled(400), "{total:?}");
+    assert!(total.dropped >= crate::cases::scaled(1000), "{total:?}");
+    assert!(total.many_systems >= crate::cases::scaled(200), "{total:?}");
+    assert!(total.many_pages >= crate::cases::scaled(100), "{total:?}");
 }
