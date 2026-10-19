@@ -1,5 +1,5 @@
 use opentab_model::{
-    Automation, AutomationValue, Balance, Level, MasterBar, MidiBank, Track, TrackMidi,
+    Automation, AutomationValue, Balance, Level, MasterBar, Track, TrackMidi, check_program,
 };
 
 use crate::canon::{self, AutomationParts};
@@ -9,13 +9,13 @@ use crate::codes::{
 };
 use crate::dom::{Element, Node};
 use crate::error::Refusal;
+use crate::read::same_connection;
 use crate::write::payload::Item;
 use crate::write::xml::{self, Fail, Within};
 
 const RSE: &str = "RSE";
 const CHANNEL_STRIP: &str = "RSE/ChannelStrip";
 const MIDI_CONNECTION: &str = "MidiConnection";
-const INSTRUMENT_SET: &str = "InstrumentSet";
 
 fn under(items: &[Item], root: &str) -> bool {
     items.iter().any(|item| {
@@ -36,7 +36,7 @@ fn kept_text(items: &[Item], parent: &str, name: &str) -> Option<String> {
         .map(Element::text)
 }
 
-pub(crate) fn check_track(track: &Track, items: &[Item]) -> Result<(), Refusal> {
+pub(crate) fn check_track(track: &Track) -> Result<(), Refusal> {
     let instrument = &track.instrument;
     if instrument
         .set
@@ -44,13 +44,10 @@ pub(crate) fn check_track(track: &Track, items: &[Item]) -> Result<(), Refusal> 
     {
         return Err(Refusal::InstrumentSet);
     }
-    let kept_type = items.iter().any(|item| {
-        item.guard.is_some()
-            && item.parent == INSTRUMENT_SET
-            && item.element().is_some_and(|element| element.name == "Type")
-    });
-    if instrument.set.is_none() && !kept_type {
-        return Err(Refusal::NoInstrumentSet);
+    let programs = std::iter::once(instrument.midi_program)
+        .chain(track.sounds.iter().map(|sound| sound.program));
+    for program in programs {
+        check_program(program).map_err(|_| Refusal::Program { program })?;
     }
     if let Some(first) = track.sounds.first()
         && (first.program != instrument.midi_program || first.bank != track.midi.bank)
@@ -60,29 +57,20 @@ pub(crate) fn check_track(track: &Track, items: &[Item]) -> Result<(), Refusal> 
     Ok(())
 }
 
-fn midi_element(program: u8, bank: MidiBank, full: bool) -> Element {
-    let mut midi = Element::new("MIDI");
-    if full || bank != MidiBank::default() {
-        midi.push(Element::leaf("LSB", &bank.lsb().to_string()));
-        midi.push(Element::leaf("MSB", &bank.msb().to_string()));
-    }
-    midi.push(Element::leaf("Program", &program.to_string()));
-    midi
-}
-
 pub(crate) fn sounds_element(track: &Track) -> Result<Element, Fail> {
     let mut sounds = Element::new("Sounds");
     if track.sounds.is_empty() {
-        let midi = midi_element(track.instrument.midi_program, track.midi.bank, false);
-        sounds.push(Element::new("Sound").with_child(midi));
-        return Ok(sounds);
+        return Ok(canon::bare_sounds(
+            track.instrument.midi_program,
+            track.midi.bank,
+        ));
     }
     for (index, sound) in track.sounds.iter().enumerate() {
         let path = || format!("sounds[{index}].name");
         let element = Element::new("Sound")
             .with_child(xml::text("Name", &sound.name).within(path)?)
             .with_child(xml::text("Label", &sound.name).within(path)?)
-            .with_child(midi_element(sound.program, sound.bank, true));
+            .with_child(canon::sound_midi(sound.program, sound.bank, true));
         sounds.push(element);
     }
     Ok(sounds)
@@ -90,11 +78,7 @@ pub(crate) fn sounds_element(track: &Track) -> Result<Element, Fail> {
 
 pub(crate) fn midi_connection(track: &Track, items: &[Item]) -> Option<Element> {
     let midi = &track.midi;
-    let default = TrackMidi::default_for(track.instrument.kind);
-    let same = midi.port == default.port
-        && midi.primary == default.primary
-        && midi.secondary == default.secondary
-        && midi.per_string == default.per_string;
+    let same = same_connection(midi, &TrackMidi::default_for(track.instrument.kind));
     if same && !under(items, MIDI_CONNECTION) {
         return None;
     }

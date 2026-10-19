@@ -6,6 +6,7 @@ use crate::fraction::{checked_sum, deserialize_non_negative};
 use crate::{
     AutomationValue, Bar, BarId, Beat, BeatId, ElementId, Fraction, InstrumentKind, MasterBar,
     MasterBarId, NoteId, NoteKind, Score, SoundRef, Staff, StaffId, Track, TrackId, Voice, VoiceId,
+    automations_in_order, check_program, on_automation_grid,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -82,6 +83,25 @@ pub enum Diagnostic {
     SoundOverrideWithoutTrack {
         track: TrackId,
     },
+    AutomationOffGrid {
+        track: TrackId,
+        master_bar: MasterBarId,
+        #[serde(deserialize_with = "deserialize_non_negative")]
+        position: Fraction,
+    },
+    AmbiguousSound {
+        track: TrackId,
+        sound: SoundRef,
+    },
+    DuplicateSoundOverride {
+        track: TrackId,
+    },
+    ProgramOutOfRange {
+        track: TrackId,
+    },
+    AutomationOrder {
+        track: TrackId,
+    },
 }
 
 pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
@@ -103,11 +123,19 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
             report.staff(score, track, staff);
         }
     }
-    for entry in &score.sound_overrides {
+    for (index, entry) in score.sound_overrides.iter().enumerate() {
         if score.find_track(entry.track).is_none() {
             report
                 .diagnostics
                 .push(Diagnostic::SoundOverrideWithoutTrack { track: entry.track });
+        }
+        if score.sound_overrides[..index]
+            .iter()
+            .any(|other| other.track == entry.track)
+        {
+            report
+                .diagnostics
+                .push(Diagnostic::DuplicateSoundOverride { track: entry.track });
         }
     }
     for id in score.extensions.0.keys() {
@@ -196,6 +224,15 @@ impl Report {
             self.diagnostics
                 .push(Diagnostic::InstrumentSetMismatch { track: track.id });
         }
+        let programs = std::iter::once(instrument.midi_program)
+            .chain(track.sounds.iter().map(|sound| sound.program));
+        if programs
+            .into_iter()
+            .any(|program| check_program(program).is_err())
+        {
+            self.diagnostics
+                .push(Diagnostic::ProgramOutOfRange { track: track.id });
+        }
         if let Some(first) = track.sounds.first()
             && (first.program != instrument.midi_program || first.bank != track.midi.bank)
         {
@@ -205,6 +242,10 @@ impl Report {
     }
 
     fn automations(&mut self, score: &Score, track: &Track) {
+        if !automations_in_order(&track.automations) {
+            self.diagnostics
+                .push(Diagnostic::AutomationOrder { track: track.id });
+        }
         let start = Fraction::from_integer(0);
         for automation in &track.automations {
             let inside = score
@@ -220,14 +261,33 @@ impl Report {
                     master_bar: automation.master_bar,
                     position: automation.position,
                 });
-            }
-            if let AutomationValue::Sound(sound) = automation.value
-                && track.sounds.get(sound.0).is_none()
-            {
-                self.diagnostics.push(Diagnostic::MissingSound {
+            } else if !on_automation_grid(automation.position) {
+                self.diagnostics.push(Diagnostic::AutomationOffGrid {
                     track: track.id,
-                    sound,
+                    master_bar: automation.master_bar,
+                    position: automation.position,
                 });
+            }
+            if let AutomationValue::Sound(sound) = automation.value {
+                match track.sounds.get(sound.0) {
+                    None => self.diagnostics.push(Diagnostic::MissingSound {
+                        track: track.id,
+                        sound,
+                    }),
+                    Some(named) => {
+                        let twins = track
+                            .sounds
+                            .iter()
+                            .filter(|other| other.name == named.name)
+                            .count();
+                        if twins > 1 {
+                            self.diagnostics.push(Diagnostic::AmbiguousSound {
+                                track: track.id,
+                                sound,
+                            });
+                        }
+                    }
+                }
             }
         }
     }

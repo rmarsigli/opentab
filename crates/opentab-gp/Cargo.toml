@@ -20,5 +20,6 @@ workspace = true
 
 [dev-dependencies]
 opentab-command = { path = "../opentab-command" }
+quick-xml.workspace = true
 opentab-testkit = { path = "../opentab-testkit" }
 proptest.workspace = true

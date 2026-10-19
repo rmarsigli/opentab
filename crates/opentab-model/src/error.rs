@@ -40,6 +40,10 @@ pub enum ModelError {
     InvalidLevel { millionths: u32 },
     #[error("balance {millionths} millionths is outside 0..=1000000")]
     InvalidBalance { millionths: u32 },
+    #[error("MIDI program {program} is outside 0..=127")]
+    InvalidProgram { program: u8 },
+    #[error("track {track} has more than one sound override")]
+    DuplicateSoundOverride { track: u64 },
     #[error("container has {scores} score entries; at most one is allowed")]
     InvalidContainer { scores: usize },
     #[error("the score's id space is exhausted")]

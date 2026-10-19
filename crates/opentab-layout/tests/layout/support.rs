@@ -8,9 +8,9 @@ use opentab_layout::{
     StaffSpace, SystemLayout, Units, layout,
 };
 use opentab_model::{
-    Bar, Beat, BeatEffects, Clef, Duration, Grace, InstrumentKind, KeySignature, MasterBar, Note,
-    NoteEffects, NoteKind, NoteValue, Score, Staff, TimeSignature, Track, Tuplet, Voice, VoiceSlot,
-    blank_score,
+    Bar, Beat, BeatEffects, Clef, Duration, Grace, InstrumentKind, InstrumentSet, KeySignature,
+    MasterBar, Note, NoteEffects, NoteKind, NoteValue, Score, Staff, TimeSignature, Track, Tuplet,
+    Voice, VoiceSlot, blank_score,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,8 +205,7 @@ fn inside(outer: Rect, inner: Rect) -> bool {
         && inner.max.y <= outer.max.y
 }
 
-fn fretted_instrument(track: &opentab_model::Track) -> bool {
-    use opentab_model::InstrumentSet;
+fn fretted_instrument(track: &Track) -> bool {
     let program = track.instrument.midi_program;
     match track.instrument.set {
         Some(set) => matches!(

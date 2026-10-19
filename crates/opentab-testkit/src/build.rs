@@ -2,9 +2,9 @@ use std::collections::HashSet;
 
 use opentab_model::{
     Automation, AutomationValue, Bar, Beat, BeatEffects, ContainerEntry, Duration, ElementId,
-    Extensions, Instrument, InstrumentKind, InstrumentSet, Marker, MasterBar, Note, NoteKind,
-    OpaquePayload, Score, Sound, SoundOverride, SoundRef, Staff, TempoChange, TimeSignature, Track,
-    Tuning, Voice, VoiceSlot,
+    Extensions, Instrument, InstrumentKind, InstrumentSet, Marker, MasterBar, MidiBank, Note,
+    NoteKind, OpaquePayload, Score, Sound, SoundOverride, SoundRef, Staff, TempoChange,
+    TimeSignature, Track, Tuning, Voice, VoiceSlot,
 };
 
 const EXTRA_FORMAT: &str = "gpif";
@@ -42,7 +42,12 @@ fn instrument_set(
     }
 }
 
-fn sounds(seeds: Vec<SoundSeed>, first: (u8, opentab_model::MidiBank), unique: bool) -> Vec<Sound> {
+struct FirstSound {
+    program: u8,
+    bank: MidiBank,
+}
+
+fn sounds(seeds: Vec<SoundSeed>, first: FirstSound, unique: bool) -> Vec<Sound> {
     let mut sounds: Vec<Sound> = seeds
         .into_iter()
         .enumerate()
@@ -57,8 +62,8 @@ fn sounds(seeds: Vec<SoundSeed>, first: (u8, opentab_model::MidiBank), unique: b
         })
         .collect();
     if let Some(sound) = sounds.first_mut() {
-        sound.program = first.0;
-        sound.bank = first.1;
+        sound.program = first.program;
+        sound.bank = first.bank;
     }
     sounds
 }
@@ -66,14 +71,20 @@ fn sounds(seeds: Vec<SoundSeed>, first: (u8, opentab_model::MidiBank), unique: b
 fn automation(
     seed: AutomationSeed,
     master_bars: &[MasterBar],
-    sounds: usize,
+    sounds: &[Sound],
 ) -> Option<Automation> {
     let master = master_bars.get(seed.bar.checked_rem(master_bars.len())?)?;
     let value = match seed.value {
         AutomationValueSeed::Volume(level) => AutomationValue::Volume(level),
         AutomationValueSeed::Pan(balance) => AutomationValue::Pan(balance),
         AutomationValueSeed::Sound(index) => {
-            AutomationValue::Sound(SoundRef(index.checked_rem(sounds)?))
+            let index = index.checked_rem(sounds.len())?;
+            let name = &sounds.get(index)?.name;
+            let twins = sounds.iter().filter(|sound| sound.name == *name).count();
+            if twins > 1 {
+                return None;
+            }
+            AutomationValue::Sound(SoundRef(index))
         }
     };
     Some(Automation {
@@ -130,13 +141,16 @@ impl Builder {
         let master_bars = self.score.master_bars.clone();
         let sounds = sounds(
             seed.sounds,
-            (seed.midi_program, seed.midi.bank),
+            FirstSound {
+                program: seed.midi_program,
+                bank: seed.midi.bank,
+            },
             self.gp_writable,
         );
         let mut automations: Vec<Automation> = seed
             .automations
             .into_iter()
-            .filter_map(|automation_seed| automation(automation_seed, &master_bars, sounds.len()))
+            .filter_map(|automation_seed| automation(automation_seed, &master_bars, &sounds))
             .collect();
         automations.sort_by_key(|automation| matches!(automation.value, AutomationValue::Sound(_)));
         let staves = seed
@@ -376,11 +390,15 @@ pub fn build_score(seed: ScoreSeed, cfg: ScoreGenConfig) -> Score {
     }
     builder.score.extensions = extensions;
     let tracks: Vec<_> = builder.score.tracks.iter().map(|track| track.id).collect();
+    let mut overridden = HashSet::new();
     builder.score.sound_overrides = seed
         .sound_overrides
         .into_iter()
         .filter_map(|entry| {
             let track = tracks.get(entry.track.checked_rem(tracks.len())?)?;
+            if !overridden.insert(*track) {
+                return None;
+            }
             Some(SoundOverride {
                 track: *track,
                 bank: entry.bank,

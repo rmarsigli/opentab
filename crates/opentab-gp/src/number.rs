@@ -135,6 +135,18 @@ pub(crate) fn millionths(text: &str) -> Option<u32> {
     (i128::from(value) <= MILLIONTHS).then_some(value)
 }
 
+pub(crate) fn rounded_millionths(text: &str) -> Option<u32> {
+    let decimal = Decimal::parse(text)?;
+    if decimal.is_negative() {
+        return None;
+    }
+    let scaled = decimal.mantissa.checked_mul(MILLIONTHS)?;
+    let denominator = decimal.denominator();
+    let rounded = scaled.checked_mul(2)?.checked_add(denominator)? / denominator.checked_mul(2)?;
+    let value = u32::try_from(rounded).ok()?;
+    (i128::from(value) <= MILLIONTHS).then_some(value)
+}
+
 pub(crate) fn integer<T: FromStr>(text: &str) -> Option<T> {
     text.trim().parse().ok()
 }

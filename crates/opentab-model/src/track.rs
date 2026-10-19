@@ -108,6 +108,7 @@ pub enum InstrumentKind {
 #[serde(deny_unknown_fields)]
 pub struct Instrument {
     pub kind: InstrumentKind,
+    #[serde(deserialize_with = "crate::midi::deserialize_program")]
     pub midi_program: u8,
     pub set: Option<InstrumentSet>,
 }

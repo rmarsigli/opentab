@@ -5,7 +5,9 @@ use opentab_model::{Bar, KeySignature, MasterBar, Score, TimeSignature};
 use crate::ids::{
     bar_ids, check_removable, check_restorable, next_id, put_extensions, reserve, take_extensions,
 };
-use crate::midi::{check_restorable_automations, put_automations, take_automations};
+use crate::midi::{
+    check_removable_automations, check_restorable_automations, put_automations, take_automations,
+};
 use crate::rules::{already_broken, check_bar, check_tempo_changes, clef_for_new_bar, empty_bar};
 use crate::{AutomationEntry, Command, CommandError, ExtensionEntry};
 
@@ -123,6 +125,7 @@ pub(crate) fn remove(score: &mut Score, index: usize) -> Result<Command, Command
     };
     check_contents(score, current, bars()).map_err(already_broken)?;
     check_removable(score, once(current.id.0).chain(bars().flat_map(bar_ids)))?;
+    check_removable_automations(score, current.id)?;
     let master_bar = score.master_bars.remove(index);
     let bars: Vec<Bar> = score
         .tracks
@@ -158,7 +161,7 @@ pub(crate) fn restore(
     check_contents(score, snapshot.master_bar, snapshot.bars.iter())?;
     let restored = once(snapshot.master_bar.id.0).chain(snapshot.bars.iter().flat_map(bar_ids));
     check_restorable(score, restored, snapshot.extensions)?;
-    check_restorable_automations(score, snapshot.master_bar.id, snapshot.automations)?;
+    check_restorable_automations(score, snapshot.master_bar, snapshot.automations)?;
     score.master_bars.insert(index, snapshot.master_bar.clone());
     let staves = score.tracks.iter_mut().flat_map(|track| &mut track.staves);
     for (staff, bar) in staves.zip(snapshot.bars) {

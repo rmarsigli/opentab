@@ -371,10 +371,10 @@ fn arb_automation_value() -> impl Strategy<Value = AutomationValueSeed> {
     ]
 }
 
-fn arb_automation_seed(gp_writable: bool) -> impl Strategy<Value = AutomationSeed> {
+fn arb_automation_seed() -> impl Strategy<Value = AutomationSeed> {
     (
         any::<usize>(),
-        (0i64..=64, arb_share_denominator(gp_writable)),
+        (0i64..=64, arb_share_denominator(true)),
         any::<bool>(),
         prop::bool::weighted(0.8),
         arb_automation_value(),
@@ -408,7 +408,7 @@ fn arb_track_seed(cfg: ScoreGenConfig, bars: usize) -> impl Strategy<Value = Tra
         (
             arb_track_midi(),
             vec(arb_sound_seed(cfg.gp_writable), 0..=MAX_SOUNDS),
-            vec(arb_automation_seed(cfg.gp_writable), 0..=MAX_AUTOMATIONS),
+            vec(arb_automation_seed(), 0..=MAX_AUTOMATIONS),
         ),
         (0..=MAX_MIDI, 0..=MAX_CAPO),
         vec((0..=highest_open).prop_map(Pitch), 1..=MAX_STRINGS),

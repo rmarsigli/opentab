@@ -1,5 +1,6 @@
 use opentab_model::{
-    Automation, AutomationValue, Balance, Level, MasterBar, MidiBank, MidiChannel, Sound, SoundRef,
+    Automation, AutomationValue, Balance, InstrumentKind, Level, MasterBar, MidiBank, MidiChannel,
+    Sound, SoundRef, TrackMidi, check_program,
 };
 
 use crate::canon::{self, AutomationParts};
@@ -7,7 +8,9 @@ use crate::codes::{
     GENERATED_ROLE, PAN_AUTOMATION, SOUND_AUTOMATION, TEMPO_POSITION_GRID, VOLUME_AUTOMATION,
 };
 use crate::dom::{Element, Node};
+use crate::error::GpifProblem;
 use crate::guard;
+use crate::location::Location;
 use crate::number::{self, Decimal};
 use crate::read::context::{Context, Fault, Handled, Scope, Visit};
 
@@ -56,43 +59,27 @@ struct Bare {
     lsb: Option<u8>,
 }
 
-fn bare(sounds: &Element) -> Option<(u8, MidiBank)> {
-    if !sounds.attributes.is_empty() {
-        return None;
-    }
-    let [Node::Element(sound)] = sounds.children.as_slice() else {
-        return None;
-    };
-    if sound.name != "Sound" || !sound.attributes.is_empty() {
-        return None;
-    }
-    let [Node::Element(midi)] = sound.children.as_slice() else {
-        return None;
-    };
-    if midi.name != "MIDI" || !midi.attributes.is_empty() {
-        return None;
-    }
+struct Implicit {
+    program: u8,
+    bank: MidiBank,
+}
+
+fn bare(sounds: &Element) -> Option<Implicit> {
+    let (_, sound) = sounds.child("Sound")?;
+    let (_, midi) = sound.child("MIDI")?;
     let mut found = Bare::default();
-    for node in &midi.children {
-        let Node::Element(field) = node else {
-            return None;
-        };
-        if !field.attributes.is_empty() || field.has_elements() {
-            return None;
-        }
+    for (_, field) in midi.elements() {
         let slot = match field.name.as_str() {
             "Program" => &mut found.program,
             "MSB" => &mut found.msb,
             "LSB" => &mut found.lsb,
             _ => return None,
         };
-        if slot.is_some() {
-            return None;
-        }
         *slot = Some(number::integer::<u8>(&field.text())?);
     }
     let bank = MidiBank::new(found.msb.unwrap_or(0), found.lsb.unwrap_or(0)).ok()?;
-    Some((found.program?, bank))
+    let program = found.program?;
+    (*sounds == canon::bare_sounds(program, bank)).then_some(Implicit { program, bank })
 }
 
 pub(crate) fn sound_keys(track: &Element) -> Vec<String> {
@@ -121,10 +108,12 @@ pub(crate) fn read_sounds(
     scope: &Scope,
     element: &Element,
 ) -> Result<Sounds, Fault> {
-    if let Some((program, bank)) = bare(element) {
+    if let Some(implicit) = bare(element) {
+        let program = check_program(implicit.program)
+            .map_err(|error| Fault::model(&scope.location, error))?;
         return Ok(Sounds {
             program,
-            bank,
+            bank: implicit.bank,
             sounds: Vec::new(),
         });
     }
@@ -192,37 +181,101 @@ fn read_sound(
     })?;
     let bank =
         MidiBank::new(midi.msb, midi.lsb).map_err(|error| Fault::model(&scope.location, error))?;
+    let program =
+        check_program(midi.program).map_err(|error| Fault::model(&scope.location, error))?;
     Ok(Sound {
         name,
-        program: midi.program,
+        program,
         bank,
     })
 }
 
-fn channel(visit: &Visit<'_>) -> Result<MidiChannel, Fault> {
-    MidiChannel::new(visit.integer()?).map_err(|error| Fault::model(&visit.location, error))
+fn connection_field<T>(
+    element: &Element,
+    location: &Location,
+    name: &str,
+    parse: fn(&str) -> Result<T, GpifProblem>,
+) -> Result<Option<T>, Fault> {
+    let Some((index, child)) = element.child(name) else {
+        return Ok(None);
+    };
+    parse(&child.text())
+        .map(Some)
+        .map_err(|problem| Fault::at(&location.child(index), problem))
+}
+
+fn integer_of(text: &str) -> Result<u8, GpifProblem> {
+    number::integer(text).ok_or_else(|| GpifProblem::InvalidNumber {
+        text: text.trim().to_string(),
+    })
+}
+
+fn channel_of(text: &str) -> Result<MidiChannel, GpifProblem> {
+    MidiChannel::new(integer_of(text)?).map_err(GpifProblem::Model)
+}
+
+fn flag_of(text: &str) -> Result<bool, GpifProblem> {
+    number::boolean(text).ok_or_else(|| GpifProblem::InvalidValue {
+        text: text.trim().to_string(),
+    })
+}
+
+pub(crate) fn midi_fields(element: &Element, location: &Location) -> Result<MidiFields, Fault> {
+    Ok(MidiFields {
+        port: connection_field(element, location, "Port", integer_of)?,
+        primary: connection_field(element, location, "PrimaryChannel", channel_of)?,
+        secondary: connection_field(element, location, "SecondaryChannel", channel_of)?,
+        per_string: connection_field(element, location, "ForeOneChannelPerString", flag_of)?,
+    })
+}
+
+pub(crate) fn connection(fields: &MidiFields, kind: InstrumentKind) -> TrackMidi {
+    let defaults = TrackMidi::default_for(kind);
+    TrackMidi {
+        port: fields.port.unwrap_or(defaults.port),
+        primary: fields.primary.unwrap_or(defaults.primary),
+        secondary: fields.secondary.unwrap_or(defaults.secondary),
+        per_string: fields.per_string.unwrap_or(defaults.per_string),
+        ..defaults
+    }
+}
+
+pub(crate) struct ConnectionRead {
+    pub fields: MidiFields,
+    pub handled: Handled,
+}
+
+pub(crate) fn same_connection(left: &TrackMidi, right: &TrackMidi) -> bool {
+    left.port == right.port
+        && left.primary == right.primary
+        && left.secondary == right.secondary
+        && left.per_string == right.per_string
 }
 
 pub(crate) fn read_midi_connection(
     ctx: &mut Context,
     scope: &Scope,
-    element: &Element,
-) -> Result<MidiFields, Fault> {
-    let mut fields = MidiFields::default();
-    ctx.visit(scope, element, |_, visit| {
-        match visit.key.as_str() {
-            "Port" => fields.port = Some(visit.integer()?),
-            "PrimaryChannel" => fields.primary = Some(channel(visit)?),
-            "SecondaryChannel" => fields.secondary = Some(channel(visit)?),
-            "ForeOneChannelPerString" => {
-                let flag = number::boolean(&visit.text()).ok_or_else(|| visit.invalid())?;
-                fields.per_string = Some(flag);
-            }
-            _ => return Ok(Handled::Unknown),
+    visit: &Visit<'_>,
+    kind: InstrumentKind,
+) -> Result<ConnectionRead, Fault> {
+    let fields = midi_fields(visit.element, &visit.location)?;
+    let midi = connection(&fields, kind);
+    if same_connection(&midi, &TrackMidi::default_for(kind)) {
+        return Ok(ConnectionRead {
+            fields,
+            handled: Handled::Replayed(guard::midi_connection(&midi)),
+        });
+    }
+    ctx.visit(scope, visit.element, |_, child| match child.key.as_str() {
+        "Port" | "PrimaryChannel" | "SecondaryChannel" | "ForeOneChannelPerString" => {
+            Ok(Handled::Mapped(&[]))
         }
-        Ok(Handled::Mapped(&[]))
+        _ => Ok(Handled::Unknown),
     })?;
-    Ok(fields)
+    Ok(ConnectionRead {
+        fields,
+        handled: Handled::Mapped(&[]),
+    })
 }
 
 pub(crate) fn read_rse(

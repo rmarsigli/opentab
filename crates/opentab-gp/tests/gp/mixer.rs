@@ -2,8 +2,9 @@ use std::io::{Cursor, Read};
 
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
-    Automation, AutomationValue, Balance, Fraction, InstrumentKind, InstrumentSet, Level, MidiBank,
-    MidiChannel, Score, Sound, SoundOverride, SoundRef, TrackMidi,
+    Automation, AutomationValue, Balance, Base64Bytes, ContainerEntry, ElementId, Fraction,
+    InstrumentKind, InstrumentSet, Level, MasterBarId, MidiBank, MidiChannel, Score, Sound,
+    SoundOverride, SoundRef, TrackId, TrackMidi, diagnose,
 };
 use zip::ZipArchive;
 
@@ -46,6 +47,7 @@ fn round_trip(score: &Score) -> Score {
 }
 
 fn refusal(score: &Score) -> Refusal {
+    assert!(!diagnose(score).is_empty(), "a refused score must diagnose");
     match write_gp(score) {
         Err(GpError::Unsupported { reason, .. }) => reason,
         other => panic!(
@@ -398,7 +400,7 @@ fn the_writer_refuses_midi_data_gpif_cannot_hold() {
         Fraction::from_integer(0),
         AutomationValue::Pan(Balance::LEFT),
     );
-    stray.master_bar = opentab_model::MasterBarId(opentab_model::ElementId(999));
+    stray.master_bar = MasterBarId(ElementId(999));
     score.tracks[0].automations = vec![stray];
     assert_eq!(refusal(&score), Refusal::AutomationBar { master_bar: 999 });
     score.tracks[0].automations = vec![at(
@@ -419,14 +421,28 @@ fn the_writer_refuses_midi_data_gpif_cannot_hold() {
     let mut kinds = base.clone();
     kinds.tracks[0].instrument.set = Some(InstrumentSet::DrumKit);
     assert_eq!(refusal(&kinds), Refusal::InstrumentSet);
-    kinds.tracks[0].instrument.set = None;
-    assert_eq!(refusal(&kinds), Refusal::NoInstrumentSet);
-    let mut orphan = base;
+    let mut programs = base.clone();
+    programs.tracks[0].instrument.midi_program = 200;
+    assert_eq!(refusal(&programs), Refusal::Program { program: 200 });
+    let mut orphan = base.clone();
     orphan.sound_overrides = vec![SoundOverride {
-        track: opentab_model::TrackId(opentab_model::ElementId(999)),
+        track: TrackId(ElementId(999)),
         bank: "x".to_string(),
     }];
     assert_eq!(refusal(&orphan), Refusal::SoundOverrideTrack { track: 999 });
+    let mut twice = base.clone();
+    let track = twice.tracks[0].id;
+    twice.sound_overrides = ["a", "b"]
+        .into_iter()
+        .map(|bank| SoundOverride {
+            track,
+            bank: bank.to_string(),
+        })
+        .collect();
+    assert_eq!(
+        refusal(&twice),
+        Refusal::DuplicateSoundOverride { track: track.0.0 }
+    );
 }
 
 #[test]
@@ -440,4 +456,160 @@ fn an_unknown_instrument_type_survives_with_no_set() {
     assert!(gpif_text(&write_gp(&again).unwrap()).contains("<Type>banjo</Type>"));
     let reread = read_gpif(&gpif_text(&write_gp(&again).unwrap()));
     assert_eq!(reread.tracks[0].instrument.set, None);
+}
+
+fn drum_doc(connection: &str) -> Doc {
+    Doc {
+        instrument: "drumKit".to_string(),
+        tuning: "0 0 0 0 0 0".to_string(),
+        note: "<InstrumentArticulation>3</InstrumentArticulation>".to_string(),
+        track: connection.to_string(),
+        ..Doc::default()
+    }
+}
+
+const DEFAULT_DRUMS: &str = "<MidiConnection><Port>0</Port><PrimaryChannel>9</PrimaryChannel><SecondaryChannel>9</SecondaryChannel><ForeOneChannelPerString>false</ForeOneChannelPerString></MidiConnection>";
+
+#[test]
+fn a_midi_connection_that_was_read_is_written_even_at_its_default() {
+    let drums = drum_doc(DEFAULT_DRUMS).read();
+    let mut kits = drums.clone();
+    crate::support::add_drum_kits(&mut kits);
+    let text = gpif_text(&write_gp(&kits).unwrap());
+    assert!(
+        text.contains("<MidiConnection>\n<Port>0</Port>\n<PrimaryChannel>9</PrimaryChannel>\n<SecondaryChannel>9</SecondaryChannel>\n<ForeOneChannelPerString>false</ForeOneChannelPerString>\n</MidiConnection>"),
+        "{text}"
+    );
+    round_trip(&kits);
+    let pitched = with_track(
+        "<MidiConnection><Port>0</Port><PrimaryChannel>0</PrimaryChannel><SecondaryChannel>0</SecondaryChannel><ForeOneChannelPerString>false</ForeOneChannelPerString></MidiConnection>",
+    );
+    let again = round_trip(&pitched);
+    assert!(gpif_text(&write_gp(&again).unwrap()).contains("<MidiConnection>"));
+    let mut moved = pitched;
+    moved.tracks[0].midi.primary = MidiChannel::new(3).unwrap();
+    let text = gpif_text(&write_gp(&moved).unwrap());
+    assert_eq!(text.matches("<MidiConnection>").count(), 1);
+    assert!(
+        text.contains("<PrimaryChannel>3</PrimaryChannel>"),
+        "{text}"
+    );
+    let absent = Doc::default().read();
+    assert!(!gpif_text(&write_gp(&absent).unwrap()).contains("<MidiConnection>"));
+}
+
+#[test]
+fn a_track_without_an_instrument_set_saves_with_a_derived_one() {
+    let rendered = Doc::default().render();
+    let start = rendered.find("<InstrumentSet>").unwrap();
+    let end = rendered.find("</InstrumentSet>").unwrap() + "</InstrumentSet>".len();
+    let gpif = format!("{}{}", &rendered[..start], &rendered[end..]);
+    let mut score = read_gpif(&gpif);
+    assert_eq!(score.tracks[0].instrument.set, None);
+    assert_eq!(diagnose(&score), Vec::new());
+    for (program, set) in [
+        (0, InstrumentSet::AcousticPiano),
+        (25, InstrumentSet::ElectricGuitar),
+        (33, InstrumentSet::ElectricBass),
+        (90, InstrumentSet::ElectricGuitar),
+    ] {
+        score.tracks[0].instrument.midi_program = program;
+        let again = read_gp(&write_gp(&score).unwrap()).unwrap();
+        assert_eq!(again.tracks[0].instrument.set, Some(set), "{program}");
+    }
+}
+
+#[test]
+fn the_reserved_entry_is_always_regenerated_from_the_overrides() {
+    let base = Doc::default().read();
+    for data in [
+        &b"garbage"[..],
+        br#"{"sound_overrides":[{"track":0,"bank":"stale"}]}"#,
+    ] {
+        let mut score = base.clone();
+        score.container.push(ContainerEntry::File {
+            name: OVERRIDES_ENTRY.to_string(),
+            data: Base64Bytes(data.to_vec()),
+        });
+        let bytes = write_gp(&score).unwrap();
+        assert!(!entry_names(&bytes).contains(&OVERRIDES_ENTRY.to_string()));
+        let again = read_gp(&bytes).unwrap();
+        assert!(again.sound_overrides.is_empty());
+        assert!(
+            again
+                .container
+                .iter()
+                .all(|entry| entry.name() != OVERRIDES_ENTRY)
+        );
+        score.sound_overrides = vec![SoundOverride {
+            track: score.tracks[0].id,
+            bank: "fresh".to_string(),
+        }];
+        let bytes = write_gp(&score).unwrap();
+        assert_eq!(
+            entry_names(&bytes)
+                .iter()
+                .filter(|name| *name == OVERRIDES_ENTRY)
+                .count(),
+            1
+        );
+        assert_eq!(
+            read_gp(&bytes).unwrap().sound_overrides,
+            score.sound_overrides
+        );
+    }
+}
+
+#[test]
+fn a_non_canonical_bare_sound_keeps_its_explicit_bank() {
+    let score = with_track(
+        "<Sounds><Sound><MIDI><Program>25</Program><MSB>0</MSB><LSB>0</LSB></MIDI></Sound></Sounds>",
+    );
+    assert_eq!(track(&score).sounds.len(), 1);
+    let text = gpif_text(&write_gp(&score).unwrap());
+    assert!(
+        text.contains("<LSB>0</LSB>") && text.contains("<MSB>0</MSB>"),
+        "{text}"
+    );
+    round_trip(&score);
+    let canonical = with_track(
+        "<Sounds><Sound><MIDI><LSB>3</LSB><MSB>1</MSB><Program>25</Program></MIDI></Sound></Sounds>",
+    );
+    assert!(track(&canonical).sounds.is_empty());
+    assert!(gpif_text(&write_gp(&canonical).unwrap()).contains(
+        "<Sound>\n<MIDI>\n<LSB>3</LSB>\n<MSB>1</MSB>\n<Program>25</Program>\n</MIDI>\n</Sound>"
+    ));
+}
+
+#[test]
+fn parameters_beyond_six_places_round_to_millionths_and_keep_their_text() {
+    let parameters = "0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0.5 0 0.5 0.1234565 0.6666667 0.5 0.5 0.5";
+    let score = with_track(&strip(parameters, ""));
+    assert_eq!(track(&score).midi.volume, Level::new(666_667).unwrap());
+    assert_eq!(track(&score).midi.pan, Balance::new(123_457).unwrap());
+    assert!(gpif_text(&write_gp(&score).unwrap()).contains(parameters));
+    round_trip(&score);
+}
+
+#[test]
+fn out_of_range_programs_and_twin_overrides_are_read_errors() {
+    for track in [
+        "<Sounds><Sound><MIDI><Program>200</Program></MIDI></Sound></Sounds>",
+        "<Sounds><Sound><Name><![CDATA[x]]></Name><MIDI><Program>128</Program></MIDI></Sound></Sounds>",
+    ] {
+        let error = Doc {
+            track: track.to_string(),
+            ..Doc::default()
+        }
+        .error();
+        assert!(error.to_string().contains("outside 0..=127"), "{error}");
+    }
+    let gpif = Doc::default().render();
+    let twins = br#"{"sound_overrides":[{"track":0,"bank":"a"},{"track":0,"bank":"b"}]}"#;
+    let bytes = crate::support::archive(&[
+        ("VERSION", b"7.0"),
+        ("Content/score.gpif", gpif.as_bytes()),
+        (OVERRIDES_ENTRY, twins),
+    ]);
+    assert!(matches!(read_gp(&bytes), Err(GpError::Entry { .. })));
 }

@@ -346,3 +346,125 @@ fn midi_commands_have_the_documented_json_shape() {
         assert_eq!(back, command);
     }
 }
+
+fn sound_at(fx: &Fixture, bar: usize) -> Automation {
+    Automation {
+        master_bar: fx.score.master_bars[bar].id,
+        position: Fraction::from_integer(0),
+        linear: false,
+        visible: true,
+        value: AutomationValue::Sound(SoundRef(0)),
+    }
+}
+
+#[test]
+fn automations_keep_the_volume_and_pan_lane_before_the_sound_lane() {
+    let mut fx = with_automations();
+    fx.score.tracks[0].sounds = vec![Sound {
+        name: "Clean".to_owned(),
+        program: 0,
+        bank: MidiBank::default(),
+    }];
+    let sound = sound_at(&fx, 0);
+    let guitar = fx.guitar;
+    let early = Command::InsertAutomation {
+        track: guitar,
+        index: 2,
+        automation: sound.clone(),
+    };
+    assert!(matches!(
+        rejected(&mut fx, &early),
+        CommandError::InvalidValue { .. }
+    ));
+    apply(
+        &mut fx.score,
+        &Command::InsertAutomation {
+            track: guitar,
+            index: 4,
+            automation: sound,
+        },
+    )
+    .unwrap();
+    let late = Command::InsertAutomation {
+        track: guitar,
+        index: 5,
+        automation: volume(&fx, 0, Fraction::from_integer(0), 1),
+    };
+    assert!(matches!(
+        rejected(&mut fx, &late),
+        CommandError::InvalidValue { .. }
+    ));
+    let off_grid = Command::InsertAutomation {
+        track: guitar,
+        index: 0,
+        automation: volume(&fx, 0, Fraction::new(1, 7), 1),
+    };
+    let CommandError::InvalidValue { message } = rejected(&mut fx, &off_grid) else {
+        panic!("invalid value expected");
+    };
+    assert!(message.contains("grid"), "{message}");
+    fx.score.tracks[0].automations.rotate_right(1);
+    assert!(!diagnose(&fx.score).is_empty());
+    let remove = Command::RemoveAutomation {
+        track: guitar,
+        index: 0,
+    };
+    let CommandError::InvalidValue { message } = rejected(&mut fx, &remove) else {
+        panic!("invalid value expected");
+    };
+    assert!(message.contains("run diagnose"), "{message}");
+}
+
+#[test]
+fn restores_follow_the_forward_rules() {
+    let mut fx = with_automations();
+    let inverse = apply(&mut fx.score, &Command::RemoveMasterBar { index: 1 }).unwrap();
+    for broken in 0..3 {
+        let mut restore = inverse.clone();
+        let Command::RestoreMasterBar { automations, .. } = &mut restore else {
+            panic!("restore_master_bar expected");
+        };
+        match broken {
+            0 => automations[0].automation.position = Fraction::new(1, 7),
+            1 => automations[0].automation.position = Fraction::from_integer(2),
+            _ => automations[0].automation.value = AutomationValue::Sound(SoundRef(0)),
+        }
+        rejected(&mut fx, &restore);
+    }
+    let guitar = fx.guitar;
+    let twice = Command::RestoreSoundOverrides {
+        sound_overrides: vec![
+            SoundOverride {
+                track: guitar,
+                bank: "a".to_owned(),
+            };
+            2
+        ],
+    };
+    assert!(matches!(
+        rejected(&mut fx, &twice),
+        CommandError::InvalidValue { .. }
+    ));
+    let stranger = Command::RestoreSoundOverrides {
+        sound_overrides: vec![SoundOverride {
+            track: TrackId(ElementId(999)),
+            bank: "a".to_owned(),
+        }],
+    };
+    assert!(matches!(
+        rejected(&mut fx, &stranger),
+        CommandError::NotFound { .. }
+    ));
+    fx.score.sound_overrides = vec![SoundOverride {
+        track: TrackId(ElementId(999)),
+        bank: "a".to_owned(),
+    }];
+    let set = Command::SetSoundOverride {
+        track: guitar,
+        bank: Some("b".to_owned()),
+    };
+    let CommandError::InvalidValue { message } = rejected(&mut fx, &set) else {
+        panic!("invalid value expected");
+    };
+    assert!(message.contains("run diagnose"), "{message}");
+}

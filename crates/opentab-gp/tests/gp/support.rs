@@ -258,7 +258,8 @@ pub fn documented(reason: &Refusal) -> bool {
             | Refusal::RightHandOpen
             | Refusal::DrumKit
             | Refusal::InstrumentSet
-            | Refusal::NoInstrumentSet
+            | Refusal::Program { .. }
+            | Refusal::DuplicateSoundOverride { .. }
             | Refusal::FirstSound
             | Refusal::AutomationBar { .. }
             | Refusal::AutomationPosition { .. }

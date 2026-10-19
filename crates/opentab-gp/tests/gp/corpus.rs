@@ -2,6 +2,9 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use opentab_gp::{read_gp, write_gp};
+
+use crate::anchors::gpif_text;
+use crate::inventory::{first_difference as subtree_difference, inventory};
 use opentab_model::{
     Accent, AutomationValue, Clef, Diagnostic, Dynamic, Score, TempoUnit, diagnose, from_json,
     to_json,
@@ -232,6 +235,13 @@ fn every_corpus_example_survives_a_write() {
             }
         };
         assert_eq!(write_gp(&score).as_ref(), Ok(&written), "{name}");
+        if let Some(difference) = subtree_difference(
+            &inventory(&gpif_text(&bytes)),
+            &inventory(&gpif_text(&written)),
+        ) {
+            failures.push(format!("{name}: typed subtree changed: {difference}"));
+            continue;
+        }
         match read_gp(&written) {
             Ok(again) if again == score => {
                 println!("corpus {name}: {} -> {} bytes", bytes.len(), written.len());

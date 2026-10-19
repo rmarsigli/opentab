@@ -259,6 +259,7 @@ fn broken_midi_data_is_diagnosed() {
         vec![
             Diagnostic::InstrumentSetMismatch { track },
             Diagnostic::FirstSoundMismatch { track },
+            Diagnostic::AutomationOrder { track },
             Diagnostic::AutomationOutsideBar {
                 track,
                 master_bar,
@@ -284,4 +285,88 @@ fn broken_midi_data_is_diagnosed() {
             track: program.tracks[0].id
         }]
     );
+}
+
+#[test]
+fn every_case_the_writer_refuses_is_diagnosed() {
+    let mut score = mixed_score();
+    let track = score.tracks[0].id;
+    let master_bar = score.master_bars[0].id;
+    score.tracks[0].sounds[1].name = "Clean".to_string();
+    score.tracks[0].automations[0].position = Fraction::new(1, 7);
+    score.tracks[0].sounds[1].program = 128;
+    score.sound_overrides.push(SoundOverride {
+        track,
+        bank: "again".to_string(),
+    });
+    assert_eq!(
+        diagnose(&score),
+        vec![
+            Diagnostic::ProgramOutOfRange { track },
+            Diagnostic::AutomationOffGrid {
+                track,
+                master_bar,
+                position: Fraction::new(1, 7),
+            },
+            Diagnostic::AmbiguousSound {
+                track,
+                sound: SoundRef(1),
+            },
+            Diagnostic::DuplicateSoundOverride { track },
+        ]
+    );
+}
+
+#[test]
+fn programs_above_127_and_twin_overrides_are_rejected_on_load() {
+    for pointer in [
+        "/tracks/0/instrument/midi_program",
+        "/tracks/0/sounds/1/program",
+    ] {
+        let mut value = document();
+        *value.pointer_mut(pointer).unwrap() = json!(128);
+        assert!(rejected(&value).contains("MIDI program 128"), "{pointer}");
+    }
+    let mut value = document();
+    let twin = value["sound_overrides"][0].clone();
+    value["sound_overrides"].as_array_mut().unwrap().push(twin);
+    assert!(matches!(
+        from_json(&value.to_string()),
+        Err(ModelError::DuplicateSoundOverride { .. })
+    ));
+}
+
+#[test]
+fn a_missing_set_is_derived_from_the_family_table() {
+    for program in 0..=127u8 {
+        let fretted = InstrumentSet::derived(InstrumentKind::Fretted, program);
+        assert_eq!(fretted.kind(), InstrumentKind::Fretted);
+        let family = InstrumentFamily::of_program(program);
+        if fretted != InstrumentSet::ElectricGuitar {
+            assert_eq!(fretted.family(), family, "{program}");
+        }
+        assert_eq!(
+            InstrumentSet::derived(InstrumentKind::Percussion, program),
+            InstrumentSet::DrumKit
+        );
+    }
+    let table = [
+        (0, InstrumentSet::AcousticPiano),
+        (16, InstrumentSet::ElectricOrgan),
+        (25, InstrumentSet::ElectricGuitar),
+        (33, InstrumentSet::ElectricBass),
+        (40, InstrumentSet::Violin),
+        (52, InstrumentSet::Voice),
+        (56, InstrumentSet::Trumpet),
+        (65, InstrumentSet::Saxophone),
+        (8, InstrumentSet::ElectricGuitar),
+        (120, InstrumentSet::ElectricGuitar),
+    ];
+    for (program, set) in table {
+        assert_eq!(
+            InstrumentSet::derived(InstrumentKind::Fretted, program),
+            set,
+            "{program}"
+        );
+    }
 }

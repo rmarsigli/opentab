@@ -1,11 +1,10 @@
 use opentab_model::{
-    Balance, Fraction, InstrumentKind, InstrumentSet, KeySignature, Level, NoteKind, Pitch,
-    TimeSignature,
+    Balance, Fraction, InstrumentSet, KeySignature, Level, MidiBank, NoteKind, Pitch, TimeSignature,
 };
 
 use crate::codes::{
-    DRUM_KIT, ELECTRIC_GUITAR, INSTRUMENT_SETS, PAN_PARAMETER, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS,
-    TEMPO_POSITION_GRID, VOLUME_PARAMETER, name_of,
+    INSTRUMENT_SETS, PAN_PARAMETER, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS, TEMPO_POSITION_GRID,
+    VOLUME_PARAMETER, name_of,
 };
 use crate::dom::{self, Element, Node};
 use crate::guard::PitchInputs;
@@ -69,13 +68,23 @@ pub(crate) fn gp_revision() -> Element {
         .with_attribute("recommended", REVISION_RECOMMENDED)
 }
 
-pub(crate) fn instrument_type(kind: InstrumentKind, set: Option<InstrumentSet>) -> Element {
-    let name = match (set, kind) {
-        (Some(set), _) => name_of(INSTRUMENT_SETS, set),
-        (None, InstrumentKind::Fretted) => ELECTRIC_GUITAR,
-        (None, InstrumentKind::Percussion) => DRUM_KIT,
-    };
-    Element::leaf("Type", name)
+pub(crate) fn instrument_type(set: InstrumentSet) -> Element {
+    Element::leaf("Type", name_of(INSTRUMENT_SETS, set))
+}
+
+pub(crate) fn sound_midi(program: u8, bank: MidiBank, full: bool) -> Element {
+    let mut midi = Element::new("MIDI");
+    if full || bank != MidiBank::default() {
+        midi.push(Element::leaf("LSB", &bank.lsb().to_string()));
+        midi.push(Element::leaf("MSB", &bank.msb().to_string()));
+    }
+    midi.push(Element::leaf("Program", &program.to_string()));
+    midi
+}
+
+pub(crate) fn bare_sounds(program: u8, bank: MidiBank) -> Element {
+    Element::new("Sounds")
+        .with_child(Element::new("Sound").with_child(sound_midi(program, bank, false)))
 }
 
 pub(crate) fn millionths(value: u32) -> String {
@@ -95,7 +104,11 @@ pub(crate) struct Mixer {
 
 pub(crate) fn mixer(parameters: &str) -> Mixer {
     let tokens: Vec<&str> = parameters.split_whitespace().collect();
-    let value = |at: usize| tokens.get(at).and_then(|token| number::millionths(token));
+    let value = |at: usize| {
+        tokens
+            .get(at)
+            .and_then(|token| number::rounded_millionths(token))
+    };
     Mixer {
         volume: value(VOLUME_PARAMETER)
             .and_then(|value| Level::new(value).ok())

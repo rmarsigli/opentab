@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use opentab_model::{
-    Automation, AutomationValue, Fraction, MasterBarId, Score, SoundOverride, Track, TrackId,
-    TrackMidi,
+    AUTOMATION_GRID, Automation, AutomationValue, Fraction, MasterBar, MasterBarId, Score,
+    SoundOverride, Track, TrackId, TrackMidi, automations_in_order, on_automation_grid,
 };
 
 use crate::rules::already_broken;
@@ -50,38 +50,91 @@ pub(crate) fn set_track_midi(
     Ok(Command::SetTrackMidi { track, midi: old })
 }
 
-pub(crate) fn check_automation(
-    score: &Score,
-    track: &Track,
-    automation: &Automation,
-) -> Result<(), CommandError> {
-    let master_bar = score
-        .find_master_bar_index(automation.master_bar)
-        .and_then(|index| score.master_bars.get(index))
-        .ok_or(CommandError::NotFound {
-            what: "master bar",
-            id: automation.master_bar.0.0,
-        })?;
-    let position = automation.position;
-    let end = master_bar.time_signature.bar_length();
-    if *position.denom() <= 0 || position < Fraction::from_integer(0) || position > end {
-        return Err(CommandError::invalid(format!(
-            "automation position {}/{} is outside the bar of length {}/{}",
-            position.numer(),
-            position.denom(),
-            end.numer(),
-            end.denom()
-        )));
-    }
-    if let AutomationValue::Sound(sound) = automation.value
-        && track.sounds.get(sound.0).is_none()
-    {
+fn invalid_position(position: Fraction, end: Fraction) -> CommandError {
+    CommandError::invalid(format!(
+        "automation position {}/{} is outside the bar of length {}/{} or off the 1/{} grid",
+        position.numer(),
+        position.denom(),
+        end.numer(),
+        end.denom(),
+        AUTOMATION_GRID
+    ))
+}
+
+fn check_value(track: &Track, automation: &Automation) -> Result<(), CommandError> {
+    let AutomationValue::Sound(sound) = automation.value else {
+        return Ok(());
+    };
+    let Some(named) = track.sounds.get(sound.0) else {
         return Err(CommandError::invalid(format!(
             "track {} has no sound {}",
             track.id.0.0, sound.0
         )));
+    };
+    let twins = track
+        .sounds
+        .iter()
+        .filter(|other| other.name == named.name)
+        .count();
+    if twins > 1 {
+        return Err(CommandError::invalid(format!(
+            "sound {} of track {} shares its name with another sound",
+            sound.0, track.id.0.0
+        )));
     }
     Ok(())
+}
+
+pub(crate) fn check_automation_in(
+    track: &Track,
+    automation: &Automation,
+    bar_length: Fraction,
+) -> Result<(), CommandError> {
+    let position = automation.position;
+    if *position.denom() <= 0
+        || position < Fraction::from_integer(0)
+        || position > bar_length
+        || !on_automation_grid(position)
+    {
+        return Err(invalid_position(position, bar_length));
+    }
+    check_value(track, automation)
+}
+
+fn bar_length(score: &Score, master_bar: MasterBarId) -> Result<Fraction, CommandError> {
+    score
+        .find_master_bar_index(master_bar)
+        .and_then(|index| score.master_bars.get(index))
+        .map(|found| found.time_signature.bar_length())
+        .ok_or(CommandError::NotFound {
+            what: "master bar",
+            id: master_bar.0.0,
+        })
+}
+
+fn check_order(track: &Track) -> Result<(), CommandError> {
+    if automations_in_order(&track.automations) {
+        return Ok(());
+    }
+    Err(already_broken(CommandError::invalid(format!(
+        "track {} lists a sound automation before a volume or pan automation",
+        track.id.0.0
+    ))))
+}
+
+fn check_placement(
+    automations: &[Automation],
+    index: usize,
+    automation: &Automation,
+) -> Result<(), CommandError> {
+    let mut placed = automations.to_vec();
+    placed.insert(index.min(placed.len()), automation.clone());
+    if automations_in_order(&placed) {
+        return Ok(());
+    }
+    Err(CommandError::invalid(format!(
+        "index {index} would put a volume or pan automation after a sound automation"
+    )))
 }
 
 pub(crate) fn insert_automation(
@@ -103,7 +156,13 @@ pub(crate) fn insert_automation(
             len,
         });
     }
-    check_automation(score, target, automation)?;
+    check_order(target)?;
+    check_automation_in(
+        target,
+        automation,
+        bar_length(score, automation.master_bar)?,
+    )?;
+    check_placement(&target.automations, index, automation)?;
     track_mut(score, track)?
         .automations
         .insert(index, automation.clone());
@@ -116,6 +175,7 @@ pub(crate) fn remove_automation(
     index: usize,
 ) -> Result<Command, CommandError> {
     let target = track_mut(score, track)?;
+    check_order(target)?;
     let len = target.automations.len();
     if index >= len {
         return Err(CommandError::IndexOutOfRange {
@@ -132,11 +192,28 @@ pub(crate) fn remove_automation(
     })
 }
 
+fn check_overrides(score: &Score, overrides: &[SoundOverride]) -> Result<(), CommandError> {
+    for (index, entry) in overrides.iter().enumerate() {
+        track_index(score, entry.track)?;
+        if overrides[..index]
+            .iter()
+            .any(|other| other.track == entry.track)
+        {
+            return Err(CommandError::invalid(format!(
+                "track {} has more than one sound override",
+                entry.track.0.0
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn set_sound_override(
     score: &mut Score,
     track: TrackId,
     bank: Option<&str>,
 ) -> Result<Command, CommandError> {
+    check_overrides(score, &score.sound_overrides).map_err(already_broken)?;
     let old = score.sound_overrides.clone();
     match bank {
         Some(bank) => {
@@ -160,11 +237,31 @@ pub(crate) fn set_sound_override(
     })
 }
 
-pub(crate) fn restore_sound_overrides(score: &mut Score, overrides: &[SoundOverride]) -> Command {
+pub(crate) fn restore_sound_overrides(
+    score: &mut Score,
+    overrides: &[SoundOverride],
+) -> Result<Command, CommandError> {
+    check_overrides(score, overrides)?;
     let old = std::mem::replace(&mut score.sound_overrides, overrides.to_vec());
-    Command::RestoreSoundOverrides {
+    Ok(Command::RestoreSoundOverrides {
         sound_overrides: old,
+    })
+}
+
+pub(crate) fn check_removable_automations(
+    score: &Score,
+    master_bar: MasterBarId,
+) -> Result<(), CommandError> {
+    let length = bar_length(score, master_bar)?;
+    for track in &score.tracks {
+        check_order(track)?;
+        for automation in &track.automations {
+            if automation.master_bar == master_bar {
+                check_automation_in(track, automation, length).map_err(already_broken)?;
+            }
+        }
     }
+    Ok(())
 }
 
 pub(crate) fn take_automations(score: &mut Score, master_bar: MasterBarId) -> Vec<AutomationEntry> {
@@ -190,31 +287,37 @@ pub(crate) fn take_automations(score: &mut Score, master_bar: MasterBarId) -> Ve
 
 pub(crate) fn check_restorable_automations(
     score: &Score,
-    master_bar: MasterBarId,
+    master_bar: &MasterBar,
     entries: &[AutomationEntry],
 ) -> Result<(), CommandError> {
-    let mut lengths: BTreeMap<TrackId, usize> = BTreeMap::new();
+    let mut placed: BTreeMap<TrackId, Vec<Automation>> = BTreeMap::new();
+    let length = master_bar.time_signature.bar_length();
     for entry in entries {
-        if entry.automation.master_bar != master_bar {
+        if entry.automation.master_bar != master_bar.id {
             return Err(CommandError::invalid(format!(
                 "a restored automation names master bar {}, not the restored master bar {}",
-                entry.automation.master_bar.0.0, master_bar.0.0
+                entry.automation.master_bar.0.0, master_bar.id.0.0
             )));
         }
         let position = track_index(score, entry.track)?;
-        let start = score
-            .tracks
-            .get(position)
-            .map_or(0, |track| track.automations.len());
-        let len = lengths.entry(entry.track).or_insert(start);
-        if entry.index > *len {
+        let track = score.tracks.get(position).ok_or(CommandError::NotFound {
+            what: "track",
+            id: entry.track.0.0,
+        })?;
+        check_order(track)?;
+        check_automation_in(track, &entry.automation, length)?;
+        let list = placed
+            .entry(entry.track)
+            .or_insert_with(|| track.automations.clone());
+        if entry.index > list.len() {
             return Err(CommandError::IndexOutOfRange {
                 what: AUTOMATION,
                 index: entry.index,
-                len: *len,
+                len: list.len(),
             });
         }
-        *len += 1;
+        check_placement(list, entry.index, &entry.automation)?;
+        list.insert(entry.index, entry.automation.clone());
     }
     Ok(())
 }

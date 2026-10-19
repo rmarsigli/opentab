@@ -15,8 +15,8 @@ use crate::read::beat::read_bar;
 use crate::read::context::{Context, Fault, Handled, Owner, Scope, Visit, missing_element};
 use crate::read::master::{MasterFrame, TrackOrder};
 use crate::read::mixer::{
-    Lane, MidiFields, Sounds, Strip, read_lane, read_midi_connection, read_rse, read_sounds,
-    sound_keys,
+    Lane, MidiFields, Sounds, Strip, connection, read_lane, read_midi_connection, read_rse,
+    read_sounds, sound_keys,
 };
 use crate::read::pools::Pools;
 
@@ -162,6 +162,11 @@ fn read_track(
     let scope = Scope::new(Owner::Element(id.0), ParentPath::owner(), location.clone());
     ctx.keep_attributes(&scope, element, &["id"])?;
     let keys = sound_keys(element);
+    let kind_hint = element
+        .child("InstrumentSet")
+        .and_then(|(_, set)| set.child("Type"))
+        .and_then(|(_, kind)| lookup(INSTRUMENT_SETS, &kind.text()))
+        .map_or(InstrumentKind::Fretted, InstrumentSet::kind);
     let mut fields = TrackFields {
         name: String::new(),
         short_name: String::new(),
@@ -199,7 +204,9 @@ fn read_track(
             }
             "MidiConnection" if !visited.midi => {
                 visited.midi = true;
-                fields.midi = read_midi_connection(ctx, &scope.enter(visit), visit.element)?;
+                let read = read_midi_connection(ctx, &scope.enter(visit), visit, kind_hint)?;
+                fields.midi = read.fields;
+                return Ok(read.handled);
             }
             "Automations" if !visited.automations => {
                 visited.automations = true;
@@ -216,15 +223,11 @@ fn read_track(
         }
         Ok(Handled::Mapped(&[]))
     })?;
-    let defaults = TrackMidi::default_for(fields.kind);
     let midi = TrackMidi {
-        port: fields.midi.port.unwrap_or(defaults.port),
-        primary: fields.midi.primary.unwrap_or(defaults.primary),
-        secondary: fields.midi.secondary.unwrap_or(defaults.secondary),
-        per_string: fields.midi.per_string.unwrap_or(defaults.per_string),
         bank: fields.sounds.bank,
         volume: fields.strip.volume,
         pan: fields.strip.pan,
+        ..connection(&fields.midi, fields.kind)
     };
     let mut automations = fields.strip.automations;
     automations.extend(fields.automations);
@@ -289,10 +292,11 @@ fn read_instrument_set(
         "Type" => {
             set = lookup(INSTRUMENT_SETS, &visit.text());
             kind = set.map_or(InstrumentKind::Fretted, InstrumentSet::kind);
-            if *visit.element == canon::instrument_type(kind, set) {
-                Ok(Handled::Mapped(&[]))
-            } else {
-                Ok(Handled::Replayed(guard::instrument(kind, set)))
+            match set {
+                Some(known) if *visit.element == canon::instrument_type(known) => {
+                    Ok(Handled::Mapped(&[]))
+                }
+                _ => Ok(Handled::Replayed(guard::instrument(kind, set))),
             }
         }
         _ => Ok(Handled::Unknown),

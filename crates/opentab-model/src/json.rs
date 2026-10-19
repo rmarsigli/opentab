@@ -75,6 +75,7 @@ pub fn from_json(input: &str) -> Result<Score, ModelError> {
     }
     let document: DocumentIn = serde_json::from_str(input).map_err(json_error)?;
     check_container(&document.container)?;
+    check_sound_overrides(&document.sound_overrides)?;
     Ok(Score {
         meta: document.meta,
         anacrusis: document.anacrusis,
@@ -86,6 +87,20 @@ pub fn from_json(input: &str) -> Result<Score, ModelError> {
         container: document.container,
         ids: document.ids,
     })
+}
+
+pub fn check_sound_overrides(overrides: &[SoundOverride]) -> Result<(), ModelError> {
+    for (index, entry) in overrides.iter().enumerate() {
+        if overrides[..index]
+            .iter()
+            .any(|other| other.track == entry.track)
+        {
+            return Err(ModelError::DuplicateSoundOverride {
+                track: entry.track.0.0,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn json_error(error: serde_json::Error) -> ModelError {

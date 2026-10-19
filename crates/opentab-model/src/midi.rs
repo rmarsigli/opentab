@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::fraction::deserialize_non_negative;
 use crate::{Fraction, InstrumentKind, MasterBarId, ModelError, TrackId};
@@ -9,6 +10,39 @@ const MAX_BANK: u8 = 127;
 const MILLIONTHS: u32 = 1_000_000;
 const HALF: u32 = 500_000;
 const PROGRAMS_PER_FAMILY: u8 = 8;
+pub const MAX_PROGRAM: u8 = 127;
+pub const AUTOMATION_GRID: i64 = 3840;
+
+pub(crate) fn deserialize_program<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let program = u8::deserialize(deserializer)?;
+    check_program(program).map_err(D::Error::custom)
+}
+
+pub fn check_program(program: u8) -> Result<u8, ModelError> {
+    if program > MAX_PROGRAM {
+        return Err(ModelError::InvalidProgram { program });
+    }
+    Ok(program)
+}
+
+pub fn automations_in_order(automations: &[Automation]) -> bool {
+    let first_sound = automations
+        .iter()
+        .position(|automation| matches!(automation.value, AutomationValue::Sound(_)));
+    first_sound.is_none_or(|first| {
+        automations
+            .iter()
+            .skip(first)
+            .all(|automation| matches!(automation.value, AutomationValue::Sound(_)))
+    })
+}
+
+pub fn on_automation_grid(position: Fraction) -> bool {
+    (position * AUTOMATION_GRID).is_integer()
+}
 
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
@@ -187,6 +221,7 @@ impl TrackMidi {
 #[serde(deny_unknown_fields)]
 pub struct Sound {
     pub name: String,
+    #[serde(deserialize_with = "deserialize_program")]
     pub program: u8,
     pub bank: MidiBank,
 }
@@ -308,6 +343,34 @@ const PROGRAM_FAMILIES: [InstrumentFamily; 16] = [
     InstrumentFamily::Percussive,
     InstrumentFamily::SoundEffects,
 ];
+
+const FAMILY_SETS: [(InstrumentFamily, InstrumentSet); 9] = [
+    (InstrumentFamily::Piano, InstrumentSet::AcousticPiano),
+    (InstrumentFamily::Organ, InstrumentSet::ElectricOrgan),
+    (InstrumentFamily::Guitar, InstrumentSet::ElectricGuitar),
+    (InstrumentFamily::Bass, InstrumentSet::ElectricBass),
+    (InstrumentFamily::Strings, InstrumentSet::Violin),
+    (InstrumentFamily::Ensemble, InstrumentSet::Voice),
+    (InstrumentFamily::Brass, InstrumentSet::Trumpet),
+    (InstrumentFamily::Reed, InstrumentSet::Saxophone),
+    (InstrumentFamily::Drums, InstrumentSet::DrumKit),
+];
+
+impl InstrumentSet {
+    pub fn derived(kind: InstrumentKind, program: u8) -> InstrumentSet {
+        let fallback = match kind {
+            InstrumentKind::Fretted => InstrumentSet::ElectricGuitar,
+            InstrumentKind::Percussion => InstrumentSet::DrumKit,
+        };
+        let family = InstrumentFamily::of(kind, None, program);
+        FAMILY_SETS
+            .iter()
+            .find(|(candidate, _)| *candidate == family)
+            .map(|(_, set)| *set)
+            .filter(|set| set.kind() == kind)
+            .unwrap_or(fallback)
+    }
+}
 
 impl InstrumentFamily {
     pub fn of(kind: InstrumentKind, set: Option<InstrumentSet>, program: u8) -> InstrumentFamily {

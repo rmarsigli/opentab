@@ -256,6 +256,7 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
         ("instrument", Env::Track(track)) => {
             guard::instrument(track.instrument.kind, track.instrument.set)
         }
+        ("midi-connection", Env::Track(track)) => guard::midi_connection(&track.midi),
         ("sound-label", Env::Track(track)) => {
             let index = guard::sound_label_index(guard)?;
             let name = track.sounds.get(index).map(|sound| sound.name.as_str());

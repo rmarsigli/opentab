@@ -1,7 +1,7 @@
 use opentab_model::{
     Bar, Beat, BeatEffects, Clef, Duration, Instrument, InstrumentKind, KeySignature, MasterBar,
-    Note, NoteEffects, NoteKind, NoteValue, Pitch, Score, Staff, TimeSignature, Track, Transpose,
-    Tuning, Voice, VoiceSlot,
+    Note, NoteEffects, NoteKind, NoteValue, Pitch, Score, Staff, TimeSignature, Track, TrackMidi,
+    Transpose, Tuning, Voice, VoiceSlot,
 };
 
 pub fn standard_tuning() -> Tuning {
@@ -85,7 +85,7 @@ pub fn guitar(score: &mut Score, bars: Vec<Vec<Duration>>) -> Track {
             midi_program: 25,
             set: None,
         },
-        midi: opentab_model::TrackMidi::default_for(InstrumentKind::Fretted),
+        midi: TrackMidi::default_for(InstrumentKind::Fretted),
         sounds: Vec::new(),
         automations: Vec::new(),
         tuning: standard_tuning(),

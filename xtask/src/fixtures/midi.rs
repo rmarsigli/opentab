@@ -1,6 +1,6 @@
 use opentab_model::{
     Automation, AutomationValue, Balance, Clef, Fraction, InstrumentSet, Level, MidiBank,
-    MidiChannel, NoteValue, Score, Sound, SoundOverride, SoundRef,
+    MidiChannel, NoteValue, Score, Sound, SoundOverride, SoundRef, Track,
 };
 
 use crate::fixtures::FixtureError;
@@ -76,7 +76,7 @@ fn scale(sketch: &mut Sketch, track: usize, string: u8) -> Result<(), FixtureErr
     Ok(())
 }
 
-fn track_mut(sketch: &mut Sketch, track: usize) -> Result<&mut opentab_model::Track, FixtureError> {
+fn track_mut(sketch: &mut Sketch, track: usize) -> Result<&mut Track, FixtureError> {
     sketch
         .score
         .tracks

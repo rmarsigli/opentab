@@ -3,8 +3,8 @@ use opentab_model::{
     ElementId, Extensions, Finger, Fraction, Grace, Harmonic, HarmonicKind, Instrument,
     InstrumentKind, Marker, ModelError, Note, NoteEffects, NoteKind, NoteValue, OpaquePayload,
     Pitch, Score, Slide, Staff, Stroke, StrokeDirection, StrokeTicks, Tap, Tempo, TempoChange,
-    TempoUnit, Track, Transpose, TremoloPicking, Tuning, Tuplet, Vibrato, VoiceSlot, diagnose,
-    from_json, to_json,
+    TempoUnit, Track, TrackMidi, Transpose, TremoloPicking, Tuning, Tuplet, Vibrato, VoiceSlot,
+    diagnose, from_json, to_json,
 };
 use serde_json::{Value, json};
 
@@ -106,7 +106,7 @@ fn rich_score() -> Score {
             midi_program: 0,
             set: None,
         },
-        midi: opentab_model::TrackMidi::default_for(InstrumentKind::Percussion),
+        midi: TrackMidi::default_for(InstrumentKind::Percussion),
         sounds: Vec::new(),
         automations: Vec::new(),
         tuning: Tuning {

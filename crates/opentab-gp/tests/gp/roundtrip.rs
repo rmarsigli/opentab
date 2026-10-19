@@ -3,8 +3,7 @@ use std::collections::BTreeMap;
 
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
-    AutomationValue, Balance, Fraction, InstrumentSet, Level, NoteKind, OpaquePayload, Score,
-    TrackMidi,
+    AutomationValue, Balance, InstrumentSet, Level, NoteKind, OpaquePayload, Score, TrackMidi,
 };
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
 use proptest::prelude::*;
@@ -190,18 +189,15 @@ fn writable_scores_read_back_equal() {
     }
 }
 
-const GENUINE_LIMITS: [&str; 9] = [
-    "AmbiguousSound",
-    "AutomationPosition",
+const GENUINE_LIMITS: [&str; 6] = [
     "Character",
     "DrumKit",
     "HarmonicFret",
-    "NoInstrumentSet",
     "Pitch",
     "RightHandOpen",
     "TempoPosition",
 ];
-const MAX_ROUNDS: usize = 12;
+const MAX_ROUNDS: usize = 8;
 const GRID: i64 = 3840;
 const MAX_MIDI: u16 = 127;
 
@@ -297,43 +293,6 @@ fn clean_kind(score: &mut Score, kind: &str) -> bool {
     match kind {
         "Character" => changed = clean_texts(score),
         "DrumKit" => changed = add_drum_kits(score),
-        "NoInstrumentSet" => {
-            for track in &mut score.tracks {
-                if track.instrument.set.is_none() {
-                    track.instrument.set = Some(match track.instrument.kind {
-                        opentab_model::InstrumentKind::Fretted => InstrumentSet::ElectricGuitar,
-                        opentab_model::InstrumentKind::Percussion => InstrumentSet::DrumKit,
-                    });
-                    changed = true;
-                }
-            }
-        }
-        "AmbiguousSound" => {
-            for track in &mut score.tracks {
-                for (index, sound) in track.sounds.iter_mut().enumerate() {
-                    sound.name = format!("{}{index}", sound.name);
-                    changed = true;
-                }
-            }
-        }
-        "AutomationPosition" => {
-            let bars: Vec<(opentab_model::MasterBarId, Fraction)> = score
-                .master_bars
-                .iter()
-                .map(|master| (master.id, master.time_signature.bar_length()))
-                .collect();
-            for track in &mut score.tracks {
-                let before = track.automations.len();
-                track.automations.retain(|automation| {
-                    bars.iter().any(|(id, length)| {
-                        *id == automation.master_bar
-                            && (automation.position * GRID).is_integer()
-                            && automation.position <= *length
-                    })
-                });
-                changed |= track.automations.len() != before;
-            }
-        }
         "TempoPosition" => {
             for master in &mut score.master_bars {
                 let bar = master.time_signature.bar_length();
@@ -401,6 +360,18 @@ fn clean_kind(score: &mut Score, kind: &str) -> bool {
     changed
 }
 
+fn with_derived_sets(score: &Score) -> Score {
+    let mut expected = score.clone();
+    for track in &mut expected.tracks {
+        let instrument = &mut track.instrument;
+        instrument.set =
+            Some(instrument.set.unwrap_or_else(|| {
+                InstrumentSet::derived(instrument.kind, instrument.midi_program)
+            }));
+    }
+    expected
+}
+
 fn stripped(mut score: Score) -> Score {
     score.container.clear();
     score.extensions = opentab_model::Extensions::default();
@@ -430,7 +401,7 @@ fn default_scores_are_refused_only_for_genuine_gp_limits() {
                 Ok(bytes) => {
                     let read =
                         read_gp(&bytes).map_err(|error| TestCaseError::fail(error.to_string()))?;
-                    prop_assert_eq!(&read, &score);
+                    prop_assert_eq!(&read, &with_derived_sets(&score));
                     if round == 0 {
                         accepted.set(accepted.get() + 1);
                     }

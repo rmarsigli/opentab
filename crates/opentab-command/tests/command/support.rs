@@ -1,8 +1,8 @@
 use opentab_model::{
     Bar, Beat, BeatEffects, BeatId, Clef, Duration, ElementId, Instrument, InstrumentKind,
     KeySignature, MasterBar, Note, NoteEffects, NoteId, NoteKind, NoteValue, OpaquePayload, Pitch,
-    Score, Staff, Tempo, TempoChange, TempoUnit, TimeSignature, Track, TrackId, Transpose, Tuning,
-    Voice, VoiceId, VoiceSlot,
+    Score, Staff, Tempo, TempoChange, TempoUnit, TimeSignature, Track, TrackId, TrackMidi,
+    Transpose, Tuning, Voice, VoiceId, VoiceSlot,
 };
 
 pub struct Fixture {
@@ -111,7 +111,7 @@ pub fn track(score: &mut Score, kind: InstrumentKind, bars: Vec<Bar>) -> Track {
             midi_program: 0,
             set: None,
         },
-        midi: opentab_model::TrackMidi::default_for(kind),
+        midi: TrackMidi::default_for(kind),
         sounds: Vec::new(),
         automations: Vec::new(),
         tuning: Tuning { strings },

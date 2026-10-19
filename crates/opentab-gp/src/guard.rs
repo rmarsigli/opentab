@@ -1,7 +1,7 @@
 use opentab_model::{
     Accent, Bar, Beat, Bend, Clef, Dynamic, Finger, Fraction, Grace, Harmonic, InstrumentKind,
-    InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature, Transpose, TremoloPicking,
-    Vibrato, VoiceSlot,
+    InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature, TrackMidi, Transpose,
+    TremoloPicking, Vibrato, VoiceSlot,
 };
 
 use crate::codes::{
@@ -168,6 +168,16 @@ pub(crate) fn instrument(kind: InstrumentKind, set: Option<InstrumentSet>) -> St
     };
     let set = set.map_or(NONE, |set| name_of(INSTRUMENT_SETS, set));
     format!("instrument:{kind} {set}")
+}
+
+pub(crate) fn midi_connection(midi: &TrackMidi) -> String {
+    format!(
+        "midi-connection:{} {} {} {}",
+        midi.port,
+        midi.primary.get(),
+        midi.secondary.get(),
+        midi.per_string
+    )
 }
 
 const SOUND_LABEL: &str = "sound-label:";

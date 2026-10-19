@@ -1,4 +1,6 @@
-use opentab_model::{Base64Bytes, ContainerEntry, Score, SoundOverride, TrackId};
+use opentab_model::{
+    Base64Bytes, ContainerEntry, ModelError, Score, SoundOverride, TrackId, check_sound_overrides,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{GpError, Refusal};
@@ -53,12 +55,21 @@ pub(crate) fn take(
             bank: item.bank,
         });
     }
+    check_sound_overrides(&overrides).map_err(|error| entry_error(error.to_string()))?;
     Ok(overrides)
 }
 
 pub(crate) fn entry(score: &Score) -> Result<Option<ContainerEntry>, GpError> {
     if score.sound_overrides.is_empty() {
         return Ok(None);
+    }
+    if let Err(ModelError::DuplicateSoundOverride { track }) =
+        check_sound_overrides(&score.sound_overrides)
+    {
+        return Err(GpError::Unsupported {
+            path: "sound_overrides".to_string(),
+            reason: Refusal::DuplicateSoundOverride { track },
+        });
     }
     let mut items = Vec::with_capacity(score.sound_overrides.len());
     for (index, item) in score.sound_overrides.iter().enumerate() {

@@ -1,4 +1,4 @@
-use opentab_model::{InstrumentKind, MasterBar, Pitch, Score, Staff, Track};
+use opentab_model::{InstrumentKind, InstrumentSet, MasterBar, Pitch, Score, Staff, Track};
 
 use crate::canon;
 use crate::dom::{Element, Node};
@@ -251,7 +251,7 @@ fn track_element(
     if track.instrument.kind == InstrumentKind::Percussion && !has_drum_kit(&items) {
         return Err(Fail::new(Refusal::DrumKit));
     }
-    check_track(track, &items).map_err(Fail::new)?;
+    check_track(track).map_err(Fail::new)?;
     let lanes = lanes(track, site.master_bars, &items)?;
     let layouts = site.layouts;
     let contexts = site.contexts;
@@ -259,12 +259,11 @@ fn track_element(
     let mut element = Element::new("Track").with_attribute("id", &id.to_string());
     element.push(xml::text("Name", &track.name).within(|| "name".to_string())?);
     element.push(xml::text("ShortName", &track.short_name).within(|| "short_name".to_string())?);
-    element.push(
-        Element::new("InstrumentSet").with_child(canon::instrument_type(
-            track.instrument.kind,
-            track.instrument.set,
-        )),
-    );
+    let instrument = &track.instrument;
+    let set = instrument
+        .set
+        .unwrap_or_else(|| InstrumentSet::derived(instrument.kind, instrument.midi_program));
+    element.push(Element::new("InstrumentSet").with_child(canon::instrument_type(set)));
     element.push(
         Element::new("Transpose")
             .with_child(Element::leaf(

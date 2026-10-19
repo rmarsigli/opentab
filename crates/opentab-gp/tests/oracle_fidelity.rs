@@ -24,7 +24,7 @@ const REPLACEMENT: char = '\u{FFFD}';
 const SHOWN_DIFF_LINES: usize = 40;
 const AWAITING_HARVEST: [&str; 3] = ["mixer.gp", "sound-change.gp", "sound-override.gp"];
 
-const GP_DEFAULT_PAYLOADS: [&str; 51] = [
+const GP_DEFAULT_PAYLOADS: [&str; 52] = [
     "/AudioEngineState",
     "/Color",
     "/ConcertPitchStemOrientation",
@@ -39,6 +39,7 @@ const GP_DEFAULT_PAYLOADS: [&str; 51] = [
     "/SystemsDefautLayout",
     "/SystemsLayout",
     "/TransposedPitchStemOrientation",
+    "midi-connection:/MidiConnection",
     "note-kind:/InstrumentArticulation",
     "tempo-position:*Tempo/Linear",
     "tempo-position:*Tempo/Visible",

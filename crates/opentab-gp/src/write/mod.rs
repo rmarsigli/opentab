@@ -17,7 +17,7 @@ use zip::{CompressionMethod, DateTime, System, ZipArchive, ZipWriter};
 
 use crate::archive::{SCORE_ENTRY, minimal_container};
 use crate::error::{GpError, Refusal};
-use crate::overrides;
+use crate::overrides::{self, OVERRIDES_ENTRY};
 
 const DIRECTORY_SUFFIX: char = '/';
 const ARCHIVE_SYSTEM: System = System::Unix;
@@ -26,18 +26,8 @@ const DIRECTORY_PERMISSIONS: u32 = 0o755;
 
 pub fn write_gp(score: &Score) -> Result<Vec<u8>, GpError> {
     let mut entries = container(score)?;
+    entries.retain(|entry| entry.name() != OVERRIDES_ENTRY);
     if let Some(entry) = overrides::entry(score)? {
-        if entries
-            .iter()
-            .any(|existing| existing.name() == entry.name())
-        {
-            return Err(GpError::Unsupported {
-                path: "container".to_string(),
-                reason: Refusal::DuplicateEntry {
-                    name: entry.name().to_string(),
-                },
-            });
-        }
         entries.push(entry);
     }
     let gpif = document::write_gpif(score).map_err(xml::Fail::into_error)?;

@@ -27,13 +27,14 @@ pub use fraction::Fraction;
 pub use ids::{
     BarId, BeatId, ElementId, IdAllocator, MasterBarId, NoteId, StaffId, TrackId, VoiceId,
 };
-pub use json::{from_json, to_json};
+pub use json::{check_sound_overrides, from_json, to_json};
 pub use master_bar::{
     KeySignature, Marker, MasterBar, Tempo, TempoChange, TempoUnit, TimeSignature,
 };
 pub use midi::{
-    Automation, AutomationValue, Balance, InstrumentFamily, InstrumentSet, Level, MidiBank,
-    MidiChannel, Sound, SoundOverride, SoundRef, TrackMidi,
+    AUTOMATION_GRID, Automation, AutomationValue, Balance, InstrumentFamily, InstrumentSet, Level,
+    MAX_PROGRAM, MidiBank, MidiChannel, Sound, SoundOverride, SoundRef, TrackMidi,
+    automations_in_order, check_program, on_automation_grid,
 };
 pub use score::{BeatPath, NotePath, Score, ScoreMeta, VoicePath};
 pub use track::{

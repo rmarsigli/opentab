@@ -233,19 +233,19 @@ mod tests {
     #[test]
     fn natural_harmonics_sound_their_partial_above_the_open_string() {
         use opentab_model::{
-            ElementId, Fraction, Harmonic, Instrument, NoteEffects, NoteId, Pitch, Transpose,
-            Tuning,
+            ElementId, Fraction, Harmonic, Instrument, InstrumentKind, NoteEffects, NoteId, Pitch,
+            TrackMidi, Transpose, Tuning,
         };
         let track = Track {
             id: opentab_model::TrackId(ElementId(1)),
             name: String::new(),
             short_name: String::new(),
             instrument: Instrument {
-                kind: opentab_model::InstrumentKind::Fretted,
+                kind: InstrumentKind::Fretted,
                 midi_program: 0,
                 set: None,
             },
-            midi: opentab_model::TrackMidi::default_for(opentab_model::InstrumentKind::Fretted),
+            midi: TrackMidi::default_for(InstrumentKind::Fretted),
             sounds: Vec::new(),
             tuning: Tuning {
                 strings: vec![Pitch(64), Pitch(59)],

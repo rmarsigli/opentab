@@ -1,0 +1,1 @@
+{"op": "insert_automation", "track": 5, "index": 0, "automation": {"master_bar": 1, "position": [1, 7], "linear": false, "visible": true, "value": {"kind": "volume", "value": 300000}}}

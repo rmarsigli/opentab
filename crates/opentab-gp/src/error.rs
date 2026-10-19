@@ -131,8 +131,10 @@ pub enum Refusal {
     DrumKit,
     #[error("the instrument set belongs to another instrument kind than the track's")]
     InstrumentSet,
-    #[error("the track has no instrument set, and GPIF needs one to name the instrument")]
-    NoInstrumentSet,
+    #[error("MIDI program {program} is outside 0..=127")]
+    Program { program: u8 },
+    #[error("track {track} has more than one sound override")]
+    DuplicateSoundOverride { track: u64 },
     #[error("the first sound's program or bank differs from the track's initial program or bank")]
     FirstSound,
     #[error("an automation names master bar {master_bar}, which the score does not contain")]

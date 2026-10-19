@@ -40,7 +40,7 @@ pub fn apply(score: &mut Score, command: &Command) -> Result<Command, CommandErr
             midi::set_sound_override(score, *track, bank.as_deref())
         }
         Command::RestoreSoundOverrides { sound_overrides } => {
-            Ok(midi::restore_sound_overrides(score, sound_overrides))
+            midi::restore_sound_overrides(score, sound_overrides)
         }
         Command::InsertBeat {
             voice,
