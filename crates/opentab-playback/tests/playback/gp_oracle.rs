@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use opentab_gp::read_gp;
@@ -255,10 +255,35 @@ pub struct Side {
 #[derive(Debug, Clone, Default)]
 pub struct Context {
     pub name: String,
-    pub off_grid: BTreeSet<(usize, u64)>,
+    pub off_grid: BTreeSet<GridKey>,
     pub bar_ticks: Vec<u64>,
     pub triplet_feel: bool,
     pub coda_never_reached: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GridKey {
+    pub lane: usize,
+    pub channel: u8,
+    pub key: u8,
+    pub onset: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Started {
+    onset: u64,
+    whole: bool,
+}
+
+impl GridKey {
+    fn of(onset: Onset) -> GridKey {
+        GridKey {
+            lane: onset.track,
+            channel: onset.channel,
+            key: onset.key,
+            onset: onset.tick,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -506,20 +531,37 @@ pub fn context(name: &str, score: &Score, performance: &Performance) -> Context 
     let ppq = performance.profile.ppq();
     let first = lanes(performance);
     let mut off_grid = BTreeSet::new();
+    let mut open: BTreeMap<Slot, VecDeque<Started>> = BTreeMap::new();
     for event in &performance.events {
-        if !matches!(
-            event.message,
-            MidiMessage::NoteOn { .. } | MidiMessage::NoteOff { .. }
-        ) {
-            continue;
-        }
+        let (key, on) = match event.message {
+            MidiMessage::NoteOn { key, .. } => (key, true),
+            MidiMessage::NoteOff { key, .. } => (key, false),
+            _ => continue,
+        };
+        let lane = match performance.profile.track_layout() {
+            TrackLayout::PerStaff => first[event.track] + event.staff,
+            TrackLayout::PerTrack => first[event.track],
+        };
+        let slot = Slot {
+            track: lane,
+            channel: event.channel.get(),
+            key,
+        };
         let exact = event.at.whole_notes() * (TICKS_PER_QUARTER_TIMES * i64::from(ppq.get()));
-        if !exact.is_integer() {
-            let lane = match performance.profile.track_layout() {
-                TrackLayout::PerStaff => first[event.track] + event.staff,
-                TrackLayout::PerTrack => first[event.track],
-            };
-            off_grid.insert((lane, to_ticks(event.at, ppq)));
+        if on {
+            open.entry(slot).or_default().push_back(Started {
+                onset: to_ticks(event.at, ppq),
+                whole: exact.is_integer(),
+            });
+        } else if let Some(started) = open.get_mut(&slot).and_then(VecDeque::pop_front)
+            && !(started.whole && exact.is_integer())
+        {
+            off_grid.insert(GridKey {
+                lane,
+                channel: slot.channel,
+                key,
+                onset: started.onset,
+            });
         }
     }
     let played: BTreeSet<usize> = performance.order.sources().into_iter().collect();
@@ -674,10 +716,7 @@ fn compare_notes(context: &Context, ours: &Side, gp: &Side, verdict: &mut Verdic
     }
     let allowed = off_grid_ticks();
     for (left, right) in mine.iter().zip(&theirs) {
-        let end = left.onset.tick + left.length;
-        let lane = left.onset.track;
-        let off_grid = context.off_grid.contains(&(lane, left.onset.tick))
-            || context.off_grid.contains(&(lane, end));
+        let off_grid = context.off_grid.contains(&GridKey::of(left.onset));
         let gap = left.length.abs_diff(right.length);
         if gap == 0 {
             continue;
@@ -896,12 +935,7 @@ fn off_grid_note(case: &Case) -> usize {
     case.ours
         .notes
         .iter()
-        .position(|note| {
-            let lane = note.onset.track;
-            case.context
-                .off_grid
-                .contains(&(lane, note.onset.tick + note.length))
-        })
+        .position(|note| case.context.off_grid.contains(&GridKey::of(note.onset)))
         .expect("an off-grid note")
 }
 
@@ -926,11 +960,7 @@ fn the_comparator_rejects_every_difference_no_allowance_covers() {
             !durations
                 .context
                 .off_grid
-                .contains(&(note.onset.track, note.onset.tick))
-                && !durations
-                    .context
-                    .off_grid
-                    .contains(&(note.onset.track, note.onset.tick + note.length))
+                .contains(&GridKey::of(note.onset))
         })
         .expect("an on-grid note");
     let mut one_tick = durations.ours.clone();
