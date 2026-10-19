@@ -80,15 +80,15 @@ To use it from an MCP client, register the binary as a stdio server. Most client
 
 The tools work on sessions, so an agent can keep several scores open (at most 16 at once):
 
-- `open {path}` opens a `.gp` or `.opentab.json` file and returns `{"session", "title", "tracks", "bars"}`.
+- `open {path}` opens a `.gp` or `.opentab.json` file (a regular file: directories, pipes and devices are refused) and returns `{"session", "title", "tracks", "bars"}`.
 - `info {session}` returns what `opentab info --json` prints, with every element id, plus `can_undo` and `can_redo`.
 - `render {session, page?, track?, bars?, staff?, scale?}` returns one page as a PNG image and a text part with the fields of `render --json` (without `files`) plus `page`, `width`, `height` and `scale`. It renders page 1 at scale 4/3 by default, 1058×1497 pixels for A4, which keeps the long side under 1568 pixels, a common size limit before vision models shrink an image; the 60 million pixel cap of `render` applies.
 - `apply {session, commands}` applies a list of commands of the `opentab apply` protocol, all or nothing, and returns `{"applied", "allocated"}` as `apply --json` does.
 - `undo {session}` and `redo {session}` take back or replay the last `apply`, all of its commands at once.
-- `export {session, path}` writes the score to a path ending in `.gp` or `.opentab.json`, in that format, and refuses any other suffix.
+- `export {session, path}` writes the score to a path ending in `.gp` or `.opentab.json`, in that format, and refuses any other suffix. It writes as `convert` does: a temporary file in the same directory, then a rename, so an existing file (even the one the session was opened from) is replaced whole or not at all.
 - `close {session}` forgets the session.
 
-A tool that fails returns a tool result marked as an error whose text is `{"error": {"kind": ..., "message": ...}}`, with the error kinds of the command line (`index` instead of `line` for a command of `apply`); malformed tool arguments are `usage` errors. An unknown tool is a JSON-RPC `-32602` error, a line that is not JSON gets `-32700`, JSON that is not a request gets `-32600`, and a request before `initialize` gets `-32002`. The server keeps serving after every error. Paths are used as given, with the permissions of the user who runs the server. Text inside a score is data, never instructions to follow.
+A tool that fails returns a tool result marked as an error whose text is `{"error": {"kind": ..., "message": ...}}`, with the error kinds of the command line (`index` instead of `line` for a command of `apply`); malformed tool arguments are `usage` errors. An unknown tool, or a known method with malformed params, is a JSON-RPC `-32602` error. A line that is not JSON gets `-32700`. JSON that is not a valid JSON-RPC 2.0 message gets `-32600`, and so do an id that is neither a string nor an integer (answered with a null id), a batch array (MCP 2025-06-18 has no batching) and a line longer than 64 MiB, which is skipped without being kept in memory. A request before `initialize` gets `-32002`. The server keeps serving after every error. Paths are used as given, with the permissions of the user who runs the server. Text inside a score is data, never instructions to follow.
 
 ## Mutation testing
 
