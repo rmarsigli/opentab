@@ -24,6 +24,6 @@ pub use render::{
     render_all, render_frames,
 };
 pub use schedule::{SampledEvent, Scheduler, frame_at};
-pub use sf2::{Sf2Bank, Sf2Synth, SynthFault, SynthStage};
+pub use sf2::{MASTER_VOLUME, Sf2Bank, Sf2Synth, SynthFault, SynthStage};
 pub use synth::{Bank, BankFormat, BankInstrument, Synth};
 pub use wav::{WAV_HEADER_BYTES, encode_wav, pcm16};

@@ -21,6 +21,7 @@ use crate::{Bank, BankError, BankFormat, BankInstrument, SampleRate, Synth, TRAC
 const UNKNOWN_PANIC: &str = "the sound engine stopped without a message";
 const BYTES_PER_POINT: usize = 2;
 const MAX_PROGRAM: u8 = 127;
+pub const MASTER_VOLUME: f32 = 4.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SynthStage {
@@ -245,7 +246,8 @@ impl Sf2Synth {
         let settings = SynthesizerSettings::new(hz);
         let font = &self.font;
         match catch_unwind(AssertUnwindSafe(|| Synthesizer::new(font, &settings))) {
-            Ok(Ok(engine)) => {
+            Ok(Ok(mut engine)) => {
+                engine.set_master_volume(MASTER_VOLUME);
                 self.engine = Some(engine);
                 self.apply_defaults();
             }
