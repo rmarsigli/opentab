@@ -96,7 +96,7 @@ pub(crate) enum Handled {
     Anchored,
     Mapped(&'static [&'static str]),
     Replayed(String),
-    Custom,
+    Each,
     Substitute(Node),
 }
 
@@ -279,7 +279,7 @@ impl Context {
             let handled = handle(self, &visit)?;
             if !matches!(
                 handled,
-                Handled::Unknown | Handled::Anchored | Handled::Substitute(_)
+                Handled::Unknown | Handled::Anchored | Handled::Each | Handled::Substitute(_)
             ) {
                 if seen.contains(&visit.key) {
                     return Err(visit.fault(GpifProblem::DuplicateElement {
@@ -296,7 +296,7 @@ impl Context {
                     self.keep_attributes(&inner, child, known)?;
                 }
                 Handled::Replayed(guard) => self.keep(scope, index, node, Some(guard))?,
-                Handled::Custom => {}
+                Handled::Each => {}
                 Handled::Substitute(replacement) => self.keep(scope, index, &replacement, None)?,
             }
         }

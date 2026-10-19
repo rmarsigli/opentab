@@ -37,11 +37,11 @@ fn an_empty_file_exits_2() {
 }
 
 #[test]
-fn versions_one_and_three_exit_2() {
-    for version in [1, 3] {
+fn versions_two_and_four_exit_2() {
+    for version in [2, 4] {
         assert_rejected(
             format!(r#"{{"opentab_json": {version}}}"#).as_bytes(),
-            &format!("unsupported opentab_json version {version}, expected 2"),
+            &format!("unsupported opentab_json version {version}, expected 3"),
         );
     }
 }

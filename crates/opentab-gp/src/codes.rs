@@ -1,6 +1,6 @@
 use opentab_model::{
-    Accent, Clef, Dynamic, Finger, Grace, HarmonicKind, NoteValue, Slide, StrokeDirection,
-    TempoUnit, Vibrato,
+    Accent, Clef, Dynamic, Finger, Grace, HarmonicKind, InstrumentSet, NoteValue, Slide,
+    StrokeDirection, TempoUnit, Vibrato,
 };
 
 pub(crate) type Table<T> = [(&'static str, T)];
@@ -89,6 +89,34 @@ pub(crate) const HEAVY_ACCENT_BIT: u32 = 4;
 pub(crate) const ACCENT_BIT: u32 = 8;
 
 pub(crate) const DRUM_KIT: &str = "drumKit";
+pub(crate) const ELECTRIC_GUITAR: &str = "electricGuitar";
+
+pub(crate) const INSTRUMENT_SETS: &Table<InstrumentSet> = &[
+    (ELECTRIC_GUITAR, InstrumentSet::ElectricGuitar),
+    ("steelGuitar", InstrumentSet::SteelGuitar),
+    ("nylonGuitar", InstrumentSet::NylonGuitar),
+    ("electricBass", InstrumentSet::ElectricBass),
+    ("acousticBass", InstrumentSet::AcousticBass),
+    ("violin", InstrumentSet::Violin),
+    ("acousticPiano", InstrumentSet::AcousticPiano),
+    ("saxophone", InstrumentSet::Saxophone),
+    ("trumpet", InstrumentSet::Trumpet),
+    ("electricOrgan", InstrumentSet::ElectricOrgan),
+    ("voice", InstrumentSet::Voice),
+    (DRUM_KIT, InstrumentSet::DrumKit),
+];
+
+pub(crate) const SOUND_AUTOMATION: &str = "Sound";
+pub(crate) const VOLUME_AUTOMATION: &str = "DSPParam_12";
+pub(crate) const PAN_AUTOMATION: &str = "DSPParam_11";
+pub(crate) const VOLUME_PARAMETER: usize = 12;
+pub(crate) const PAN_PARAMETER: usize = 11;
+pub(crate) const STRIP_DEFAULTS: [&str; 16] = [
+    "0.5", "0.5", "0.5", "0.5", "0.5", "0.5", "0.5", "0.5", "0.5", "0", "0.5", "0.5", "0.5", "0.5",
+    "0.5", "0.5",
+];
+pub(crate) const GENERATED_ROLE: &str = "User";
+pub(crate) const SOUND_KEY_SEPARATOR: char = ';';
 pub(crate) const FADE_IN: &str = "FadeIn";
 pub(crate) const GHOST: &str = "Normal";
 pub(crate) const MINOR: &str = "Minor";

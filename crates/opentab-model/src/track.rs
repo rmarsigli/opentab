@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    BarId, BeatEffects, BeatId, Duration, ModelError, NoteEffects, NoteId, StaffId, TrackId,
-    VoiceId,
+    Automation, BarId, BeatEffects, BeatId, Duration, InstrumentSet, ModelError, NoteEffects,
+    NoteId, Sound, StaffId, TrackId, TrackMidi, VoiceId,
 };
 
 const MAX_MIDI_NOTE: u8 = 127;
@@ -109,6 +109,7 @@ pub enum InstrumentKind {
 pub struct Instrument {
     pub kind: InstrumentKind,
     pub midi_program: u8,
+    pub set: Option<InstrumentSet>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -171,10 +172,13 @@ pub struct Track {
     pub name: String,
     pub short_name: String,
     pub instrument: Instrument,
+    pub midi: TrackMidi,
+    pub sounds: Vec<Sound>,
     pub tuning: Tuning,
     pub capo: u8,
     pub transpose: Transpose,
     pub staves: Vec<Staff>,
+    pub automations: Vec<Automation>,
 }
 
 impl Track {

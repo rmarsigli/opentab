@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use opentab_gp::read_gp;
 use opentab_model::{
-    ElementId, IdAllocator, Note, OpaquePayload, Score, Tempo, TempoChange, TempoUnit, Track,
-    to_json,
+    Automation, AutomationValue, ElementId, Fraction, IdAllocator, Note, OpaquePayload, Score,
+    Sound, SoundRef, Tempo, TempoChange, TempoUnit, Track, to_json,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -23,20 +23,17 @@ const DEFAULT_BPM: f64 = 120.0;
 const REPLACEMENT: char = '\u{FFFD}';
 const SHOWN_DIFF_LINES: usize = 40;
 
-const GP_DEFAULT_PAYLOADS: [&str; 57] = [
+const GP_DEFAULT_PAYLOADS: [&str; 51] = [
     "/AudioEngineState",
-    "/Automations",
     "/Color",
     "/ConcertPitchStemOrientation",
     "/Encoding",
     "/ForcedSound",
     "/IconId",
     "/Lyrics",
-    "/MidiConnection",
     "/PalmMute",
     "/PlaybackState",
     "/PlayingStyle",
-    "/RSE",
     "/ScoreViews",
     "/SystemsDefautLayout",
     "/SystemsLayout",
@@ -64,6 +61,7 @@ const GP_DEFAULT_PAYLOADS: [&str; 57] = [
     "Properties/Property@Tuning/Instrument",
     "Properties/Property@Tuning/Label",
     "Properties/Property@Tuning/LabelVisible",
+    "RSE/ChannelStrip/@version",
     "Score/FirstPageFooter",
     "Score/FirstPageHeader",
     "Score/MultiVoice",
@@ -74,13 +72,9 @@ const GP_DEFAULT_PAYLOADS: [&str; 57] = [
     "Score/ScoreZoom",
     "Score/ScoreZoomPolicy",
     "Score/WordsAndMusic",
-    "Sounds/Sound/Label",
-    "Sounds/Sound/Name",
     "Sounds/Sound/Path",
     "Sounds/Sound/RSE",
     "Sounds/Sound/Role",
-    "Sounds/Sound/MIDI/LSB",
-    "Sounds/Sound/MIDI/MSB",
 ];
 
 struct Pair {
@@ -96,7 +90,7 @@ struct Normalisation {
     apply: Normalise,
 }
 
-const NORMALISATIONS: [Normalisation; 9] = [
+const NORMALISATIONS: [Normalisation; 11] = [
     Normalisation {
         name: "gp_writes_its_own_defaults",
         apply: gp_writes_its_own_defaults,
@@ -128,6 +122,14 @@ const NORMALISATIONS: [Normalisation; 9] = [
     Normalisation {
         name: GHOST_NORMALISATION,
         apply: gp_drops_ghost_on_accented_notes,
+    },
+    Normalisation {
+        name: "gp_spells_out_the_implicit_sound",
+        apply: gp_spells_out_the_implicit_sound,
+    },
+    Normalisation {
+        name: "gp_starts_every_track_with_its_first_sound",
+        apply: gp_starts_every_track_with_its_first_sound,
     },
     Normalisation {
         name: "element_ids_follow_reading_order",
@@ -433,6 +435,41 @@ fn gp_drops_ghost_on_accented_notes(fixture: &mut Score, _golden: &mut Score) {
     }
 }
 
+fn gp_spells_out_the_implicit_sound(fixture: &mut Score, golden: &mut Score) {
+    for (ours, theirs) in fixture.tracks.iter().zip(golden.tracks.iter_mut()) {
+        let implicit = Sound {
+            name: String::new(),
+            program: ours.instrument.midi_program,
+            bank: ours.midi.bank,
+        };
+        if ours.sounds.is_empty() && theirs.sounds == [implicit] {
+            theirs.sounds.clear();
+        }
+    }
+}
+
+fn gp_starts_every_track_with_its_first_sound(fixture: &mut Score, golden: &mut Score) {
+    let Some(first) = golden.master_bars.first().map(|master| master.id) else {
+        return;
+    };
+    let opening = Automation {
+        master_bar: first,
+        position: Fraction::from_integer(0),
+        linear: false,
+        visible: true,
+        value: AutomationValue::Sound(SoundRef(0)),
+    };
+    for (ours, theirs) in fixture.tracks.iter().zip(golden.tracks.iter_mut()) {
+        let named = ours
+            .automations
+            .iter()
+            .any(|automation| matches!(automation.value, AutomationValue::Sound(_)));
+        if !named && theirs.automations.first() == Some(&opening) {
+            theirs.automations.remove(0);
+        }
+    }
+}
+
 fn renumbered(score: &mut Score) {
     let mut ids = IdAllocator::default();
     let mut next = || ids.next().unwrap_or(ElementId(0));
@@ -577,6 +614,9 @@ fn payload_kind(data: &str) -> String {
     let head_end = data.find('>').unwrap_or(data.len());
     let head = &data[..head_end];
     let parent = ordinal_free(attribute(head, "parent").unwrap_or_default());
+    if data.starts_with("<KeepAttribute ") {
+        return format!("{parent}/@{}", attribute(head, "name").unwrap_or_default());
+    }
     let guard = attribute(head, "guard")
         .and_then(|guard| guard.split(':').next())
         .map(|kind| format!("{kind}:"))
@@ -727,6 +767,12 @@ fn payload_kinds_name_their_parent_guard_and_element() {
     assert_eq!(
         payload_kind("<Keep parent=\"Sounds/Sound#0/MIDI\" index=\"0\"><LSB>0</LSB></Keep>"),
         "Sounds/Sound/MIDI/LSB"
+    );
+    assert_eq!(
+        payload_kind(
+            "<KeepAttribute parent=\"RSE/ChannelStrip\" index=\"0\" name=\"version\" value=\"E56\"/>"
+        ),
+        "RSE/ChannelStrip/@version"
     );
     assert_eq!(
         payload_kind("<Keep parent=\"MasterBars\" index=\"0\"><!-- x --></Keep>"),

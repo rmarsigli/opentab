@@ -1,6 +1,6 @@
 use opentab_model::{
-    Clef, ContainerEntry, Diagnostic, Dynamic, Finger, Fraction, Grace, NoteKind, NoteValue, Score,
-    Tap, TempoUnit, Transpose, Voice, diagnose, from_json, to_json,
+    AutomationValue, Clef, ContainerEntry, Diagnostic, Dynamic, Finger, Fraction, Grace, NoteKind,
+    NoteValue, Score, Tap, TempoUnit, TrackMidi, Transpose, Voice, diagnose, from_json, to_json,
 };
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with, min_beats_for_bar};
 use proptest::prelude::*;
@@ -278,6 +278,16 @@ struct Coverage {
     note_finger_open: bool,
     note_finger_little: bool,
     note_bend_negative: bool,
+    instrument_set: bool,
+    no_instrument_set: bool,
+    midi_not_default: bool,
+    sounds: bool,
+    twin_sound_names: bool,
+    volume_automation: bool,
+    pan_automation: bool,
+    sound_automation: bool,
+    automation_at_bar_end: bool,
+    sound_override: bool,
 }
 
 fn observe(coverage: &mut Coverage, score: &Score) {
@@ -331,7 +341,28 @@ fn observe(coverage: &mut Coverage, score: &Score) {
         coverage.repeats |= master_bar.repeat_start || master_bar.repeat_end.is_some();
         coverage.tempo_changes |= !master_bar.tempo_changes.is_empty();
     }
+    coverage.sound_override |= !score.sound_overrides.is_empty();
     for track in &score.tracks {
+        coverage.instrument_set |= track.instrument.set.is_some();
+        coverage.no_instrument_set |= track.instrument.set.is_none();
+        coverage.midi_not_default |= track.midi != TrackMidi::default_for(track.instrument.kind);
+        coverage.sounds |= !track.sounds.is_empty();
+        coverage.twin_sound_names |= track.sounds.iter().enumerate().any(|(index, sound)| {
+            track.sounds[..index]
+                .iter()
+                .any(|other| other.name == sound.name)
+        });
+        for automation in &track.automations {
+            match automation.value {
+                AutomationValue::Volume(_) => coverage.volume_automation = true,
+                AutomationValue::Pan(_) => coverage.pan_automation = true,
+                AutomationValue::Sound(_) => coverage.sound_automation = true,
+            }
+            coverage.automation_at_bar_end |= score.master_bars.iter().any(|master| {
+                master.id == automation.master_bar
+                    && automation.position == master.time_signature.bar_length()
+            });
+        }
         coverage.multi_staff |= track.staves.len() > 1;
         coverage.transpose |= track.transpose != Transpose::default();
         for staff in &track.staves {
@@ -504,6 +535,16 @@ fn generator_covers_every_feature() {
         ("note_finger_open", coverage.note_finger_open),
         ("note_finger_little", coverage.note_finger_little),
         ("note_bend_negative", coverage.note_bend_negative),
+        ("instrument_set", coverage.instrument_set),
+        ("no_instrument_set", coverage.no_instrument_set),
+        ("midi_not_default", coverage.midi_not_default),
+        ("sounds", coverage.sounds),
+        ("twin_sound_names", coverage.twin_sound_names),
+        ("volume_automation", coverage.volume_automation),
+        ("pan_automation", coverage.pan_automation),
+        ("sound_automation", coverage.sound_automation),
+        ("automation_at_bar_end", coverage.automation_at_bar_end),
+        ("sound_override", coverage.sound_override),
     ];
     let missing: Vec<&str> = checks
         .iter()

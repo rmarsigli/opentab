@@ -104,7 +104,11 @@ fn rich_score() -> Score {
         instrument: Instrument {
             kind: InstrumentKind::Percussion,
             midi_program: 0,
+            set: None,
         },
+        midi: opentab_model::TrackMidi::default_for(InstrumentKind::Percussion),
+        sounds: Vec::new(),
+        automations: Vec::new(),
         tuning: Tuning {
             strings: Vec::new(),
         },
@@ -192,7 +196,7 @@ fn empty_score_round_trips() {
 #[test]
 fn document_carries_version_and_score_fields_at_top_level() {
     let text = to_json(&Score::new()).unwrap();
-    assert!(text.contains("\n  \"opentab_json\": 2,"), "{text}");
+    assert!(text.contains("\n  \"opentab_json\": 3,"), "{text}");
     let value: Value = serde_json::from_str(&text).unwrap();
     let keys: Vec<&str> = value
         .as_object()
@@ -213,6 +217,7 @@ fn document_carries_version_and_score_fields_at_top_level() {
             "master_bars",
             "meta",
             "opentab_json",
+            "sound_overrides",
             "tracks"
         ]
     );
@@ -238,7 +243,7 @@ fn missing_version_is_rejected() {
 fn unknown_versions_are_rejected() {
     for (version, found) in [
         (json!(1), "1"),
-        (json!(3), "3"),
+        (json!(2), "2"),
         (json!(0), "0"),
         (json!("1"), "\"1\""),
         (json!(1.5), "1.5"),
@@ -286,11 +291,11 @@ fn garbage_inputs_are_errors() {
     for input in inputs {
         assert!(from_json(input).is_err(), "{input:?} accepted");
     }
-    assert!(from_json(r#"{"opentab_json": 2}"#).is_err());
+    assert!(from_json(r#"{"opentab_json": 3}"#).is_err());
     assert!(from_json(&"[".repeat(100_000)).is_err());
     assert!(
         from_json(&format!(
-            "{{\"opentab_json\": 2, \"meta\": {}",
+            "{{\"opentab_json\": 3, \"meta\": {}",
             "[".repeat(100_000)
         ))
         .is_err()

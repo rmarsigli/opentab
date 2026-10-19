@@ -243,13 +243,17 @@ mod tests {
             instrument: Instrument {
                 kind: opentab_model::InstrumentKind::Fretted,
                 midi_program: 0,
+                set: None,
             },
+            midi: opentab_model::TrackMidi::default_for(opentab_model::InstrumentKind::Fretted),
+            sounds: Vec::new(),
             tuning: Tuning {
                 strings: vec![Pitch(64), Pitch(59)],
             },
             capo: 2,
             transpose: Transpose::new(0, -1).unwrap(),
             staves: Vec::new(),
+            automations: Vec::new(),
         };
         let note = |fret: u8, harmonic: Option<(HarmonicKind, i64, i64)>| Note {
             id: NoteId(ElementId(2)),

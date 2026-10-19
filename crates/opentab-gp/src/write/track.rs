@@ -1,10 +1,13 @@
-use opentab_model::{InstrumentKind, Pitch, Score, Staff, Track};
+use opentab_model::{InstrumentKind, MasterBar, Pitch, Score, Staff, Track};
 
 use crate::canon;
 use crate::dom::{Element, Node};
 use crate::error::Refusal;
 use crate::number;
 use crate::read::{ChordItem, chord_items};
+use crate::write::mixer::{
+    check_track, lanes, midi_connection, patch_parameters, rse_element, sounds_element,
+};
 use crate::write::payload::{self, Content, Env, Item};
 use crate::write::state::{Layouts, Owners, StaffContext};
 use crate::write::xml::{self, Fail, Within};
@@ -231,28 +234,36 @@ fn has_drum_kit(items: &[Item]) -> bool {
     })
 }
 
-fn sounds(program: u8) -> Element {
-    let midi = Element::new("MIDI").with_child(Element::leaf("Program", &program.to_string()));
-    Element::new("Sounds").with_child(Element::new("Sound").with_child(midi))
+struct TrackSite<'s> {
+    index: usize,
+    layouts: &'s Layouts,
+    contexts: &'s [StaffContext],
+    master_bars: &'s [MasterBar],
 }
 
 fn track_element(
     track: &Track,
-    index: usize,
-    layouts: &Layouts,
-    contexts: &[StaffContext],
+    site: &TrackSite<'_>,
     owners: &mut Owners<'_>,
 ) -> Result<Element, Fail> {
+    let index = site.index;
     let items = payload::surviving(owners.items(track.id.0)?, &Env::Track(track))?;
     if track.instrument.kind == InstrumentKind::Percussion && !has_drum_kit(&items) {
         return Err(Fail::new(Refusal::DrumKit));
     }
+    check_track(track, &items).map_err(Fail::new)?;
+    let lanes = lanes(track, site.master_bars, &items)?;
+    let layouts = site.layouts;
+    let contexts = site.contexts;
     let id = Layouts::id(&layouts.tracks, index);
     let mut element = Element::new("Track").with_attribute("id", &id.to_string());
     element.push(xml::text("Name", &track.name).within(|| "name".to_string())?);
     element.push(xml::text("ShortName", &track.short_name).within(|| "short_name".to_string())?);
     element.push(
-        Element::new("InstrumentSet").with_child(canon::instrument_type(track.instrument.kind)),
+        Element::new("InstrumentSet").with_child(canon::instrument_type(
+            track.instrument.kind,
+            track.instrument.set,
+        )),
     );
     element.push(
         Element::new("Transpose")
@@ -265,7 +276,13 @@ fn track_element(
                 &track.transpose.octave().to_string(),
             )),
     );
-    element.push(sounds(track.instrument.midi_program));
+    if let Some(rse) = rse_element(track, lanes.strip, &items) {
+        element.push(rse);
+    }
+    element.push(sounds_element(track)?);
+    if let Some(connection) = midi_connection(track, &items) {
+        element.push(connection);
+    }
     let mut staves = Element::new("Staves");
     for (staff_index, staff) in track.staves.iter().enumerate() {
         let context = contexts
@@ -276,7 +293,11 @@ fn track_element(
         staves.children.push(Node::Element(staff));
     }
     element.push(staves);
+    if let Some(automations) = lanes.sounds {
+        element.push(automations);
+    }
     apply_own(&mut element, items)?;
+    patch_parameters(&mut element, &track.midi);
     Ok(element)
 }
 
@@ -288,8 +309,13 @@ pub(crate) fn tracks_pool(
 ) -> Result<Element, Fail> {
     let mut pool = Element::new("Tracks");
     for (index, track) in score.tracks.iter().enumerate() {
-        let element = track_element(track, index, layouts, staves, owners)
-            .within(|| format!("tracks[{index}]"))?;
+        let site = TrackSite {
+            index,
+            layouts,
+            contexts: staves,
+            master_bars: &score.master_bars,
+        };
+        let element = track_element(track, &site, owners).within(|| format!("tracks[{index}]"))?;
         pool.push(element);
     }
     Ok(pool)

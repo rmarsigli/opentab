@@ -109,7 +109,11 @@ pub fn track(score: &mut Score, kind: InstrumentKind, bars: Vec<Bar>) -> Track {
         instrument: Instrument {
             kind,
             midi_program: 0,
+            set: None,
         },
+        midi: opentab_model::TrackMidi::default_for(kind),
+        sounds: Vec::new(),
+        automations: Vec::new(),
         tuning: Tuning { strings },
         capo: 0,
         transpose: Transpose::default(),

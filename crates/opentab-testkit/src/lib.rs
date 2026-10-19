@@ -15,6 +15,5 @@ pub fn arb_score() -> impl Strategy<Value = Score> {
 }
 
 pub fn arb_score_with(cfg: ScoreGenConfig) -> impl Strategy<Value = Score> {
-    seed::arb_score_seed(cfg)
-        .prop_map(move |seed| build::build_score(seed, cfg.max_beats_per_voice))
+    seed::arb_score_seed(cfg).prop_map(move |seed| build::build_score(seed, cfg))
 }

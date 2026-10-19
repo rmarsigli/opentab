@@ -1,8 +1,15 @@
-use opentab_model::{Fraction, InstrumentKind, KeySignature, NoteKind, Pitch, TimeSignature};
+use opentab_model::{
+    Balance, Fraction, InstrumentKind, InstrumentSet, KeySignature, Level, NoteKind, Pitch,
+    TimeSignature,
+};
 
-use crate::codes::{DRUM_KIT, TEMPO_POSITION_GRID};
+use crate::codes::{
+    DRUM_KIT, ELECTRIC_GUITAR, INSTRUMENT_SETS, PAN_PARAMETER, SOUND_KEY_SEPARATOR, STRIP_DEFAULTS,
+    TEMPO_POSITION_GRID, VOLUME_PARAMETER, name_of,
+};
 use crate::dom::{self, Element, Node};
 use crate::guard::PitchInputs;
+use crate::number;
 use crate::read::Handled;
 
 pub(crate) const GP_REVISION: &str = "GPRevision";
@@ -11,12 +18,13 @@ const VERSION: &str = "8.1.5";
 const REVISION: &str = "13008";
 const REVISION_REQUIRED: &str = "12024";
 const REVISION_RECOMMENDED: &str = "13000";
-const FRETTED_TYPE: &str = "electricGuitar";
 const DIAGRAM_FRETS: &str = "5";
 const MAX_MIDI: i32 = 127;
 const SEMITONES: i32 = 12;
 const FIFTH: i32 = 7;
 const SIGNIFICANT_DIGITS: u32 = 6;
+const MILLIONTHS: u32 = 1_000_000;
+const MILLIONTH_DIGITS: usize = 6;
 const SCIENTIFIC_BELOW: u32 = 5;
 const SHARP_NAMES: [(&str, &str); 12] = [
     ("C", ""),
@@ -61,12 +69,96 @@ pub(crate) fn gp_revision() -> Element {
         .with_attribute("recommended", REVISION_RECOMMENDED)
 }
 
-pub(crate) fn instrument_type(kind: InstrumentKind) -> Element {
-    let name = match kind {
-        InstrumentKind::Fretted => FRETTED_TYPE,
-        InstrumentKind::Percussion => DRUM_KIT,
+pub(crate) fn instrument_type(kind: InstrumentKind, set: Option<InstrumentSet>) -> Element {
+    let name = match (set, kind) {
+        (Some(set), _) => name_of(INSTRUMENT_SETS, set),
+        (None, InstrumentKind::Fretted) => ELECTRIC_GUITAR,
+        (None, InstrumentKind::Percussion) => DRUM_KIT,
     };
     Element::leaf("Type", name)
+}
+
+pub(crate) fn millionths(value: u32) -> String {
+    let whole = value / MILLIONTHS;
+    let rest = value % MILLIONTHS;
+    if rest == 0 {
+        return whole.to_string();
+    }
+    let digits = format!("{rest:0width$}", width = MILLIONTH_DIGITS);
+    format!("{whole}.{}", digits.trim_end_matches('0'))
+}
+
+pub(crate) struct Mixer {
+    pub volume: Level,
+    pub pan: Balance,
+}
+
+pub(crate) fn mixer(parameters: &str) -> Mixer {
+    let tokens: Vec<&str> = parameters.split_whitespace().collect();
+    let value = |at: usize| tokens.get(at).and_then(|token| number::millionths(token));
+    Mixer {
+        volume: value(VOLUME_PARAMETER)
+            .and_then(|value| Level::new(value).ok())
+            .unwrap_or(Level::HALF),
+        pan: value(PAN_PARAMETER)
+            .and_then(|value| Balance::new(value).ok())
+            .unwrap_or(Balance::CENTRE),
+    }
+}
+
+pub(crate) fn strip_parameters(volume: Level, pan: Balance) -> Element {
+    let mut tokens: Vec<String> = STRIP_DEFAULTS
+        .iter()
+        .map(|token| token.to_string())
+        .collect();
+    if let Some(slot) = tokens.get_mut(VOLUME_PARAMETER) {
+        *slot = millionths(volume.millionths());
+    }
+    if let Some(slot) = tokens.get_mut(PAN_PARAMETER) {
+        *slot = millionths(pan.millionths());
+    }
+    Element::leaf("Parameters", &tokens.join(" "))
+}
+
+pub(crate) fn sound_key(path: &str, name: &str, role: &str) -> String {
+    format!("{path}{SOUND_KEY_SEPARATOR}{name}{SOUND_KEY_SEPARATOR}{role}")
+}
+
+pub(crate) fn sound_value(key: &str) -> Element {
+    let mut element = Element::new("Value");
+    element.children = dom::cdata_nodes(key);
+    element
+}
+
+pub(crate) struct AutomationParts<'a> {
+    pub kind: &'a str,
+    pub linear: bool,
+    pub bar: usize,
+    pub position: String,
+    pub visible: bool,
+    pub value: Element,
+}
+
+pub(crate) fn automation(parts: AutomationParts<'_>) -> Element {
+    Element::new("Automation")
+        .with_child(Element::leaf("Type", parts.kind))
+        .with_child(Element::leaf("Linear", &parts.linear.to_string()))
+        .with_child(Element::leaf("Bar", &parts.bar.to_string()))
+        .with_child(Element::leaf("Position", &parts.position))
+        .with_child(Element::leaf("Visible", &parts.visible.to_string()))
+        .with_child(parts.value)
+}
+
+pub(crate) fn automation_position(position: Fraction, time: TimeSignature) -> Option<String> {
+    let ticks = grid_ticks(position)?;
+    let bar = grid_ticks(time.bar_length())?;
+    if ticks > bar {
+        return None;
+    }
+    Some(general_format(
+        u128::try_from(ticks).ok()?,
+        u128::try_from(bar).ok()?,
+    ))
 }
 
 pub(crate) fn capo_property(capo: u8) -> Element {

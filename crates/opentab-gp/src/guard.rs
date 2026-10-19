@@ -1,12 +1,12 @@
 use opentab_model::{
     Accent, Bar, Beat, Bend, Clef, Dynamic, Finger, Fraction, Grace, Harmonic, InstrumentKind,
-    NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature, Transpose, TremoloPicking, Vibrato,
-    VoiceSlot,
+    InstrumentSet, NoteKind, Pitch, Slide, Stroke, Tap, TimeSignature, Transpose, TremoloPicking,
+    Vibrato, VoiceSlot,
 };
 
 use crate::codes::{
-    CLEFS, DYNAMICS, FINGERS, GRACES, HARMONICS, STROKE_DIRECTIONS, TREMOLOS, VIBRATOS, name_of,
-    slide_bits,
+    CLEFS, DYNAMICS, FINGERS, GRACES, HARMONICS, INSTRUMENT_SETS, STROKE_DIRECTIONS, TREMOLOS,
+    VIBRATOS, name_of, slide_bits,
 };
 
 const NONE: &str = "none";
@@ -161,11 +161,31 @@ pub(crate) fn chord(name: Option<&str>) -> String {
     }
 }
 
-pub(crate) fn instrument(kind: InstrumentKind) -> String {
-    match kind {
-        InstrumentKind::Fretted => "instrument:fretted".to_string(),
-        InstrumentKind::Percussion => "instrument:percussion".to_string(),
+pub(crate) fn instrument(kind: InstrumentKind, set: Option<InstrumentSet>) -> String {
+    let kind = match kind {
+        InstrumentKind::Fretted => "fretted",
+        InstrumentKind::Percussion => "percussion",
+    };
+    let set = set.map_or(NONE, |set| name_of(INSTRUMENT_SETS, set));
+    format!("instrument:{kind} {set}")
+}
+
+const SOUND_LABEL: &str = "sound-label:";
+
+pub(crate) fn sound_label(index: usize, name: Option<&str>) -> String {
+    match name {
+        Some(name) => format!("{SOUND_LABEL}{index} {name}"),
+        None => format!("{SOUND_LABEL}{index}"),
     }
+}
+
+pub(crate) fn sound_label_index(guard: &str) -> Option<usize> {
+    let rest = guard.strip_prefix(SOUND_LABEL)?;
+    let index = rest.split(' ').next()?;
+    if index.is_empty() || !index.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    index.parse().ok()
 }
 
 pub(crate) fn clef(clef: Clef) -> String {

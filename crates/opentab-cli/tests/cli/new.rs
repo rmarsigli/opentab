@@ -9,7 +9,7 @@ fn new_writes_the_briefed_score() {
     let result = run(&["new", "--out", path_str(&path), "--title", "Demo"]);
     assert_eq!(result.code, 0, "{}", result.stderr);
     let score = read_json(&path);
-    assert_eq!(score["opentab_json"], 2);
+    assert_eq!(score["opentab_json"], 3);
     assert_eq!(score["meta"]["title"], "Demo");
     assert_eq!(score["master_bars"].as_array().unwrap().len(), 1);
     let master_bar = &score["master_bars"][0];
@@ -24,7 +24,7 @@ fn new_writes_the_briefed_score() {
     assert_eq!(track["name"], "Guitar");
     assert_eq!(
         track["instrument"],
-        json!({"kind": "fretted", "midi_program": 25})
+        json!({"kind": "fretted", "midi_program": 25, "set": "electric_guitar"})
     );
     assert_eq!(track["tuning"]["strings"], json!([64, 59, 55, 50, 45, 40]));
     assert_eq!(track["capo"], 0);

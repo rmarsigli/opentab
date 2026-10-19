@@ -742,6 +742,8 @@ dependencies = [
  "opentab-testkit",
  "proptest",
  "quick-xml",
+ "serde",
+ "serde_json",
  "thiserror",
  "zip",
 ]

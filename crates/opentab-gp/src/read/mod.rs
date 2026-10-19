@@ -2,6 +2,7 @@ mod beat;
 mod context;
 mod document;
 mod master;
+mod mixer;
 mod note;
 mod pools;
 mod property;
@@ -17,12 +18,14 @@ use opentab_model::Score;
 use crate::archive::{SCORE_ENTRY, minimal_container, read_archive};
 use crate::dom;
 use crate::error::{GpError, GpifProblem};
+use crate::overrides;
 
 const BYTE_ORDER_MARK: &[u8] = b"\xEF\xBB\xBF";
 
 pub fn read_gp(bytes: &[u8]) -> Result<Score, GpError> {
-    let archive = read_archive(bytes)?;
+    let mut archive = read_archive(bytes)?;
     let mut score = read_gpif(&archive.score)?;
+    score.sound_overrides = overrides::take(&mut archive.entries, &score)?;
     if archive.entries != minimal_container() {
         score.container = archive.entries;
     }

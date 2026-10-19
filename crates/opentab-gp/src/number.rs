@@ -124,6 +124,17 @@ fn reduce(numer: i128, denom: i128) -> Option<(i128, i128)> {
     Some((numer / a, denom / a))
 }
 
+const MILLIONTHS: i128 = 1_000_000;
+
+pub(crate) fn millionths(text: &str) -> Option<u32> {
+    let decimal = Decimal::parse(text)?;
+    if decimal.is_negative() {
+        return None;
+    }
+    let value = u32::try_from(decimal.scaled_integer(MILLIONTHS)?).ok()?;
+    (i128::from(value) <= MILLIONTHS).then_some(value)
+}
+
 pub(crate) fn integer<T: FromStr>(text: &str) -> Option<T> {
     text.trim().parse().ok()
 }

@@ -129,6 +129,26 @@ pub enum Refusal {
         "a percussion track needs Guitar Pro's drum kit (InstrumentSet/Elements kept from a .gp file); Guitar Pro cannot open a kit-less drum track"
     )]
     DrumKit,
+    #[error("the instrument set belongs to another instrument kind than the track's")]
+    InstrumentSet,
+    #[error("the track has no instrument set, and GPIF needs one to name the instrument")]
+    NoInstrumentSet,
+    #[error("the first sound's program or bank differs from the track's initial program or bank")]
+    FirstSound,
+    #[error("an automation names master bar {master_bar}, which the score does not contain")]
+    AutomationBar { master_bar: u64 },
+    #[error(
+        "automation position {numer}/{denom} is not on the 1/3840 grid within its bar, end included"
+    )]
+    AutomationPosition { numer: i64, denom: i64 },
+    #[error("a sound automation names sound {index}, which the track does not have")]
+    SoundRef { index: usize },
+    #[error(
+        "a sound automation names sound {index}, whose path, name and role another sound of the track shares"
+    )]
+    AmbiguousSound { index: usize },
+    #[error("a sound override names track {track}, which the score does not contain")]
+    SoundOverrideTrack { track: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Error)]

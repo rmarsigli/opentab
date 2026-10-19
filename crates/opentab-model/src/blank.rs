@@ -1,7 +1,7 @@
 use crate::{
     Bar, Beat, BeatEffects, Clef, Duration, ElementId, Fraction, Instrument, InstrumentKind,
-    KeySignature, MasterBar, ModelError, NoteValue, Pitch, Score, Staff, Tempo, TempoChange,
-    TempoUnit, TimeSignature, Track, Transpose, Tuning, Voice, VoiceSlot,
+    InstrumentSet, KeySignature, MasterBar, ModelError, NoteValue, Pitch, Score, Staff, Tempo,
+    TempoChange, TempoUnit, TimeSignature, Track, TrackMidi, Transpose, Tuning, Voice, VoiceSlot,
 };
 
 const GUITAR_PROGRAM: u8 = 25;
@@ -60,7 +60,10 @@ fn guitar_track(score: &mut Score) -> Result<Track, ModelError> {
         instrument: Instrument {
             kind: InstrumentKind::Fretted,
             midi_program: GUITAR_PROGRAM,
+            set: Some(InstrumentSet::ElectricGuitar),
         },
+        midi: TrackMidi::default_for(InstrumentKind::Fretted),
+        sounds: Vec::new(),
         tuning: Tuning {
             strings: STANDARD_TUNING.iter().copied().map(Pitch).collect(),
         },
@@ -70,5 +73,6 @@ fn guitar_track(score: &mut Score) -> Result<Track, ModelError> {
             id: alloc(score)?,
             bars: vec![bar],
         }],
+        automations: Vec::new(),
     })
 }

@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::fraction::{checked_sum, deserialize_non_negative};
 use crate::{
-    Bar, BarId, Beat, BeatId, ElementId, Fraction, InstrumentKind, MasterBar, MasterBarId, NoteId,
-    NoteKind, Score, Staff, StaffId, Track, TrackId, Voice, VoiceId,
+    AutomationValue, Bar, BarId, Beat, BeatId, ElementId, Fraction, InstrumentKind, MasterBar,
+    MasterBarId, NoteId, NoteKind, Score, SoundRef, Staff, StaffId, Track, TrackId, Voice, VoiceId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -63,6 +63,25 @@ pub enum Diagnostic {
         #[serde(deserialize_with = "deserialize_non_negative")]
         position: Fraction,
     },
+    AutomationOutsideBar {
+        track: TrackId,
+        master_bar: MasterBarId,
+        #[serde(deserialize_with = "deserialize_non_negative")]
+        position: Fraction,
+    },
+    MissingSound {
+        track: TrackId,
+        sound: SoundRef,
+    },
+    FirstSoundMismatch {
+        track: TrackId,
+    },
+    InstrumentSetMismatch {
+        track: TrackId,
+    },
+    SoundOverrideWithoutTrack {
+        track: TrackId,
+    },
 }
 
 pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
@@ -78,8 +97,17 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
     }
     for track in &score.tracks {
         report.id(track.id.0);
+        report.instrument(track);
+        report.automations(score, track);
         for staff in &track.staves {
             report.staff(score, track, staff);
+        }
+    }
+    for entry in &score.sound_overrides {
+        if score.find_track(entry.track).is_none() {
+            report
+                .diagnostics
+                .push(Diagnostic::SoundOverrideWithoutTrack { track: entry.track });
         }
     }
     for id in score.extensions.0.keys() {
@@ -154,6 +182,51 @@ impl Report {
                 self.diagnostics.push(Diagnostic::TempoChangeOutsideBar {
                     master_bar: master_bar.id,
                     position: change.position,
+                });
+            }
+        }
+    }
+
+    fn instrument(&mut self, track: &Track) {
+        let instrument = &track.instrument;
+        if instrument
+            .set
+            .is_some_and(|set| set.kind() != instrument.kind)
+        {
+            self.diagnostics
+                .push(Diagnostic::InstrumentSetMismatch { track: track.id });
+        }
+        if let Some(first) = track.sounds.first()
+            && (first.program != instrument.midi_program || first.bank != track.midi.bank)
+        {
+            self.diagnostics
+                .push(Diagnostic::FirstSoundMismatch { track: track.id });
+        }
+    }
+
+    fn automations(&mut self, score: &Score, track: &Track) {
+        let start = Fraction::from_integer(0);
+        for automation in &track.automations {
+            let inside = score
+                .find_master_bar_index(automation.master_bar)
+                .and_then(|index| score.master_bars.get(index))
+                .is_some_and(|master_bar| {
+                    let position = automation.position;
+                    position >= start && position <= master_bar.time_signature.bar_length()
+                });
+            if !inside {
+                self.diagnostics.push(Diagnostic::AutomationOutsideBar {
+                    track: track.id,
+                    master_bar: automation.master_bar,
+                    position: automation.position,
+                });
+            }
+            if let AutomationValue::Sound(sound) = automation.value
+                && track.sounds.get(sound.0).is_none()
+            {
+                self.diagnostics.push(Diagnostic::MissingSound {
+                    track: track.id,
+                    sound,
                 });
             }
         }

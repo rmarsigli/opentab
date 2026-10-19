@@ -1,7 +1,8 @@
 use opentab_model::{
     Bar, Beat, BeatEffects, Clef, Duration, ElementId, IdAllocator, Instrument, InstrumentKind,
-    KeySignature, MasterBar, Note, NoteEffects, NoteKind, NoteValue, Pitch, Score, Staff,
-    TimeSignature, Track, Transpose, Tuning, Tuplet, Voice, VoiceSlot,
+    InstrumentSet, KeySignature, MasterBar, MasterBarId, Note, NoteEffects, NoteKind, NoteValue,
+    Pitch, Score, Staff, TimeSignature, Track, TrackId, TrackMidi, Transpose, Tuning, Tuplet,
+    Voice, VoiceSlot,
 };
 
 use crate::fixtures::FixtureError;
@@ -12,6 +13,7 @@ pub struct TrackSetup {
     pub name: &'static str,
     pub short_name: &'static str,
     pub kind: InstrumentKind,
+    pub set: Option<InstrumentSet>,
     pub program: u8,
     pub tuning: Vec<u8>,
     pub capo: u8,
@@ -27,6 +29,7 @@ impl TrackSetup {
             name,
             short_name,
             kind: InstrumentKind::Fretted,
+            set: Some(InstrumentSet::ElectricGuitar),
             program: 27,
             tuning: STANDARD.to_vec(),
             capo: 0,
@@ -206,13 +209,17 @@ impl Sketch {
             instrument: Instrument {
                 kind: setup.kind,
                 midi_program: setup.program,
+                set: setup.set,
             },
+            midi: TrackMidi::default_for(setup.kind),
+            sounds: Vec::new(),
             tuning: Tuning {
                 strings: setup.tuning.into_iter().map(Pitch).collect(),
             },
             capo: setup.capo,
             transpose: Transpose::new(setup.chromatic, setup.octave)?,
             staves,
+            automations: Vec::new(),
         });
         Ok(self.score.tracks.len() - 1)
     }
@@ -304,11 +311,25 @@ impl Sketch {
     pub fn finish(mut self) -> Score {
         let mut ids = IdAllocator::default();
         let mut next = || ids.next().unwrap_or(ElementId(0));
+        let mut masters: Vec<(MasterBarId, MasterBarId)> = Vec::new();
         for master_bar in &mut self.score.master_bars {
-            master_bar.id = next().into();
+            let id = next().into();
+            masters.push((master_bar.id, id));
+            master_bar.id = id;
         }
+        let mut tracks: Vec<(TrackId, TrackId)> = Vec::new();
         for track in &mut self.score.tracks {
-            track.id = next().into();
+            let id = next().into();
+            tracks.push((track.id, id));
+            track.id = id;
+            for automation in &mut track.automations {
+                if let Some((_, new)) = masters
+                    .iter()
+                    .find(|(old, _)| *old == automation.master_bar)
+                {
+                    automation.master_bar = *new;
+                }
+            }
             for staff in &mut track.staves {
                 staff.id = next().into();
                 for bar in &mut staff.bars {
@@ -323,6 +344,11 @@ impl Sketch {
                         }
                     }
                 }
+            }
+        }
+        for entry in &mut self.score.sound_overrides {
+            if let Some((_, new)) = tracks.iter().find(|(old, _)| *old == entry.track) {
+                entry.track = *new;
             }
         }
         self.score.ids = ids;

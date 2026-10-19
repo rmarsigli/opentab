@@ -240,6 +240,25 @@ fn op_name(command: &Command) -> String {
 
 fn musical(score: &Score) -> Score {
     let mut copy = score.clone();
+    let position = |id: ElementId| {
+        score
+            .master_bars
+            .iter()
+            .position(|master| master.id.0 == id)
+            .map_or(ElementId(u64::MAX), |index| ElementId(index as u64))
+    };
+    for track in &mut copy.tracks {
+        for automation in &mut track.automations {
+            automation.master_bar.0 = position(automation.master_bar.0);
+        }
+    }
+    for entry in &mut copy.sound_overrides {
+        entry.track.0 = score
+            .tracks
+            .iter()
+            .position(|track| track.id == entry.track)
+            .map_or(ElementId(u64::MAX), |index| ElementId(index as u64));
+    }
     copy.ids = IdAllocator::default();
     copy.extensions = opentab_model::Extensions::default();
     copy.document_extensions.clear();

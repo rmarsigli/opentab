@@ -2,7 +2,10 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
-use opentab_model::{NoteKind, OpaquePayload, Score};
+use opentab_model::{
+    AutomationValue, Balance, Fraction, InstrumentSet, Level, NoteKind, OpaquePayload, Score,
+    TrackMidi,
+};
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, FileFailurePersistence, TestRunner};
@@ -53,6 +56,12 @@ struct Coverage {
     second_staves: Cell<usize>,
     markup: Cell<usize>,
     chords: Cell<usize>,
+    sounds: Cell<usize>,
+    sound_automations: Cell<usize>,
+    mixer_automations: Cell<usize>,
+    mixers: Cell<usize>,
+    channels: Cell<usize>,
+    overrides: Cell<usize>,
 }
 
 impl Coverage {
@@ -71,7 +80,28 @@ impl Coverage {
         for master in &score.master_bars {
             Coverage::add(&self.tempo_changes, master.tempo_changes.len());
         }
+        Coverage::add(&self.overrides, score.sound_overrides.len());
         for track in &score.tracks {
+            Coverage::add(&self.sounds, track.sounds.len());
+            let sound_automations = track
+                .automations
+                .iter()
+                .filter(|automation| matches!(automation.value, AutomationValue::Sound(_)))
+                .count();
+            Coverage::add(&self.sound_automations, sound_automations);
+            Coverage::add(
+                &self.mixer_automations,
+                track.automations.len() - sound_automations,
+            );
+            let midi = &track.midi;
+            Coverage::add(
+                &self.mixers,
+                usize::from(midi.volume != Level::HALF || midi.pan != Balance::CENTRE),
+            );
+            Coverage::add(
+                &self.channels,
+                usize::from(midi != &TrackMidi::default_for(track.instrument.kind)),
+            );
             Coverage::add(&self.second_staves, track.staves.len().saturating_sub(1));
             for staff in &track.staves {
                 for bar in &staff.bars {
@@ -91,7 +121,7 @@ impl Coverage {
         }
     }
 
-    fn counts(&self) -> [(&'static str, usize); 8] {
+    fn counts(&self) -> [(&'static str, usize); 14] {
         [
             ("notes", self.notes.get()),
             ("percussion notes", self.percussion.get()),
@@ -101,6 +131,12 @@ impl Coverage {
             ("second staves", self.second_staves.get()),
             ("markup titles", self.markup.get()),
             ("chord names", self.chords.get()),
+            ("sounds", self.sounds.get()),
+            ("sound automations", self.sound_automations.get()),
+            ("mixer automations", self.mixer_automations.get()),
+            ("mixers", self.mixers.get()),
+            ("channels", self.channels.get()),
+            ("sound overrides", self.overrides.get()),
         ]
     }
 }
@@ -154,15 +190,18 @@ fn writable_scores_read_back_equal() {
     }
 }
 
-const GENUINE_LIMITS: [&str; 6] = [
+const GENUINE_LIMITS: [&str; 9] = [
+    "AmbiguousSound",
+    "AutomationPosition",
     "Character",
     "DrumKit",
     "HarmonicFret",
+    "NoInstrumentSet",
     "Pitch",
     "RightHandOpen",
     "TempoPosition",
 ];
-const MAX_ROUNDS: usize = 8;
+const MAX_ROUNDS: usize = 12;
 const GRID: i64 = 3840;
 const MAX_MIDI: u16 = 127;
 
@@ -217,6 +256,9 @@ fn clean_texts(score: &mut Score) -> bool {
     for track in &mut score.tracks {
         changed |= clean(&mut track.name);
         changed |= clean(&mut track.short_name);
+        for sound in &mut track.sounds {
+            changed |= clean(&mut sound.name);
+        }
         for beat in beats_of(track) {
             if let Some(text) = &mut beat.effects.text {
                 changed |= clean(text);
@@ -255,6 +297,43 @@ fn clean_kind(score: &mut Score, kind: &str) -> bool {
     match kind {
         "Character" => changed = clean_texts(score),
         "DrumKit" => changed = add_drum_kits(score),
+        "NoInstrumentSet" => {
+            for track in &mut score.tracks {
+                if track.instrument.set.is_none() {
+                    track.instrument.set = Some(match track.instrument.kind {
+                        opentab_model::InstrumentKind::Fretted => InstrumentSet::ElectricGuitar,
+                        opentab_model::InstrumentKind::Percussion => InstrumentSet::DrumKit,
+                    });
+                    changed = true;
+                }
+            }
+        }
+        "AmbiguousSound" => {
+            for track in &mut score.tracks {
+                for (index, sound) in track.sounds.iter_mut().enumerate() {
+                    sound.name = format!("{}{index}", sound.name);
+                    changed = true;
+                }
+            }
+        }
+        "AutomationPosition" => {
+            let bars: Vec<(opentab_model::MasterBarId, Fraction)> = score
+                .master_bars
+                .iter()
+                .map(|master| (master.id, master.time_signature.bar_length()))
+                .collect();
+            for track in &mut score.tracks {
+                let before = track.automations.len();
+                track.automations.retain(|automation| {
+                    bars.iter().any(|(id, length)| {
+                        *id == automation.master_bar
+                            && (automation.position * GRID).is_integer()
+                            && automation.position <= *length
+                    })
+                });
+                changed |= track.automations.len() != before;
+            }
+        }
         "TempoPosition" => {
             for master in &mut score.master_bars {
                 let bar = master.time_signature.bar_length();

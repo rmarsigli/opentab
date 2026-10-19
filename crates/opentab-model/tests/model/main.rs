@@ -4,6 +4,7 @@ mod duration;
 mod ids;
 mod json;
 mod lookup;
+mod midi;
 mod notation;
 mod pitch;
 mod ranges;

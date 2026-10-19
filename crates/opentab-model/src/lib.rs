@@ -9,6 +9,7 @@ mod fraction;
 mod ids;
 mod json;
 mod master_bar;
+mod midi;
 mod score;
 mod track;
 
@@ -29,6 +30,10 @@ pub use ids::{
 pub use json::{from_json, to_json};
 pub use master_bar::{
     KeySignature, Marker, MasterBar, Tempo, TempoChange, TempoUnit, TimeSignature,
+};
+pub use midi::{
+    Automation, AutomationValue, Balance, InstrumentFamily, InstrumentSet, Level, MidiBank,
+    MidiChannel, Sound, SoundOverride, SoundRef, TrackMidi,
 };
 pub use score::{BeatPath, NotePath, Score, ScoreMeta, VoicePath};
 pub use track::{

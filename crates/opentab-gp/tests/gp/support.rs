@@ -257,5 +257,13 @@ pub fn documented(reason: &Refusal) -> bool {
             | Refusal::HarmonicFret { .. }
             | Refusal::RightHandOpen
             | Refusal::DrumKit
+            | Refusal::InstrumentSet
+            | Refusal::NoInstrumentSet
+            | Refusal::FirstSound
+            | Refusal::AutomationBar { .. }
+            | Refusal::AutomationPosition { .. }
+            | Refusal::SoundRef { .. }
+            | Refusal::AmbiguousSound { .. }
+            | Refusal::SoundOverrideTrack { .. }
     )
 }

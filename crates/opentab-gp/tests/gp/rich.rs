@@ -79,7 +79,7 @@ pub fn rich_gpif() -> String {
     out.push_str("<Tracks><Track id=\"0\"><Name><![CDATA[Guitar]]></Name><ShortName><![CDATA[gtr]]></ShortName>");
     out.push_str("<InstrumentSet><Type>electricGuitar</Type></InstrumentSet>");
     out.push_str("<RSE><ChannelStrip><Automations>");
-    out.push_str(&automation("DSPParam_11", 1, "0.25"));
+    out.push_str(&automation("DSPParam_11", 1, "0.250"));
     out.push_str("</Automations></ChannelStrip></RSE>");
     out.push_str(&format!(
         "<Sounds><Sound><MIDI><Program>25</Program></MIDI></Sound><Sound><Name><![CDATA[{SECOND_SOUND}]]></Name><MIDI><Program>30</Program></MIDI></Sound></Sounds>"

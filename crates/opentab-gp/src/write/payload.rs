@@ -253,7 +253,14 @@ fn expected(kind: &str, guard: &str, env: &Env<'_>) -> Option<String> {
         ("repeat", Env::MasterBar(bar)) => guard::repeat(bar.repeat_start, bar.repeat_end),
         ("minor", Env::MasterBar(bar)) => guard::minor(bar.key_signature.minor()),
         ("tempo-position", Env::Tempo(tempo, time)) => guard::tempo_position(tempo.position, *time),
-        ("instrument", Env::Track(track)) => guard::instrument(track.instrument.kind),
+        ("instrument", Env::Track(track)) => {
+            guard::instrument(track.instrument.kind, track.instrument.set)
+        }
+        ("sound-label", Env::Track(track)) => {
+            let index = guard::sound_label_index(guard)?;
+            let name = track.sounds.get(index).map(|sound| sound.name.as_str());
+            guard::sound_label(index, name)
+        }
         ("clef", Env::Bar(bar)) => guard::clef(bar.clef),
         ("stroke", Env::Beat(effects)) => guard::stroke(effects.stroke),
         ("grace", Env::Beat(effects)) => guard::grace(effects.grace),

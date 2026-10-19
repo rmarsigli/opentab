@@ -3,12 +3,13 @@ use std::path::PathBuf;
 
 use opentab_gp::{read_gp, write_gp};
 use opentab_model::{
-    Accent, Clef, Diagnostic, Dynamic, Score, TempoUnit, diagnose, from_json, to_json,
+    Accent, AutomationValue, Clef, Diagnostic, Dynamic, Score, TempoUnit, diagnose, from_json,
+    to_json,
 };
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
-const EXPECTED_TOTALS: [(&str, usize); 20] = [
+const EXPECTED_TOTALS: [(&str, usize); 26] = [
     ("tracks", 64),
     ("master_bars", 1260),
     ("bars", 2392),
@@ -29,6 +30,12 @@ const EXPECTED_TOTALS: [(&str, usize); 20] = [
     ("dynamics_not_mf", 4998),
     ("clefs_not_treble", 618),
     ("tempo_units_not_quarter", 2),
+    ("sounds", 66),
+    ("sound_automations", 67),
+    ("volume_automations", 79),
+    ("pan_automations", 65),
+    ("instrument_sets", 64),
+    ("midi_connections_not_default", 54),
 ];
 const EXPECTED_DIAGNOSTICS: [(&str, usize); 1] = [("IncompleteBar", 14)];
 
@@ -57,6 +64,25 @@ fn tally(score: &Score, totals: &mut BTreeMap<String, usize>) {
         count(totals, "tempo_units_not_quarter", units);
     }
     for track in &score.tracks {
+        count(totals, "sounds", track.sounds.len());
+        count(
+            totals,
+            "instrument_sets",
+            usize::from(track.instrument.set.is_some()),
+        );
+        count(
+            totals,
+            "midi_connections_not_default",
+            usize::from(track.midi.secondary != track.midi.primary),
+        );
+        for automation in &track.automations {
+            let name = match automation.value {
+                AutomationValue::Sound(_) => "sound_automations",
+                AutomationValue::Volume(_) => "volume_automations",
+                AutomationValue::Pan(_) => "pan_automations",
+            };
+            count(totals, name, 1);
+        }
         for staff in &track.staves {
             count(totals, "bars", staff.bars.len());
             for bar in &staff.bars {

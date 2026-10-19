@@ -1,18 +1,20 @@
 use std::collections::HashSet;
 
 use opentab_model::{
-    Bar, Beat, BeatEffects, ContainerEntry, Duration, ElementId, Extensions, Instrument,
-    InstrumentKind, Marker, MasterBar, Note, NoteKind, OpaquePayload, Score, Staff, TempoChange,
-    TimeSignature, Track, Tuning, Voice, VoiceSlot,
+    Automation, AutomationValue, Bar, Beat, BeatEffects, ContainerEntry, Duration, ElementId,
+    Extensions, Instrument, InstrumentKind, InstrumentSet, Marker, MasterBar, Note, NoteKind,
+    OpaquePayload, Score, Sound, SoundOverride, SoundRef, Staff, TempoChange, TimeSignature, Track,
+    Tuning, Voice, VoiceSlot,
 };
 
 const EXTRA_FORMAT: &str = "gpif";
 const EXTRA_ELEMENT: &str = "OpenTabExtra";
 
+use crate::ScoreGenConfig;
 use crate::fill::FillTable;
 use crate::seed::{
-    BarSeed, GraceSeed, MasterBarSeed, NoteSeed, ScoreSeed, StaffSeed, TempoChangeSeed, TrackSeed,
-    VoiceSeed,
+    AutomationSeed, AutomationValueSeed, BarSeed, GraceSeed, MasterBarSeed, NoteSeed, ScoreSeed,
+    SoundSeed, StaffSeed, TempoChangeSeed, TrackSeed, VoiceSeed,
 };
 
 struct Builder {
@@ -20,6 +22,67 @@ struct Builder {
     allocated: Vec<ElementId>,
     table: &'static FillTable,
     beat_cap: usize,
+    gp_writable: bool,
+}
+
+fn instrument_set(
+    kind: InstrumentKind,
+    set: Option<InstrumentSet>,
+    gp_writable: bool,
+) -> Option<InstrumentSet> {
+    let fallback = match kind {
+        InstrumentKind::Fretted => InstrumentSet::ElectricGuitar,
+        InstrumentKind::Percussion => InstrumentSet::DrumKit,
+    };
+    match set {
+        Some(set) if set.kind() == kind => Some(set),
+        Some(_) => Some(fallback),
+        None if gp_writable => Some(fallback),
+        None => None,
+    }
+}
+
+fn sounds(seeds: Vec<SoundSeed>, first: (u8, opentab_model::MidiBank), unique: bool) -> Vec<Sound> {
+    let mut sounds: Vec<Sound> = seeds
+        .into_iter()
+        .enumerate()
+        .map(|(index, seed)| Sound {
+            name: if unique {
+                format!("{}{index}", seed.name)
+            } else {
+                seed.name
+            },
+            program: seed.program,
+            bank: seed.bank,
+        })
+        .collect();
+    if let Some(sound) = sounds.first_mut() {
+        sound.program = first.0;
+        sound.bank = first.1;
+    }
+    sounds
+}
+
+fn automation(
+    seed: AutomationSeed,
+    master_bars: &[MasterBar],
+    sounds: usize,
+) -> Option<Automation> {
+    let master = master_bars.get(seed.bar.checked_rem(master_bars.len())?)?;
+    let value = match seed.value {
+        AutomationValueSeed::Volume(level) => AutomationValue::Volume(level),
+        AutomationValueSeed::Pan(balance) => AutomationValue::Pan(balance),
+        AutomationValueSeed::Sound(index) => {
+            AutomationValue::Sound(SoundRef(index.checked_rem(sounds)?))
+        }
+    };
+    Some(Automation {
+        master_bar: master.id,
+        position: seed.share * master.time_signature.bar_length(),
+        linear: seed.linear,
+        visible: seed.visible,
+        value,
+    })
 }
 
 impl Builder {
@@ -65,6 +128,17 @@ impl Builder {
         };
         let kind = seed.kind;
         let master_bars = self.score.master_bars.clone();
+        let sounds = sounds(
+            seed.sounds,
+            (seed.midi_program, seed.midi.bank),
+            self.gp_writable,
+        );
+        let mut automations: Vec<Automation> = seed
+            .automations
+            .into_iter()
+            .filter_map(|automation_seed| automation(automation_seed, &master_bars, sounds.len()))
+            .collect();
+        automations.sort_by_key(|automation| matches!(automation.value, AutomationValue::Sound(_)));
         let staves = seed
             .staves
             .into_iter()
@@ -77,11 +151,15 @@ impl Builder {
             instrument: Instrument {
                 kind,
                 midi_program: seed.midi_program,
+                set: instrument_set(kind, seed.set, self.gp_writable),
             },
+            midi: seed.midi,
+            sounds,
             tuning,
             capo: seed.capo,
             transpose: seed.transpose,
             staves,
+            automations,
         }
     }
 
@@ -266,12 +344,13 @@ fn push_extras(payloads: &mut Vec<OpaquePayload>, extras: &[String]) {
     }
 }
 
-pub fn build_score(seed: ScoreSeed, beat_cap: usize) -> Score {
+pub fn build_score(seed: ScoreSeed, cfg: ScoreGenConfig) -> Score {
     let mut builder = Builder {
         score: Score::new(),
         allocated: Vec::new(),
         table: FillTable::shared(),
-        beat_cap,
+        beat_cap: cfg.max_beats_per_voice,
+        gp_writable: cfg.gp_writable,
     };
     builder.score.meta = seed.meta;
     builder.score.anacrusis = seed.anacrusis;
@@ -296,6 +375,18 @@ pub fn build_score(seed: ScoreSeed, beat_cap: usize) -> Score {
         push_extras(payloads, &extension.extras);
     }
     builder.score.extensions = extensions;
+    let tracks: Vec<_> = builder.score.tracks.iter().map(|track| track.id).collect();
+    builder.score.sound_overrides = seed
+        .sound_overrides
+        .into_iter()
+        .filter_map(|entry| {
+            let track = tracks.get(entry.track.checked_rem(tracks.len())?)?;
+            Some(SoundOverride {
+                track: *track,
+                bank: entry.bank,
+            })
+        })
+        .collect();
     builder.score.document_extensions = seed.document_extensions;
     push_extras(
         &mut builder.score.document_extensions,

@@ -32,13 +32,21 @@ pub enum ModelError {
     InvalidVoiceSlot { slot: u8 },
     #[error("key signature with {accidentals} accidentals is outside -7..=7")]
     InvalidKeySignature { accidentals: i8 },
+    #[error("MIDI channel {channel} is outside 0..=15")]
+    InvalidMidiChannel { channel: u8 },
+    #[error("MIDI bank {msb}/{lsb} has a byte outside 0..=127")]
+    InvalidMidiBank { msb: u8, lsb: u8 },
+    #[error("level {millionths} millionths is outside 0..=1000000")]
+    InvalidLevel { millionths: u32 },
+    #[error("balance {millionths} millionths is outside 0..=1000000")]
+    InvalidBalance { millionths: u32 },
     #[error("container has {scores} score entries; at most one is allowed")]
     InvalidContainer { scores: usize },
     #[error("the score's id space is exhausted")]
     IdsExhausted,
     #[error("missing \"opentab_json\" version field")]
     MissingVersion,
-    #[error("unsupported opentab_json version {found}, expected 2")]
+    #[error("unsupported opentab_json version {found}, expected 3")]
     UnsupportedVersion { found: String },
     #[error("invalid opentab JSON: {message}")]
     Json { message: String },

@@ -9,6 +9,7 @@ mod fuzz;
 mod limits;
 mod master_bar;
 mod meta;
+mod mixer;
 mod note;
 mod rawzip;
 mod references;

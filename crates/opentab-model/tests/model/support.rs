@@ -83,7 +83,11 @@ pub fn guitar(score: &mut Score, bars: Vec<Vec<Duration>>) -> Track {
         instrument: Instrument {
             kind: InstrumentKind::Fretted,
             midi_program: 25,
+            set: None,
         },
+        midi: opentab_model::TrackMidi::default_for(InstrumentKind::Fretted),
+        sounds: Vec::new(),
+        automations: Vec::new(),
         tuning: standard_tuning(),
         capo: 0,
         transpose: Transpose::default(),

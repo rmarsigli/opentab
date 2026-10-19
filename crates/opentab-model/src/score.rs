@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Beat, BeatId, ContainerEntry, ElementId, Extensions, IdAllocator, MasterBar, MasterBarId,
-    NoteId, OpaquePayload, Track, TrackId, Voice, VoiceId,
+    NoteId, OpaquePayload, SoundOverride, Track, TrackId, Voice, VoiceId,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -27,6 +27,7 @@ pub struct Score {
     pub anacrusis: bool,
     pub master_bars: Vec<MasterBar>,
     pub tracks: Vec<Track>,
+    pub sound_overrides: Vec<SoundOverride>,
     pub extensions: Extensions,
     pub document_extensions: Vec<OpaquePayload>,
     pub container: Vec<ContainerEntry>,

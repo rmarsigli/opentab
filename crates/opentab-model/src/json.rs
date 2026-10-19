@@ -5,10 +5,10 @@ use serde_json::Value;
 use crate::container::check_container;
 use crate::{
     ContainerEntry, Extensions, IdAllocator, MasterBar, ModelError, OpaquePayload, Score,
-    ScoreMeta, Track,
+    ScoreMeta, SoundOverride, Track,
 };
 
-const VERSION: u64 = 2;
+const VERSION: u64 = 3;
 
 #[derive(Serialize)]
 struct DocumentOut<'a> {
@@ -17,6 +17,7 @@ struct DocumentOut<'a> {
     anacrusis: bool,
     master_bars: &'a [MasterBar],
     tracks: &'a [Track],
+    sound_overrides: &'a [SoundOverride],
     extensions: &'a Extensions,
     document_extensions: &'a [OpaquePayload],
     container: &'a [ContainerEntry],
@@ -32,6 +33,7 @@ struct DocumentIn {
     anacrusis: bool,
     master_bars: Vec<MasterBar>,
     tracks: Vec<Track>,
+    sound_overrides: Vec<SoundOverride>,
     extensions: Extensions,
     document_extensions: Vec<OpaquePayload>,
     container: Vec<ContainerEntry>,
@@ -51,6 +53,7 @@ pub fn to_json(score: &Score) -> Result<String, ModelError> {
         anacrusis: score.anacrusis,
         master_bars: &score.master_bars,
         tracks: &score.tracks,
+        sound_overrides: &score.sound_overrides,
         extensions: &score.extensions,
         document_extensions: &score.document_extensions,
         container: &score.container,
@@ -77,6 +80,7 @@ pub fn from_json(input: &str) -> Result<Score, ModelError> {
         anacrusis: document.anacrusis,
         master_bars: document.master_bars,
         tracks: document.tracks,
+        sound_overrides: document.sound_overrides,
         extensions: document.extensions,
         document_extensions: document.document_extensions,
         container: document.container,

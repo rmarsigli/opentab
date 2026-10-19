@@ -1,10 +1,10 @@
 use opentab_model::{
-    Instrument, InstrumentKind, KeySignature, Pitch, Staff, StaffId, Track, TrackId, Transpose,
-    Tuning,
+    Automation, Instrument, InstrumentKind, InstrumentSet, KeySignature, Pitch, Staff, StaffId,
+    Track, TrackId, TrackMidi, Transpose, Tuning,
 };
 
 use crate::canon;
-use crate::codes::DRUM_KIT;
+use crate::codes::{INSTRUMENT_SETS, lookup};
 use crate::dom::{Element, Node};
 use crate::error::GpifProblem;
 use crate::guard;
@@ -14,6 +14,10 @@ use crate::opaque::ParentPath;
 use crate::read::beat::read_bar;
 use crate::read::context::{Context, Fault, Handled, Owner, Scope, Visit, missing_element};
 use crate::read::master::{MasterFrame, TrackOrder};
+use crate::read::mixer::{
+    Lane, MidiFields, Sounds, Strip, read_lane, read_midi_connection, read_rse, read_sounds,
+    sound_keys,
+};
 use crate::read::pools::Pools;
 
 pub(crate) struct StaffFrame<'t> {
@@ -40,9 +44,20 @@ struct TrackFields<'e> {
     name: String,
     short_name: String,
     kind: InstrumentKind,
-    midi_program: u8,
+    set: Option<InstrumentSet>,
     transpose: Transpose,
+    sounds: Sounds,
+    midi: MidiFields,
+    strip: Strip,
+    automations: Vec<Automation>,
     staves: Option<(&'e Element, Location)>,
+}
+
+struct Visited {
+    sounds: bool,
+    rse: bool,
+    midi: bool,
+    automations: bool,
 }
 
 struct StaffHead {
@@ -146,46 +161,91 @@ fn read_track(
     let id: TrackId = ctx.alloc(location)?;
     let scope = Scope::new(Owner::Element(id.0), ParentPath::owner(), location.clone());
     ctx.keep_attributes(&scope, element, &["id"])?;
+    let keys = sound_keys(element);
     let mut fields = TrackFields {
         name: String::new(),
         short_name: String::new(),
         kind: InstrumentKind::Fretted,
-        midi_program: 0,
+        set: None,
         transpose: Transpose::default(),
+        sounds: Sounds::default(),
+        midi: MidiFields::default(),
+        strip: Strip::default(),
+        automations: Vec::new(),
         staves: None,
+    };
+    let mut visited = Visited {
+        sounds: false,
+        rse: false,
+        midi: false,
+        automations: false,
     };
     ctx.visit(&scope, element, |ctx, visit| {
         match visit.key.as_str() {
             "Name" => fields.name = visit.text(),
             "ShortName" => fields.short_name = visit.text(),
             "InstrumentSet" => {
-                fields.kind = read_instrument_set(ctx, &scope.enter(visit), visit.element)?;
+                (fields.kind, fields.set) =
+                    read_instrument_set(ctx, &scope.enter(visit), visit.element)?;
             }
             "Transpose" => fields.transpose = read_transpose(ctx, &scope.enter(visit), visit)?,
-            "Sounds" => {
-                if let Some(program) = read_sounds(ctx, &scope.enter(visit), visit.element)? {
-                    fields.midi_program = program;
-                }
+            "Sounds" if !visited.sounds => {
+                visited.sounds = true;
+                fields.sounds = read_sounds(ctx, &scope.enter(visit), visit.element)?;
+            }
+            "RSE" if !visited.rse => {
+                visited.rse = true;
+                read_rse(ctx, &scope.enter(visit), visit.element, &mut fields.strip)?;
+            }
+            "MidiConnection" if !visited.midi => {
+                visited.midi = true;
+                fields.midi = read_midi_connection(ctx, &scope.enter(visit), visit.element)?;
+            }
+            "Automations" if !visited.automations => {
+                visited.automations = true;
+                read_lane(
+                    ctx,
+                    &scope.enter(visit),
+                    visit.element,
+                    &Lane::Track(&keys),
+                    &mut fields.automations,
+                )?;
             }
             "Staves" => fields.staves = Some((visit.element, visit.location.clone())),
             _ => return Ok(Handled::Anchored),
         }
         Ok(Handled::Mapped(&[]))
     })?;
+    let defaults = TrackMidi::default_for(fields.kind);
+    let midi = TrackMidi {
+        port: fields.midi.port.unwrap_or(defaults.port),
+        primary: fields.midi.primary.unwrap_or(defaults.primary),
+        secondary: fields.midi.secondary.unwrap_or(defaults.secondary),
+        per_string: fields.midi.per_string.unwrap_or(defaults.per_string),
+        bank: fields.sounds.bank,
+        volume: fields.strip.volume,
+        pan: fields.strip.pan,
+    };
+    let mut automations = fields.strip.automations;
+    automations.extend(fields.automations);
     let mut track = Track {
         id,
         name: fields.name,
         short_name: fields.short_name,
         instrument: Instrument {
             kind: fields.kind,
-            midi_program: fields.midi_program,
+            midi_program: fields.sounds.program,
+            set: fields.set,
         },
+        midi,
+        sounds: fields.sounds.sounds,
         tuning: Tuning {
             strings: Vec::new(),
         },
         capo: 0,
         transpose: fields.transpose,
         staves: Vec::new(),
+        automations,
     };
     if let Some((staves, staves_location)) = fields.staves {
         let staves_scope = Scope::new(
@@ -222,22 +282,22 @@ fn read_instrument_set(
     ctx: &mut Context,
     scope: &Scope,
     element: &Element,
-) -> Result<InstrumentKind, Fault> {
+) -> Result<(InstrumentKind, Option<InstrumentSet>), Fault> {
     let mut kind = InstrumentKind::Fretted;
+    let mut set = None;
     ctx.visit(scope, element, |_, visit| match visit.key.as_str() {
         "Type" => {
-            if visit.text().trim() == DRUM_KIT {
-                kind = InstrumentKind::Percussion;
-            }
-            if *visit.element == canon::instrument_type(kind) {
+            set = lookup(INSTRUMENT_SETS, &visit.text());
+            kind = set.map_or(InstrumentKind::Fretted, InstrumentSet::kind);
+            if *visit.element == canon::instrument_type(kind, set) {
                 Ok(Handled::Mapped(&[]))
             } else {
-                Ok(Handled::Replayed(guard::instrument(kind)))
+                Ok(Handled::Replayed(guard::instrument(kind, set)))
             }
         }
         _ => Ok(Handled::Unknown),
     })?;
-    Ok(kind)
+    Ok((kind, set))
 }
 
 fn read_transpose(
@@ -256,41 +316,6 @@ fn read_transpose(
         Ok(Handled::Mapped(&[]))
     })?;
     Transpose::new(chromatic, octave).map_err(|error| Fault::model(&transpose.location, error))
-}
-
-fn read_sounds(ctx: &mut Context, scope: &Scope, element: &Element) -> Result<Option<u8>, Fault> {
-    let mut program = None;
-    let mut first = true;
-    ctx.visit(scope, element, |ctx, visit| {
-        if visit.key != "Sound" || !first {
-            return Ok(Handled::Unknown);
-        }
-        first = false;
-        let sound = Scope::new(
-            scope.owner,
-            scope.parent.nth("Sound", 0),
-            visit.location.clone(),
-        );
-        ctx.keep_attributes(&sound, visit.element, &[])?;
-        ctx.visit(&sound, visit.element, |ctx, child| {
-            match child.key.as_str() {
-                "MIDI" => {
-                    let midi = sound.enter(child);
-                    ctx.visit(&midi, child.element, |_, field| match field.key.as_str() {
-                        "Program" => {
-                            program = Some(field.integer()?);
-                            Ok(Handled::Mapped(&[]))
-                        }
-                        _ => Ok(Handled::Unknown),
-                    })?;
-                    Ok(Handled::Mapped(&[]))
-                }
-                _ => Ok(Handled::Unknown),
-            }
-        })?;
-        Ok(Handled::Custom)
-    })?;
-    Ok(program)
 }
 
 fn read_staff(

@@ -292,6 +292,7 @@ fn percussion_score() -> Score {
     track.instrument = Instrument {
         kind: InstrumentKind::Percussion,
         midi_program: 0,
+        set: None,
     };
     track.tuning = Tuning {
         strings: Vec::new(),

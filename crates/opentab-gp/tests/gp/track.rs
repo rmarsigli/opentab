@@ -1,4 +1,4 @@
-use opentab_model::{InstrumentKind, NoteKind, Pitch};
+use opentab_model::{InstrumentKind, InstrumentSet, MidiBank, NoteKind, Pitch, Sound};
 
 use crate::support::{Doc, note, payloads, read_gpif, track};
 
@@ -34,18 +34,34 @@ fn the_capo_is_mapped_and_raises_the_pitch() {
 }
 
 #[test]
-fn the_instrument_type_is_replayed_and_drum_kits_are_percussion() {
+fn the_instrument_type_is_typed_unknown_ones_replayed_and_drum_kits_are_percussion() {
     let score = Doc::default().read();
     assert_eq!(payloads(&score, track(&score).id.0), Vec::<String>::new());
+    assert_eq!(
+        track(&score).instrument.set,
+        Some(InstrumentSet::ElectricGuitar)
+    );
     let steel = Doc {
         instrument: "steelGuitar".to_string(),
         ..Doc::default()
     }
     .read();
+    assert_eq!(payloads(&steel, track(&steel).id.0), Vec::<String>::new());
     assert_eq!(
-        payloads(&steel, track(&steel).id.0),
+        track(&steel).instrument.set,
+        Some(InstrumentSet::SteelGuitar)
+    );
+    let banjo = Doc {
+        instrument: "banjo".to_string(),
+        ..Doc::default()
+    }
+    .read();
+    assert_eq!(track(&banjo).instrument.set, None);
+    assert_eq!(track(&banjo).instrument.kind, InstrumentKind::Fretted);
+    assert_eq!(
+        payloads(&banjo, track(&banjo).id.0),
         vec![
-            "<Keep parent=\"InstrumentSet\" index=\"0\" guard=\"instrument:fretted\"><Type>steelGuitar</Type></Keep>"
+            "<Keep parent=\"InstrumentSet\" index=\"0\" guard=\"instrument:fretted none\"><Type>banjo</Type></Keep>"
                 .to_string()
         ]
     );
@@ -57,6 +73,7 @@ fn the_instrument_type_is_replayed_and_drum_kits_are_percussion() {
     }
     .read();
     assert_eq!(track(&drums).instrument.kind, InstrumentKind::Percussion);
+    assert_eq!(track(&drums).instrument.set, Some(InstrumentSet::DrumKit));
     assert_eq!(note(&drums).kind, NoteKind::Percussion { articulation: 12 });
     assert!(crate::support::note_payloads(&drums).contains(
         &"<Keep parent=\"Properties\" index=\"0\" guard=\"pitch:percussion 12\"><Property name=\"String\"><String>0</String></Property></Keep>"
@@ -65,10 +82,10 @@ fn the_instrument_type_is_replayed_and_drum_kits_are_percussion() {
 }
 
 #[test]
-fn the_first_sound_gives_the_program_and_the_rest_is_kept() {
+fn every_sound_is_typed_and_the_first_gives_the_program() {
     let doc = Doc {
         track: concat!(
-            "<Sounds><Sound><Name><![CDATA[Clean]]></Name><MIDI><LSB>0</LSB><MSB>0</MSB><Program>27</Program></MIDI></Sound>",
+            "<Sounds><Sound><Name><![CDATA[Clean]]></Name><MIDI><LSB>3</LSB><MSB>1</MSB><Program>27</Program></MIDI></Sound>",
             "<Sound><Name><![CDATA[Dirty]]></Name><MIDI><Program>30</Program></MIDI></Sound></Sounds>"
         )
         .to_string(),
@@ -77,20 +94,23 @@ fn the_first_sound_gives_the_program_and_the_rest_is_kept() {
     let score = doc.read();
     let track = track(&score);
     assert_eq!(track.instrument.midi_program, 27);
-    let payloads = payloads(&score, track.id.0);
-    assert!(
-        payloads.contains(
-            &"<Keep parent=\"Sounds/Sound#0\" index=\"0\"><Name><![CDATA[Clean]]></Name></Keep>"
-                .to_string()
-        )
+    assert_eq!(track.midi.bank, MidiBank::new(1, 3).unwrap());
+    assert_eq!(
+        track.sounds,
+        vec![
+            Sound {
+                name: "Clean".to_string(),
+                program: 27,
+                bank: MidiBank::new(1, 3).unwrap(),
+            },
+            Sound {
+                name: "Dirty".to_string(),
+                program: 30,
+                bank: MidiBank::default(),
+            },
+        ]
     );
-    assert!(payloads.contains(
-        &"<Keep parent=\"Sounds/Sound#0/MIDI\" index=\"1\"><MSB>0</MSB></Keep>".to_string()
-    ));
-    assert!(payloads.contains(
-        &"<Keep parent=\"Sounds\" index=\"1\"><Sound><Name><![CDATA[Dirty]]></Name><MIDI><Program>30</Program></MIDI></Sound></Keep>"
-            .to_string()
-    ));
+    assert_eq!(payloads(&score, track.id.0), Vec::<String>::new());
 }
 
 #[test]

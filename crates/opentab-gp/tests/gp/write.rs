@@ -3,9 +3,9 @@ use std::io::{Cursor, Read};
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
     Bar, Base64Bytes, Beat, BeatEffects, ContainerEntry, Duration, Finger, Fraction, Harmonic,
-    HarmonicKind, Instrument, InstrumentKind, KeySignature, Marker, MasterBar, Note, NoteEffects,
-    NoteKind, NoteValue, OpaquePayload, Pitch, Score, Staff, Tempo, TempoChange, TempoUnit,
-    TimeSignature, Track, Transpose, Tuning, Voice, VoiceSlot,
+    HarmonicKind, Instrument, InstrumentKind, InstrumentSet, KeySignature, Marker, MasterBar, Note,
+    NoteEffects, NoteKind, NoteValue, OpaquePayload, Pitch, Score, Staff, Tempo, TempoChange,
+    TempoUnit, TimeSignature, Track, TrackMidi, Transpose, Tuning, Voice, VoiceSlot,
 };
 use zip::{CompressionMethod, ZipArchive};
 
@@ -88,11 +88,18 @@ impl Scratch {
             instrument: Instrument {
                 kind,
                 midi_program: 0,
+                set: Some(match kind {
+                    InstrumentKind::Fretted => InstrumentSet::ElectricGuitar,
+                    InstrumentKind::Percussion => InstrumentSet::DrumKit,
+                }),
             },
+            midi: TrackMidi::default_for(kind),
+            sounds: Vec::new(),
             tuning: Tuning { strings: tuning },
             capo: 0,
             transpose: Transpose::default(),
             staves: vec![staff],
+            automations: Vec::new(),
         });
     }
 }
@@ -863,6 +870,7 @@ fn a_pitched_articulation_is_dropped_when_the_note_becomes_percussion() {
     let mut score = read_gpif(&hopo_document());
     let track = &mut score.tracks[0];
     track.instrument.kind = InstrumentKind::Percussion;
+    track.instrument.set = Some(InstrumentSet::DrumKit);
     for beat in &mut track.staves[0].bars[0].voices[0].beats {
         for note in &mut beat.notes {
             note.kind = NoteKind::Percussion { articulation: 7 };
