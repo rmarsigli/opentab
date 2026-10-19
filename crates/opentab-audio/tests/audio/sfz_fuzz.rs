@@ -235,6 +235,7 @@ fn seeds() -> Vec<Vec<u8>> {
     let mut booked_ogg = VorbisSpec::tone(44_100, 6, 2);
     booked_ogg.extra_codebook = Some(ExtraCodebook {
         entries: 2,
+        length: 1,
         dimensions: 2,
         lookup_type: 0,
         value_bits: 1,
@@ -344,7 +345,7 @@ fn decode_case() -> impl Strategy<Value = DecodeCase> {
 const DECODE_TIGHT: SfzLimits = SfzLimits {
     sample_frames: 20_000,
     decoded_bytes: 96 << 10,
-    vorbis_table_values: 1 << 12,
+    vorbis_setup_bytes: 256 << 10,
     ..SfzLimits::DEFAULT
 };
 
@@ -361,7 +362,12 @@ fn check_decode(seeds: &[Vec<u8>], case: &DecodeCase) -> Result<(), TestCaseErro
     } else {
         SfzLimits::DEFAULT
     };
-    if let Ok(decoded) = decode_audio(&bytes, &limits) {
+    let result = decode_audio(&bytes, &limits);
+    prop_assert!(
+        !matches!(result, Err(BankError::Panicked { .. })),
+        "a decoder panicked: {result:?}"
+    );
+    if let Ok(decoded) = result {
         prop_assert!(decoded.channels >= 1 && decoded.channels <= limits.sample_channels);
         prop_assert!(decoded.frames as u64 <= limits.sample_frames);
         prop_assert!(decoded.bytes() <= limits.decoded_bytes);

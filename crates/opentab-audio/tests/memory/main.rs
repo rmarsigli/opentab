@@ -200,5 +200,7 @@ fn main() {
     sfz::hostile_samples_never_allocate_what_they_declare();
     sfz::text_bombs_stop_at_the_expansion_cap();
     sfz::a_huge_declared_file_is_refused_before_it_is_read();
-    println!("memory: 9 checks passed");
+    sfz::the_vorbis_setup_estimate_covers_what_lewton_allocates();
+    sfz::symlink_bombs_are_refused_before_listing();
+    println!("memory: 11 checks passed");
 }

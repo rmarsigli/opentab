@@ -270,7 +270,11 @@ fn sanitize(samples: &mut [f32]) {
 
 impl SfzSynth {
     pub(crate) fn new(shared: Arc<SfzShared>, rate: SampleRate, instance: u32) -> SfzSynth {
-        let instruments = shared.instruments.len();
+        let sequences = shared
+            .instruments
+            .iter()
+            .map(|instrument| vec![1; instrument.regions.len()])
+            .collect();
         SfzSynth {
             shared,
             rate,
@@ -279,7 +283,7 @@ impl SfzSynth {
             voices: Vec::new(),
             event: 0,
             random: RANDOM_SEED,
-            sequences: vec![Vec::new(); instruments],
+            sequences,
         }
     }
 
@@ -379,9 +383,6 @@ impl SfzSynth {
         let random = self.draw();
         self.event += 1;
         let event = self.event;
-        if self.sequences.get(index).is_some_and(Vec::is_empty) {
-            self.sequences[index] = vec![1; instrument.regions.len()];
-        }
         let mut started: Vec<Started<'_>> = Vec::new();
         for (position, play) in instrument.regions.iter().enumerate() {
             let region = &play.region;
@@ -607,7 +608,7 @@ impl Synth for SfzSynth {
         self.event = 0;
         self.random = RANDOM_SEED;
         for counters in &mut self.sequences {
-            counters.clear();
+            counters.fill(1);
         }
     }
 

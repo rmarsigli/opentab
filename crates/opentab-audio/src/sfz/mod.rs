@@ -18,19 +18,21 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use opentab_model::MidiBank;
 
-pub use decode::{AudioKind, DecodedSample, audio_kind, decode_audio};
+pub use decode::{AudioKind, DecodedSample, audio_kind, decode_audio, vorbis_setup_cost};
 pub use limits::{
     SFZ_MAX_AUDIO_FILE_BYTES, SFZ_MAX_BANK_TEXT_BYTES, SFZ_MAX_DECODED_BYTES, SFZ_MAX_DEFINE_BYTES,
-    SFZ_MAX_DEFINES, SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_FILE_BYTES, SFZ_MAX_FOLDER_DEPTH,
-    SFZ_MAX_FOLDER_ENTRIES, SFZ_MAX_INCLUDE_DEPTH, SFZ_MAX_INCLUDES, SFZ_MAX_LOADER_BYTES,
+    SFZ_MAX_DEFINE_NAME_BYTES, SFZ_MAX_DEFINES, SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_FILE_BYTES,
+    SFZ_MAX_FOLDER_DEPTH, SFZ_MAX_FOLDER_ENTRIES, SFZ_MAX_INCLUDE_DEPTH, SFZ_MAX_INCLUDES,
+    SFZ_MAX_LINE_BYTES, SFZ_MAX_LISTED_ENTRIES, SFZ_MAX_LOADER_BYTES, SFZ_MAX_READ_BYTES,
     SFZ_MAX_REGIONS, SFZ_MAX_SAMPLE_CHANNELS, SFZ_MAX_SAMPLE_FRAMES, SFZ_MAX_SAMPLE_RATE,
     SFZ_MAX_SFZ_FILES, SFZ_MAX_SIDECAR_BYTES, SFZ_MAX_VOICES, SFZ_MAX_VOICES_PER_NOTE,
-    SFZ_MAX_VORBIS_TABLE_VALUES, SFZ_MIN_SAMPLE_RATE, SfzLimits,
+    SFZ_MAX_VORBIS_ENTRIES, SFZ_MAX_VORBIS_SETUP_BYTES, SFZ_MIN_SAMPLE_RATE, SfzLimits,
 };
 pub use listing::{IgnoreReason, IgnoredOpcode, SfzScope};
 pub use mapping::{SIDECAR_NAME, SIDECAR_VERSION};
 pub use player::{SFZ_MASTER_GAIN, SfzSynth};
 pub use region::{CcRange, Envelope, LoopMode, OffMode, SfzRegion, Trigger, VelocityPoint};
+pub use vorbis::VorbisSetupCost;
 
 use cache::SampleCache;
 use limits::{KIB, MIB};
@@ -85,6 +87,7 @@ pub struct SfzText {
     pub set_cc: Vec<(u8, u8)>,
     pub sw_default: Option<u8>,
     pub expanded_bytes: usize,
+    pub read_bytes: u64,
 }
 
 pub struct SfzBank {
@@ -92,6 +95,7 @@ pub struct SfzBank {
     root: PathBuf,
     skipped: Vec<SkippedInstrument>,
     loader_bytes: u64,
+    listed_entries: u64,
     next_instance: AtomicU32,
 }
 
@@ -135,31 +139,53 @@ fn is_audio(path: &Path) -> bool {
     })
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SfzTextRun {
+    pub result: Result<SfzText, BankError>,
+    pub steps: u64,
+}
+
 pub fn parse_sfz_text(
     text: &str,
     includes: &BTreeMap<String, String>,
     limits: &SfzLimits,
 ) -> Result<SfzText, BankError> {
+    measure_sfz_text(text, includes, limits).result
+}
+
+pub fn measure_sfz_text(
+    text: &str,
+    includes: &BTreeMap<String, String>,
+    limits: &SfzLimits,
+) -> SfzTextRun {
     if text.len() as u64 > limits.file_bytes {
-        return Err(file_too_large(limits));
+        return SfzTextRun {
+            result: Err(file_too_large(limits)),
+            steps: 0,
+        };
     }
     let mut source = MemoryIncludes {
         files: includes,
         cap: limits.file_bytes,
     };
     let root_dir = PathBuf::new();
-    let expanded =
-        Preprocessor::new(&mut source, limits, &root_dir).run(Path::new("root.sfz"), text)?;
-    let mut parsed = parse(&expanded.text, limits, limits.loader_bytes)?;
-    parsed.listing.merge(expanded.listing);
-    Ok(SfzText {
-        regions: parsed.regions,
-        ignored: parsed.listing.entries(),
-        default_path: parsed.control.default_path,
-        set_cc: parsed.control.set_cc,
-        sw_default: parsed.control.sw_default,
-        expanded_bytes: expanded.text.len(),
-    })
+    let measured =
+        Preprocessor::new(&mut source, limits, &root_dir).run_measured(Path::new("root.sfz"), text);
+    let steps = measured.steps;
+    let result = measured.result.and_then(|expanded| {
+        let mut parsed = parse(&expanded.text, limits, limits.loader_bytes)?;
+        parsed.listing.merge(expanded.listing);
+        Ok(SfzText {
+            regions: parsed.regions,
+            ignored: parsed.listing.entries(),
+            default_path: parsed.control.default_path,
+            set_cc: parsed.control.set_cc,
+            sw_default: parsed.control.sw_default,
+            expanded_bytes: expanded.text.len(),
+            read_bytes: expanded.read_bytes,
+        })
+    });
+    SfzTextRun { result, steps }
 }
 
 struct Loader<'a> {
@@ -204,14 +230,23 @@ impl Loader<'_> {
             cap: limits.file_bytes,
         };
         let expanded = Preprocessor::new(&mut source, limits, &root_dir).run(file, text)?;
-        self.count_text(expanded.text.len())?;
+        self.count_text(
+            expanded
+                .text
+                .len()
+                .saturating_add(usize::try_from(expanded.read_bytes).unwrap_or(usize::MAX)),
+        )?;
         Ok(Expansion::Done(expanded))
     }
 
-    fn sample(&mut self, root_dir: &Path, text: &str) -> Result<usize, IgnoreReason> {
+    fn sample(
+        &mut self,
+        root_dir: &Path,
+        text: &str,
+    ) -> Result<Result<usize, IgnoreReason>, BankError> {
         let key = (root_dir.to_path_buf(), text.to_owned());
         if let Some(found) = self.resolved.get(&key) {
-            return *found;
+            return Ok(*found);
         }
         let outcome = match self.fs.resolve(root_dir, text) {
             Ok(path) if !is_audio(&path) => Err(IgnoreReason::UnsupportedAudioFormat),
@@ -225,12 +260,17 @@ impl Loader<'_> {
             }
             Err(PathProblem::Outside | PathProblem::Rejected) => Err(IgnoreReason::PathOutsideBank),
             Err(PathProblem::Missing) => Err(IgnoreReason::MissingFile),
+            Err(PathProblem::Exhausted) => {
+                return Err(refuse(UnsafeBank::ListedEntries {
+                    limit: self.limits.listed_entries,
+                }));
+            }
         };
         self.loader_bytes = self
             .loader_bytes
             .saturating_add((key.0.as_os_str().len() + key.1.len()) as u64 * 2);
         self.resolved.insert(key, outcome);
-        outcome
+        Ok(outcome)
     }
 
     fn instrument(
@@ -246,7 +286,7 @@ impl Loader<'_> {
         listing.merge(expanded.listing);
         let mut kept = Vec::new();
         for region in parsed.regions {
-            match self.sample(&root_dir, &region.sample) {
+            match self.sample(&root_dir, &region.sample)? {
                 Ok(sample) => kept.push(PlayRegion { region, sample }),
                 Err(reason) => listing.note("sample", SfzScope::Region, reason),
             }
@@ -337,6 +377,7 @@ impl SfzBank {
             None => ProgramMap::fallback(&names),
         };
         let loader_bytes = loader.loader_bytes;
+        let listed_entries = loader.fs.listed();
         let cache = SampleCache::new(loader.samples, *limits);
         Ok(SfzBank {
             shared: Arc::new(SfzShared {
@@ -349,6 +390,7 @@ impl SfzBank {
             root: canonical_root,
             skipped,
             loader_bytes,
+            listed_entries,
             next_instance: AtomicU32::new(0),
         })
     }
@@ -424,6 +466,10 @@ impl SfzBank {
 
     pub fn loader_bytes(&self) -> u64 {
         self.loader_bytes
+    }
+
+    pub fn listed_entries(&self) -> u64 {
+        self.listed_entries
     }
 
     pub fn shared_count(&self) -> usize {

@@ -15,6 +15,7 @@ pub(crate) enum PathProblem {
     Rejected,
     Outside,
     Missing,
+    Exhausted,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +29,8 @@ pub(crate) struct BankFs {
     root: PathBuf,
     listings: HashMap<PathBuf, Vec<OsString>>,
     entry_cap: u64,
+    listed: u64,
+    listed_cap: u64,
 }
 
 fn invalid(reason: &str) -> BankError {
@@ -85,7 +88,13 @@ impl BankFs {
             root,
             listings: HashMap::new(),
             entry_cap: limits.folder_entries,
+            listed: 0,
+            listed_cap: limits.listed_entries,
         })
+    }
+
+    pub(crate) fn listed(&self) -> u64 {
+        self.listed
     }
 
     pub(crate) fn root(&self) -> &Path {
@@ -122,6 +131,9 @@ impl BankFs {
                 let Ok(kind) = entry.file_type() else {
                     continue;
                 };
+                if kind.is_symlink() {
+                    return Err(unsafe_bank(UnsafeBank::BankSymlink));
+                }
                 let path = entry.path();
                 if kind.is_dir() {
                     if depth + 1 > limits.folder_depth {
@@ -148,28 +160,37 @@ impl BankFs {
         Ok(found)
     }
 
-    fn listing(&mut self, folder: &Path) -> &[OsString] {
-        let cap = self.entry_cap;
-        self.listings
-            .entry(folder.to_path_buf())
-            .or_insert_with(|| {
-                let Ok(entries) = fs::read_dir(folder) else {
-                    return Vec::new();
-                };
-                entries
-                    .flatten()
-                    .take(usize::try_from(cap).unwrap_or(usize::MAX))
-                    .map(|entry| entry.file_name())
-                    .collect()
-            })
+    fn listing(&mut self, folder: &Path) -> Result<&[OsString], PathProblem> {
+        let canonical = fs::canonicalize(folder).map_err(|_| PathProblem::Missing)?;
+        let canonical = self.confine(canonical)?;
+        if !self.listings.contains_key(&canonical) {
+            let mut names = Vec::new();
+            if let Ok(entries) = fs::read_dir(&canonical) {
+                for entry in entries.flatten() {
+                    if names.len() as u64 >= self.entry_cap {
+                        break;
+                    }
+                    if self.listed >= self.listed_cap {
+                        return Err(PathProblem::Exhausted);
+                    }
+                    self.listed += 1;
+                    names.push(entry.file_name());
+                }
+            }
+            self.listings.insert(canonical.clone(), names);
+        }
+        Ok(self.listings.get(&canonical).map_or(&[][..], Vec::as_slice))
     }
 
-    fn find_ignoring_case(&mut self, candidate: &Path) -> Option<PathBuf> {
-        let relative = candidate.strip_prefix(&self.root).ok()?.to_path_buf();
+    fn find_ignoring_case(&mut self, candidate: &Path) -> Result<PathBuf, PathProblem> {
+        let relative = candidate
+            .strip_prefix(&self.root)
+            .map_err(|_| PathProblem::Missing)?
+            .to_path_buf();
         let mut current = self.root.clone();
         for component in relative.components() {
             let Component::Normal(name) = component else {
-                return None;
+                return Err(PathProblem::Missing);
             };
             let exact = current.join(name);
             if fs::symlink_metadata(&exact).is_ok() {
@@ -178,17 +199,17 @@ impl BankFs {
             }
             let wanted = name.to_string_lossy().into_owned();
             let matches: Vec<OsString> = self
-                .listing(&current)
+                .listing(&current)?
                 .iter()
                 .filter(|entry| same_name(&entry.to_string_lossy(), &wanted))
                 .cloned()
                 .collect();
             let [only] = matches.as_slice() else {
-                return None;
+                return Err(PathProblem::Missing);
             };
             current = current.join(only);
         }
-        Some(current)
+        Ok(current)
     }
 
     pub(crate) fn resolve(&mut self, base: &Path, text: &str) -> Result<PathBuf, PathProblem> {
@@ -213,8 +234,7 @@ impl BankFs {
         let found = if fs::symlink_metadata(&candidate).is_ok() {
             candidate
         } else {
-            self.find_ignoring_case(&candidate)
-                .ok_or(PathProblem::Missing)?
+            self.find_ignoring_case(&candidate)?
         };
         let canonical = fs::canonicalize(&found).map_err(|_| PathProblem::Missing)?;
         self.confine(canonical)

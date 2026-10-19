@@ -1,4 +1,7 @@
-use opentab_audio::{AudioKind, BankError, SfzLimits, UnsafeBank, audio_kind, decode_audio};
+use opentab_audio::{
+    AudioKind, BankError, SFZ_MAX_VORBIS_ENTRIES, SfzLimits, UnsafeBank, audio_kind, decode_audio,
+    vorbis_setup_cost,
+};
 use opentab_testkit::banks::{
     ExtraCodebook, FlacOverrides, FlacSpec, SAMPLE_RATE, SINE_BIN, SINE_PACKETS, VorbisSpec,
     WavOverrides, WavSpec, flac16, mono_points, samples, sine_ogg, stereo_points, wav16,
@@ -264,10 +267,11 @@ fn rates_outside_the_window_are_refused_in_every_format() {
     }
 }
 
-fn with_codebook(entries: u32, dimensions: u16, lookup_type: u8) -> Vec<u8> {
+fn with_codebook(entries: u32, length: u8, dimensions: u16, lookup_type: u8) -> Vec<u8> {
     let mut spec = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
     spec.extra_codebook = Some(ExtraCodebook {
         entries,
+        length,
         dimensions,
         lookup_type,
         value_bits: 1,
@@ -276,14 +280,40 @@ fn with_codebook(entries: u32, dimensions: u16, lookup_type: u8) -> Vec<u8> {
 }
 
 #[test]
-fn a_vorbis_codebook_declaring_too_many_entries_is_refused() {
+fn a_vorbis_file_declaring_too_many_codebook_entries_is_refused() {
+    let entries = u32::try_from(SFZ_MAX_VORBIS_ENTRIES).unwrap_or(u32::MAX);
     assert_eq!(
         unsafe_reason(decode_audio(
-            &with_codebook((1 << 24) - 1, 1, 0),
+            &with_codebook(entries + 1, 1, 1, 0),
             &SfzLimits::DEFAULT
         )),
+        UnsafeBank::VorbisEntries {
+            limit: SFZ_MAX_VORBIS_ENTRIES
+        }
+    );
+    assert_eq!(
+        unsafe_reason(decode_audio(
+            &with_codebook((1 << 24) - 1, 22, 1, 0),
+            &SfzLimits::DEFAULT
+        )),
+        UnsafeBank::VorbisEntries {
+            limit: SFZ_MAX_VORBIS_ENTRIES
+        }
+    );
+}
+
+#[test]
+fn a_vorbis_huffman_tree_beyond_the_setup_budget_is_refused() {
+    let bomb = with_codebook(1 << 17, 17, 1, 0);
+    assert!(bomb.len() < 400, "{} bytes", bomb.len());
+    assert_eq!(
+        unsafe_reason(decode_audio(&bomb, &SfzLimits::DEFAULT)),
         UnsafeBank::VorbisTables
     );
+    let cost = vorbis_setup_cost(&with_codebook(1 << 12, 12, 1, 0), &SfzLimits::DEFAULT)
+        .expect("a complete 4096-entry tree is within the budget");
+    let tree_nodes = (1u64 << 12) * 12 + 1;
+    assert!(cost.bytes >= tree_nodes * 72, "{cost:?}");
 }
 
 #[test]
@@ -291,7 +321,7 @@ fn a_vorbis_codebook_declaring_huge_lookup_tables_is_refused() {
     for (entries, dimensions, lookup_type) in [(1000, 65_535, 2u8), (1000, 65_535, 1), (4, 0, 1)] {
         assert_eq!(
             unsafe_reason(decode_audio(
-                &with_codebook(entries, dimensions, lookup_type),
+                &with_codebook(entries, 1, dimensions, lookup_type),
                 &SfzLimits::DEFAULT
             )),
             UnsafeBank::VorbisTables,
@@ -305,6 +335,7 @@ fn a_vorbis_codebook_within_the_cap_still_decodes() {
     let mut spec = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
     spec.extra_codebook = Some(ExtraCodebook {
         entries: 2,
+        length: 1,
         dimensions: 2,
         lookup_type: 0,
         value_bits: 1,

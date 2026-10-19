@@ -6,7 +6,14 @@ const COMMENT_FIXED_BYTES: u64 = 8;
 const CODEBOOK_SYNC: u32 = 0x56_4342;
 const IDENT_CHANNELS: usize = 11;
 const IDENT_RATE: usize = 12;
-const LENGTH_BYTES: u64 = 4;
+const LENGTH_FIELD_BYTES: u64 = 4;
+const BOOK_BYTES: u64 = 4096;
+const LENGTH_BYTES: u64 = 1;
+const DESC_CAPACITY_BYTES: u64 = 4;
+const NODE_BYTES: u64 = 48;
+const DESC_NODE_BYTES: u64 = 24;
+const VALUE_BYTES: u64 = 4;
+const VECTOR_BYTES: u64 = 4;
 
 fn damaged() -> BankError {
     BankError::Invalid {
@@ -115,12 +122,12 @@ pub(crate) fn check_comment(packet: &[u8]) -> Result<(), BankError> {
     };
     let total = packet.len() as u64;
     let vendor = read_length(&mut at)?;
-    if vendor > total.saturating_sub(at as u64 + LENGTH_BYTES) {
+    if vendor > total.saturating_sub(at as u64 + LENGTH_FIELD_BYTES) {
         return Err(refuse(UnsafeBank::VorbisComments));
     }
     at += vendor as usize;
     let comments = read_length(&mut at)?;
-    if comments.saturating_mul(LENGTH_BYTES) > total.saturating_sub(at as u64) {
+    if comments.saturating_mul(LENGTH_FIELD_BYTES) > total.saturating_sub(at as u64) {
         return Err(refuse(UnsafeBank::VorbisComments));
     }
     for _ in 0..comments {
@@ -136,14 +143,59 @@ pub(crate) fn check_comment(packet: &[u8]) -> Result<(), BankError> {
     Ok(())
 }
 
-pub(crate) fn check_setup(packet: &[u8], limits: &SfzLimits) -> Result<(), BankError> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct VorbisSetupCost {
+    pub entries: u64,
+    pub bytes: u64,
+}
+
+impl VorbisSetupCost {
+    fn add(&mut self, bytes: u64, limits: &SfzLimits) -> Result<(), BankError> {
+        self.bytes = self.bytes.saturating_add(bytes);
+        if self.bytes > limits.vorbis_setup_bytes {
+            return Err(refuse(UnsafeBank::VorbisTables));
+        }
+        Ok(())
+    }
+}
+
+fn codeword_lengths(
+    cursor: &mut BitCursor<'_>,
+    entries: u32,
+    ordered: bool,
+) -> Result<u64, BankError> {
+    let mut total: u64 = 0;
+    if ordered {
+        let mut length = u64::from(cursor.read(5)?) + 1;
+        let mut current: u32 = 0;
+        while current < entries {
+            let number = cursor.read(ilog(u64::from(entries - current)))?;
+            current = current.saturating_add(number);
+            if current > entries {
+                return Err(damaged());
+            }
+            total = total.saturating_add(u64::from(number).saturating_mul(length));
+            length += 1;
+        }
+    } else {
+        let sparse = cursor.read(1)? == 1;
+        for _ in 0..entries {
+            if !sparse || cursor.read(1)? == 1 {
+                total = total.saturating_add(u64::from(cursor.read(5)?) + 1);
+            }
+        }
+    }
+    Ok(total)
+}
+
+pub(crate) fn check_setup(packet: &[u8], limits: &SfzLimits) -> Result<VorbisSetupCost, BankError> {
     let body = packet.get(HEADER_BYTES..).ok_or_else(damaged)?;
     let mut cursor = BitCursor {
         bytes: body,
         position: 0,
     };
     let books = cursor.read(8)? + 1;
-    let mut table_values: u64 = 0;
+    let mut cost = VorbisSetupCost::default();
     for _ in 0..books {
         if cursor.read(24)? != CODEBOOK_SYNC {
             return Err(damaged());
@@ -151,28 +203,21 @@ pub(crate) fn check_setup(packet: &[u8], limits: &SfzLimits) -> Result<(), BankE
         let dimensions = cursor.read(16)? as u16;
         let entries = cursor.read(24)?;
         let ordered = cursor.read(1)? == 1;
-        table_values = table_values.saturating_add(u64::from(entries));
-        if table_values > limits.vorbis_table_values {
-            return Err(refuse(UnsafeBank::VorbisTables));
+        cost.entries = cost.entries.saturating_add(u64::from(entries));
+        if cost.entries > limits.vorbis_entries {
+            return Err(refuse(UnsafeBank::VorbisEntries {
+                limit: limits.vorbis_entries,
+            }));
         }
-        if ordered {
-            cursor.read(5)?;
-            let mut current: u32 = 0;
-            while current < entries {
-                let number = cursor.read(ilog(u64::from(entries - current)))?;
-                current = current.saturating_add(number);
-                if current > entries {
-                    return Err(damaged());
-                }
-            }
-        } else {
-            let sparse = cursor.read(1)? == 1;
-            for _ in 0..entries {
-                if !sparse || cursor.read(1)? == 1 {
-                    cursor.read(5)?;
-                }
-            }
-        }
+        cost.add(
+            BOOK_BYTES + u64::from(entries) * (LENGTH_BYTES + DESC_CAPACITY_BYTES),
+            limits,
+        )?;
+        let tree_nodes = codeword_lengths(&mut cursor, entries, ordered)?.saturating_add(1);
+        cost.add(
+            tree_nodes.saturating_mul(NODE_BYTES + DESC_NODE_BYTES),
+            limits,
+        )?;
         let lookup = cursor.read(4)?;
         if lookup == 0 {
             continue;
@@ -189,11 +234,13 @@ pub(crate) fn check_setup(packet: &[u8], limits: &SfzLimits) -> Result<(), BankE
             u64::from(entries) * u64::from(dimensions)
         };
         let vectors = u64::from(entries).saturating_mul(u64::from(dimensions));
-        table_values = table_values.saturating_add(values).saturating_add(vectors);
-        if table_values > limits.vorbis_table_values {
-            return Err(refuse(UnsafeBank::VorbisTables));
-        }
+        cost.add(
+            values
+                .saturating_mul(VALUE_BYTES)
+                .saturating_add(vectors.saturating_mul(VECTOR_BYTES)),
+            limits,
+        )?;
         cursor.skip(values.saturating_mul(value_bits))?;
     }
-    Ok(())
+    Ok(cost)
 }

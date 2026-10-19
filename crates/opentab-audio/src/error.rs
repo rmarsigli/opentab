@@ -105,6 +105,16 @@ pub enum UnsafeBank {
     DecodedAudioBudget { limit_mib: u64 },
     #[error("an Ogg Vorbis sample declares decoding tables larger than OpenTab allows")]
     VorbisTables,
+    #[error("an Ogg Vorbis sample declares more than {limit} codebook entries")]
+    VorbisEntries { limit: u64 },
+    #[error("the bank folder holds a symbolic link, which OpenTab does not follow in sound banks")]
+    BankSymlink,
+    #[error("looking up file names would list more than {limit} folder entries")]
+    ListedEntries { limit: u64 },
+    #[error("an instrument reads more than {limit_mib} MiB of text through its includes")]
+    TextReadTooLarge { limit_mib: u64 },
+    #[error("a line of instrument text is longer than {limit_kib} KiB")]
+    LineTooLong { limit_kib: u64 },
     #[error("an Ogg Vorbis sample declares text longer than the file")]
     VorbisComments,
 }

@@ -18,6 +18,7 @@ pub(crate) enum Opened {
     Missing,
     Outside,
     TooLarge,
+    Exhausted,
 }
 
 pub(crate) trait IncludeSource {
@@ -42,6 +43,7 @@ impl IncludeSource for FsIncludes<'_> {
                 Err(ReadProblem::TooLarge) => Opened::TooLarge,
             },
             Err(PathProblem::Outside) => Opened::Outside,
+            Err(PathProblem::Exhausted) => Opened::Exhausted,
             Err(PathProblem::Missing | PathProblem::Rejected) => Opened::Missing,
         }
     }
@@ -71,6 +73,13 @@ pub(crate) struct Expanded {
     pub(crate) text: String,
     pub(crate) included: Vec<PathBuf>,
     pub(crate) listing: Listing,
+    pub(crate) read_bytes: u64,
+    pub(crate) steps: u64,
+}
+
+pub(crate) struct MeasuredExpansion {
+    pub(crate) result: Result<Expanded, BankError>,
+    pub(crate) steps: u64,
 }
 
 fn unsafe_bank(reason: UnsafeBank) -> BankError {
@@ -82,43 +91,49 @@ pub(crate) fn decode_text(bytes: &[u8]) -> Option<&str> {
     Some(text.strip_prefix(BYTE_ORDER_MARK).unwrap_or(text))
 }
 
-pub(crate) fn strip_comments(text: &str) -> String {
+pub(crate) struct Stripped {
+    pub(crate) text: String,
+    pub(crate) scanned: u64,
+}
+
+pub(crate) fn strip_comments(text: &str) -> Stripped {
+    let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    loop {
-        let line = rest.find("//");
-        let block = rest.find("/*");
-        match (line, block) {
-            (Some(at), Some(other)) if at < other => {
-                out.push_str(&rest[..at]);
-                rest = &rest[at..];
-                let end = rest.find(['\n', '\r']).unwrap_or(rest.len());
-                rest = &rest[end..];
+    let mut scanned: u64 = 0;
+    let mut index = 0;
+    let mut copied = 0;
+    while index + 1 < bytes.len() {
+        scanned += 1;
+        match (bytes[index], bytes[index + 1]) {
+            (b'/', b'/') => {
+                out.push_str(&text[copied..index]);
+                let end = text[index..]
+                    .find(['\n', '\r'])
+                    .map_or(text.len(), |end| index + end);
+                scanned += (end - index) as u64;
+                index = end;
+                copied = index;
             }
-            (Some(at), None) => {
-                out.push_str(&rest[..at]);
-                rest = &rest[at..];
-                let end = rest.find(['\n', '\r']).unwrap_or(rest.len());
-                rest = &rest[end..];
-            }
-            (_, Some(at)) => {
-                out.push_str(&rest[..at]);
-                let after = &rest[at + 2..];
-                match after.find("*/") {
+            (b'/', b'*') => {
+                out.push_str(&text[copied..index]);
+                match text[index + 2..].find("*/") {
                     Some(end) => {
                         out.push(' ');
-                        rest = &after[end + 2..];
+                        scanned += (end + 2) as u64;
+                        index += 2 + end + 2;
                     }
-                    None => rest = "",
+                    None => {
+                        scanned += (text.len() - index) as u64;
+                        index = text.len();
+                    }
                 }
+                copied = index;
             }
-            (None, None) => {
-                out.push_str(rest);
-                break;
-            }
+            _ => index += 1,
         }
     }
-    out
+    out.push_str(&text[copied..]);
+    Stripped { text: out, scanned }
 }
 
 fn lines(text: &str) -> impl Iterator<Item = &str> {
@@ -133,6 +148,7 @@ fn is_name_char(character: char) -> bool {
 
 struct Defines {
     values: HashMap<String, String>,
+    lengths: Vec<bool>,
     longest: usize,
     count: u64,
     bytes: u64,
@@ -156,6 +172,7 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
             root_dir: root_dir.to_path_buf(),
             defines: Defines {
                 values: HashMap::new(),
+                lengths: Vec::new(),
                 longest: 0,
                 count: 0,
                 bytes: 0,
@@ -166,10 +183,30 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
         }
     }
 
-    pub(crate) fn run(mut self, key: &Path, text: &str) -> Result<Expanded, BankError> {
-        self.stack.push(key.to_path_buf());
-        self.expand(text, key, 0)?;
-        Ok(self.out)
+    pub(crate) fn run(self, key: &Path, text: &str) -> Result<Expanded, BankError> {
+        self.run_measured(key, text).result
+    }
+
+    pub(crate) fn run_measured(mut self, key: &Path, text: &str) -> MeasuredExpansion {
+        let outcome = self.count_read(text.len()).and_then(|()| {
+            self.stack.push(key.to_path_buf());
+            self.expand(text, key, 0)
+        });
+        let steps = self.out.steps;
+        MeasuredExpansion {
+            result: outcome.map(|()| self.out),
+            steps,
+        }
+    }
+
+    fn count_read(&mut self, bytes: usize) -> Result<(), BankError> {
+        self.out.read_bytes = self.out.read_bytes.saturating_add(bytes as u64);
+        if self.out.read_bytes > self.limits.read_bytes {
+            return Err(unsafe_bank(UnsafeBank::TextReadTooLarge {
+                limit_mib: self.limits.read_bytes / MIB,
+            }));
+        }
+        Ok(())
     }
 
     fn reserve(&self, extra: usize) -> Result<(), BankError> {
@@ -184,6 +221,7 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
 
     fn push(&mut self, piece: &str) -> Result<(), BankError> {
         self.reserve(piece.len())?;
+        self.out.steps = self.out.steps.saturating_add(piece.len() as u64);
         self.out.text.push_str(piece);
         Ok(())
     }
@@ -193,16 +231,23 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
         while let Some(at) = rest.find(VARIABLE) {
             self.push(&rest[..at])?;
             let after = &rest[at + 1..];
-            let run = after
-                .find(|c: char| !is_name_char(c))
-                .unwrap_or(after.len());
-            let longest = run.min(self.defines.longest);
-            let found = (1..=longest).rev().find_map(|length| {
-                self.defines
-                    .values
-                    .get(&after[..length])
-                    .map(|value| (length, value.clone()))
-            });
+            let window = &after.as_bytes()[..after.len().min(self.defines.longest)];
+            let run = window
+                .iter()
+                .take_while(|byte| is_name_char(char::from(**byte)))
+                .count();
+            self.out.steps = self.out.steps.saturating_add(run as u64 + 1);
+            let mut found = None;
+            for length in (1..=run).rev() {
+                if !self.defines.lengths.get(length).copied().unwrap_or(false) {
+                    continue;
+                }
+                self.out.steps = self.out.steps.saturating_add(length as u64);
+                if let Some(value) = self.defines.values.get(&after[..length]) {
+                    found = Some((length, value.clone()));
+                    break;
+                }
+            }
             match found {
                 Some((length, value)) => {
                     self.push(&value)?;
@@ -228,7 +273,10 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
                 .note(DEFINE, SfzScope::File, IgnoreReason::UnknownDirective);
             return;
         };
-        if bare.is_empty() || !bare.chars().all(is_name_char) {
+        if bare.is_empty()
+            || bare.len() > self.limits.define_name_bytes
+            || !bare.chars().all(is_name_char)
+        {
             self.out
                 .listing
                 .note(DEFINE, SfzScope::File, IgnoreReason::UnknownDirective);
@@ -237,6 +285,12 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
         self.defines.count += 1;
         self.defines.bytes += (bare.len() + value.len()) as u64;
         self.defines.longest = self.defines.longest.max(bare.len());
+        if self.defines.lengths.len() <= bare.len() {
+            self.defines.lengths.resize(bare.len() + 1, false);
+        }
+        if let Some(slot) = self.defines.lengths.get_mut(bare.len()) {
+            *slot = true;
+        }
         self.defines
             .values
             .insert(bare.to_owned(), value.to_owned());
@@ -288,6 +342,7 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
                 if self.stack.contains(&key) {
                     return Err(unsafe_bank(UnsafeBank::IncludeCycle));
                 }
+                self.count_read(bytes.len())?;
                 let Some(text) = decode_text(&bytes) else {
                     self.out
                         .listing
@@ -317,6 +372,9 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
             Opened::TooLarge => Err(unsafe_bank(UnsafeBank::SfzFileTooLarge {
                 limit_kib: self.limits.file_bytes / KIB,
             })),
+            Opened::Exhausted => Err(unsafe_bank(UnsafeBank::ListedEntries {
+                limit: self.limits.listed_entries,
+            })),
         }
     }
 
@@ -343,8 +401,14 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
     }
 
     fn expand(&mut self, text: &str, key: &Path, depth: u64) -> Result<(), BankError> {
-        let text = strip_comments(text);
-        for line in lines(&text) {
+        let stripped = strip_comments(text);
+        self.out.steps = self.out.steps.saturating_add(stripped.scanned);
+        for line in lines(&stripped.text) {
+            if line.len() as u64 > self.limits.line_bytes {
+                return Err(unsafe_bank(UnsafeBank::LineTooLong {
+                    limit_kib: self.limits.line_bytes / KIB,
+                }));
+            }
             let trimmed = line.trim_start();
             if trimmed.starts_with(DEFINE) {
                 self.define(trimmed);

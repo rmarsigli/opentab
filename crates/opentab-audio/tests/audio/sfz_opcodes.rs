@@ -488,6 +488,34 @@ fn controller_ranges_use_set_cc_and_the_stream_but_never_rpn_controllers() {
 }
 
 #[test]
+fn rpn_and_nrpn_controllers_never_move_the_controller_state() {
+    for controller in [6u8, 38, 98, 99, 100, 101] {
+        let test = bank(&format!(
+            "<control> set_cc{controller}=0\n<region> hicc{controller}=63 sample=kick.wav\n<region> locc{controller}=64 sample=hat.wav\n"
+        ));
+        let mut reference = test.bank.synth(RATE);
+        on(&mut reference, 60, 100);
+        let expected = render(&mut reference, 2400).0;
+        let mut synth = test.bank.synth(RATE);
+        synth.handle(
+            channel(),
+            &MidiMessage::Rpn {
+                parameter: 0,
+                value: 12,
+            },
+        );
+        cc(&mut synth, controller, 127);
+        on(&mut synth, 60, 100);
+        assert_eq!(synth.sounding(), 1, "controller {controller}");
+        assert_eq!(
+            render(&mut synth, 2400).0,
+            expected,
+            "controller {controller}"
+        );
+    }
+}
+
+#[test]
 fn the_controller_state_starts_from_set_cc() {
     let test = bank("<control> set_cc30=100\n<region> locc30=64 sample=kick.wav\n");
     let mut synth = test.bank.synth(RATE);

@@ -716,7 +716,15 @@ pub(crate) fn parse(text: &str, limits: &SfzLimits, budget: u64) -> Result<Parse
                     open_header(&mut scopes, name, &mut parsed.listing);
                 }
                 Token::Opcode(raw_name, value) => {
+                    let listed = parsed.listing.bytes();
                     apply_token(&mut scopes, &mut parsed, raw_name, value);
+                    if parsed.listing.bytes() > listed
+                        && parsed.bytes.saturating_add(parsed.listing.bytes()) > budget
+                    {
+                        return Err(BankError::Unsafe {
+                            reason: UnsafeBank::LoaderBudget,
+                        });
+                    }
                 }
                 Token::Junk => {
                     if scopes.header != Header::Ignored {

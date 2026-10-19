@@ -9,7 +9,7 @@ use lewton::samples::{InterleavedSamples, Samples};
 use ogg::PacketReader;
 
 use crate::sfz::limits::{MIB, SfzLimits};
-use crate::sfz::vorbis;
+use crate::sfz::vorbis::{self, VorbisSetupCost};
 use crate::{BankError, UnsafeBank};
 
 const GROWTH_FLOOR_VALUES: usize = 16_384;
@@ -210,12 +210,20 @@ fn ogg_error(error: impl ToString) -> BankError {
     invalid(error.to_string())
 }
 
-fn decode_ogg(bytes: &[u8], limits: &SfzLimits, budget: u64) -> Result<DecodedSample, BankError> {
+struct VorbisHeaders<'a> {
+    packets: PacketReader<Cursor<&'a [u8]>>,
+    ident: ogg::Packet,
+    comment: ogg::Packet,
+    setup: ogg::Packet,
+    cost: VorbisSetupCost,
+}
+
+fn vorbis_headers<'a>(bytes: &'a [u8], limits: &SfzLimits) -> Result<VorbisHeaders<'a>, BankError> {
     let mut packets = PacketReader::new(Cursor::new(bytes));
     let ident = packets.read_packet_expected().map_err(ogg_error)?;
     let serial = ident.stream_serial();
     let shape = vorbis::check_ident(&ident.data)?;
-    let mut collector = Collector::new(shape.channels, shape.rate, limits, budget)?;
+    Collector::new(shape.channels, shape.rate, limits, 0)?;
     let mut next_header = || loop {
         let packet = packets.read_packet_expected().map_err(ogg_error)?;
         if packet.stream_serial() == serial {
@@ -225,7 +233,31 @@ fn decode_ogg(bytes: &[u8], limits: &SfzLimits, budget: u64) -> Result<DecodedSa
     let comment = next_header()?;
     vorbis::check_comment(&comment.data)?;
     let setup = next_header()?;
-    vorbis::check_setup(&setup.data, limits)?;
+    let cost = vorbis::check_setup(&setup.data, limits)?;
+    Ok(VorbisHeaders {
+        packets,
+        ident,
+        comment,
+        setup,
+        cost,
+    })
+}
+
+pub fn vorbis_setup_cost(bytes: &[u8], limits: &SfzLimits) -> Result<VorbisSetupCost, BankError> {
+    vorbis_headers(bytes, limits).map(|headers| headers.cost)
+}
+
+fn decode_ogg(bytes: &[u8], limits: &SfzLimits, budget: u64) -> Result<DecodedSample, BankError> {
+    let VorbisHeaders {
+        mut packets,
+        ident,
+        comment,
+        setup,
+        ..
+    } = vorbis_headers(bytes, limits)?;
+    let serial = ident.stream_serial();
+    let shape = vorbis::check_ident(&ident.data)?;
+    let mut collector = Collector::new(shape.channels, shape.rate, limits, budget)?;
     let ident_header = read_header_ident(&ident.data).map_err(ogg_error)?;
     read_header_comment(&comment.data).map_err(ogg_error)?;
     let setup_header = read_header_setup(

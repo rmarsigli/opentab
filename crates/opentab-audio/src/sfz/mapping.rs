@@ -62,10 +62,7 @@ impl ProgramMap {
             .iter()
             .position(|file| !is_drum_named(file))
             .or(if files.is_empty() { None } else { Some(0) });
-        let drums = files
-            .iter()
-            .position(|file| is_drum_named(file))
-            .or(melodic);
+        let drums = files.iter().position(|file| is_drum_named(file));
         ProgramMap {
             programs: vec![None; PROGRAMS],
             default: melodic,

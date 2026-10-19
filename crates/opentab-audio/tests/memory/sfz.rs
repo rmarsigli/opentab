@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::fs;
 
 use opentab_audio::{
-    Bank, BankError, SFZ_MAX_EXPANDED_BYTES, SampleRate, SfzBank, SfzLimits, Synth, UnsafeBank,
-    decode_audio, parse_sfz_text,
+    Bank, BankError, SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_VORBIS_ENTRIES, SampleRate, SfzBank,
+    SfzLimits, Synth, UnsafeBank, decode_audio, parse_sfz_text, vorbis_setup_cost,
 };
 use opentab_playback::{Channel, MidiMessage};
 use opentab_testkit::banks::{
@@ -20,6 +20,9 @@ const MIN_DECODED_BYTES: usize = 16_000_000;
 const REFUSAL_BYTES: usize = 64 * 1024;
 const TEXT_FACTOR: usize = 8;
 const FRAGMENT_REGIONS: usize = 200;
+const HUFFMAN_BOMB_DEPTH: u8 = 17;
+const HUFFMAN_ACCEPTED_DEPTH: u8 = 14;
+const NODE_BYTES: usize = 32;
 const SPARSE_BYTES: u64 = 1 << 30;
 
 fn allocated(region: &Region<'_, std::alloc::System>) -> usize {
@@ -99,11 +102,18 @@ pub fn hostile_samples_never_allocate_what_they_declare() {
     let mut tables = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
     tables.extra_codebook = Some(ExtraCodebook {
         entries: (1 << 24) - 1,
+        length: 1,
         dimensions: 65_535,
         lookup_type: 2,
         value_bits: 32,
     });
-    refused_with_little(&write_vorbis(&tables), UnsafeBank::VorbisTables);
+    refused_with_little(
+        &write_vorbis(&tables),
+        UnsafeBank::VorbisEntries {
+            limit: SFZ_MAX_VORBIS_ENTRIES,
+        },
+    );
+    refused_with_little(&huffman_ogg(HUFFMAN_BOMB_DEPTH), UnsafeBank::VorbisTables);
     let mut comments = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
     comments.declared_comments = Some(u32::MAX);
     refused_with_little(&write_vorbis(&comments), UnsafeBank::VorbisComments);
@@ -167,6 +177,49 @@ pub fn a_huge_declared_file_is_refused_before_it_is_read() {
     assert!(spent <= REFUSAL_BYTES, "{spent} bytes");
 }
 
+fn huffman_ogg(depth: u8) -> Vec<u8> {
+    let mut spec = VorbisSpec::tone(SAMPLE_RATE, 4, 3);
+    spec.extra_codebook = Some(ExtraCodebook {
+        entries: 1 << depth,
+        length: depth,
+        dimensions: 1,
+        lookup_type: 0,
+        value_bits: 1,
+    });
+    write_vorbis(&spec)
+}
+
+pub fn the_vorbis_setup_estimate_covers_what_lewton_allocates() {
+    let bytes = huffman_ogg(HUFFMAN_ACCEPTED_DEPTH);
+    let cost = vorbis_setup_cost(&bytes, &SfzLimits::DEFAULT).expect("within the budget");
+    let at_cap = SfzLimits {
+        vorbis_setup_bytes: cost.bytes,
+        ..SfzLimits::DEFAULT
+    };
+    let below = SfzLimits {
+        vorbis_setup_bytes: cost.bytes - 1,
+        ..SfzLimits::DEFAULT
+    };
+    assert_eq!(
+        decode_audio(&bytes, &below).map(|sample| sample.frames),
+        Err(BankError::Unsafe {
+            reason: UnsafeBank::VorbisTables
+        })
+    );
+    let decoding = Region::new(GLOBAL);
+    let decoded = decode_audio(&bytes, &at_cap).expect("decodes at the cap");
+    let spent = allocated(&decoding);
+    let audio = usize::try_from(decoded.bytes()).unwrap_or(usize::MAX);
+    let estimate = usize::try_from(cost.bytes).unwrap_or(usize::MAX);
+    println!("vorbis setup estimate {estimate} bytes, decode allocated {spent} bytes");
+    assert!(
+        spent <= estimate + 2 * audio + SLACK_BYTES,
+        "{spent} bytes allocated for an estimate of {estimate}"
+    );
+    let tree = (1usize << HUFFMAN_ACCEPTED_DEPTH) * 2 * NODE_BYTES;
+    assert!(spent >= tree, "{spent} bytes, the tree alone needs {tree}");
+}
+
 pub fn text_bombs_stop_at_the_expansion_cap() {
     let fragment = "<region> sample=pluck.wav lokey=1 hikey=2\n".repeat(FRAGMENT_REGIONS);
     let mut includes = BTreeMap::new();
@@ -186,9 +239,9 @@ pub fn text_bombs_stop_at_the_expansion_cap() {
     assert!(spent <= TEXT_FACTOR * cap + SLACK_BYTES, "{spent} bytes");
 
     let define = format!(
-        "#define $A {}\n<region> sample=a.wav volume={}",
+        "#define $A {}\n{}",
         "9".repeat(60_000),
-        "$A".repeat(100_000)
+        format!("<region> sample=a.wav volume={}\n", "$A".repeat(30_000)).repeat(10)
     );
     let parsing = Region::new(GLOBAL);
     let result = parse_sfz_text(&define, &BTreeMap::new(), &SfzLimits::DEFAULT)
@@ -201,4 +254,46 @@ pub fn text_bombs_stop_at_the_expansion_cap() {
         })
     ));
     assert!(spent <= TEXT_FACTOR * cap + SLACK_BYTES, "{spent} bytes");
+}
+
+const BOMB_FILES: usize = 2_000;
+const BOMB_DEPTH: u32 = 6;
+const BYTES_PER_WALKED_ENTRY: usize = 512;
+
+pub fn symlink_bombs_are_refused_before_listing() {
+    let dir = tempfile::Builder::new()
+        .prefix("sfz-listing-")
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .expect("scratch");
+    let root = dir.path().join("bank");
+    fs::create_dir_all(&root).expect("bank folder");
+    for index in 0..BOMB_FILES {
+        fs::write(root.join(format!("f{index:06}")), b"").expect("entry");
+    }
+    let regions: String = (0..1u32 << BOMB_DEPTH)
+        .map(|combo| {
+            let path: Vec<&str> = (0..BOMB_DEPTH)
+                .map(|bit| if combo >> bit & 1 == 0 { "a" } else { "b" })
+                .collect();
+            format!("<region> sample={}/missing.wav\n", path.join("/"))
+        })
+        .collect();
+    fs::write(root.join("bomb.sfz"), regions).expect("bomb");
+    #[cfg(unix)]
+    for name in ["a", "b"] {
+        std::os::unix::fs::symlink(".", root.join(name)).expect("link");
+    }
+    let loading = Region::new(GLOBAL);
+    let result = SfzBank::load(&root).map(|bank| bank.listed_entries());
+    let spent = allocated(&loading);
+    if cfg!(unix) {
+        assert_eq!(
+            result,
+            Err(BankError::Unsafe {
+                reason: UnsafeBank::BankSymlink
+            })
+        );
+    }
+    let bound = BOMB_FILES * BYTES_PER_WALKED_ENTRY + REFUSAL_BYTES;
+    assert!(spent <= bound, "{spent} bytes, bound {bound}");
 }

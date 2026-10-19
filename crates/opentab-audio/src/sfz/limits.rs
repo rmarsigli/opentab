@@ -6,6 +6,10 @@ pub const SFZ_MAX_INCLUDE_DEPTH: u64 = 8;
 pub const SFZ_MAX_INCLUDES: u64 = 4096;
 pub const SFZ_MAX_DEFINES: u64 = 16_384;
 pub const SFZ_MAX_DEFINE_BYTES: u64 = 1 << 20;
+pub const SFZ_MAX_DEFINE_NAME_BYTES: usize = 64;
+pub const SFZ_MAX_LINE_BYTES: u64 = 64 << 10;
+pub const SFZ_MAX_READ_BYTES: u64 = 32 << 20;
+pub const SFZ_MAX_LISTED_ENTRIES: u64 = 1 << 20;
 pub const SFZ_MAX_FOLDER_ENTRIES: u64 = 200_000;
 pub const SFZ_MAX_FOLDER_DEPTH: u64 = 16;
 pub const SFZ_MAX_SFZ_FILES: u64 = 8192;
@@ -17,7 +21,8 @@ pub const SFZ_MAX_SAMPLE_CHANNELS: u32 = 2;
 pub const SFZ_MIN_SAMPLE_RATE: u32 = 8_000;
 pub const SFZ_MAX_SAMPLE_RATE: u32 = 192_000;
 pub const SFZ_MAX_DECODED_BYTES: u64 = 1 << 30;
-pub const SFZ_MAX_VORBIS_TABLE_VALUES: u64 = 1 << 22;
+pub const SFZ_MAX_VORBIS_ENTRIES: u64 = 1 << 18;
+pub const SFZ_MAX_VORBIS_SETUP_BYTES: u64 = 32 << 20;
 pub const SFZ_MAX_VOICES: usize = 128;
 pub const SFZ_MAX_VOICES_PER_NOTE: usize = 32;
 
@@ -31,6 +36,10 @@ pub struct SfzLimits {
     pub includes: u64,
     pub defines: u64,
     pub define_bytes: u64,
+    pub define_name_bytes: usize,
+    pub line_bytes: u64,
+    pub read_bytes: u64,
+    pub listed_entries: u64,
     pub folder_entries: u64,
     pub folder_depth: u64,
     pub sfz_files: u64,
@@ -42,7 +51,8 @@ pub struct SfzLimits {
     pub min_sample_rate: u32,
     pub max_sample_rate: u32,
     pub decoded_bytes: u64,
-    pub vorbis_table_values: u64,
+    pub vorbis_entries: u64,
+    pub vorbis_setup_bytes: u64,
     pub voices: usize,
     pub voices_per_note: usize,
 }
@@ -57,6 +67,10 @@ impl SfzLimits {
         includes: SFZ_MAX_INCLUDES,
         defines: SFZ_MAX_DEFINES,
         define_bytes: SFZ_MAX_DEFINE_BYTES,
+        define_name_bytes: SFZ_MAX_DEFINE_NAME_BYTES,
+        line_bytes: SFZ_MAX_LINE_BYTES,
+        read_bytes: SFZ_MAX_READ_BYTES,
+        listed_entries: SFZ_MAX_LISTED_ENTRIES,
         folder_entries: SFZ_MAX_FOLDER_ENTRIES,
         folder_depth: SFZ_MAX_FOLDER_DEPTH,
         sfz_files: SFZ_MAX_SFZ_FILES,
@@ -68,7 +82,8 @@ impl SfzLimits {
         min_sample_rate: SFZ_MIN_SAMPLE_RATE,
         max_sample_rate: SFZ_MAX_SAMPLE_RATE,
         decoded_bytes: SFZ_MAX_DECODED_BYTES,
-        vorbis_table_values: SFZ_MAX_VORBIS_TABLE_VALUES,
+        vorbis_entries: SFZ_MAX_VORBIS_ENTRIES,
+        vorbis_setup_bytes: SFZ_MAX_VORBIS_SETUP_BYTES,
         voices: SFZ_MAX_VOICES,
         voices_per_note: SFZ_MAX_VOICES_PER_NOTE,
     };

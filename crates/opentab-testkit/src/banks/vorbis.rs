@@ -18,6 +18,7 @@ const VENDOR: &[u8] = b"opentab-testkit";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExtraCodebook {
     pub entries: u32,
+    pub length: u8,
     pub dimensions: u16,
     pub lookup_type: u8,
     pub value_bits: u8,
@@ -166,7 +167,7 @@ fn extra_codebook(bits: &mut Bits, book: &ExtraCodebook) {
     bits.put(u64::from(book.dimensions), 16);
     bits.put(u64::from(book.entries), 24);
     bits.flag(true);
-    bits.put(0, 5);
+    bits.put(u64::from(book.length.saturating_sub(1)), 5);
     bits.put(u64::from(book.entries), ilog(u64::from(book.entries)));
     bits.put(u64::from(book.lookup_type), 4);
     if book.lookup_type > 0 {

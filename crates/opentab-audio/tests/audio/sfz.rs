@@ -290,3 +290,22 @@ fn note_off_releases_and_one_shots_ignore_it() {
     assert!(energy(&left[2400..]) > 0.01);
     let _ = tiny_sfz_root();
 }
+
+#[test]
+fn a_bank_without_a_drum_file_plays_no_drums() {
+    let dir = scratch_dir();
+    let root = write_bank(
+        dir.path(),
+        &[("guitar.sfz", "<region> sample=pluck.wav")],
+        &[("pluck.wav", wav16(&samples::pluck()))],
+    );
+    let bank = SfzBank::load(&root).expect("loads");
+    assert_eq!(bank.drum_instrument(), None);
+    assert_eq!(bank.melodic_instrument(24).as_deref(), Some("guitar"));
+    assert!(bank.instruments().iter().all(|entry| entry.bank.msb() == 0));
+    let mut synth = bank.synth(RATE);
+    synth.handle(Channel::DRUMS, &note_on(38, 100));
+    assert_eq!(synth.sounding(), 0);
+    synth.handle(channel(0), &note_on(60, 100));
+    assert_eq!(synth.sounding(), 1);
+}
