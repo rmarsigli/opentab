@@ -252,7 +252,7 @@ SFZ files carry no program numbers, so a bank maps General MIDI programs to its 
 
 ## 11. Limits
 
-Every limit is a named constant and refuses the bank with a message that names it. Sizes are checked before the memory they guard is allocated; counts are checked as each item is added. Loading work is bounded by these limits rather than by the bank's shape: comments are removed in one pass; a variable is looked up only among the lengths of defined names, each at most 64 bytes; each path, after variables, is at most 1 KiB and its text counts against the bank text limit; each distinct path is resolved once (hits and misses are both remembered), and the number of distinct paths is capped; each folder is listed and lower-cased once into an index, so a case-insensitive miss costs one lookup in that index. The total is roughly proportional to the text read plus the folder entries listed plus the distinct paths times their length. Real libraries sit far below each one: the survey's largest file is 210 KB, its largest instrument 8,902 regions and 0.95 MB of expanded text, its deepest include chain 3 levels, and its longest samples a few tens of seconds.
+Every limit is a named constant and refuses the bank with a message that names it. Sizes are checked before the memory they guard is allocated; counts are checked as each item is added. Loading work is bounded by these limits rather than by the bank's shape: comments are removed in one pass; a variable is looked up only among the lengths of defined names, each at most 64 bytes; each path, after variables, is at most 1 KiB and its text counts against the bank text limit; each distinct path is resolved once (hits and misses are both remembered), and the number of distinct paths is capped; each folder is listed and lower-cased once into an index, so a case-insensitive miss costs one lookup in that index. The remembered results are charged to the memory kept per bank. The total work is roughly proportional to the text read, plus the folder entries listed, plus each path occurrence times the length of its key and canonical result (a hit still builds and hashes its key; an include hit also checks, opens and re-checks the file, a few system calls on a path of at most about 4 KiB), with path occurrences bounded by the region and include limits. Real libraries sit far below each one: the survey's largest file is 210 KB, its largest instrument 8,902 regions and 0.95 MB of expanded text, its deepest include chain 3 levels, and its longest samples a few tens of seconds.
 
 | Limit | Value |
 |---|---|
@@ -261,6 +261,7 @@ Every limit is a named constant and refuses the bank with a message that names i
 | Text read and expanded per bank, every file counted | 512 MiB |
 | Regions per instrument | 100,000 |
 | Include depth, includes per instrument | 8, 4,096 |
+| Include occurrences per bank, both passes counted | 16,384 (the survey's 8 libraries hold 2,875 include lines in all) |
 | Definitions per instrument, their text, one name | 16,384, 1 MiB, 64 bytes (a longer name is ignored and listed) |
 | One line of text | 64 KiB |
 | One sample or include path, after variables and `default_path` | 1 KiB |
@@ -277,6 +278,7 @@ Every limit is a named constant and refuses the bank with a message that names i
 | Decoded audio per bank | 1 GiB |
 | Ogg Vorbis codebook entries per file | 262,144 |
 | Ogg Vorbis codebook memory estimate per file | 32 MiB |
-| Ogg Vorbis comment header estimate per file (48 bytes per declared comment, plus twice its text) | 1 MiB |
+| Ogg Vorbis comment header estimate per file (the vendor text, 48 bytes per declared comment, plus twice its text) | 1 MiB |
+| Logical streams in an Ogg file (every page header is checked before the Ogg reader runs) | 1 |
 
 The sample limits are checked when a sample is decoded; a breach silences its regions and is reported, as in section 6.5.
