@@ -194,4 +194,42 @@ mod tests {
         assert_eq!(ToolName::parse("Open"), None);
         assert_eq!(ToolName::parse(""), None);
     }
+
+    #[test]
+    fn each_description_states_what_its_tool_does() {
+        for (tool, phrase) in [
+            (ToolName::Open, "start an editing session"),
+            (ToolName::Info, "every element id (for apply)"),
+            (ToolName::Render, "as a PNG image"),
+            (ToolName::Apply, "All or nothing"),
+            (ToolName::Undo, "Undo the last apply"),
+            (ToolName::Redo, "Redo the last undone apply"),
+            (ToolName::Export, "the suffix picks the format"),
+            (ToolName::Close, "forget its score and history"),
+        ] {
+            let description = tool.spec().description;
+            assert!(
+                description.contains(phrase),
+                "{}: {description}",
+                tool.name()
+            );
+        }
+    }
+
+    #[test]
+    fn sessions_and_paths_are_described_strings_and_paths_are_never_empty() {
+        let session = json!({"type": "string", "description": "The session id returned by open."});
+        for tool in ALL.into_iter().filter(|tool| *tool != ToolName::Open) {
+            let schema = tool.spec().schema;
+            assert_eq!(schema["properties"]["session"], session, "{}", tool.name());
+        }
+        assert_eq!(
+            ToolName::Open.spec().schema["properties"]["path"],
+            json!({"type": "string", "minLength": 1, "description": "The score file to open."})
+        );
+        assert_eq!(
+            ToolName::Export.spec().schema["properties"]["path"],
+            json!({"type": "string", "minLength": 1, "description": "Where to write; must end in .gp or .opentab.json."})
+        );
+    }
 }

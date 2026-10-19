@@ -272,9 +272,140 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
     use serde_json::json;
+    use tokio::sync::mpsc::unbounded_channel;
 
     use super::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Refuse {
+        Everything,
+        Text,
+        Newline,
+    }
+
+    struct Flaky {
+        refuse: Refuse,
+        attempts: Vec<Vec<u8>>,
+    }
+
+    impl Flaky {
+        fn new(refuse: Refuse) -> Flaky {
+            Flaky {
+                refuse,
+                attempts: Vec::new(),
+            }
+        }
+    }
+
+    impl AsyncWrite for Flaky {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            bytes: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            self.attempts.push(bytes.to_vec());
+            let refused = match self.refuse {
+                Refuse::Everything => true,
+                Refuse::Text => bytes != b"\n",
+                Refuse::Newline => bytes == b"\n",
+            };
+            Poll::Ready(if refused {
+                Err(io::Error::other("refused"))
+            } else {
+                Ok(bytes.len())
+            })
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    fn run<F: Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
+
+    fn pumped_in<W: AsyncWrite + Unpin>(input: &[u8], to_server: W) -> Vec<String> {
+        let (errors, mut replies) = unbounded_channel();
+        run(pump_in(input, to_server, errors));
+        let mut seen = Vec::new();
+        while let Ok(text) = replies.try_recv() {
+            seen.push(text);
+        }
+        seen
+    }
+
+    fn pumped_out<W: AsyncWrite + Unpin>(server: &[u8], errors: &[&str], output: W) {
+        let (sender, receiver) = unbounded_channel();
+        for text in errors {
+            sender.send((*text).to_string()).unwrap();
+        }
+        drop(sender);
+        run(pump_out(server, output, receiver));
+    }
+
+    #[test]
+    fn a_line_just_under_the_limit_is_forwarded_whole() {
+        let mut call =
+            br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"open","arguments":{"path":""#
+                .to_vec();
+        let tail = br#""}}}"#;
+        call.resize(MAX_LINE_BYTES - 1 - tail.len(), b'x');
+        call.extend_from_slice(tail);
+        assert_eq!(call.len(), MAX_LINE_BYTES - 1);
+        let mut input = line(&initialize());
+        input.extend_from_slice(&call);
+        input.push(b'\n');
+        let mut forwarded = Vec::new();
+        assert_eq!(pumped_in(&input, &mut forwarded), Vec::<String>::new());
+        assert!(
+            forwarded == input,
+            "{} of {} bytes",
+            forwarded.len(),
+            input.len()
+        );
+    }
+
+    #[test]
+    fn reading_stops_once_the_server_side_refuses_a_line() {
+        let mut input = line(&initialize());
+        input.extend_from_slice(b"not json\n");
+        let mut server = Flaky::new(Refuse::Everything);
+        assert_eq!(pumped_in(&input, &mut server), Vec::<String>::new());
+        assert_eq!(server.attempts, [line(&initialize())]);
+    }
+
+    #[test]
+    fn server_lines_still_flow_after_the_error_channel_closes() {
+        let mut output = Vec::new();
+        pumped_out(b"one\ntwo\n", &["early"], &mut output);
+        assert_eq!(output, b"early\none\ntwo\n");
+    }
+
+    #[test]
+    fn writing_stops_when_a_line_or_its_newline_is_refused() {
+        for refuse in [Refuse::Text, Refuse::Newline] {
+            let mut output = Flaky::new(refuse);
+            pumped_out(b"one\ntwo\n", &[], &mut output);
+            assert_eq!(
+                output.attempts,
+                [b"one".to_vec(), b"\n".to_vec()],
+                "{refuse:?}"
+            );
+        }
+    }
 
     fn line(value: &Value) -> Vec<u8> {
         format!("{value}\n").into_bytes()
