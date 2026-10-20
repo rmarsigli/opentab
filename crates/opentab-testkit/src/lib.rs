@@ -1,7 +1,9 @@
+pub mod archives;
 pub mod banks;
 mod build;
 mod effects;
 mod fill;
+pub mod http;
 mod seed;
 mod text;
 
