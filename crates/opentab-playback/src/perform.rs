@@ -64,6 +64,8 @@ pub struct PlaybackOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Performance {
     pub profile: Profile,
+    pub title: String,
+    pub copyright: String,
     pub order: PlayOrder,
     pub tempo: TempoMap,
     pub tracks: Vec<TrackSetup>,
@@ -299,6 +301,8 @@ pub fn perform(score: &Score, options: &PlaybackOptions) -> Result<Performance, 
     }
     Ok(Performance {
         profile: options.profile,
+        title: score.meta.title.clone(),
+        copyright: score.meta.copyright.clone(),
         conductor: conductor(score, &order, &tempo)?,
         clicks: beat_grid(score, &order),
         unplayed: catalogue(score, options.profile),

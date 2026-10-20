@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use opentab_model::Score;
 
-use crate::midi::{ConductorEvent, ConductorKind, MidiMessage, TimedEvent};
+use crate::midi::{ConductorKind, MidiMessage, TimedEvent};
 use crate::perform::{Performance, PlaybackOptions, Profile, perform};
 use crate::{PlaybackError, ScoreTime};
 
@@ -14,6 +14,7 @@ const QUARTERS_PER_WHOLE: i128 = 4;
 const MAX_DIVISION: u16 = 0x7fff;
 const META: u8 = 0xff;
 const TEXT: u8 = 0x01;
+const COPYRIGHT: u8 = 0x02;
 const TRACK_NAME: u8 = 0x03;
 const END_OF_TRACK: u8 = 0x2f;
 const TEMPO: u8 = 0x51;
@@ -39,6 +40,7 @@ const CONTINUES: u8 = 0x80;
 const NAME_GROUP: u8 = 0;
 const KEY_GROUP: u8 = 1;
 const EVENT_GROUP: u8 = 2;
+const TEXT_GROUP: u8 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ppq(u16);
@@ -230,8 +232,9 @@ fn chunk(events: &[Placed], end: u64) -> Vec<u8> {
     out
 }
 
-fn conductor_track(conductor: &[ConductorEvent], keys: bool, ppq: Ppq) -> Vec<Placed> {
-    conductor
+fn conductor_track(performance: &Performance, keys: bool, ppq: Ppq) -> Vec<Placed> {
+    let mut out: Vec<Placed> = performance
+        .conductor
         .iter()
         .filter(|event| keys || !matches!(event.kind, ConductorKind::KeySignature { .. }))
         .enumerate()
@@ -241,7 +244,23 @@ fn conductor_track(conductor: &[ConductorEvent], keys: bool, ppq: Ppq) -> Vec<Pl
             seq,
             bytes: conductor_bytes(event.kind),
         })
-        .collect()
+        .collect();
+    let texts = [
+        (TRACK_NAME, &performance.title),
+        (COPYRIGHT, &performance.copyright),
+    ];
+    for (seq, (kind, text)) in texts.into_iter().enumerate() {
+        if !text.is_empty() {
+            out.push(Placed {
+                tick: 0,
+                group: TEXT_GROUP,
+                seq,
+                bytes: meta(kind, text.as_bytes()),
+            });
+        }
+    }
+    out.sort_by_key(|item| (item.tick, item.group, item.seq));
+    out
 }
 
 fn note_track(name: &str, keys: &[Placed], events: &[&TimedEvent], ppq: Ppq) -> Vec<Placed> {
@@ -275,7 +294,7 @@ pub fn write_smf(performance: &Performance, ppq: Ppq) -> Vec<u8> {
         TrackLayout::PerTrack => Vec::new(),
     };
     let mut tracks = vec![conductor_track(
-        &performance.conductor,
+        performance,
         layout == TrackLayout::PerTrack,
         ppq,
     )];
