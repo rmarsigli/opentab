@@ -10,6 +10,7 @@ mod error;
 mod gm;
 #[cfg(feature = "live")]
 mod live;
+mod manager;
 mod output;
 mod rate;
 mod render;
@@ -30,6 +31,16 @@ pub use command::{BarRange, COMMAND_CAPACITY, QueueFull, TransportCommand};
 pub use error::{AudioError, BankError, SF3_UNSUPPORTED, UnsafeBank};
 #[cfg(feature = "live")]
 pub use live::CpalOutput;
+pub use manager::{
+    ArchiveKind, BANK_ID_MAX_BYTES, BANK_MAX_BYTES, BANK_MAX_DEPTH, BANK_MAX_ENTRIES,
+    BANK_MAX_FILE_BYTES, BANK_MAX_NAME_BYTES, BANKS_FOLDER, BankId, BankManager, BankRef,
+    BankSource, CatalogueEntry, DATA_DIR_NAME, DATA_DIR_VARIABLE, DOWNLOAD_CONNECT_SECONDS,
+    DOWNLOAD_REDIRECTS, DOWNLOAD_RESPONSE_SECONDS, Fallback, FallbackReason, ImportLimits,
+    InstallError, InstallProgress, InstallStage, InstalledBank, LOCK_NAME, LoadedVoices,
+    PREFERENCES_NAME, REGISTRY_NAME, STAGING_FOLDER, STORE_MAX_BYTES, STORE_VERSION,
+    SidecarProgram, SidecarRecord, SoundPlan, TrackSound, check_download_url, default_catalogue,
+    default_data_dir, sidecar_for,
+};
 pub use output::{AudioOutput, NULL_TICK_MILLIS, NullClock, NullOutput, OutputError};
 pub use rate::SampleRate;
 pub use render::{

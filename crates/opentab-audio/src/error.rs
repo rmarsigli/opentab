@@ -35,6 +35,12 @@ pub enum BankError {
         "this sound bank was not loaded because {reason}. The file may be damaged or built to crash programs."
     )]
     Unsafe { reason: UnsafeBank },
+    #[error("OpenTab could not use its sound bank folder: {message}")]
+    Storage { message: String },
+    #[error("no sound bank named {id} is installed")]
+    NotInstalled { id: String },
+    #[error("{text:?} is not a sound bank name; names use lowercase letters, digits and dashes")]
+    BadName { text: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Error)]
@@ -139,4 +145,16 @@ pub enum UnsafeBank {
     OggChecksum,
     #[error("an Ogg Vorbis sample declares codebooks of more than {limit} dimensions")]
     VorbisDimensions { limit: u64 },
+    #[error("the bank holds a device, pipe or other special file")]
+    SpecialFile,
+    #[error("the bank holds more than {limit_mib} MiB of files")]
+    BankTooLarge { limit_mib: u64 },
+    #[error("a file in the bank is larger than {limit_mib} MiB")]
+    BankFileTooLarge { limit_mib: u64 },
+    #[error("a file name in the bank is longer than {limit} bytes")]
+    NameTooLong { limit: u64 },
+    #[error("an archive entry points outside the bank folder")]
+    ArchiveEscape,
+    #[error("the archive holds a symbolic link, which OpenTab does not unpack")]
+    ArchiveLink,
 }
