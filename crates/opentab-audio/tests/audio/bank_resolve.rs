@@ -274,3 +274,38 @@ fn an_unloadable_bank_plays_built_in_and_says_why() {
             .is_some_and(|text| text.contains("cannot be used"))
     );
 }
+
+#[test]
+fn a_registry_path_leaving_the_bank_folder_is_never_used() {
+    let mut setup = setup();
+    let family = families(&setup.score)[0];
+    setup
+        .manager
+        .assign(family, installed(&setup.sf2))
+        .expect("assigns");
+    let registry_path = setup.manager.root().join(opentab_audio::REGISTRY_NAME);
+    let text = fs::read_to_string(&registry_path).expect("registry");
+    let outside = setup.manager.root().join("outside.sf2");
+    fs::copy(&setup.sf2.path, &outside).expect("a bank outside");
+    let stored = format!("banks/{}/tiny.sf2", setup.sf2.id);
+    assert!(text.contains(&stored), "{text}");
+    for tampered in [
+        format!("banks/{}/../../outside.sf2", setup.sf2.id),
+        String::from("outside.sf2"),
+        format!("banks/other/../{}/tiny.sf2", setup.sf2.id),
+    ] {
+        fs::write(&registry_path, text.replace(&stored, &tampered)).expect("tampered");
+        let reopened =
+            BankManager::with_catalogue(setup.manager.root(), Vec::new()).expect("opens");
+        let plan = reopened.resolve(&setup.score);
+        assert_eq!(plan.tracks[0].bank, BankRef::BuiltIn, "{tampered}");
+        assert_eq!(
+            plan.tracks[0]
+                .fallback
+                .as_ref()
+                .map(|fallback| &fallback.reason),
+            Some(&FallbackReason::FilesMissing),
+            "{tampered}"
+        );
+    }
+}

@@ -39,6 +39,7 @@ pub enum SevenMethod {
     Deflate,
     Bzip2,
     Lzma2,
+    Ppmd,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +47,7 @@ pub struct SevenFile {
     pub name: String,
     pub data: Vec<u8>,
     pub attributes: Option<u32>,
+    pub declared: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,7 +112,7 @@ fn lzma2_uncompressed(data: &[u8]) -> Vec<u8> {
 
 fn encode(method: SevenMethod, data: &[u8]) -> Vec<u8> {
     let outcome = match method {
-        SevenMethod::Copy => Ok(data.to_vec()),
+        SevenMethod::Copy | SevenMethod::Ppmd => Ok(data.to_vec()),
         SevenMethod::Lzma2 => Ok(lzma2_uncompressed(data)),
         SevenMethod::Deflate => {
             let mut encoder = DeflateEncoder::new(Vec::new(), DeflateLevel::default());
@@ -135,7 +137,13 @@ fn coder(out: &mut Vec<u8>, method: SevenMethod) {
         SevenMethod::Lzma2 => {
             out.extend_from_slice(&[HAS_PROPERTIES | 0x01, 0x21, 0x01, LZMA2_DICTIONARY])
         }
+        SevenMethod::Ppmd => out.extend_from_slice(&[0x03, 0x03, 0x04, 0x01]),
     }
+}
+
+fn declared(file: &SevenFile) -> u64 {
+    file.declared
+        .unwrap_or_else(|| u64::try_from(file.data.len()).unwrap_or(u64::MAX))
 }
 
 fn streams(out: &mut Vec<u8>, folders: &[SevenFolder], packed: &[Vec<u8>]) {
@@ -158,8 +166,8 @@ fn streams(out: &mut Vec<u8>, folders: &[SevenFolder], packed: &[Vec<u8>]) {
     }
     out.push(K_UNPACK_SIZE);
     for folder in folders {
-        let total: usize = folder.files.iter().map(|file| file.data.len()).sum();
-        size(out, total);
+        let total: u64 = folder.files.iter().map(declared).sum();
+        number(out, total);
     }
     out.push(K_END);
     out.push(K_SUB_STREAMS);
@@ -171,7 +179,7 @@ fn streams(out: &mut Vec<u8>, folders: &[SevenFolder], packed: &[Vec<u8>]) {
     for folder in folders {
         if let Some((_, leading)) = folder.files.split_last() {
             for file in leading {
-                size(out, file.data.len());
+                number(out, declared(file));
             }
         }
     }

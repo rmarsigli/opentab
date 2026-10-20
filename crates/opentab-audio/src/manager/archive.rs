@@ -132,7 +132,6 @@ pub(crate) fn unzip(archive: &Path, target: &Path, budget: &mut Budget) -> Resul
     let root = canonical_root(target)?;
     for index in 0..count {
         let mut entry = zip.by_index(index).map_err(|error| invalid("zip", error))?;
-        budget.entry()?;
         let mode_kind = match entry.unix_mode() {
             Some(mode) => unix_kind(mode)?,
             None => None,
@@ -234,7 +233,6 @@ fn extract_seven(
     root: &Path,
     budget: &mut Budget,
 ) -> Result<(), BankError> {
-    budget.entry()?;
     let Some(planned) = plan.get(&entry.name) else {
         return Err(refuse(UnsafeBank::ArchiveEscape));
     };
@@ -247,5 +245,65 @@ fn extract_seven(
             let path = place(root, relative)?;
             budget.write(data, &path).map(|_| ())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, Write};
+
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    use super::*;
+    use crate::manager::limits::ImportLimits;
+
+    fn one_entry_zip(name: &str, data: &[u8]) -> Vec<u8> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .expect("entry");
+        writer.write_all(data).expect("data");
+        writer.finish().expect("finished").into_inner()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_entry_reaching_through_a_link_in_the_target_is_refused() {
+        let dir = tempfile::tempdir().expect("scratch");
+        let target = dir.path().join("target");
+        let outside = dir.path().join("outside");
+        fs::create_dir_all(&target).expect("target");
+        fs::create_dir_all(&outside).expect("outside");
+        std::os::unix::fs::symlink(&outside, target.join("a")).expect("link");
+        let archive = dir.path().join("a.zip");
+        fs::write(&archive, one_entry_zip("a/x.sfz", b"escaped")).expect("zip");
+        let mut budget = Budget::new(ImportLimits::DEFAULT);
+        assert_eq!(
+            unzip(&archive, &target, &mut budget),
+            Err(refuse(UnsafeBank::ArchiveEscape))
+        );
+        assert!(!outside.join("x.sfz").exists());
+    }
+
+    #[test]
+    fn a_declared_size_over_the_cap_refuses_before_unpacking() {
+        let dir = tempfile::tempdir().expect("scratch");
+        let mut bytes = one_entry_zip("a.sfz", b"small");
+        let central = bytes
+            .windows(4)
+            .position(|window| window == b"PK\x01\x02")
+            .expect("a central directory");
+        bytes[central + 24..central + 28].copy_from_slice(&0xFFFF_FF00u32.to_le_bytes());
+        let archive = dir.path().join("a.zip");
+        fs::write(&archive, bytes).expect("zip");
+        let target = dir.path().join("target");
+        fs::create_dir_all(&target).expect("target");
+        let mut budget = Budget::new(ImportLimits::DEFAULT);
+        assert_eq!(
+            unzip(&archive, &target, &mut budget),
+            Err(refuse(UnsafeBank::BankFileTooLarge { limit_mib: 1024 }))
+        );
+        assert!(!target.join("a.sfz").exists());
     }
 }

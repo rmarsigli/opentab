@@ -309,6 +309,7 @@ fn seven_files(source: &std::path::Path) -> Vec<SevenFolder> {
             name: format!("Seven/{name}"),
             data,
             attributes: None,
+            declared: None,
         })
         .collect();
     let methods = [
@@ -361,11 +362,13 @@ fn seven_with(name: &str, attributes: Option<u32>) -> Vec<u8> {
                     name: String::from("ok.sfz"),
                     data: b"<region> sample=a.wav".to_vec(),
                     attributes: None,
+                    declared: None,
                 },
                 SevenFile {
                     name: name.to_owned(),
                     data: b"payload".to_vec(),
                     attributes,
+                    declared: None,
                 },
             ],
         }],
@@ -436,6 +439,7 @@ fn seven_zip_solid_bombs_stop_at_the_limits() {
                         name: format!("{index}.sfz"),
                         data: vec![0u8; *size],
                         attributes: None,
+                        declared: None,
                     })
                     .collect(),
             }],
@@ -517,4 +521,57 @@ fn an_orphan_folder_from_a_crashed_install_is_replaced() {
     let bank = manager.install(&id("tiny"), &mut ignore).expect("installs");
     assert_eq!(listing(&orphan), vec![String::from("tiny.sf2")]);
     assert_eq!(fs::read(bank.path).expect("bank"), tiny_bytes());
+}
+
+fn install_seven(
+    archive: Vec<u8>,
+) -> (
+    tempfile::TempDir,
+    Result<opentab_audio::InstalledBank, InstallError>,
+    opentab_audio::BankManager,
+) {
+    install_from(
+        Reply::ok(PATH, archive.clone()),
+        ArchiveKind::SevenZip,
+        BankFormat::Sfz,
+        &archive,
+    )
+}
+
+fn one_file_seven(method: SevenMethod, declared: Option<u64>) -> Vec<u8> {
+    seven_zip(
+        &[SevenFolder {
+            method,
+            files: vec![SevenFile {
+                name: String::from("a.sfz"),
+                data: b"<region> sample=a.wav".to_vec(),
+                attributes: None,
+                declared,
+            }],
+        }],
+        &[],
+    )
+}
+
+#[test]
+fn a_seven_zip_declared_size_over_the_cap_refuses_before_decoding() {
+    let (_dir, result, manager) = install_seven(one_file_seven(SevenMethod::Copy, Some(2 << 30)));
+    assert_eq!(
+        unsafe_reason(result),
+        UnsafeBank::BankFileTooLarge { limit_mib: 1024 }
+    );
+    assert_clean(&manager);
+}
+
+#[test]
+fn a_seven_zip_method_outside_the_allowed_list_is_refused() {
+    let (_dir, result, manager) = install_seven(one_file_seven(SevenMethod::Ppmd, None));
+    assert!(
+        matches!(
+            result,
+            Err(InstallError::Bank(BankError::Unsupported { .. }))
+        ),
+        "{result:?}"
+    );
+    assert_clean(&manager);
 }

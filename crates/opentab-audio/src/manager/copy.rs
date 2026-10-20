@@ -253,6 +253,37 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_link_swapped_in_after_the_listing_is_still_refused() {
+        let dir = tempfile::tempdir().expect("scratch");
+        let link = dir.path().join("link.sf2");
+        std::os::unix::fs::symlink("/etc/hostname", &link).expect("link");
+        let mut budget = Budget::new(ImportLimits::DEFAULT);
+        assert_eq!(
+            copy_file(&link, &dir.path().join("copy"), &mut budget),
+            Err(refuse(UnsafeBank::BankSymlink))
+        );
+        assert!(!dir.path().join("copy").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pipe_swapped_in_after_the_listing_is_refused_without_blocking() {
+        let dir = tempfile::tempdir().expect("scratch");
+        let pipe = dir.path().join("pipe.sf2");
+        let made = std::process::Command::new("mkfifo").arg(&pipe).status();
+        assert!(
+            made.is_ok_and(|status| status.success()),
+            "mkfifo is available"
+        );
+        let mut budget = Budget::new(ImportLimits::DEFAULT);
+        assert_eq!(
+            copy_file(&pipe, &dir.path().join("copy"), &mut budget),
+            Err(refuse(UnsafeBank::SpecialFile))
+        );
+    }
+
     #[test]
     fn writing_stops_at_the_caps_whatever_the_source_declared() {
         let dir = tempfile::tempdir().expect("scratch");
