@@ -20,6 +20,7 @@ pub enum Declared {
 pub enum Ending {
     Close,
     Hold,
+    Reset,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,19 +67,22 @@ pub struct LoopbackServer {
     thread: Option<JoinHandle<Vec<String>>>,
 }
 
-fn read_request(stream: &mut TcpStream) -> Option<String> {
-    let mut request = Vec::new();
+fn read_until(stream: &mut TcpStream, request: &mut Vec<u8>, end: &[u8]) -> bool {
     let mut byte = [0u8; 1];
-    while !request.ends_with(b"\r\n\r\n") {
+    while !request.ends_with(end) {
         match stream.read(&mut byte) {
             Ok(1) => request.push(byte[0]),
-            _ => return None,
+            _ => return false,
         }
         if request.len() > REQUEST_LIMIT {
-            return None;
+            return false;
         }
     }
-    let text = String::from_utf8_lossy(&request).into_owned();
+    true
+}
+
+fn path_of(request: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(request).into_owned();
     let line = text.lines().next()?;
     line.split(' ').nth(1).map(str::to_owned)
 }
@@ -138,16 +142,28 @@ fn serve(listener: TcpListener, replies: Vec<Reply>) -> Vec<String> {
             continue;
         };
         let _ = stream.set_read_timeout(Some(Duration::from_secs(SAFETY_SECONDS)));
-        let Some(path) = read_request(&mut stream) else {
+        let mut request = Vec::new();
+        if !read_until(&mut stream, &mut request, b"\r\n") {
+            continue;
+        }
+        let Some(path) = path_of(&request) else {
             continue;
         };
+        let reply = replies.iter().find(|reply| reply.path == path);
+        let resets = reply.is_some_and(|reply| reply.ending == Ending::Reset);
+        if !resets && !read_until(&mut stream, &mut request, b"\r\n\r\n") {
+            continue;
+        }
         if path == STOP_PATH {
             let _ = stream
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             break;
         }
-        answer(&mut stream, replies.iter().find(|reply| reply.path == path));
-        let _ = stream.shutdown(Shutdown::Both);
+        answer(&mut stream, reply);
+        if !resets {
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+        drop(stream);
         seen.push(path);
     }
     seen
