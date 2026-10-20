@@ -2,14 +2,16 @@ use std::sync::Arc;
 
 use opentab_model::Fraction;
 use opentab_playback::{
-    Channel, ChannelState, MidiMessage, NOTE_OFF_VELOCITY, Performance, PlayOrder, ScoreTime,
-    Seconds, Speed,
+    Channel, ChannelState, MidiMessage, NOTE_OFF_VELOCITY, Performance, PlayOrder, PlayedPosition,
+    ScoreTime, Seconds, Speed,
 };
 
 use crate::command::{
-    BarRange, CommandReceiver, CommandSender, QueueFull, TransportCommand, command_queue,
+    BarRange, CommandQueue, CommandReceiver, CommandSender, QueueFull, TransportCommand,
+    command_queue,
 };
 use crate::render::{BLOCK_FRAMES, from_bus, to_bus};
+use crate::session::Session;
 use crate::status::{StatusCell, TransportState, TransportStatus};
 use crate::timeline::{Timeline, frames_until, is_due, step_of};
 use crate::{AudioError, Limiter, LimiterSettings, SampleRate, SoundUse, Synth};
@@ -110,8 +112,42 @@ struct CountInRun {
     elapsed: u64,
     length: u64,
     origin: u64,
-    next_click: usize,
+    lead: u64,
+    first_click: usize,
+    split_click: usize,
     end_click: usize,
+    struck: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CountInClick {
+    index: usize,
+    due: u64,
+}
+
+impl CountInRun {
+    fn next(&self, units: &[u64]) -> Option<CountInClick> {
+        let late = self.end_click.saturating_sub(self.split_click);
+        let (index, wrap) = if self.struck < late {
+            (self.split_click + self.struck, 0)
+        } else {
+            (self.first_click + (self.struck - late), self.length)
+        };
+        let limit = if wrap == 0 {
+            self.end_click
+        } else {
+            self.split_click
+        };
+        if index >= limit {
+            return None;
+        }
+        let unit = *units.get(index)?;
+        let due = unit
+            .saturating_sub(self.origin)
+            .saturating_add(wrap)
+            .saturating_sub(self.lead);
+        Some(CountInClick { index, due })
+    }
 }
 
 pub struct Transport {
@@ -131,6 +167,7 @@ pub struct Transport {
     span: Option<LoopSpan>,
     wrapped: bool,
     count_in: Option<CountInRun>,
+    leads: Vec<u64>,
     metronome: bool,
     counts_in: bool,
     chase_at: Option<ScoreTime>,
@@ -197,6 +234,41 @@ fn sound_uses(performance: &Performance, track: usize) -> Vec<SoundUse> {
     uses
 }
 
+fn lead_ins(performance: &Performance, timeline: &Timeline) -> Vec<u64> {
+    let bars = timeline.bar_count();
+    let mut leads = vec![0; bars];
+    let mut found = vec![false; bars];
+    let mut bar = 0;
+    for (event, unit) in performance.events.iter().zip(&timeline.events) {
+        let MidiMessage::NoteOn { velocity, .. } = event.message else {
+            continue;
+        };
+        if velocity == 0 {
+            continue;
+        }
+        while bar + 1 < bars
+            && timeline
+                .bars
+                .get(bar + 1)
+                .is_some_and(|start| *start <= *unit)
+        {
+            bar += 1;
+        }
+        let (Some(start), Some(end)) = (timeline.bars.get(bar), timeline.bars.get(bar + 1)) else {
+            continue;
+        };
+        if let (Some(lead), Some(seen)) = (leads.get_mut(bar), found.get_mut(bar))
+            && !*seen
+            && *start <= *unit
+            && *unit < *end
+        {
+            *seen = true;
+            *lead = unit - start;
+        }
+    }
+    leads
+}
+
 fn strike(click: &mut dyn Synth, downbeat: bool) {
     let (key, velocity) = if downbeat {
         (CLICK_DOWNBEAT_KEY, CLICK_DOWNBEAT_VELOCITY)
@@ -225,7 +297,7 @@ impl Transport {
         mut voices: Vec<Box<dyn Synth>>,
         mut click: Box<dyn Synth>,
         config: SessionConfig,
-    ) -> Result<(Transport, TransportHandle), AudioError> {
+    ) -> Result<Session, AudioError> {
         if voices.len() != performance.tracks.len() {
             return Err(AudioError::VoiceCount {
                 voices: voices.len(),
@@ -240,7 +312,8 @@ impl Transport {
         click.reset();
         let tracks = performance.tracks.len();
         let bars = timeline.bar_count();
-        let (sender, receiver) = command_queue();
+        let leads = lead_ins(&performance, &timeline);
+        let CommandQueue { sender, receiver } = command_queue();
         let status = Arc::new(StatusCell::new());
         let mut transport = Transport {
             performance,
@@ -259,6 +332,7 @@ impl Transport {
             span: None,
             wrapped: false,
             count_in: None,
+            leads,
             metronome: config.metronome,
             counts_in: config.count_in,
             chase_at: None,
@@ -286,13 +360,13 @@ impl Transport {
             limiter: Limiter::new(LimiterSettings::DEFAULT, config.rate),
         };
         transport.publish();
-        Ok((
+        Ok(Session {
             transport,
-            TransportHandle {
+            handle: TransportHandle {
                 commands: sender,
                 status,
             },
-        ))
+        })
     }
 
     pub fn rate(&self) -> SampleRate {
@@ -339,10 +413,16 @@ impl Transport {
     }
 
     fn apply_commands(&mut self) {
-        while let Some(word) = self.commands.receive() {
+        for _ in 0..self.commands.pending() {
+            let Some(word) = self.commands.receive() else {
+                break;
+            };
             if let Some(command) = word {
                 self.apply(command);
             }
+        }
+        if self.running() {
+            self.chase_now();
         }
     }
 
@@ -371,8 +451,9 @@ impl Transport {
                 self.silence();
                 self.count_in = None;
                 self.state = TransportState::Stopped;
-                if self.timeline.bar_count() > 0 {
-                    self.move_to(0);
+                let home = self.span.map_or(0, |span| span.range.first);
+                if home < self.timeline.bar_count() {
+                    self.move_to(home);
                 }
             }
             TransportCommand::Seek(bar) => {
@@ -384,9 +465,7 @@ impl Transport {
                         self.span = None;
                     }
                     self.move_to(bar);
-                    if self.running() {
-                        self.chase_now();
-                    }
+                    self.recount();
                 }
             }
             TransportCommand::Loop(range) => self.set_loop(range),
@@ -424,9 +503,7 @@ impl Transport {
         });
         if !(range.first..=range.last).contains(&self.bar) {
             self.move_to(range.first);
-            if self.running() {
-                self.chase_now();
-            }
+            self.recount();
         }
     }
 
@@ -439,13 +516,29 @@ impl Transport {
     }
 
     fn start(&mut self) {
-        self.chase_now();
         self.wrapped = false;
+        self.begin_count_in();
+    }
+
+    fn recount(&mut self) {
+        if self.state == TransportState::CountIn {
+            self.begin_count_in();
+        }
+    }
+
+    fn begin_count_in(&mut self) {
         self.count_in = if self.counts_in {
             self.count_in_run()
         } else {
             None
         };
+        if let Some(run) = self.count_in
+            && run.lead > 0
+        {
+            let entry = run.origin.saturating_add(run.lead);
+            self.position = entry;
+            self.next_click = self.timeline.clicks.partition_point(|unit| *unit < entry);
+        }
         self.state = if self.count_in.is_some() {
             TransportState::CountIn
         } else {
@@ -458,12 +551,29 @@ impl Transport {
         let origin = *self.timeline.bars.get(bar)?;
         let end = *self.timeline.bars.get(bar + 1)?;
         let length = end.checked_sub(origin).filter(|length| *length > 0)?;
+        let first_click = *self.timeline.bar_clicks.get(bar)?;
+        let end_click = *self.timeline.bar_clicks.get(bar + 1)?;
+        let lead = if self.position == origin {
+            self.leads.get(bar).copied().unwrap_or(0)
+        } else {
+            0
+        };
+        let entry = origin.saturating_add(lead);
+        let split_click = first_click
+            + self
+                .timeline
+                .clicks
+                .get(first_click..end_click)
+                .map_or(0, |units| units.partition_point(|unit| *unit < entry));
         Some(CountInRun {
             elapsed: 0,
             length,
             origin,
-            next_click: *self.timeline.bar_clicks.get(bar)?,
-            end_click: *self.timeline.bar_clicks.get(bar + 1)?,
+            lead,
+            first_click,
+            split_click,
+            end_click,
+            struck: 0,
         })
     }
 
@@ -624,18 +734,15 @@ impl Transport {
             self.state = TransportState::Playing;
             return true;
         };
-        while run.next_click < run.end_click {
-            let (Some(unit), Some(click)) = (
-                self.timeline.clicks.get(run.next_click),
-                self.performance.clicks.get(run.next_click),
-            ) else {
+        while let Some(next) = run.next(&self.timeline.clicks) {
+            let Some(click) = self.performance.clicks.get(next.index) else {
                 break;
             };
-            if !is_due(unit.saturating_sub(run.origin), run.elapsed, step) {
+            if !is_due(next.due, run.elapsed, step) {
                 break;
             }
             strike(self.click.as_mut(), click.downbeat);
-            run.next_click += 1;
+            run.struck += 1;
         }
         if is_due(run.length, run.elapsed, step) {
             self.count_in = None;
@@ -732,14 +839,8 @@ impl Transport {
             }
             TransportState::CountIn => self.count_in.map_or(u64::MAX, |run| {
                 let mut next = frames_until(run.length, run.elapsed, step);
-                if run.next_click < run.end_click
-                    && let Some(unit) = self.timeline.clicks.get(run.next_click)
-                {
-                    next = next.min(frames_until(
-                        unit.saturating_sub(run.origin),
-                        run.elapsed,
-                        step,
-                    ));
+                if let Some(click) = run.next(&self.timeline.clicks) {
+                    next = next.min(frames_until(click.due, run.elapsed, step));
                 }
                 next
             }),
@@ -797,10 +898,14 @@ impl Transport {
         }
     }
 
-    fn cursor(&self) -> (usize, usize, Fraction) {
+    fn cursor(&self) -> PlayedPosition {
         let order = &self.performance.order;
         let Some(last) = order.bars.last() else {
-            return (0, 0, Fraction::new_raw(0, 1));
+            return PlayedPosition {
+                played_bar: 0,
+                source_bar: 0,
+                offset: Fraction::new_raw(0, 1),
+            };
         };
         let reached = self.position.saturating_add(self.step).saturating_sub(1);
         let found = Seconds::new(i128::from(reached), i128::from(self.rate.hz()) * PERCENT)
@@ -812,19 +917,20 @@ impl Transport {
                     .ok()
             })
             .and_then(|time| order.position_at(time));
-        match found {
-            Some(position) => (position.played_bar, position.source_bar, position.offset),
-            None => (order.bars.len() - 1, last.source, last.length),
-        }
+        found.unwrap_or(PlayedPosition {
+            played_bar: order.bars.len() - 1,
+            source_bar: last.source,
+            offset: last.length,
+        })
     }
 
     fn publish(&mut self) {
-        let (played_bar, source_bar, offset) = self.cursor();
+        let position = self.cursor();
         self.status.publish(&TransportStatus {
             state: self.state,
-            played_bar,
-            source_bar,
-            offset,
+            played_bar: position.played_bar,
+            source_bar: position.source_bar,
+            offset: position.offset,
             frame: self.clock,
         });
     }

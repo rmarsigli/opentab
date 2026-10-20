@@ -125,19 +125,25 @@ pub(crate) struct CommandReceiver {
     ring: Arc<Ring>,
 }
 
-pub(crate) fn command_queue() -> (CommandSender, CommandReceiver) {
+#[derive(Debug)]
+pub(crate) struct CommandQueue {
+    pub(crate) sender: CommandSender,
+    pub(crate) receiver: CommandReceiver,
+}
+
+pub(crate) fn command_queue() -> CommandQueue {
     let slots: Vec<AtomicU64> = (0..COMMAND_CAPACITY).map(|_| AtomicU64::new(0)).collect();
     let ring = Arc::new(Ring {
         slots: slots.into_boxed_slice(),
         written: AtomicUsize::new(0),
         read: AtomicUsize::new(0),
     });
-    (
-        CommandSender {
+    CommandQueue {
+        sender: CommandSender {
             ring: Arc::clone(&ring),
         },
-        CommandReceiver { ring },
-    )
+        receiver: CommandReceiver { ring },
+    }
 }
 
 impl CommandSender {
@@ -160,6 +166,13 @@ impl CommandSender {
 }
 
 impl CommandReceiver {
+    pub(crate) fn pending(&self) -> usize {
+        let ring = &self.ring;
+        let read = ring.read.load(Ordering::Relaxed);
+        let written = ring.written.load(Ordering::Acquire);
+        written.wrapping_sub(read).min(ring.slots.len())
+    }
+
     pub(crate) fn receive(&mut self) -> Option<Option<TransportCommand>> {
         let ring = &self.ring;
         let read = ring.read.load(Ordering::Relaxed);
@@ -180,7 +193,9 @@ impl CommandReceiver {
 mod tests {
     use proptest::prelude::*;
 
-    use super::{BarRange, COMMAND_CAPACITY, TransportCommand, command_queue, decode, encode};
+    use super::{
+        BarRange, COMMAND_CAPACITY, CommandQueue, TransportCommand, command_queue, decode, encode,
+    };
     use opentab_playback::Speed;
 
     const SENT: usize = 200_000;
@@ -228,7 +243,10 @@ mod tests {
 
     #[test]
     fn the_queue_refuses_beyond_its_capacity_and_keeps_order_across_threads() {
-        let (mut sender, mut receiver) = command_queue();
+        let CommandQueue {
+            mut sender,
+            mut receiver,
+        } = command_queue();
         for bar in 0..COMMAND_CAPACITY {
             sender.send(TransportCommand::Seek(bar)).expect("room");
         }
@@ -256,5 +274,19 @@ mod tests {
         }
         producer.join().expect("producer");
         assert_eq!(receiver.receive(), None);
+    }
+
+    #[test]
+    fn pending_counts_what_was_written_before_the_read() {
+        let CommandQueue {
+            mut sender,
+            mut receiver,
+        } = command_queue();
+        assert_eq!(receiver.pending(), 0);
+        sender.send(TransportCommand::Play).expect("room");
+        sender.send(TransportCommand::Stop).expect("room");
+        assert_eq!(receiver.pending(), 2);
+        assert_eq!(receiver.receive(), Some(Some(TransportCommand::Play)));
+        assert_eq!(receiver.pending(), 1);
     }
 }

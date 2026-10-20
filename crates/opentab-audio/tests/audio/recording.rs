@@ -53,12 +53,17 @@ impl Synth for RecordingSynth {
     }
 }
 
-pub fn recording() -> (SharedLog, Box<dyn Synth>) {
+pub struct Recording {
+    pub log: SharedLog,
+    pub synth: Box<dyn Synth>,
+}
+
+pub fn recording() -> Recording {
     let log: SharedLog = Arc::new(Mutex::new(Log::default()));
     let synth = Box::new(RecordingSynth {
         log: Arc::clone(&log),
     });
-    (log, synth)
+    Recording { log, synth }
 }
 
 pub struct Recorders {
@@ -67,7 +72,13 @@ pub struct Recorders {
 }
 
 pub fn recorders(performance: &Performance) -> Recorders {
-    let (logs, voices) = performance.tracks.iter().map(|_| recording()).unzip();
+    let mut logs = Vec::new();
+    let mut voices = Vec::new();
+    for _ in &performance.tracks {
+        let Recording { log, synth } = recording();
+        logs.push(log);
+        voices.push(synth);
+    }
     Recorders { logs, voices }
 }
 

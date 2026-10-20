@@ -417,23 +417,67 @@ fn a_speed_change_moves_every_later_event_from_the_next_block_on() {
     }
 }
 
-fn clicks_of(log: &[Heard]) -> Vec<(u64, u8, u8)> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ClickNote {
+    key: u8,
+    velocity: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HeardClick {
+    frame: u64,
+    note: ClickNote,
+}
+
+struct ClickRecording {
+    logs: Vec<Vec<Heard>>,
+    clicks: Vec<Heard>,
+}
+
+fn clicks_of(log: &[Heard]) -> Vec<HeardClick> {
     log.iter()
         .filter_map(|heard| match heard.message {
             MidiMessage::NoteOn { key, velocity } => {
                 assert_eq!(heard.channel, Channel::DRUMS);
-                Some((heard.frame, key, velocity))
+                Some(HeardClick {
+                    frame: heard.frame,
+                    note: ClickNote { key, velocity },
+                })
             }
             _ => None,
         })
         .collect()
 }
 
-fn click_note(downbeat: bool) -> (u8, u8) {
+fn click_note(downbeat: bool) -> ClickNote {
     if downbeat {
-        (CLICK_DOWNBEAT_KEY, CLICK_DOWNBEAT_VELOCITY)
+        ClickNote {
+            key: CLICK_DOWNBEAT_KEY,
+            velocity: CLICK_DOWNBEAT_VELOCITY,
+        }
     } else {
-        (CLICK_BEAT_KEY, CLICK_BEAT_VELOCITY)
+        ClickNote {
+            key: CLICK_BEAT_KEY,
+            velocity: CLICK_BEAT_VELOCITY,
+        }
+    }
+}
+
+fn record_script_with_click(
+    performance: &Performance,
+    config: SessionConfig,
+    script: &[ScriptStep],
+    frames: u64,
+) -> ClickRecording {
+    let recorders = recorders(performance);
+    let click = recording();
+    let mut session =
+        Session::with_click(performance.clone(), recorders.voices, click.synth, config)
+            .expect("session");
+    render_session(&mut session, script, frames).expect("render");
+    ClickRecording {
+        logs: recorders.logs.iter().map(heard).collect(),
+        clicks: heard(&click.log),
     }
 }
 
@@ -441,16 +485,81 @@ fn record_with_click(
     performance: &Performance,
     config: SessionConfig,
     frames: u64,
-) -> (Vec<Vec<Heard>>, Vec<Heard>) {
-    let recorders = recorders(performance);
-    let (click_log, click) = recording();
-    let mut session =
-        Session::with_click(performance.clone(), recorders.voices, click, config).expect("session");
-    render_session(&mut session, &[], frames).expect("render");
-    (
-        recorders.logs.iter().map(heard).collect(),
-        heard(&click_log),
-    )
+) -> ClickRecording {
+    record_script_with_click(performance, config, &[], frames)
+}
+
+struct CountInExpectation {
+    lead: u64,
+    clicks: Vec<HeardClick>,
+    tracks: Vec<Vec<Heard>>,
+}
+
+fn count_in_expectation(
+    performance: &Performance,
+    played: usize,
+    percent: u16,
+) -> CountInExpectation {
+    let tempo = &performance.tempo;
+    let bar = &performance.order.bars[played];
+    let bar_end = ScoreTime::new(bar.start.whole_notes() + bar.length).expect("time");
+    let origin = unit_of(tempo, bar.start, RATE);
+    let length = unit_of(tempo, bar_end, RATE) - origin;
+    let entry = performance
+        .events
+        .iter()
+        .filter(
+            |event| matches!(event.message, MidiMessage::NoteOn { velocity, .. } if velocity > 0),
+        )
+        .map(|event| unit_of(tempo, event.at, RATE))
+        .find(|unit| (origin..origin + length).contains(unit))
+        .unwrap_or(origin);
+    let step = u64::from(percent);
+    let mut clicks: Vec<HeardClick> = performance
+        .clicks
+        .iter()
+        .filter(|click| click.at >= bar.start && click.at < bar_end)
+        .map(|click| {
+            let unit = unit_of(tempo, click.at, RATE);
+            let elapsed = if unit >= entry {
+                unit - entry
+            } else {
+                unit + length - entry
+            };
+            HeardClick {
+                frame: elapsed / step,
+                note: click_note(click.downbeat),
+            }
+        })
+        .collect();
+    clicks.sort_by_key(|click| click.frame);
+    let count_in = length / step;
+    let tracks = (0..performance.tracks.len())
+        .map(|track| {
+            performance
+                .events
+                .iter()
+                .filter(|event| event.track == track)
+                .map(|event| Heard {
+                    frame: count_in + unit_of(tempo, event.at, RATE).saturating_sub(entry) / step,
+                    channel: event.channel,
+                    message: event.message,
+                })
+                .collect()
+        })
+        .collect();
+    CountInExpectation {
+        lead: entry - origin,
+        clicks,
+        tracks,
+    }
+}
+
+fn count_in_config(percent: u16) -> SessionConfig {
+    SessionConfig {
+        count_in: true,
+        ..session_config(percent)
+    }
 }
 
 #[test]
@@ -461,47 +570,139 @@ fn the_count_in_plays_one_bar_of_accented_clicks_before_the_song() {
         ("tempo.gp", 180),
     ] {
         let performance = performance(&fixture(name), Profile::Musical);
-        let tempo = &performance.tempo;
-        let bar = &performance.order.bars[0];
-        let length = unit_of(tempo, ScoreTime::new(bar.length).expect("time"), RATE);
-        let count_in = length / u64::from(percent);
-        let frames = count_in + song_frames(&performance, percent) + 10;
-        let config = SessionConfig {
-            count_in: true,
-            ..session_config(percent)
-        };
-        let (logs, clicks) = record_with_click(&performance, config, frames);
-        let expected_clicks: Vec<(u64, u8, u8)> = performance
-            .clicks
+        let expected = count_in_expectation(&performance, 0, percent);
+        let frames = expected
+            .tracks
             .iter()
-            .filter(|click| click.at < ScoreTime::new(bar.length).expect("time"))
-            .map(|click| {
-                let (key, velocity) = click_note(click.downbeat);
-                (
-                    unit_of(tempo, click.at, RATE) / u64::from(percent),
-                    key,
-                    velocity,
-                )
-            })
-            .collect();
-        assert!(expected_clicks.len() >= 2, "{name}");
-        assert_eq!(expected_clicks[0].1, CLICK_DOWNBEAT_KEY);
-        assert_eq!(clicks_of(&clicks), expected_clicks, "{name}");
-        assert_eq!(notes(&clicks).len(), expected_clicks.len());
-        for (track, log) in logs.iter().enumerate() {
-            let expected: Vec<Heard> = performance
-                .events
-                .iter()
-                .filter(|event| event.track == track)
-                .map(|event| Heard {
-                    frame: count_in + unit_of(tempo, event.at, RATE) / u64::from(percent),
-                    channel: event.channel,
-                    message: event.message,
-                })
-                .collect();
-            assert_eq!(*log, expected, "{name} track {track}");
+            .flatten()
+            .map(|heard| heard.frame)
+            .max()
+            .unwrap_or(0)
+            + song_frames(&performance, percent)
+            + 10;
+        let ClickRecording { logs, clicks } =
+            record_with_click(&performance, count_in_config(percent), frames);
+        assert!(expected.clicks.len() >= 2, "{name}");
+        if expected.lead == 0 {
+            assert_eq!(expected.clicks[0].note.key, CLICK_DOWNBEAT_KEY, "{name}");
+        }
+        assert_eq!(clicks_of(&clicks), expected.clicks, "{name}");
+        assert_eq!(notes(&clicks).len(), expected.clicks.len());
+        assert_eq!(logs, expected.tracks, "{name}");
+    }
+}
+
+fn with_pickup(name: &str) -> Performance {
+    let mut score = fixture(name);
+    score.anacrusis = true;
+    for track in &mut score.tracks {
+        for staff in &mut track.staves {
+            if let Some(bar) = staff.bars.first_mut() {
+                for voice in &mut bar.voices {
+                    let keep = voice.beats.len().saturating_sub(1);
+                    voice.beats.drain(..keep);
+                }
+            }
         }
     }
+    performance(&score, Profile::Musical)
+}
+
+#[test]
+fn a_count_in_into_a_pickup_bar_fills_the_bar_before_its_first_note() {
+    for (name, percent) in [("note-effects.gp", 100u16), ("mixer.gp", 150)] {
+        let performance = with_pickup(name);
+        let expected = count_in_expectation(&performance, 0, percent);
+        assert!(expected.lead > 0, "{name} has a pickup");
+        let beats = performance
+            .clicks
+            .iter()
+            .filter(|click| click.at < performance.order.bars[1].start)
+            .count();
+        assert_eq!(expected.clicks.len(), beats);
+        let frames = expected
+            .tracks
+            .iter()
+            .flatten()
+            .map(|heard| heard.frame)
+            .max()
+            .unwrap_or(0)
+            + 10;
+        let ClickRecording { logs, clicks } =
+            record_with_click(&performance, count_in_config(percent), frames);
+        assert_eq!(clicks_of(&clicks), expected.clicks, "{name}");
+        assert_eq!(logs, expected.tracks, "{name}");
+        let first_note = logs
+            .iter()
+            .flatten()
+            .filter(|heard| matches!(heard.message, MidiMessage::NoteOn { velocity, .. } if velocity > 0))
+            .map(|heard| heard.frame)
+            .min()
+            .expect("a note");
+        let bar = &performance.order.bars[0];
+        let length = unit_of(
+            &performance.tempo,
+            ScoreTime::new(bar.start.whole_notes() + bar.length).expect("time"),
+            RATE,
+        );
+        assert_eq!(first_note, length / u64::from(percent), "{name}");
+        let last_click = expected.clicks.last().expect("a click").frame;
+        assert!(last_click < first_note);
+        let gaps: Vec<u64> = expected
+            .clicks
+            .windows(2)
+            .map(|pair| pair[1].frame - pair[0].frame)
+            .collect();
+        let beat = gaps.first().copied().expect("two clicks");
+        assert!(
+            gaps.iter().all(|gap| gap.abs_diff(beat) <= 1),
+            "{name} {gaps:?}"
+        );
+        assert!((first_note - last_click).abs_diff(beat) <= 1, "{name}");
+    }
+}
+
+#[test]
+fn a_seek_during_the_count_in_counts_the_new_bar_in() {
+    let performance = performance(&fixture("signatures.gp"), Profile::Musical);
+    let percent = 100u16;
+    let bars = &performance.order.bars;
+    let target = (1..bars.len())
+        .find(|index| bars[*index].length != bars[0].length)
+        .expect("a bar of another length");
+    let seek = 1_000;
+    let script = [step(seek, TransportCommand::Seek(target))];
+    let before = count_in_expectation(&performance, 0, percent);
+    let after = count_in_expectation(&performance, target, percent);
+    let tempo = &performance.tempo;
+    let bar_end =
+        ScoreTime::new(bars[target].start.whole_notes() + bars[target].length).expect("time");
+    let length = unit_of(tempo, bar_end, RATE) - unit_of(tempo, bars[target].start, RATE);
+    let frames = seek + length / u64::from(percent) + 10;
+    let ClickRecording { logs, clicks } =
+        record_script_with_click(&performance, count_in_config(percent), &script, frames);
+    let expected: Vec<HeardClick> = before
+        .clicks
+        .iter()
+        .filter(|click| click.frame < seek)
+        .copied()
+        .chain(after.clicks.iter().map(|click| HeardClick {
+            frame: seek + click.frame,
+            note: click.note,
+        }))
+        .collect();
+    assert!(after.clicks.len() >= 2);
+    assert_eq!(clicks_of(&clicks), expected);
+    let first_note = logs
+        .iter()
+        .flatten()
+        .filter(
+            |heard| matches!(heard.message, MidiMessage::NoteOn { velocity, .. } if velocity > 0),
+        )
+        .map(|heard| heard.frame)
+        .min()
+        .expect("a note");
+    assert_eq!(first_note, seek + length / u64::from(percent));
 }
 
 #[test]
@@ -513,22 +714,22 @@ fn the_metronome_clicks_every_beat_with_an_accented_downbeat() {
         metronome: true,
         ..session_config(percent)
     };
-    let (_, clicks) = record_with_click(&performance, config, frames);
-    let expected: Vec<(u64, u8, u8)> = performance
+    let clicks = record_with_click(&performance, config, frames).clicks;
+    let expected: Vec<HeardClick> = performance
         .clicks
         .iter()
-        .map(|click| {
-            let (key, velocity) = click_note(click.downbeat);
-            (
-                unit_of(&performance.tempo, click.at, RATE) / u64::from(percent),
-                key,
-                velocity,
-            )
+        .map(|click| HeardClick {
+            frame: unit_of(&performance.tempo, click.at, RATE) / u64::from(percent),
+            note: click_note(click.downbeat),
         })
         .collect();
-    assert!(expected.iter().any(|click| click.1 == CLICK_BEAT_KEY));
+    assert!(
+        expected
+            .iter()
+            .any(|click| click.note.key == CLICK_BEAT_KEY)
+    );
     assert_eq!(clicks_of(&clicks), expected);
-    let (_, silent) = record_with_click(&performance, session_config(percent), frames);
+    let silent = record_with_click(&performance, session_config(percent), frames).clicks;
     assert!(clicks_of(&silent).is_empty());
 }
 
@@ -683,4 +884,246 @@ fn the_render_report_names_the_played_bars_length_and_backends() {
     render_session(&mut whole, &[], song_frames(&performance, 100) + 10).expect("render");
     let all: Vec<usize> = (0..performance.order.bars.len()).collect();
     assert_eq!(whole.report(Vec::new()).played_bars, all);
+}
+
+#[test]
+fn stop_with_a_loop_set_returns_to_the_loop_start() {
+    let performance = performance(&fixture("repeats.gp"), Profile::Musical);
+    let mut session = Session::new(
+        performance.clone(),
+        built_in_voices(&performance, RATE),
+        config(RATE),
+    )
+    .expect("session");
+    let mut left = vec![0.0f32; 1_000];
+    let mut right = vec![0.0f32; 1_000];
+    session
+        .handle
+        .send(TransportCommand::Loop(range(2, 3)))
+        .expect("send");
+    session.handle.send(TransportCommand::Play).expect("send");
+    session.transport.process(&mut left, &mut right);
+    assert_eq!(session.handle.status().played_bar, 2);
+    session.handle.send(TransportCommand::Stop).expect("send");
+    session.transport.process(&mut left[..1], &mut right[..1]);
+    let stopped = session.handle.status();
+    assert_eq!(stopped.state, opentab_audio::TransportState::Stopped);
+    assert_eq!(
+        (stopped.played_bar, stopped.offset),
+        (2, Fraction::new_raw(0, 1))
+    );
+    session
+        .handle
+        .send(TransportCommand::ClearLoop)
+        .expect("send");
+    session.handle.send(TransportCommand::Stop).expect("send");
+    session.transport.process(&mut left[..1], &mut right[..1]);
+    assert_eq!(session.handle.status().played_bar, 0);
+}
+
+type SharedHandle = std::sync::Arc<std::sync::Mutex<Option<opentab_audio::TransportHandle>>>;
+
+struct Refill {
+    handle: SharedHandle,
+    armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Synth for Refill {
+    fn reset(&mut self) {}
+    fn handle(&mut self, _channel: Channel, message: &MidiMessage) {
+        if matches!(message, MidiMessage::NoteOff { .. })
+            && self.armed.swap(false, std::sync::atomic::Ordering::SeqCst)
+            && let Some(handle) = self.handle.lock().expect("handle").as_mut()
+        {
+            handle.send(TransportCommand::Pause).expect("room");
+        }
+    }
+    fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        left.fill(0.0);
+        right.fill(0.0);
+    }
+}
+
+#[test]
+fn a_block_applies_only_the_commands_waiting_when_it_starts() {
+    let performance = performance(&fixture("note-effects.gp"), Profile::Musical);
+    let shared: SharedHandle = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let armed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let voices: Vec<Box<dyn Synth>> = performance
+        .tracks
+        .iter()
+        .map(|_| {
+            Box::new(Refill {
+                handle: std::sync::Arc::clone(&shared),
+                armed: std::sync::Arc::clone(&armed),
+            }) as Box<dyn Synth>
+        })
+        .collect();
+    let session = Session::new(performance.clone(), voices, config(RATE)).expect("session");
+    let (mut transport, handle) = session.split();
+    *shared.lock().expect("handle") = Some(handle);
+    let send = |command: TransportCommand| {
+        shared
+            .lock()
+            .expect("handle")
+            .as_mut()
+            .expect("handle")
+            .send(command)
+            .expect("room");
+    };
+    let state = || {
+        shared
+            .lock()
+            .expect("handle")
+            .as_ref()
+            .expect("handle")
+            .status()
+            .state
+    };
+    let tempo = &performance.tempo;
+    let on = performance
+        .events
+        .iter()
+        .find(|event| matches!(event.message, MidiMessage::NoteOn { velocity, .. } if velocity > 0))
+        .expect("a note");
+    let off = performance
+        .events
+        .iter()
+        .find(|event| {
+            event.at > on.at
+                && event.track == on.track
+                && matches!(event.message, MidiMessage::NoteOff { key, .. } | MidiMessage::NoteOn { key, velocity: 0 } if matches!(on.message, MidiMessage::NoteOn { key: struck, .. } if struck == key))
+        })
+        .expect("its note-off");
+    let middle = (frame_at(tempo, on.at, Speed::NORMAL, RATE).expect("frame")
+        + frame_at(tempo, off.at, Speed::NORMAL, RATE).expect("frame"))
+        / 2;
+    let mut left = vec![0.0f32; 1];
+    let mut right = vec![0.0f32; 1];
+    send(TransportCommand::Play);
+    for _ in 0..middle {
+        transport.process(&mut left, &mut right);
+    }
+    armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    send(TransportCommand::Seek(0));
+    transport.process(&mut left, &mut right);
+    assert!(
+        !armed.load(std::sync::atomic::Ordering::SeqCst),
+        "the seek silenced a sounding note"
+    );
+    assert_eq!(state(), opentab_audio::TransportState::Playing);
+    transport.process(&mut left, &mut right);
+    assert_eq!(state(), opentab_audio::TransportState::Paused);
+}
+
+#[test]
+fn several_seeks_in_one_block_chase_once() {
+    let performance = performance(&fixture("note-effects.gp"), Profile::Musical);
+    let frame = song_frames(&performance, 100) / 2;
+    let single = [step(frame, TransportCommand::Seek(2))];
+    let double = [
+        step(frame, TransportCommand::Seek(1)),
+        step(frame, TransportCommand::Seek(2)),
+    ];
+    let once = record(&performance, session_config(100), &single, frame + 1);
+    let twice = record(&performance, session_config(100), &double, frame + 1);
+    let chased: usize = once
+        .iter()
+        .flatten()
+        .filter(|heard| {
+            heard.frame == frame
+                && !matches!(
+                    heard.message,
+                    MidiMessage::NoteOn { .. } | MidiMessage::NoteOff { .. }
+                )
+        })
+        .count();
+    assert!(chased > 0);
+    assert_eq!(twice, once);
+}
+
+#[test]
+fn the_built_in_click_is_heard_when_every_track_is_muted() {
+    let performance = performance(&fixture("multi-track.gp"), Profile::Musical);
+    let mutes: Vec<ScriptStep> = (0..performance.tracks.len())
+        .map(|track| step(0, TransportCommand::Mute(track, true)))
+        .collect();
+    let render = |metronome: bool| {
+        let config = SessionConfig {
+            metronome,
+            ..config(RATE)
+        };
+        let mut session = Session::new(
+            performance.clone(),
+            built_in_voices(&performance, RATE),
+            config,
+        )
+        .expect("session");
+        render_session(&mut session, &mutes, MIX_FRAMES).expect("render")
+    };
+    assert!(loud(&render(true)));
+    assert!(!loud(&render(false)));
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BendAtSeam {
+    bar: usize,
+    track: usize,
+    channel: Channel,
+}
+
+#[test]
+fn a_bend_sounding_at_the_loop_end_is_reset_at_the_wrap() {
+    let mut checked = 0;
+    for name in ["note-effects.gp", "tremolo-bar.gp"] {
+        let performance = performance(&fixture(name), Profile::Musical);
+        let tempo = &performance.tempo;
+        let bars = &performance.order.bars;
+        let Some(found) = (0..bars.len()).find_map(|bar| {
+            let start = bars[bar].start;
+            let end = bars
+                .get(bar + 1)
+                .map_or(performance.order.end(), |next| next.start);
+            let last = performance
+                .events
+                .iter()
+                .filter(|event| event.at >= start && event.at < end)
+                .rfind(|event| matches!(event.message, MidiMessage::PitchBend { .. }))?;
+            matches!(last.message, MidiMessage::PitchBend { value } if value != BEND_CENTRE)
+                .then_some(BendAtSeam {
+                    bar,
+                    track: last.track,
+                    channel: last.channel,
+                })
+        }) else {
+            continue;
+        };
+        let BendAtSeam {
+            bar,
+            track,
+            channel,
+        } = found;
+        let start = bars[bar].start;
+        let end = bars
+            .get(bar + 1)
+            .map_or(performance.order.end(), |next| next.start);
+        let period = (unit_of(tempo, end, RATE) - unit_of(tempo, start, RATE)) / 100;
+        let script = [step(0, TransportCommand::Loop(range(bar, bar)))];
+        let logs = record(&performance, session_config(100), &script, period + 1);
+        let index = usize::from(channel.get());
+        let before = SynthModel::of_log(&logs[track], period - 1);
+        let start_state = reference(
+            &performance,
+            track,
+            start,
+            unit_of(tempo, start, RATE) + 100,
+        );
+        assert_ne!(
+            before.states[index].bend, start_state.states[index].bend,
+            "{name}"
+        );
+        assert_restored(&performance, &logs, bar, period, 100).expect("restored");
+        checked += 1;
+    }
+    assert!(checked > 0);
 }

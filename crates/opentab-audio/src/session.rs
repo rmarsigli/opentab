@@ -62,8 +62,7 @@ impl Session {
         click: Box<dyn Synth>,
         config: SessionConfig,
     ) -> Result<Session, AudioError> {
-        let (transport, handle) = Transport::create(performance, voices, click, config)?;
-        Ok(Session { transport, handle })
+        Transport::create(performance, voices, click, config)
     }
 
     pub fn split(self) -> (Transport, TransportHandle) {

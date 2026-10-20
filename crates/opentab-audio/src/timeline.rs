@@ -39,18 +39,24 @@ pub(crate) struct Timeline {
     pub(crate) end: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CachedUnit {
+    at: ScoreTime,
+    unit: u64,
+}
+
 fn units_of<I>(tempo: &TempoMap, times: I, rate: SampleRate) -> Result<Vec<u64>, AudioError>
 where
     I: Iterator<Item = ScoreTime>,
 {
     let mut units = Vec::new();
-    let mut cached: Option<(ScoreTime, u64)> = None;
+    let mut cached: Option<CachedUnit> = None;
     for at in times {
         let unit = match cached {
-            Some((time, unit)) if time == at => unit,
+            Some(hit) if hit.at == at => hit.unit,
             _ => {
                 let unit = unit_at(tempo, at, rate)?;
-                cached = Some((at, unit));
+                cached = Some(CachedUnit { at, unit });
                 unit
             }
         };
