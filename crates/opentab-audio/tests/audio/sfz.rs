@@ -25,11 +25,36 @@ fn note_off(key: u8) -> MidiMessage {
     MidiMessage::NoteOff { key, velocity: 0 }
 }
 
-pub fn render(synth: &mut dyn Synth, frames: usize) -> (Vec<f32>, Vec<f32>) {
+pub struct Stereo {
+    pub left: Vec<f32>,
+    pub right: Vec<f32>,
+}
+
+pub fn render(synth: &mut dyn Synth, frames: usize) -> Stereo {
     let mut left = vec![0.0f32; frames];
     let mut right = vec![0.0f32; frames];
     synth.render(&mut left, &mut right);
-    (left, right)
+    Stereo { left, right }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextFile<'a> {
+    pub name: &'a str,
+    pub text: &'a str,
+}
+
+pub fn text_file<'a>(name: &'a str, text: &'a str) -> TextFile<'a> {
+    TextFile { name, text }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SampleFile<'a> {
+    pub name: &'a str,
+    pub bytes: Vec<u8>,
+}
+
+pub fn sample_file(name: &str, bytes: Vec<u8>) -> SampleFile<'_> {
+    SampleFile { name, bytes }
 }
 
 pub fn energy(samples: &[f32]) -> f64 {
@@ -38,21 +63,28 @@ pub fn energy(samples: &[f32]) -> f64 {
 
 pub fn write_bank(
     dir: &Path,
-    sfz: &[(&str, &str)],
-    waves: &[(&str, Vec<u8>)],
+    sfz: &[TextFile<'_>],
+    waves: &[SampleFile<'_>],
 ) -> std::path::PathBuf {
     let root = dir.join("bank");
-    for (name, text) in sfz {
+    for TextFile { name, text } in sfz {
         let path = root.join(name);
         fs::create_dir_all(path.parent().expect("parent")).expect("folder");
         fs::write(path, text).expect("sfz written");
     }
-    for (name, bytes) in waves {
+    for SampleFile { name, bytes } in waves {
         let path = root.join(name);
         fs::create_dir_all(path.parent().expect("parent")).expect("folder");
         fs::write(path, bytes).expect("sample written");
     }
     root
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ListedInstrument<'a> {
+    msb: u8,
+    program: u8,
+    name: &'a str,
 }
 
 #[test]
@@ -70,17 +102,23 @@ fn the_tiny_bank_lists_its_root_instruments_and_never_its_fragments() {
     );
     assert!(bank.skipped().is_empty());
     let listed = bank.instruments();
-    let names: Vec<(u8, u8, &str)> = listed
+    let names: Vec<ListedInstrument<'_>> = listed
         .iter()
-        .map(|entry| (entry.bank.msb(), entry.program, entry.name.as_str()))
+        .map(|entry| ListedInstrument {
+            msb: entry.bank.msb(),
+            program: entry.program,
+            name: entry.name.as_str(),
+        })
         .collect();
+    let expected =
+        |msb: u8, program: u8, name: &'static str| ListedInstrument { msb, program, name };
     assert_eq!(
         names,
         vec![
-            (0, 32, "Programs/bass"),
-            (120, 0, "Programs/drum kit"),
-            (0, 24, "Programs/guitar"),
-            (0, 0, "Programs/lead"),
+            expected(0, 32, "Programs/bass"),
+            expected(120, 0, "Programs/drum kit"),
+            expected(0, 24, "Programs/guitar"),
+            expected(0, 0, "Programs/lead"),
         ]
     );
     assert_eq!(bank.sample_count(), 9);
@@ -198,7 +236,7 @@ fn every_tiny_instrument_sounds_and_decoding_is_shared() {
             synth.reset();
             synth.handle(channel(0), &MidiMessage::Program { program });
             synth.handle(channel(0), &note_on(key, 100));
-            let (left, right) = render(synth, 4800);
+            let Stereo { left, right } = render(synth, 4800);
             assert!(
                 energy(&left) > 1.0 && energy(&right) > 1.0,
                 "program {program}"
@@ -207,7 +245,7 @@ fn every_tiny_instrument_sounds_and_decoding_is_shared() {
     }
     for key in [36u8, 38, 42, 46, 60] {
         first.handle(Channel::DRUMS, &note_on(key, 100));
-        let (left, _) = render(&mut first, 2400);
+        let Stereo { left, .. } = render(&mut first, 2400);
         assert!(energy(&left) > 0.1, "drum key {key}");
     }
     assert!(bank.faults().is_empty(), "{:?}", bank.faults());
@@ -220,13 +258,13 @@ fn a_missing_sample_is_listed_and_the_bank_still_loads() {
     let dir = scratch_dir();
     let root = write_bank(
         dir.path(),
-        &[(
+        &[text_file(
             "a.sfz",
             "<region> sample=gone.wav\n<region> sample=there.wav key=60\n<region> sample=song.aif",
         )],
         &[
-            ("there.wav", wav16(&samples::pluck())),
-            ("song.aif", vec![0; 16]),
+            sample_file("there.wav", wav16(&samples::pluck())),
+            sample_file("song.aif", vec![0; 16]),
         ],
     );
     let bank = SfzBank::load(&root).expect("loads");
@@ -260,7 +298,7 @@ fn bend_follows_the_rpn_range() {
         synth.handle(channel(0), &MidiMessage::Program { program: 33 });
         synth.handle(channel(0), &MidiMessage::PitchBend { value: bend });
         synth.handle(channel(0), &note_on(40, 127));
-        let (left, _) = render(&mut synth, 48_000);
+        let Stereo { left, .. } = render(&mut synth, 48_000);
         left.windows(2)
             .filter(|pair| pair[0] <= 0.0 && pair[1] > 0.0)
             .count() as f64
@@ -291,7 +329,7 @@ fn note_off_releases_and_one_shots_ignore_it() {
     synth.handle(Channel::DRUMS, &note_on(36, 100));
     render(&mut synth, 480);
     synth.handle(Channel::DRUMS, &note_off(36));
-    let (left, _) = render(&mut synth, 4800);
+    let Stereo { left, .. } = render(&mut synth, 4800);
     assert!(energy(&left[2400..]) > 0.01);
     let _ = tiny_sfz_root();
 }
@@ -301,8 +339,8 @@ fn a_bank_without_a_drum_file_plays_no_drums() {
     let dir = scratch_dir();
     let root = write_bank(
         dir.path(),
-        &[("guitar.sfz", "<region> sample=pluck.wav")],
-        &[("pluck.wav", wav16(&samples::pluck()))],
+        &[text_file("guitar.sfz", "<region> sample=pluck.wav")],
+        &[sample_file("pluck.wav", wav16(&samples::pluck()))],
     );
     let bank = SfzBank::load(&root).expect("loads");
     assert_eq!(bank.drum_instrument(), None);
@@ -323,7 +361,7 @@ fn an_unprepared_sample_is_skipped_and_counted_and_never_decoded_on_note_on() {
     synth.handle(channel(0), &MidiMessage::Program { program: 24 });
     synth.handle(channel(0), &note_on(57, 100));
     assert_eq!(synth.sounding(), 0);
-    assert_eq!(energy(&render(&mut synth, 4800).0), 0.0);
+    assert_eq!(energy(&render(&mut synth, 4800).left), 0.0);
     assert_eq!(bank.decode_count(), 0);
     let skipped = bank.unprepared_count();
     assert!(skipped > 0);
@@ -336,7 +374,7 @@ fn an_unprepared_sample_is_skipped_and_counted_and_never_decoded_on_note_on() {
     assert!(prepared > 0);
     synth.handle(channel(0), &note_on(57, 100));
     assert!(synth.sounding() > 0);
-    assert!(energy(&render(&mut synth, 4800).0) > 1.0);
+    assert!(energy(&render(&mut synth, 4800).left) > 1.0);
     assert_eq!(bank.unprepared_count(), skipped);
     synth.handle(channel(0), &MidiMessage::Program { program: 33 });
     synth.handle(channel(0), &note_on(40, 100));

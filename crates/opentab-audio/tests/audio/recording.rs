@@ -86,10 +86,16 @@ pub fn heard(log: &SharedLog) -> Vec<Heard> {
     log.lock().expect("log").heard.clone()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ChannelKey {
+    pub channel: u8,
+    pub key: u8,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SynthModel {
     pub states: [ChannelState; CHANNELS],
-    pub sounding: BTreeMap<(u8, u8), u32>,
+    pub sounding: BTreeMap<ChannelKey, u32>,
 }
 
 impl Default for SynthModel {
@@ -105,7 +111,10 @@ impl SynthModel {
     pub fn apply(&mut self, channel: Channel, message: MidiMessage) {
         let index = usize::from(channel.get());
         self.states[index].apply(message);
-        let key = |key: u8| (channel.get(), key);
+        let key = |key: u8| ChannelKey {
+            channel: channel.get(),
+            key,
+        };
         match message {
             MidiMessage::NoteOn {
                 key: note,
@@ -150,13 +159,15 @@ pub struct Note {
 }
 
 pub fn notes(heard: &[Heard]) -> Vec<Note> {
-    let mut open: BTreeMap<(u8, u8), Vec<usize>> = BTreeMap::new();
+    let mut open: BTreeMap<ChannelKey, Vec<usize>> = BTreeMap::new();
     let mut notes: Vec<Note> = Vec::new();
     for entry in heard {
         let channel = entry.channel.get();
         match entry.message {
             MidiMessage::NoteOn { key, velocity } if velocity > 0 => {
-                open.entry((channel, key)).or_default().push(notes.len());
+                open.entry(ChannelKey { channel, key })
+                    .or_default()
+                    .push(notes.len());
                 notes.push(Note {
                     channel,
                     key,
@@ -165,7 +176,7 @@ pub fn notes(heard: &[Heard]) -> Vec<Note> {
                 });
             }
             MidiMessage::NoteOn { key, .. } | MidiMessage::NoteOff { key, .. } => {
-                let queue = open.entry((channel, key)).or_default();
+                let queue = open.entry(ChannelKey { channel, key }).or_default();
                 assert!(
                     !queue.is_empty(),
                     "a note-off on channel {channel} key {key} at frame {} closes no note",

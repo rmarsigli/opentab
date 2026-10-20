@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 
 use opentab_audio::{
-    IgnoreReason, LoopMode, OffMode, SampleRate, SfzBank, SfzLimits, SfzRegion, SfzSynth, SfzText,
-    Synth, Trigger, parse_sfz_text,
+    IgnoreReason, InitialController, LoopMode, OffMode, SampleRate, SfzBank, SfzLimits, SfzRegion,
+    SfzSynth, SfzText, Synth, Trigger, parse_sfz_text,
 };
 use opentab_playback::{Channel, MidiMessage};
 use opentab_testkit::banks::{Waveform, samples, wav16};
 
-use crate::sfz::{energy, render, write_bank};
+use crate::sfz::{SampleFile, Stereo, energy, render, sample_file, text_file, write_bank};
 use crate::support::scratch_dir;
 
 const RATE: SampleRate = SampleRate::STUDIO;
@@ -36,20 +36,20 @@ struct TestBank {
     bank: SfzBank,
 }
 
-fn waves() -> Vec<(&'static str, Vec<u8>)> {
+fn waves() -> Vec<SampleFile<'static>> {
     vec![
-        ("sine.wav", wav16(&samples::sine_loop())),
-        ("pluck.wav", wav16(&samples::pluck())),
-        ("kick.wav", wav16(&samples::kick())),
-        ("hat.wav", wav16(&samples::hat())),
-        ("open.wav", wav16(&samples::open_hat())),
-        ("snare.wav", wav16(&samples::snare())),
+        sample_file("sine.wav", wav16(&samples::sine_loop())),
+        sample_file("pluck.wav", wav16(&samples::pluck())),
+        sample_file("kick.wav", wav16(&samples::kick())),
+        sample_file("hat.wav", wav16(&samples::hat())),
+        sample_file("open.wav", wav16(&samples::open_hat())),
+        sample_file("snare.wav", wav16(&samples::snare())),
     ]
 }
 
 fn bank(sfz: &str) -> TestBank {
     let dir = scratch_dir();
-    let root = write_bank(dir.path(), &[("test.sfz", sfz)], &waves());
+    let root = write_bank(dir.path(), &[text_file("test.sfz", sfz)], &waves());
     TestBank {
         bank: SfzBank::load(&root).expect("loads"),
         _dir: dir,
@@ -76,7 +76,7 @@ fn played(bank: &TestBank, key: u8, velocity: u8, frames: usize) -> Vec<f32> {
     let mut synth = bank.bank.synth(RATE);
     synth.prepare_all();
     on(&mut synth, key, velocity);
-    render(&mut synth, frames).0
+    render(&mut synth, frames).left
 }
 
 fn crossings_per_second(samples: &[f32]) -> f64 {
@@ -190,13 +190,13 @@ fn volume_amplitude_and_pan_set_the_level() {
     let mut synth = panned.bank.synth(RATE);
     synth.prepare_all();
     on(&mut synth, 69, 127);
-    let (left, right) = render(&mut synth, SECOND / 4);
+    let Stereo { left, right } = render(&mut synth, SECOND / 4);
     assert!(energy(&right) < energy(&left) * 1e-6);
     let centre = bank(&looped_sine(""));
     let mut synth = centre.bank.synth(RATE);
     synth.prepare_all();
     on(&mut synth, 69, 127);
-    let (left, right) = render(&mut synth, SECOND / 4);
+    let Stereo { left, right } = render(&mut synth, SECOND / 4);
     assert!((energy(&left) / energy(&right) - 1.0).abs() < 1e-6);
 }
 
@@ -229,7 +229,7 @@ fn the_amplitude_envelope_follows_attack_hold_decay_sustain_and_release() {
     let mut synth = test.bank.synth(RATE);
     synth.prepare_all();
     on(&mut synth, 69, 127);
-    let (left, _) = render(&mut synth, SECOND / 2);
+    let Stereo { left, .. } = render(&mut synth, SECOND / 2);
     let block = |from: f64| {
         let start = (from * SECOND as f64) as usize;
         rms(&left[start..start + ENVELOPE_BLOCK])
@@ -238,7 +238,7 @@ fn the_amplitude_envelope_follows_attack_hold_decay_sustain_and_release() {
     assert!((block(0.12) / block(0.175) - 1.0).abs() < 0.02);
     assert!((block(0.35) / block(0.15) - 0.25).abs() < 0.02);
     off(&mut synth, 69);
-    let (tail, _) = render(&mut synth, SECOND / 2);
+    let Stereo { left: tail, .. } = render(&mut synth, SECOND / 2);
     let length = sounding_length(&tail) as f64 / SECOND as f64;
     assert!((length - 0.2).abs() < 0.005, "{length}");
     assert_eq!(synth.sounding(), 0);
@@ -260,14 +260,14 @@ fn loop_modes_decide_how_a_sample_ends() {
     on(&mut synth, 69, 127);
     render(&mut synth, SECOND / 10);
     off(&mut synth, 69);
-    let (tail, _) = render(&mut synth, SECOND / 10);
+    let Stereo { left: tail, .. } = render(&mut synth, SECOND / 10);
     assert!(sounding_length(&tail) < 600, "{}", sounding_length(&tail));
     let shot = bank("<region> sample=kick.wav loop_mode=one_shot");
     let mut synth = shot.bank.synth(RATE);
     synth.prepare_all();
     on(&mut synth, 60, 127);
     off(&mut synth, 60);
-    let (tail, _) = render(&mut synth, SECOND);
+    let Stereo { left: tail, .. } = render(&mut synth, SECOND);
     assert!(sounding_length(&tail) > SECOND / 4);
     assert_eq!(
         only("<region> sample=a.wav loopmode=one_shot").loop_mode,
@@ -381,7 +381,7 @@ fn lorand_and_hirand_pick_regions_deterministically() {
     let mut lengths = Vec::new();
     for _ in 0..32 {
         on(&mut synth, 60, 100);
-        lengths.push(render(&mut synth, 24_000).0[100].to_bits());
+        lengths.push(render(&mut synth, 24_000).left[100].to_bits());
         off(&mut synth, 60);
         render(&mut synth, 24_000);
     }
@@ -400,7 +400,7 @@ fn seq_length_and_seq_position_alternate_regions() {
     let mut firsts = Vec::new();
     for _ in 0..4 {
         on(&mut synth, 60, 127);
-        firsts.push(render(&mut synth, 4410).0[2000].to_bits());
+        firsts.push(render(&mut synth, 4410).left[2000].to_bits());
         synth.handle(
             channel(),
             &MidiMessage::Control {
@@ -457,12 +457,12 @@ fn keyswitches_are_fixed_by_sw_default_or_the_lowest_sw_last() {
     synth.prepare_all();
     on(&mut synth, 60, 100);
     assert_eq!(synth.sounding(), 2);
-    let first = render(&mut synth, 1000).0;
+    let first = render(&mut synth, 1000).left;
     let reference = bank("<region> sample=hat.wav\n<region> sample=snare.wav\n");
     let mut hat_only = reference.bank.synth(RATE);
     hat_only.prepare_all();
     on(&mut hat_only, 60, 100);
-    assert_eq!(first, render(&mut hat_only, 1000).0);
+    assert_eq!(first, render(&mut hat_only, 1000).left);
 }
 
 #[test]
@@ -504,7 +504,13 @@ fn controller_ranges_use_set_cc_and_the_stream_but_never_rpn_controllers() {
     on(&mut synth, 60, 100);
     assert_eq!(synth.sounding(), 2);
     let control = text("<control> set_cc7=90\n<region> sample=a.wav set_cc8=1");
-    assert_eq!(control.set_cc, vec![(7, 90)]);
+    assert_eq!(
+        control.set_cc,
+        vec![InitialController {
+            controller: 7,
+            value: 90
+        }]
+    );
     assert!(listed(&control, "set_ccN", IgnoreReason::Unsupported));
 }
 
@@ -517,7 +523,7 @@ fn rpn_and_nrpn_controllers_never_move_the_controller_state() {
         let mut reference = test.bank.synth(RATE);
         reference.prepare_all();
         on(&mut reference, 60, 100);
-        let expected = render(&mut reference, 2400).0;
+        let expected = render(&mut reference, 2400).left;
         let mut synth = test.bank.synth(RATE);
         synth.prepare_all();
         synth.handle(
@@ -531,7 +537,7 @@ fn rpn_and_nrpn_controllers_never_move_the_controller_state() {
         on(&mut synth, 60, 100);
         assert_eq!(synth.sounding(), 1, "controller {controller}");
         assert_eq!(
-            render(&mut synth, 2400).0,
+            render(&mut synth, 2400).left,
             expected,
             "controller {controller}"
         );
@@ -705,13 +711,13 @@ fn the_ogg_and_flac_samples_play_through_regions() {
     let dir = scratch_dir();
     let root = write_bank(
         dir.path(),
-        &[(
+        &[text_file(
             "t.sfz",
             "<region> lokey=0 hikey=59 sample=s.ogg loop_mode=loop_continuous\n<region> lokey=60 sample=p.flac\n",
         )],
         &[
-            ("s.ogg", opentab_testkit::banks::sine_ogg()),
-            ("p.flac", opentab_testkit::banks::flac16(&samples::pluck())),
+            sample_file("s.ogg", opentab_testkit::banks::sine_ogg()),
+            sample_file("p.flac", opentab_testkit::banks::flac16(&samples::pluck())),
         ],
     );
     let bank = SfzBank::load(&root).expect("loads");
@@ -719,7 +725,7 @@ fn the_ogg_and_flac_samples_play_through_regions() {
         let mut synth = bank.synth(RATE);
         synth.prepare_all();
         on(&mut synth, key, 120);
-        assert!(energy(&render(&mut synth, 4800).0) > 1.0, "key {key}");
+        assert!(energy(&render(&mut synth, 4800).left) > 1.0, "key {key}");
     }
 }
 

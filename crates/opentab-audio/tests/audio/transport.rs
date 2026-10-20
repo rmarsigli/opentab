@@ -1296,8 +1296,8 @@ fn the_count_in_ends_on_the_first_note_of_a_track_that_is_heard() {
         for solo in [false, true] {
             let mut hearing = vec![true; tracks];
             hearing[case.track] = false;
-            let expected = count_in_heard_by(&performance, case.bar, percent, &hearing);
-            let recorders = recorders(&performance);
+            let expected = count_in_heard_by(performance, case.bar, percent, &hearing);
+            let recorders = recorders(performance);
             let click = recording();
             let mut session = Session::with_click(
                 performance.clone(),

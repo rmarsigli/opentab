@@ -9,7 +9,7 @@ use opentab_audio::{
 use opentab_playback::{Channel, MidiMessage};
 use opentab_testkit::banks::{SIDECAR_FILE, WavSpec, samples, wav16, write_wav};
 
-use crate::sfz::{energy, render, write_bank};
+use crate::sfz::{TextFile, energy, render, sample_file, text_file, write_bank};
 use crate::support::scratch_dir;
 
 fn refusal<T: std::fmt::Debug>(result: Result<T, BankError>) -> UnsafeBank {
@@ -21,22 +21,22 @@ fn refusal<T: std::fmt::Debug>(result: Result<T, BankError>) -> UnsafeBank {
 
 fn text_with(
     sfz: &str,
-    files: &[(&str, &str)],
+    files: &[TextFile<'_>],
     limits: &SfzLimits,
 ) -> Result<opentab_audio::SfzText, BankError> {
-    let includes: BTreeMap<String, String> = files
-        .iter()
-        .map(|(name, text)| ((*name).to_owned(), (*text).to_owned()))
-        .collect();
-    parse_sfz_text(sfz, &includes, limits)
+    parse_sfz_text(sfz, &files_map(files), limits)
 }
 
 fn load(root: &Path, limits: &SfzLimits) -> Result<SfzBank, BankError> {
     SfzBank::load_with_limits(root, limits)
 }
 
-fn pluck_bank(dir: &Path, sfz: &[(&str, &str)]) -> std::path::PathBuf {
-    write_bank(dir, sfz, &[("pluck.wav", wav16(&samples::pluck()))])
+fn pluck_bank(dir: &Path, sfz: &[TextFile<'_>]) -> std::path::PathBuf {
+    write_bank(
+        dir,
+        sfz,
+        &[sample_file("pluck.wav", wav16(&samples::pluck()))],
+    )
 }
 
 #[test]
@@ -53,13 +53,13 @@ fn an_instrument_file_beyond_the_size_cap_is_refused() {
     assert_eq!(
         refusal(text_with(
             "#include \"big.sfz\"",
-            &[("big.sfz", &long)],
+            &[text_file("big.sfz", &long)],
             &limits
         )),
         UnsafeBank::SfzFileTooLarge { limit_kib: 0 }
     );
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &long)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &long)]);
     assert_eq!(
         refusal(load(&root, &limits)),
         UnsafeBank::SfzFileTooLarge { limit_kib: 0 }
@@ -75,7 +75,11 @@ fn expansion_beyond_the_text_cap_is_refused() {
     let fragment = "<region> sample=pluck.wav\n".repeat(20);
     let includes = "#include \"f.sfz\"\n".repeat(20);
     assert_eq!(
-        refusal(text_with(&includes, &[("f.sfz", &fragment)], &limits)),
+        refusal(text_with(
+            &includes,
+            &[text_file("f.sfz", &fragment)],
+            &limits
+        )),
         UnsafeBank::ExpandedTextTooLarge { limit_mib: 0 }
     );
     let bomb = format!(
@@ -99,7 +103,11 @@ fn the_whole_bank_text_is_capped() {
     let region = "<region> sample=pluck.wav\n";
     let root = pluck_bank(
         dir.path(),
-        &[("a.sfz", region), ("b.sfz", region), ("c.sfz", region)],
+        &[
+            text_file("a.sfz", region),
+            text_file("b.sfz", region),
+            text_file("c.sfz", region),
+        ],
     );
     assert_eq!(
         refusal(load(&root, &limits)),
@@ -121,7 +129,7 @@ fn too_many_regions_are_refused() {
     );
     assert!(text_with(&"<region> sample=a.wav\n".repeat(2), &[], &limits).is_ok());
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &three)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &three)]);
     assert_eq!(
         refusal(load(&root, &limits)),
         UnsafeBank::TooManyRegions { limit: 2 }
@@ -135,9 +143,9 @@ fn includes_nested_too_deep_are_refused() {
         ..SfzLimits::DEFAULT
     };
     let files = [
-        ("1.sfz", "#include \"2.sfz\""),
-        ("2.sfz", "#include \"3.sfz\""),
-        ("3.sfz", "<region> sample=a.wav"),
+        text_file("1.sfz", "#include \"2.sfz\""),
+        text_file("2.sfz", "#include \"3.sfz\""),
+        text_file("3.sfz", "<region> sample=a.wav"),
     ];
     assert_eq!(
         refusal(text_with("#include \"1.sfz\"", &files, &limits)),
@@ -152,7 +160,7 @@ fn too_many_includes_are_refused() {
         includes: 4,
         ..SfzLimits::DEFAULT
     };
-    let files = [("f.sfz", "<region> sample=a.wav")];
+    let files = [text_file("f.sfz", "<region> sample=a.wav")];
     assert_eq!(
         refusal(text_with(
             &"#include \"f.sfz\"\n".repeat(5),
@@ -167,8 +175,8 @@ fn too_many_includes_are_refused() {
 #[test]
 fn include_cycles_are_refused_in_memory_and_on_disk() {
     let files = [
-        ("a.sfz", "#include \"b.sfz\""),
-        ("b.sfz", "#include \"a.sfz\""),
+        text_file("a.sfz", "#include \"b.sfz\""),
+        text_file("b.sfz", "#include \"a.sfz\""),
     ];
     assert_eq!(
         refusal(text_with("#include \"a.sfz\"", &files, &SfzLimits::DEFAULT)),
@@ -178,11 +186,11 @@ fn include_cycles_are_refused_in_memory_and_on_disk() {
     let root = pluck_bank(
         dir.path(),
         &[
-            (
+            text_file(
                 "main.sfz",
                 "#include \"parts/x.sfz\"\n<region> sample=pluck.wav",
             ),
-            ("parts/x.sfz", "#include \"main.sfz\""),
+            text_file("parts/x.sfz", "#include \"main.sfz\""),
         ],
     );
     assert_eq!(
@@ -228,7 +236,11 @@ fn a_folder_with_too_many_entries_is_refused() {
     let region = "<region> sample=pluck.wav";
     let root = pluck_bank(
         dir.path(),
-        &[("a.sfz", region), ("b.sfz", region), ("c.sfz", region)],
+        &[
+            text_file("a.sfz", region),
+            text_file("b.sfz", region),
+            text_file("c.sfz", region),
+        ],
     );
     assert_eq!(
         refusal(load(&root, &limits)),
@@ -243,7 +255,10 @@ fn folders_nested_too_deep_are_refused() {
         ..SfzLimits::DEFAULT
     };
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", "<region> sample=pluck.wav")]);
+    let root = pluck_bank(
+        dir.path(),
+        &[text_file("a.sfz", "<region> sample=pluck.wav")],
+    );
     fs::create_dir_all(root.join("1/2/3")).expect("folders");
     assert_eq!(
         refusal(load(&root, &limits)),
@@ -261,7 +276,10 @@ fn too_many_instrument_files_are_refused() {
     };
     let dir = scratch_dir();
     let region = "<region> sample=pluck.wav";
-    let root = pluck_bank(dir.path(), &[("a.sfz", region), ("b.sfz", region)]);
+    let root = pluck_bank(
+        dir.path(),
+        &[text_file("a.sfz", region), text_file("b.sfz", region)],
+    );
     assert_eq!(
         refusal(load(&root, &limits)),
         UnsafeBank::TooManyInstruments { limit: 1 }
@@ -275,7 +293,10 @@ fn a_sidecar_beyond_its_cap_is_refused() {
         ..SfzLimits::DEFAULT
     };
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", "<region> sample=pluck.wav")]);
+    let root = pluck_bank(
+        dir.path(),
+        &[text_file("a.sfz", "<region> sample=pluck.wav")],
+    );
     fs::write(root.join(SIDECAR_FILE), " ".repeat(2048)).expect("sidecar");
     assert_eq!(
         refusal(load(&root, &limits)),
@@ -296,7 +317,7 @@ fn retained_regions_beyond_the_loader_budget_are_refused() {
         UnsafeBank::LoaderBudget
     );
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &text)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &text)]);
     assert_eq!(refusal(load(&root, &limits)), UnsafeBank::LoaderBudget);
     assert!(load(&root, &SfzLimits::DEFAULT).is_ok());
 }
@@ -307,11 +328,11 @@ fn sample_paths_that_leave_the_bank_are_dropped_and_listed() {
     fs::write(dir.path().join("outside.wav"), wav16(&samples::pluck())).expect("outside");
     let root = write_bank(
         dir.path(),
-        &[(
+        &[text_file(
             "Programs/a.sfz",
             "<region> key=60 sample=../../outside.wav\n<region> key=61 sample=/etc/passwd\n<region> key=62 sample=C:\\outside.wav\n<region> key=65 sample=\\\\srv\\share\\outside.wav\n<region> key=63 sample=..\\Samples\\inside.wav\n<region> key=64 sample=../Samples/../../outside.wav\n",
         )],
-        &[("Samples/inside.wav", wav16(&samples::pluck()))],
+        &[sample_file("Samples/inside.wav", wav16(&samples::pluck()))],
     );
     let bank = SfzBank::load(&root).expect("loads");
     let regions = bank.regions("Programs/a");
@@ -327,11 +348,20 @@ fn sample_paths_that_leave_the_bank_are_dropped_and_listed() {
 }
 
 #[cfg(unix)]
-fn symlinked_bank(target: &Path, link: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+struct LinkedBank {
+    _dir: tempfile::TempDir,
+    root: std::path::PathBuf,
+}
+
+#[cfg(unix)]
+fn symlinked_bank(target: &Path, link: &str) -> LinkedBank {
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", "<region> key=61 sample=pluck.wav")]);
+    let root = pluck_bank(
+        dir.path(),
+        &[text_file("a.sfz", "<region> key=61 sample=pluck.wav")],
+    );
     std::os::unix::fs::symlink(target, root.join(link)).expect("link");
-    (dir, root)
+    LinkedBank { _dir: dir, root }
 }
 
 #[cfg(unix)]
@@ -350,7 +380,7 @@ fn a_symbolic_link_anywhere_in_the_bank_refuses_it() {
         (loot.as_path(), SIDECAR_FILE),
         (Path::new("missing"), "dangling"),
     ] {
-        let (_dir, root) = symlinked_bank(target, link);
+        let LinkedBank { _dir, root } = symlinked_bank(target, link);
         assert_eq!(
             refusal(load(&root, &SfzLimits::DEFAULT)),
             UnsafeBank::BankSymlink,
@@ -360,7 +390,7 @@ fn a_symbolic_link_anywhere_in_the_bank_refuses_it() {
     let dir = scratch_dir();
     let root = pluck_bank(
         dir.path(),
-        &[("Deep/a.sfz", "<region> sample=../pluck.wav")],
+        &[text_file("Deep/a.sfz", "<region> sample=../pluck.wav")],
     );
     fs::create_dir_all(root.join("Deep/Er")).expect("folder");
     std::os::unix::fs::symlink(root.join("Deep"), root.join("Deep/Er/loop")).expect("link");
@@ -376,12 +406,12 @@ fn case_insensitive_lookups_stop_at_the_listing_cap() {
     let region = "<region> sample=PLUCK.WAV";
     let root = write_bank(
         dir.path(),
-        &[("a.sfz", region)],
+        &[text_file("a.sfz", region)],
         &[
-            ("pluck.wav", wav16(&samples::pluck())),
-            ("b.wav", Vec::new()),
-            ("c.wav", Vec::new()),
-            ("d.wav", Vec::new()),
+            sample_file("pluck.wav", wav16(&samples::pluck())),
+            sample_file("b.wav", Vec::new()),
+            sample_file("c.wav", Vec::new()),
+            sample_file("d.wav", Vec::new()),
         ],
     );
     let limits = SfzLimits {
@@ -402,11 +432,11 @@ fn one_folder_reached_through_many_spellings_is_listed_once() {
     let text = "<region> sample=Samples/ONE.wav\n<region> sample=./Samples/../Samples/TWO.wav\n<region> sample=Programs/../Samples/THREE.wav\n<region> sample=samples/one.wav";
     let root = write_bank(
         dir.path(),
-        &[("a.sfz", text), ("Programs/keep.txt", "")],
+        &[text_file("a.sfz", text), text_file("Programs/keep.txt", "")],
         &[
-            ("Samples/one.wav", wav16(&samples::pluck())),
-            ("Samples/two.wav", wav16(&samples::pluck())),
-            ("Samples/three.wav", wav16(&samples::pluck())),
+            sample_file("Samples/one.wav", wav16(&samples::pluck())),
+            sample_file("Samples/two.wav", wav16(&samples::pluck())),
+            sample_file("Samples/three.wav", wav16(&samples::pluck())),
         ],
     );
     let bank = load(&root, &SfzLimits::DEFAULT).expect("loads");
@@ -429,8 +459,8 @@ fn a_hostile_sample_is_refused_at_play_time_silenced_and_reported_once() {
     );
     let root = write_bank(
         dir.path(),
-        &[("a.sfz", "<region> sample=six.wav")],
-        &[("six.wav", six)],
+        &[text_file("a.sfz", "<region> sample=six.wav")],
+        &[sample_file("six.wav", six)],
     );
     let bank = SfzBank::load(&root).expect("loads");
     let mut synth = bank.synth(SampleRate::STUDIO);
@@ -445,7 +475,7 @@ fn a_hostile_sample_is_refused_at_play_time_silenced_and_reported_once() {
             },
         );
     }
-    assert_eq!(energy(&render(&mut synth, 4800).0), 0.0);
+    assert_eq!(energy(&render(&mut synth, 4800).left), 0.0);
     let faults = bank.faults();
     assert_eq!(faults.len(), 1, "{faults:?}");
     assert!(faults[0].message.contains("6 channels"));
@@ -479,7 +509,7 @@ fn listings_of_ignored_opcodes_count_against_the_loader_budget() {
         .collect();
     let text = format!("<region> sample=pluck.wav {}", opcodes.join(" "));
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &text)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &text)]);
     assert_eq!(refusal(load(&root, &limits)), UnsafeBank::LoaderBudget);
     let bank = load(&root, &SfzLimits::DEFAULT).expect("loads");
     assert_eq!(bank.ignored("a").len(), 400);
@@ -491,8 +521,8 @@ fn listings_of_ignored_opcodes_count_against_the_loader_budget() {
 
 const STEP_FACTOR: u64 = 4;
 
-fn input_bytes(root: &str, files: &[(&str, &str)]) -> u64 {
-    (root.len() + files.iter().map(|(_, text)| text.len()).sum::<usize>()) as u64
+fn input_bytes(root: &str, files: &[TextFile<'_>]) -> u64 {
+    (root.len() + files.iter().map(|file| file.text.len()).sum::<usize>()) as u64
 }
 
 #[test]
@@ -547,7 +577,10 @@ fn text_read_through_includes_is_capped() {
     };
     let blank = "\n".repeat(2048);
     let many = "#include \"z.txt\"\n".repeat(50);
-    let files = [("m.txt", many.as_str()), ("z.txt", blank.as_str())];
+    let files = [
+        text_file("m.txt", many.as_str()),
+        text_file("z.txt", blank.as_str()),
+    ];
     let run = measure_sfz_text("#include \"m.txt\"\n", &files_map(&files), &limits);
     assert_eq!(
         run.result.map(|text| text.regions.len()),
@@ -569,9 +602,9 @@ fn text_read_through_includes_is_capped() {
     let root = pluck_bank(
         dir.path(),
         &[
-            ("root.sfz", "#include \"inc/m.txt\"\n"),
-            ("inc/m.txt", &many.replace("z.txt", "inc/z.txt")),
-            ("inc/z.txt", &blank),
+            text_file("root.sfz", "#include \"inc/m.txt\"\n"),
+            text_file("inc/m.txt", &many.replace("z.txt", "inc/z.txt")),
+            text_file("inc/z.txt", &blank),
         ],
     );
     assert_eq!(
@@ -580,10 +613,10 @@ fn text_read_through_includes_is_capped() {
     );
 }
 
-fn files_map(files: &[(&str, &str)]) -> BTreeMap<String, String> {
+fn files_map(files: &[TextFile<'_>]) -> BTreeMap<String, String> {
     files
         .iter()
-        .map(|(name, text)| ((*name).to_owned(), (*text).to_owned()))
+        .map(|file| (file.name.to_owned(), file.text.to_owned()))
         .collect()
 }
 
@@ -622,12 +655,12 @@ fn resolved_sample_paths_count_against_the_loader_budget() {
         ..SfzLimits::DEFAULT
     };
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &regions)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &regions)]);
     assert_eq!(refusal(load(&root, &limits)), UnsafeBank::LoaderBudget);
 }
 
 fn bank_with_files(dir: &Path, sfz: &str, files: usize) -> std::path::PathBuf {
-    let root = pluck_bank(dir, &[("a.sfz", sfz)]);
+    let root = pluck_bank(dir, &[text_file("a.sfz", sfz)]);
     for index in 0..files {
         fs::write(root.join(format!("f{index:05}")), b"").expect("entry");
     }
@@ -672,7 +705,7 @@ fn distinct_path_lookups_are_capped() {
     let regions: String = (0..100)
         .map(|index| format!("<region> sample=s{index}.wav\n"))
         .collect();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &regions)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &regions)]);
     assert_eq!(
         refusal(load(&root, &limits)),
         UnsafeBank::PathLookups { limit: 50 }
@@ -696,7 +729,7 @@ fn an_include_path_expanding_past_its_cap_is_refused_with_bounded_work() {
         run.steps
     );
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &text)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &text)]);
     assert_eq!(
         refusal(load(&root, &SfzLimits::DEFAULT)),
         UnsafeBank::PathTooLong { limit: 1024 }
@@ -728,7 +761,7 @@ fn sample_path_text_counts_against_the_bank_text_cap() {
         ..SfzLimits::DEFAULT
     };
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &text)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &text)]);
     assert_eq!(
         refusal(load(&root, &limits)),
         UnsafeBank::BankTextTooLarge { limit_mib: 0 }
@@ -741,7 +774,10 @@ fn sample_path_text_counts_against_the_bank_text_cap() {
 fn an_unreadable_folder_refuses_the_bank() {
     use std::os::unix::fs::PermissionsExt;
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", "<region> sample=pluck.wav")]);
+    let root = pluck_bank(
+        dir.path(),
+        &[text_file("a.sfz", "<region> sample=pluck.wav")],
+    );
     let hidden = root.join("hidden");
     fs::create_dir_all(&hidden).expect("folder");
     fs::set_permissions(&hidden, fs::Permissions::from_mode(0o311)).expect("mode");
@@ -760,21 +796,11 @@ fn an_unreadable_folder_refuses_the_bank() {
 
 fn include_list_bank(dir: &Path, roots: usize, lines: usize) -> std::path::PathBuf {
     let list = "#include \"e.txt\"\n".repeat(lines);
-    let mut files: Vec<(String, String)> = vec![
-        ("e.txt".to_owned(), String::new()),
-        ("inc.txt".to_owned(), list),
-    ];
-    for index in 0..roots {
-        files.push((
-            format!("r{index:04}.sfz"),
-            "#include \"inc.txt\"\n<region> sample=pluck.wav\n".to_owned(),
-        ));
-    }
-    let named: Vec<(&str, &str)> = files
-        .iter()
-        .map(|(name, text)| (name.as_str(), text.as_str()))
-        .collect();
-    pluck_bank(dir, &named)
+    let root_text = "#include \"inc.txt\"\n<region> sample=pluck.wav\n";
+    let names: Vec<String> = (0..roots).map(|index| format!("r{index:04}.sfz")).collect();
+    let mut files: Vec<TextFile<'_>> = vec![text_file("e.txt", ""), text_file("inc.txt", &list)];
+    files.extend(names.iter().map(|name| text_file(name, root_text)));
+    pluck_bank(dir, &files)
 }
 
 #[test]
@@ -800,7 +826,10 @@ fn the_path_lookup_cache_counts_against_the_loader_budget_while_expanding() {
         .collect();
     let looped = spellings + "#include \"a.sfz\"\n";
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &looped), ("e.txt", "")]);
+    let root = pluck_bank(
+        dir.path(),
+        &[text_file("a.sfz", &looped), text_file("e.txt", "")],
+    );
     let limits = SfzLimits {
         loader_bytes: 32 << 10,
         ..SfzLimits::DEFAULT
@@ -833,14 +862,14 @@ fn directive_listings_are_charged_against_the_loader_budget_while_expanding() {
     };
     let looped = distinct_directives(400) + "#include \"a.sfz\"\n";
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &looped)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &looped)]);
     assert_eq!(refusal(load(&root, &limits)), UnsafeBank::LoaderBudget);
     assert_eq!(
         refusal(load(&root, &SfzLimits::DEFAULT)),
         UnsafeBank::IncludeCycle
     );
     let memory = distinct_directives(400) + "#include \"root.sfz\"\n";
-    let files = [("root.sfz", memory.as_str())];
+    let files = [text_file("root.sfz", memory.as_str())];
     assert_eq!(
         refusal(text_with(&memory, &files, &limits)),
         UnsafeBank::LoaderBudget
@@ -869,13 +898,16 @@ fn distinct_ignored_names_are_capped() {
     );
     let dir = scratch_dir();
     let looped = distinct_directives(101) + "#include \"b.sfz\"\n";
-    let root = pluck_bank(dir.path(), &[("a.sfz", &over), ("b.sfz", &looped)]);
+    let root = pluck_bank(
+        dir.path(),
+        &[text_file("a.sfz", &over), text_file("b.sfz", &looped)],
+    );
     assert_eq!(
         refusal(load(&root, &limits)),
         UnsafeBank::IgnoredNames { limit: 100 }
     );
     let directives_only = scratch_dir();
-    let root = pluck_bank(directives_only.path(), &[("b.sfz", &looped)]);
+    let root = pluck_bank(directives_only.path(), &[text_file("b.sfz", &looped)]);
     assert_eq!(
         refusal(load(&root, &limits)),
         UnsafeBank::IgnoredNames { limit: 100 }
@@ -943,7 +975,7 @@ fn regions_without_samples_count_against_the_region_cap() {
             .is_empty()
     );
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", &over)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", &over)]);
     assert_eq!(
         refusal(load(&root, &limits)),
         UnsafeBank::TooManyRegions { limit: 10 }
@@ -997,7 +1029,7 @@ fn listings_merged_after_parsing_stay_capped() {
     };
     let missing = "zzaaa=1\n<region> sample=pluck.wav\n<region> sample=gone.wav\n";
     let dir = scratch_dir();
-    let root = pluck_bank(dir.path(), &[("a.sfz", missing)]);
+    let root = pluck_bank(dir.path(), &[text_file("a.sfz", missing)]);
     assert_eq!(
         refusal(load(&root, &one)),
         UnsafeBank::IgnoredNames { limit: 1 }
@@ -1072,13 +1104,13 @@ fn sample_values_past_the_path_cap_are_refused_before_they_are_stored() {
     let root = pluck_bank(
         dir.path(),
         &[
-            ("a.sfz", "<region> sample=pluck.wav\n"),
-            ("b.sfz", &generator),
+            text_file("a.sfz", "<region> sample=pluck.wav\n"),
+            text_file("b.sfz", &generator),
         ],
     );
     assert!(load(&root, &SfzLimits::DEFAULT).is_ok());
     let over_generator = format!("<group> sample=*{}\n<region>\n", "g".repeat(1024));
-    let root = pluck_bank(dir.path(), &[("b.sfz", &over_generator)]);
+    let root = pluck_bank(dir.path(), &[text_file("b.sfz", &over_generator)]);
     assert_eq!(refusal(load(&root, &SfzLimits::DEFAULT)), over);
 }
 
@@ -1125,7 +1157,11 @@ fn expanded_lines_past_the_line_cap_are_refused() {
     let fragment = "<region>".repeat(70);
     let include = format!("{} #include \"f.sfz\"\n", "<region>".repeat(70));
     assert_eq!(
-        refusal(text_with(&include, &[("f.sfz", &fragment)], &limits)),
+        refusal(text_with(
+            &include,
+            &[text_file("f.sfz", &fragment)],
+            &limits
+        )),
         UnsafeBank::LineTooLong { limit_kib: 1 }
     );
 }

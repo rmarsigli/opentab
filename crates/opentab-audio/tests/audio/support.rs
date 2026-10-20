@@ -118,14 +118,19 @@ pub fn scratch_dir() -> tempfile::TempDir {
         .expect("a scratch folder")
 }
 
+struct ScratchBank {
+    _dir: tempfile::TempDir,
+    root: PathBuf,
+}
+
 pub fn tiny_sfz_root() -> &'static Path {
-    static ROOT: OnceLock<(tempfile::TempDir, PathBuf)> = OnceLock::new();
-    let (_, root) = ROOT.get_or_init(|| {
+    static ROOT: OnceLock<ScratchBank> = OnceLock::new();
+    let bank = ROOT.get_or_init(|| {
         let dir = scratch_dir();
         let root = opentab_testkit::banks::tiny_sfz(dir.path());
-        (dir, root)
+        ScratchBank { _dir: dir, root }
     });
-    root
+    &bank.root
 }
 
 pub fn tiny_sfz_bank() -> opentab_audio::SfzBank {
