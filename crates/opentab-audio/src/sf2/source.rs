@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Range;
 
 use crate::{BankError, Sf2Limits, UnsafeBank};
@@ -11,6 +11,7 @@ const TOP_LISTS: usize = 3;
 const SAMPLE_CHUNKS: usize = 3;
 const MAGIC_BYTES: u64 = 4;
 const MIB_SHIFT: u32 = 20;
+const CHANGED_SINCE_CHECK: &str = "a checked part of the SoundFont changed after it was checked";
 
 pub(crate) trait Source {
     fn size(&self) -> usize;
@@ -181,4 +182,99 @@ pub(crate) fn sparse(file: &mut File, limits: &Sf2Limits) -> Result<Sparse, Bank
         size: total,
         segments: reader.segments,
     })
+}
+
+pub(crate) struct Verified<'a, R> {
+    inner: R,
+    checked: &'a Sparse,
+    at: usize,
+    changed: bool,
+}
+
+impl<'a, R: Read> Verified<'a, R> {
+    pub(crate) fn new(inner: R, checked: &'a Sparse) -> Verified<'a, R> {
+        Verified {
+            inner,
+            checked,
+            at: 0,
+            changed: false,
+        }
+    }
+
+    pub(crate) fn changed(&self) -> bool {
+        self.changed
+    }
+}
+
+impl<R: Read> Read for Verified<'_, R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let read = self.inner.read(buffer)?;
+        let end = self.at.saturating_add(read);
+        for segment in &self.checked.segments {
+            let from = self.at.max(segment.start);
+            let to = end.min(segment.start.saturating_add(segment.bytes.len()));
+            if from < to
+                && buffer[from - self.at..to - self.at]
+                    != segment.bytes[from - segment.start..to - segment.start]
+            {
+                self.changed = true;
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    CHANGED_SINCE_CHECK,
+                ));
+            }
+        }
+        self.at = end;
+        Ok(read)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use super::*;
+
+    fn sparse_of(bytes: &[u8]) -> Sparse {
+        let mut file = tempfile::tempfile().expect("scratch");
+        file.write_all(bytes).expect("bank");
+        sparse(&mut file, &Sf2Limits::DEFAULT).expect("sparse")
+    }
+
+    fn read_all(bytes: &[u8], checked: &Sparse) -> bool {
+        let mut verified = Verified::new(io::Cursor::new(bytes.to_vec()), checked);
+        let mut sink = [0u8; 7];
+        while let Ok(read) = verified.read(&mut sink) {
+            if read == 0 {
+                break;
+            }
+        }
+        verified.changed()
+    }
+
+    fn offset_of(bytes: &[u8], tag: &[u8]) -> usize {
+        bytes
+            .windows(tag.len())
+            .position(|window| window == tag)
+            .expect("the tag is present")
+    }
+
+    #[test]
+    fn a_change_to_a_checked_part_is_caught_and_sample_data_is_not_checked() {
+        let original = opentab_testkit::banks::tiny_sf2();
+        let checked = sparse_of(&original);
+        assert!(!read_all(&original, &checked));
+        let mut preset = original.clone();
+        let phdr = offset_of(&preset, b"phdr") + 8;
+        preset[phdr] ^= 0x20;
+        assert!(read_all(&preset, &checked));
+        let mut sample = original.clone();
+        let smpl = offset_of(&sample, b"smpl") + 8 + MAGIC_BYTES as usize + 10;
+        sample[smpl] ^= 0x01;
+        assert!(!read_all(&sample, &checked));
+        let mut magic = original;
+        let first = offset_of(&magic, b"smpl") + 8;
+        magic[first] ^= 0x01;
+        assert!(read_all(&magic, &checked));
+    }
 }

@@ -195,7 +195,6 @@ impl Sf2Bank {
         let sparse = source::sparse(&mut file, limits)?;
         let layout = riff::check(&sparse, limits)?;
         let analysis = pdta::analyse(&sparse, &layout, limits)?;
-        drop(sparse);
         let size = file.metadata().map_err(|error| unreadable(&error))?.len();
         if size != layout.file_bytes {
             return Err(BankError::Invalid {
@@ -204,7 +203,14 @@ impl Sf2Bank {
         }
         file.seek(SeekFrom::Start(0))
             .map_err(|error| unreadable(&error))?;
-        Sf2Bank::build(&mut BufReader::new(file), analysis, limits)
+        let mut verified = source::Verified::new(BufReader::new(file), &sparse);
+        let built = Sf2Bank::build(&mut verified, analysis, limits);
+        if verified.changed() {
+            return Err(BankError::Invalid {
+                reason: CHANGED_WHILE_READING.to_owned(),
+            });
+        }
+        built
     }
 
     fn build<R: Read>(
