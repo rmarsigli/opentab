@@ -23,11 +23,26 @@ fn same_from_path(dir: &Path, bytes: &[u8], limits: &Sf2Limits) {
     assert_eq!(from_path, from_bytes);
 }
 
+fn ogg_samples() -> Vec<u8> {
+    let mut bytes = tiny_bytes().to_vec();
+    let smpl = bytes
+        .windows(4)
+        .position(|window| window == b"smpl")
+        .expect("a sample chunk");
+    bytes[smpl + 8..smpl + 12].copy_from_slice(b"OggS");
+    bytes
+}
+
 #[test]
 fn opening_from_a_path_matches_loading_the_bytes() {
     let dir = scratch_dir();
     let limits = Sf2Limits::DEFAULT;
+    assert!(matches!(
+        Sf2Bank::load(&ogg_samples()),
+        Err(BankError::Unsupported { .. })
+    ));
     for bytes in [
+        ogg_samples(),
         tiny_bytes().to_vec(),
         padded_sf2(4096),
         engine_panic_bank(),
