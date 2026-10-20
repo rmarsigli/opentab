@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
+use opentab_audio::{AudioError, BankError, InstallError, OutputError};
 use opentab_command::CommandError;
 use opentab_files::FileError;
 use opentab_model::ModelError;
+use opentab_playback::PlaybackError;
 use serde::Serialize;
 
 pub const EXIT_USAGE: u8 = 1;
@@ -36,6 +38,14 @@ pub enum CliError {
     Output {
         message: String,
     },
+    Audio {
+        message: String,
+    },
+    SoundBank {
+        message: String,
+    },
+    #[cfg(not(feature = "live"))]
+    LiveUnavailable,
     Internal {
         message: String,
     },
@@ -44,6 +54,46 @@ pub enum CliError {
 impl From<FileError> for CliError {
     fn from(error: FileError) -> CliError {
         CliError::File(error)
+    }
+}
+
+impl From<BankError> for CliError {
+    fn from(error: BankError) -> CliError {
+        CliError::SoundBank {
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<InstallError> for CliError {
+    fn from(error: InstallError) -> CliError {
+        CliError::SoundBank {
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<AudioError> for CliError {
+    fn from(error: AudioError) -> CliError {
+        CliError::Audio {
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<OutputError> for CliError {
+    fn from(error: OutputError) -> CliError {
+        CliError::Audio {
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<PlaybackError> for CliError {
+    fn from(error: PlaybackError) -> CliError {
+        CliError::Audio {
+            message: error.to_string(),
+        }
     }
 }
 
@@ -119,6 +169,25 @@ impl CliError {
             CliError::Output { message } => ErrorBody {
                 kind: "io",
                 message: format!("cannot write the result to stdout: {message}"),
+                sub_kind: None,
+                line: None,
+            },
+            CliError::Audio { message } => ErrorBody {
+                kind: "audio",
+                message: message.clone(),
+                sub_kind: None,
+                line: None,
+            },
+            CliError::SoundBank { message } => ErrorBody {
+                kind: "sound_bank",
+                message: message.clone(),
+                sub_kind: None,
+                line: None,
+            },
+            #[cfg(not(feature = "live"))]
+            CliError::LiveUnavailable => ErrorBody {
+                kind: "live_unavailable",
+                message: "this build of opentab has no live audio output; build it with --features live, or write a WAV file with `opentab audio` and play that".to_string(),
                 sub_kind: None,
                 line: None,
             },

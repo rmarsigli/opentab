@@ -1,12 +1,27 @@
 mod apply;
+mod audio;
+mod bank_store;
+mod capture;
+mod catalogue_file;
 mod cli;
 mod convert;
 mod error;
+mod export;
+mod families;
 mod ids;
 mod info;
 mod new;
+mod outfile;
 mod output;
+#[cfg(feature = "live")]
+#[path = "play_live.rs"]
+mod play;
+#[cfg(not(feature = "live"))]
+#[path = "play_off.rs"]
+mod play;
 mod render;
+mod sound;
+mod soundbank;
 mod text;
 
 use std::ffi::OsString;
@@ -14,7 +29,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use crate::cli::{Cli, Subcommand};
+use crate::cli::{Cli, MidiFormat, Subcommand};
 use crate::error::CliError;
 use crate::render::RenderRequest;
 
@@ -43,6 +58,22 @@ fn run(command: Subcommand) -> Result<(), CliError> {
             json,
         } => output::emit(&apply::run(&path, &commands, &out)?, json),
         Subcommand::Convert { path, out, json } => output::emit(&convert::run(&path, &out)?, json),
+        Subcommand::Export {
+            path,
+            format: MidiFormat::Mid,
+            profile,
+            out,
+            json,
+        } => output::emit(&export::run(&path, profile, &out)?, json),
+        Subcommand::Audio { playback, out } => {
+            output::emit(&audio::run(&playback, &out)?, playback.json)
+        }
+        Subcommand::Play { playback } => play::run(&playback),
+        Subcommand::Soundbank {
+            catalogue,
+            json,
+            action,
+        } => soundbank::run(catalogue.as_deref(), action, json),
         Subcommand::Render {
             path,
             format,

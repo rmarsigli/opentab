@@ -80,7 +80,7 @@ fn options(request: &RenderRequest<'_>, score: &Score) -> Result<LayoutOptions, 
     layout_options(score, &selection).map_err(selection_failure)
 }
 
-fn selection_failure(error: SelectionError) -> CliError {
+pub fn selection_failure(error: SelectionError) -> CliError {
     CliError::InvalidInput {
         message: format!("--{error}"),
     }
