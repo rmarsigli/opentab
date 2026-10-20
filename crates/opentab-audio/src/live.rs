@@ -29,27 +29,57 @@ fn stream_error(error: impl ToString) -> OutputError {
     }
 }
 
-fn choose(device: &cpal::Device) -> Result<(SupportedStreamConfig, SampleRate), OutputError> {
+const PLAYABLE: [SampleFormat; 4] = [
+    SampleFormat::F32,
+    SampleFormat::I16,
+    SampleFormat::U16,
+    SampleFormat::I32,
+];
+
+struct Chosen {
+    config: SupportedStreamConfig,
+    rate: SampleRate,
+}
+
+fn playable(config: &SupportedStreamConfig) -> bool {
+    PLAYABLE.contains(&config.sample_format()) && config.channels() > 0
+}
+
+fn choose(device: &cpal::Device) -> Result<Chosen, OutputError> {
     let default = device.default_output_config().map_err(unsupported)?;
-    if let Ok(rate) = SampleRate::new(default.sample_rate()) {
-        return Ok((default, rate));
+    if let Ok(rate) = SampleRate::new(default.sample_rate())
+        && playable(&default)
+    {
+        return Ok(Chosen {
+            config: default,
+            rate,
+        });
     }
     let ranges = device.supported_output_configs().map_err(unsupported)?;
-    let mut fallback: Option<(SupportedStreamConfig, SampleRate)> = None;
+    let mut fallback: Option<Chosen> = None;
     for range in ranges {
         for rate in SampleRate::SUPPORTED.iter().rev() {
-            if let Some(config) = range.try_with_sample_rate(rate.hz()) {
-                let stereo = config.channels() >= STEREO;
-                if stereo && config.sample_format() == SampleFormat::F32 {
-                    return Ok((config, *rate));
-                }
-                if fallback.is_none() {
-                    fallback = Some((config, *rate));
-                }
+            let Some(config) = range.try_with_sample_rate(rate.hz()) else {
+                continue;
+            };
+            if !playable(&config) {
+                continue;
+            }
+            if config.channels() >= STEREO && config.sample_format() == SampleFormat::F32 {
+                return Ok(Chosen {
+                    config,
+                    rate: *rate,
+                });
+            }
+            if fallback.is_none() {
+                fallback = Some(Chosen {
+                    config,
+                    rate: *rate,
+                });
             }
         }
     }
-    fallback.ok_or_else(|| unsupported("no supported rate"))
+    fallback.ok_or_else(|| unsupported("no supported rate and sample format"))
 }
 
 struct Callback {
@@ -96,7 +126,7 @@ impl CpalOutput {
     pub fn open() -> Result<CpalOutput, OutputError> {
         let host = cpal::default_host();
         let device = host.default_output_device().ok_or(OutputError::NoDevice)?;
-        let (config, rate) = choose(&device)?;
+        let Chosen { config, rate } = choose(&device)?;
         Ok(CpalOutput {
             device,
             config,
