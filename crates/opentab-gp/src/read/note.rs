@@ -355,8 +355,8 @@ fn trill_read(element: &Element, kind: NoteKind, staff: &StaffFrame<'_>) -> Tril
         };
         let value = TRILL_SPEEDS
             .iter()
-            .find(|(candidate, _)| *candidate == ticks)
-            .map(|(_, value)| *value)?;
+            .find(|known| known.ticks == ticks)
+            .map(|known| known.value)?;
         let speed = TrillSpeed::new(value).ok()?;
         Some(TrillRead {
             group: Group::Mapped(Trill { fret, speed }),

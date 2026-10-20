@@ -70,7 +70,7 @@ pub use tab::{
 pub use ties::{TieAnchor, TieSpan, draw_ties, tie};
 pub use units::{Micrometres, Point, REFERENCE_EM, Rect, STAFF_SPACE, STAVES_PER_EM, Units};
 pub use unrendered::{
-    LyricLine, MARKED, UNRENDERED, Unrendered, chord_reference, diagram_ids, has_visible_text,
-    holds_legato, holds_lyrics, holds_unmapped_whammy, lyric_lines, marked, missing_characters,
-    syllables, unrendered, visible_text,
+    LyricLine, MARKED, MarkedElement, UNRENDERED, Unrendered, chord_reference, diagram_ids,
+    has_visible_text, holds_legato, holds_lyrics, holds_unmapped_whammy, lyric_lines, marked,
+    missing_characters, syllables, unrendered, visible_text,
 };

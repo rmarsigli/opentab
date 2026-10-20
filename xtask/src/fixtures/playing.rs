@@ -71,22 +71,52 @@ pub fn tempo_ramp() -> Result<Score, FixtureError> {
     Ok(sketch.finish())
 }
 
-type Curve = [(u8, i16); 4];
+#[derive(Clone, Copy)]
+struct CurvePoint {
+    offset: u8,
+    value: i16,
+}
+
+const fn point(offset: u8, value: i16) -> CurvePoint {
+    CurvePoint { offset, value }
+}
+
+type Curve = [CurvePoint; 4];
 
 const CURVES: [Curve; 8] = [
-    [(0, 0), (35, -100), (35, -100), (99, -200)],
-    [(0, 0), (50, -200), (50, -200), (100, 0)],
-    [(0, 0), (50, 100), (50, 100), (100, 100)],
-    [(0, -200), (0, -200), (0, -200), (100, 0)],
-    [(0, 0), (50, 25), (50, 25), (100, 0)],
-    [(0, 0), (25, -50), (75, -50), (100, -150)],
-    [(0, 0), (60, -400), (60, -400), (100, -400)],
-    [(0, 0), (50, 0), (50, 0), (100, 0)],
+    [
+        point(0, 0),
+        point(35, -100),
+        point(35, -100),
+        point(99, -200),
+    ],
+    [point(0, 0), point(50, -200), point(50, -200), point(100, 0)],
+    [point(0, 0), point(50, 100), point(50, 100), point(100, 100)],
+    [
+        point(0, -200),
+        point(0, -200),
+        point(0, -200),
+        point(100, 0),
+    ],
+    [point(0, 0), point(50, 25), point(50, 25), point(100, 0)],
+    [
+        point(0, 0),
+        point(25, -50),
+        point(75, -50),
+        point(100, -150),
+    ],
+    [
+        point(0, 0),
+        point(60, -400),
+        point(60, -400),
+        point(100, -400),
+    ],
+    [point(0, 0), point(50, 0), point(50, 0), point(100, 0)],
 ];
 
 fn curve(points: Curve) -> Result<TremoloBar, FixtureError> {
     let [origin, start, end, destination] =
-        points.map(|(offset, value)| BendPoint::new(offset, value));
+        points.map(|point| BendPoint::new(point.offset, point.value));
     Ok(TremoloBar::new(origin?, start?, end?, destination?)?)
 }
 
@@ -113,11 +143,27 @@ pub fn tremolo_bar() -> Result<Score, FixtureError> {
     Ok(sketch.finish())
 }
 
-const TRILLS: [(u8, u8, u8, NoteValue); 4] = [
-    (0, 5, 7, NoteValue::ThirtySecond),
-    (1, 3, 5, NoteValue::Sixteenth),
-    (2, 2, 4, NoteValue::Eighth),
-    (3, 0, 2, NoteValue::Quarter),
+struct TrillCase {
+    string: u8,
+    fret: u8,
+    auxiliary: u8,
+    speed: NoteValue,
+}
+
+const fn trill_case(string: u8, fret: u8, auxiliary: u8, speed: NoteValue) -> TrillCase {
+    TrillCase {
+        string,
+        fret,
+        auxiliary,
+        speed,
+    }
+}
+
+const TRILLS: [TrillCase; 4] = [
+    trill_case(0, 5, 7, NoteValue::ThirtySecond),
+    trill_case(1, 3, 5, NoteValue::Sixteenth),
+    trill_case(2, 2, 4, NoteValue::Eighth),
+    trill_case(3, 0, 2, NoteValue::Quarter),
 ];
 
 pub fn trill() -> Result<Score, FixtureError> {
@@ -127,7 +173,13 @@ pub fn trill() -> Result<Score, FixtureError> {
     setup.capo = TRILL_CAPO;
     let track = sketch.track(setup)?;
     let whole = duration(NoteValue::Whole)?;
-    for (bar, (string, fret, auxiliary, speed)) in TRILLS.into_iter().enumerate() {
+    for (bar, case) in TRILLS.into_iter().enumerate() {
+        let TrillCase {
+            string,
+            fret,
+            auxiliary,
+            speed,
+        } = case;
         let effects = NoteEffects {
             trill: Some(Trill {
                 fret: auxiliary,

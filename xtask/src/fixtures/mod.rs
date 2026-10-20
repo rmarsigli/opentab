@@ -54,49 +54,58 @@ pub struct Family {
 
 type Builder = fn() -> Result<Score, FixtureError>;
 
-const BUILDERS: [(&str, Builder); 35] = [
-    ("metadata.gp", music::metadata),
-    ("signatures.gp", music::signatures),
-    ("repeats.gp", music::repeats),
-    ("tempo.gp", music::tempo),
-    ("tunings.gp", music::tunings),
-    ("durations.gp", music::durations),
-    ("beat-effects.gp", effects::beat_effects),
-    ("note-effects.gp", effects::note_effects),
-    ("ghost-accent.gp", effects::ghost_accent),
-    ("multi-voice.gp", music::multi_voice),
-    ("multi-track.gp", music::multi_track),
-    ("from-scratch.gp", music::from_scratch),
-    ("sound-change.gp", midi::sound_change),
-    ("mixer.gp", midi::mixer),
-    ("sound-override.gp", midi::sound_override),
-    ("directions-dc-fine.gp", directions::dc_fine),
-    ("directions-ds-coda.gp", directions::ds_coda),
-    ("directions-dss-double-coda.gp", directions::dss_double_coda),
-    ("directions-repeat-jumps.gp", directions::repeat_jumps),
-    ("directions-endings.gp", directions::endings),
-    ("directions-coda-held.gp", directions::coda_held),
-    ("directions-coda-free.gp", directions::coda_free),
-    ("directions-fine-ahead.gp", directions::fine_ahead),
-    ("directions-dangling.gp", directions::dangling),
-    ("directions-duplicates.gp", directions::duplicates),
-    ("directions-coda-endings.gp", directions::coda_endings),
-    ("directions-fine-repeats.gp", directions::fine_repeats),
-    ("tempo-ramp.gp", playing::tempo_ramp),
-    ("tremolo-bar.gp", playing::tremolo_bar),
-    ("trill.gp", playing::trill),
-    ("drums.gp", drums::drums),
-    ("tempo-self-repeats.gp", directions::tempo_self_repeats),
-    ("tempo-forward-jump.gp", directions::tempo_forward_jump),
-    ("triplet-feel.gp", swing::triplet_feel),
-    ("unisons.gp", unisons::unisons),
+struct Recipe {
+    file: &'static str,
+    build: Builder,
+}
+
+const fn recipe(file: &'static str, build: Builder) -> Recipe {
+    Recipe { file, build }
+}
+
+const BUILDERS: [Recipe; 35] = [
+    recipe("metadata.gp", music::metadata),
+    recipe("signatures.gp", music::signatures),
+    recipe("repeats.gp", music::repeats),
+    recipe("tempo.gp", music::tempo),
+    recipe("tunings.gp", music::tunings),
+    recipe("durations.gp", music::durations),
+    recipe("beat-effects.gp", effects::beat_effects),
+    recipe("note-effects.gp", effects::note_effects),
+    recipe("ghost-accent.gp", effects::ghost_accent),
+    recipe("multi-voice.gp", music::multi_voice),
+    recipe("multi-track.gp", music::multi_track),
+    recipe("from-scratch.gp", music::from_scratch),
+    recipe("sound-change.gp", midi::sound_change),
+    recipe("mixer.gp", midi::mixer),
+    recipe("sound-override.gp", midi::sound_override),
+    recipe("directions-dc-fine.gp", directions::dc_fine),
+    recipe("directions-ds-coda.gp", directions::ds_coda),
+    recipe("directions-dss-double-coda.gp", directions::dss_double_coda),
+    recipe("directions-repeat-jumps.gp", directions::repeat_jumps),
+    recipe("directions-endings.gp", directions::endings),
+    recipe("directions-coda-held.gp", directions::coda_held),
+    recipe("directions-coda-free.gp", directions::coda_free),
+    recipe("directions-fine-ahead.gp", directions::fine_ahead),
+    recipe("directions-dangling.gp", directions::dangling),
+    recipe("directions-duplicates.gp", directions::duplicates),
+    recipe("directions-coda-endings.gp", directions::coda_endings),
+    recipe("directions-fine-repeats.gp", directions::fine_repeats),
+    recipe("tempo-ramp.gp", playing::tempo_ramp),
+    recipe("tremolo-bar.gp", playing::tremolo_bar),
+    recipe("trill.gp", playing::trill),
+    recipe("drums.gp", drums::drums),
+    recipe("tempo-self-repeats.gp", directions::tempo_self_repeats),
+    recipe("tempo-forward-jump.gp", directions::tempo_forward_jump),
+    recipe("triplet-feel.gp", swing::triplet_feel),
+    recipe("unisons.gp", unisons::unisons),
 ];
 
 pub const PLAY_ORDERS: &str = include_str!("play-orders.json");
 
 pub fn families() -> Result<Vec<Family>, FixtureError> {
     let mut families = Vec::new();
-    for (file, build) in BUILDERS {
+    for Recipe { file, build } in BUILDERS {
         let score = build().map_err(|error| FixtureError::new(format!("{file}: {error}")))?;
         families.push(Family { file, score });
     }
@@ -144,12 +153,21 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::Path;
 
-    const DIAGNOSED: [(&str, usize); 5] = [
-        ("directions-dangling.gp", 3),
-        ("directions-duplicates.gp", 2),
-        ("directions-coda-free.gp", 2),
-        ("directions-coda-endings.gp", 1),
-        ("directions-endings.gp", 1),
+    struct Diagnosed {
+        file: &'static str,
+        count: usize,
+    }
+
+    const fn diagnosed(file: &'static str, count: usize) -> Diagnosed {
+        Diagnosed { file, count }
+    }
+
+    const DIAGNOSED: [Diagnosed; 5] = [
+        diagnosed("directions-dangling.gp", 3),
+        diagnosed("directions-duplicates.gp", 2),
+        diagnosed("directions-coda-free.gp", 2),
+        diagnosed("directions-coda-endings.gp", 1),
+        diagnosed("directions-endings.gp", 1),
     ];
     const DIRECTIONS_PREFIX: &str = "directions-";
 
@@ -232,8 +250,8 @@ mod tests {
             assert!(again == bytes, "{}", family.file);
             let expected = DIAGNOSED
                 .iter()
-                .find(|(file, _)| *file == family.file)
-                .map_or(0, |(_, count)| *count);
+                .find(|known| known.file == family.file)
+                .map_or(0, |known| known.count);
             assert_eq!(diagnose(&family.score).len(), expected, "{}", family.file);
         }
     }

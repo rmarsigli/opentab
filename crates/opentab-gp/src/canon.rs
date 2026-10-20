@@ -138,8 +138,8 @@ pub(crate) fn trill(pitch: u8) -> Element {
 pub(crate) fn trill_ticks(speed: TrillSpeed) -> Option<u16> {
     TRILL_SPEEDS
         .iter()
-        .find(|(_, value)| *value == speed.value())
-        .map(|(ticks, _)| *ticks)
+        .find(|known| known.value == speed.value())
+        .map(|known| known.ticks)
 }
 
 pub(crate) fn trill_speed(ticks: u16) -> Element {

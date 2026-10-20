@@ -203,6 +203,16 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
     report.diagnostics
 }
 
+struct PlacedTarget {
+    master_bar: MasterBarId,
+    target: DirectionTarget,
+}
+
+struct PlacedJump {
+    master_bar: MasterBarId,
+    jump: DirectionJump,
+}
+
 #[derive(Clone, Copy)]
 struct Expected {
     length: Option<Fraction>,
@@ -344,39 +354,47 @@ impl Report {
     }
 
     fn directions(&mut self, master_bars: &[MasterBar]) {
-        let targets: Vec<(MasterBarId, DirectionTarget)> = master_bars
+        let targets: Vec<PlacedTarget> = master_bars
             .iter()
             .flat_map(|bar| {
-                bar.directions
-                    .targets
-                    .iter()
-                    .map(|target| (bar.id, *target))
+                bar.directions.targets.iter().map(|target| PlacedTarget {
+                    master_bar: bar.id,
+                    target: *target,
+                })
             })
             .collect();
-        for (index, (master_bar, target)) in targets.iter().enumerate() {
+        for (index, placed) in targets.iter().enumerate() {
             if targets[index + 1..]
                 .iter()
-                .any(|(_, later)| later == target)
+                .any(|later| later.target == placed.target)
             {
                 self.diagnostics.push(Diagnostic::DuplicateTarget {
-                    master_bar: *master_bar,
-                    target: *target,
+                    master_bar: placed.master_bar,
+                    target: placed.target,
                 });
             }
         }
-        let jumps: Vec<(MasterBarId, DirectionJump)> = master_bars
+        let jumps: Vec<PlacedJump> = master_bars
             .iter()
-            .flat_map(|bar| bar.directions.jumps.iter().map(|jump| (bar.id, *jump)))
-            .collect();
-        for (index, (master_bar, jump)) in jumps.iter().enumerate() {
-            if jumps[index + 1..].iter().any(|(_, later)| later == jump) {
-                self.diagnostics.push(Diagnostic::DuplicateJump {
-                    master_bar: *master_bar,
+            .flat_map(|bar| {
+                bar.directions.jumps.iter().map(|jump| PlacedJump {
+                    master_bar: bar.id,
                     jump: *jump,
+                })
+            })
+            .collect();
+        for (index, placed) in jumps.iter().enumerate() {
+            if jumps[index + 1..]
+                .iter()
+                .any(|later| later.jump == placed.jump)
+            {
+                self.diagnostics.push(Diagnostic::DuplicateJump {
+                    master_bar: placed.master_bar,
+                    jump: placed.jump,
                 });
             }
         }
-        let placed: Vec<DirectionTarget> = targets.iter().map(|(_, target)| *target).collect();
+        let placed: Vec<DirectionTarget> = targets.iter().map(|placed| placed.target).collect();
         for (index, master_bar) in master_bars.iter().enumerate() {
             for jump in &master_bar.directions.jumps {
                 for target in jump.needs() {

@@ -220,11 +220,28 @@ pub(crate) const BRUSH_START_TIME: &str = "687935490";
 pub(crate) const TEMPO_POSITION_GRID: i64 = 3840;
 pub(crate) const TRILL_SPEED: &str = "688062467";
 pub(crate) const DEFAULT_TRILL_TICKS: u16 = 60;
-pub(crate) const TRILL_SPEEDS: &[(u16, NoteValue)] = &[
-    (60, NoteValue::ThirtySecond),
-    (120, NoteValue::Sixteenth),
-    (240, NoteValue::Eighth),
-    (480, NoteValue::Quarter),
+pub(crate) struct TrillTicks {
+    pub ticks: u16,
+    pub value: NoteValue,
+}
+
+pub(crate) const TRILL_SPEEDS: &[TrillTicks] = &[
+    TrillTicks {
+        ticks: 60,
+        value: NoteValue::ThirtySecond,
+    },
+    TrillTicks {
+        ticks: 120,
+        value: NoteValue::Sixteenth,
+    },
+    TrillTicks {
+        ticks: 240,
+        value: NoteValue::Eighth,
+    },
+    TrillTicks {
+        ticks: 480,
+        value: NoteValue::Quarter,
+    },
 ];
 pub(crate) const WHAMMY_ATTRIBUTES: [&str; 7] = [
     "originValue",

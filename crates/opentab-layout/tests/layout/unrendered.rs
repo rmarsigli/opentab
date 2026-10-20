@@ -328,21 +328,32 @@ fn a_second_voice_has_no_rhythm_under_a_lone_tab() {
     assert!(names(&score(1), &options(StaffMode::Tab)).is_empty());
 }
 
+struct OpaqueCase {
+    element: &'static str,
+    name: &'static str,
+}
+
+impl OpaqueCase {
+    const fn new(element: &'static str, name: &'static str) -> OpaqueCase {
+        OpaqueCase { element, name }
+    }
+}
+
 #[test]
 fn opaque_guitar_pro_notation_is_named_by_its_element() {
     let both = options(StaffMode::Both);
-    let cases: [(&str, &str); 9] = [
-        ("<TripletFeel>Triplet8th</TripletFeel>", "triplet_feel"),
-        ("<Arpeggio>Down</Arpeggio>", "arpeggios"),
-        ("<Wah>Open</Wah>", "wah"),
-        ("<Golpe>Thumb</Golpe>", "golpe"),
-        ("<Ornament>UpperMordent</Ornament>", "ornaments"),
-        ("<SimileMark>Simple</SimileMark>", "simile_marks"),
-        ("<Slashed/>", "slash_notation"),
-        ("<LetRingThroughout/>", "let_ring_throughout"),
-        ("<Fermatas><Fermata/></Fermatas>", "fermatas"),
+    let cases = [
+        OpaqueCase::new("<TripletFeel>Triplet8th</TripletFeel>", "triplet_feel"),
+        OpaqueCase::new("<Arpeggio>Down</Arpeggio>", "arpeggios"),
+        OpaqueCase::new("<Wah>Open</Wah>", "wah"),
+        OpaqueCase::new("<Golpe>Thumb</Golpe>", "golpe"),
+        OpaqueCase::new("<Ornament>UpperMordent</Ornament>", "ornaments"),
+        OpaqueCase::new("<SimileMark>Simple</SimileMark>", "simile_marks"),
+        OpaqueCase::new("<Slashed/>", "slash_notation"),
+        OpaqueCase::new("<LetRingThroughout/>", "let_ring_throughout"),
+        OpaqueCase::new("<Fermatas><Fermata/></Fermatas>", "fermatas"),
     ];
-    for (element, name) in cases {
+    for OpaqueCase { element, name } in cases {
         let mut one = score(2);
         let ids = [
             one.master_bars[1].id.0,

@@ -134,6 +134,11 @@ pub fn rests_for(time: TimeSignature) -> Result<Vec<BeatSketch>, FixtureError> {
     Ok((0..time.numerator()).map(|_| rest(value)).collect())
 }
 
+struct Renamed<T> {
+    old: T,
+    new: T,
+}
+
 pub struct Sketch {
     pub score: Score,
 }
@@ -314,23 +319,29 @@ impl Sketch {
     pub fn finish(mut self) -> Score {
         let mut ids = IdAllocator::default();
         let mut next = || ids.next().unwrap_or(ElementId(0));
-        let mut masters: Vec<(MasterBarId, MasterBarId)> = Vec::new();
+        let mut masters: Vec<Renamed<MasterBarId>> = Vec::new();
         for master_bar in &mut self.score.master_bars {
             let id = next().into();
-            masters.push((master_bar.id, id));
+            masters.push(Renamed {
+                old: master_bar.id,
+                new: id,
+            });
             master_bar.id = id;
         }
-        let mut tracks: Vec<(TrackId, TrackId)> = Vec::new();
+        let mut tracks: Vec<Renamed<TrackId>> = Vec::new();
         for track in &mut self.score.tracks {
             let id = next().into();
-            tracks.push((track.id, id));
+            tracks.push(Renamed {
+                old: track.id,
+                new: id,
+            });
             track.id = id;
             for automation in &mut track.automations {
-                if let Some((_, new)) = masters
+                if let Some(renamed) = masters
                     .iter()
-                    .find(|(old, _)| *old == automation.master_bar)
+                    .find(|renamed| renamed.old == automation.master_bar)
                 {
-                    automation.master_bar = *new;
+                    automation.master_bar = renamed.new;
                 }
             }
             for staff in &mut track.staves {
@@ -350,8 +361,8 @@ impl Sketch {
             }
         }
         for entry in &mut self.score.sound_overrides {
-            if let Some((_, new)) = tracks.iter().find(|(old, _)| *old == entry.track) {
-                entry.track = *new;
+            if let Some(renamed) = tracks.iter().find(|renamed| renamed.old == entry.track) {
+                entry.track = renamed.new;
             }
         }
         self.score.ids = ids;

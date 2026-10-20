@@ -344,17 +344,27 @@ const PROGRAM_FAMILIES: [InstrumentFamily; 16] = [
     InstrumentFamily::SoundEffects,
 ];
 
-const FAMILY_SETS: [(InstrumentFamily, InstrumentSet); 9] = [
-    (InstrumentFamily::Piano, InstrumentSet::AcousticPiano),
-    (InstrumentFamily::Organ, InstrumentSet::ElectricOrgan),
-    (InstrumentFamily::Guitar, InstrumentSet::ElectricGuitar),
-    (InstrumentFamily::Bass, InstrumentSet::ElectricBass),
-    (InstrumentFamily::Strings, InstrumentSet::Violin),
-    (InstrumentFamily::Ensemble, InstrumentSet::Voice),
-    (InstrumentFamily::Brass, InstrumentSet::Trumpet),
-    (InstrumentFamily::Reed, InstrumentSet::Saxophone),
-    (InstrumentFamily::Drums, InstrumentSet::DrumKit),
-];
+fn family_set(family: InstrumentFamily) -> Option<InstrumentSet> {
+    match family {
+        InstrumentFamily::Piano => Some(InstrumentSet::AcousticPiano),
+        InstrumentFamily::Organ => Some(InstrumentSet::ElectricOrgan),
+        InstrumentFamily::Guitar => Some(InstrumentSet::ElectricGuitar),
+        InstrumentFamily::Bass => Some(InstrumentSet::ElectricBass),
+        InstrumentFamily::Strings => Some(InstrumentSet::Violin),
+        InstrumentFamily::Ensemble => Some(InstrumentSet::Voice),
+        InstrumentFamily::Brass => Some(InstrumentSet::Trumpet),
+        InstrumentFamily::Reed => Some(InstrumentSet::Saxophone),
+        InstrumentFamily::Drums => Some(InstrumentSet::DrumKit),
+        InstrumentFamily::ChromaticPercussion
+        | InstrumentFamily::Pipe
+        | InstrumentFamily::SynthLead
+        | InstrumentFamily::SynthPad
+        | InstrumentFamily::SynthEffects
+        | InstrumentFamily::Ethnic
+        | InstrumentFamily::Percussive
+        | InstrumentFamily::SoundEffects => None,
+    }
+}
 
 impl InstrumentSet {
     pub fn derived(kind: InstrumentKind, program: u8) -> InstrumentSet {
@@ -363,10 +373,7 @@ impl InstrumentSet {
             InstrumentKind::Percussion => InstrumentSet::DrumKit,
         };
         let family = InstrumentFamily::of(kind, None, program);
-        FAMILY_SETS
-            .iter()
-            .find(|(candidate, _)| *candidate == family)
-            .map(|(_, set)| *set)
+        family_set(family)
             .filter(|set| set.kind() == kind)
             .unwrap_or(fallback)
     }

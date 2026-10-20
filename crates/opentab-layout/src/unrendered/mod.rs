@@ -148,17 +148,53 @@ impl Unrendered {
     }
 }
 
-pub const MARKED: [(&str, Unrendered); 10] = [
-    ("Fermata", Unrendered::Fermatas),
-    ("Hairpin", Unrendered::Hairpins),
-    ("TripletFeel", Unrendered::TripletFeel),
-    ("Arpeggio", Unrendered::Arpeggios),
-    ("Wah", Unrendered::Wah),
-    ("Golpe", Unrendered::Golpe),
-    ("Ornament", Unrendered::Ornaments),
-    ("SimileMark", Unrendered::SimileMarks),
-    ("Slashed", Unrendered::SlashNotation),
-    ("LetRingThroughout", Unrendered::LetRingThroughout),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkedElement {
+    pub tag: &'static str,
+    pub feature: Unrendered,
+}
+
+pub const MARKED: [MarkedElement; 10] = [
+    MarkedElement {
+        tag: "Fermata",
+        feature: Unrendered::Fermatas,
+    },
+    MarkedElement {
+        tag: "Hairpin",
+        feature: Unrendered::Hairpins,
+    },
+    MarkedElement {
+        tag: "TripletFeel",
+        feature: Unrendered::TripletFeel,
+    },
+    MarkedElement {
+        tag: "Arpeggio",
+        feature: Unrendered::Arpeggios,
+    },
+    MarkedElement {
+        tag: "Wah",
+        feature: Unrendered::Wah,
+    },
+    MarkedElement {
+        tag: "Golpe",
+        feature: Unrendered::Golpe,
+    },
+    MarkedElement {
+        tag: "Ornament",
+        feature: Unrendered::Ornaments,
+    },
+    MarkedElement {
+        tag: "SimileMark",
+        feature: Unrendered::SimileMarks,
+    },
+    MarkedElement {
+        tag: "Slashed",
+        feature: Unrendered::SlashNotation,
+    },
+    MarkedElement {
+        tag: "LetRingThroughout",
+        feature: Unrendered::LetRingThroughout,
+    },
 ];
 
 pub fn marked(data: &str, tag: &str) -> bool {
@@ -210,8 +246,8 @@ impl Walk<'_> {
     fn element(&mut self, id: ElementId) {
         let score = self.score;
         for data in payloads(score, id) {
-            for (tag, feature) in MARKED {
-                self.add(marked(data, tag), feature);
+            for element in MARKED {
+                self.add(marked(data, element.tag), element.feature);
             }
             self.add(holds_legato(data), Unrendered::LegatoSlurs);
             self.add(holds_unmapped_whammy(data), Unrendered::WhammyBar);
