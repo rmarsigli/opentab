@@ -810,3 +810,220 @@ fn the_path_lookup_cache_counts_against_the_loader_budget_while_expanding() {
         UnsafeBank::IncludeCycle
     );
 }
+
+fn distinct_directives(count: usize) -> String {
+    (0..count)
+        .map(|index| format!("#{}\n", letters(index)))
+        .collect()
+}
+
+fn distinct_opcodes(count: usize) -> String {
+    (0..count)
+        .map(|index| format!("{}=1", letters(index)))
+        .collect::<Vec<String>>()
+        .join(" ")
+}
+
+#[test]
+fn directive_listings_are_charged_against_the_loader_budget_while_expanding() {
+    let limits = SfzLimits {
+        loader_bytes: 16 << 10,
+        ..SfzLimits::DEFAULT
+    };
+    let looped = distinct_directives(400) + "#include \"a.sfz\"\n";
+    let dir = scratch_dir();
+    let root = pluck_bank(dir.path(), &[("a.sfz", &looped)]);
+    assert_eq!(refusal(load(&root, &limits)), UnsafeBank::LoaderBudget);
+    assert_eq!(
+        refusal(load(&root, &SfzLimits::DEFAULT)),
+        UnsafeBank::IncludeCycle
+    );
+    let memory = distinct_directives(400) + "#include \"root.sfz\"\n";
+    let files = [("root.sfz", memory.as_str())];
+    assert_eq!(
+        refusal(text_with(&memory, &files, &limits)),
+        UnsafeBank::LoaderBudget
+    );
+    assert_eq!(
+        refusal(text_with(&memory, &files, &SfzLimits::DEFAULT)),
+        UnsafeBank::IncludeCycle
+    );
+}
+
+#[test]
+fn distinct_ignored_names_are_capped() {
+    let limits = SfzLimits {
+        ignored_names: 100,
+        ..SfzLimits::DEFAULT
+    };
+    let over = format!("<region> sample=pluck.wav {}", distinct_opcodes(101));
+    assert_eq!(
+        refusal(text_with(&over, &[], &limits)),
+        UnsafeBank::IgnoredNames { limit: 100 }
+    );
+    let at = format!("<region> sample=pluck.wav {}", distinct_opcodes(100));
+    assert_eq!(
+        text_with(&at, &[], &limits).expect("parses").ignored.len(),
+        100
+    );
+    let dir = scratch_dir();
+    let looped = distinct_directives(101) + "#include \"b.sfz\"\n";
+    let root = pluck_bank(dir.path(), &[("a.sfz", &over), ("b.sfz", &looped)]);
+    assert_eq!(
+        refusal(load(&root, &limits)),
+        UnsafeBank::IgnoredNames { limit: 100 }
+    );
+    let directives_only = scratch_dir();
+    let root = pluck_bank(directives_only.path(), &[("b.sfz", &looped)]);
+    assert_eq!(
+        refusal(load(&root, &limits)),
+        UnsafeBank::IgnoredNames { limit: 100 }
+    );
+    assert_eq!(
+        refusal(load(&root, &SfzLimits::DEFAULT)),
+        UnsafeBank::IncludeCycle
+    );
+}
+
+#[test]
+fn unknown_header_names_are_charged_and_stop_the_parse() {
+    let limits = SfzLimits {
+        loader_bytes: 16 << 10,
+        ..SfzLimits::DEFAULT
+    };
+    let headers: String = (0..400)
+        .map(|index| format!("<{}>\n", letters(index)))
+        .collect();
+    let text = headers + &"<group>\n".repeat(2000);
+    let run = measure_sfz_text(&text, &BTreeMap::new(), &limits);
+    assert_eq!(
+        run.result.err(),
+        Some(BankError::Unsafe {
+            reason: UnsafeBank::LoaderBudget
+        })
+    );
+    assert!(
+        run.steps <= STEP_FACTOR * text.len() as u64,
+        "{} steps for {} bytes",
+        run.steps,
+        text.len()
+    );
+    assert!(text_with(&text, &[], &SfzLimits::DEFAULT).is_ok());
+}
+
+const SLOT_STEPS: u64 = 3 * 128;
+
+fn full_group() -> String {
+    let mut group = String::from("<group>");
+    for number in 0..128 {
+        group.push_str(&format!(
+            " amp_velcurve_{number}=0.5 locc{number}=1 hicc{number}=120"
+        ));
+    }
+    group + "\n"
+}
+
+#[test]
+fn regions_without_samples_count_against_the_region_cap() {
+    let limits = SfzLimits {
+        regions: 10,
+        ..SfzLimits::DEFAULT
+    };
+    let over = format!("{}{}", full_group(), "<region>\n".repeat(11));
+    assert_eq!(
+        refusal(text_with(&over, &[], &limits)),
+        UnsafeBank::TooManyRegions { limit: 10 }
+    );
+    let at = format!("{}{}", full_group(), "<region>\n".repeat(10));
+    assert!(
+        text_with(&at, &[], &limits)
+            .expect("parses")
+            .regions
+            .is_empty()
+    );
+    let dir = scratch_dir();
+    let root = pluck_bank(dir.path(), &[("a.sfz", &over)]);
+    assert_eq!(
+        refusal(load(&root, &limits)),
+        UnsafeBank::TooManyRegions { limit: 10 }
+    );
+}
+
+#[test]
+fn inheriting_costs_a_fixed_number_of_slots_per_region() {
+    let measure = |regions: usize| {
+        let text = format!("{}{}", full_group(), "<region>\n".repeat(regions));
+        let run = measure_sfz_text(&text, &BTreeMap::new(), &SfzLimits::DEFAULT);
+        assert!(run.result.is_ok());
+        (run.steps, text.len() as u64)
+    };
+    let (small, _) = measure(100);
+    let (large, length) = measure(200);
+    let extra = large - small;
+    assert!(
+        extra >= 100 * 5 * SLOT_STEPS,
+        "{extra} steps for 100 regions"
+    );
+    assert!(
+        extra <= 100 * 8 * SLOT_STEPS,
+        "{extra} steps for 100 regions"
+    );
+    assert!(
+        large <= STEP_FACTOR * length + 200 * 8 * SLOT_STEPS,
+        "{large} steps for {length} bytes"
+    );
+}
+
+#[test]
+fn listings_merged_after_parsing_stay_capped() {
+    let limits = SfzLimits {
+        ignored_names: 100,
+        ..SfzLimits::DEFAULT
+    };
+    let both = format!(
+        "{}<region> sample=pluck.wav {}\n",
+        distinct_directives(60),
+        distinct_opcodes(60)
+    );
+    assert_eq!(
+        refusal(text_with(&both, &[], &limits)),
+        UnsafeBank::IgnoredNames { limit: 100 }
+    );
+    assert!(text_with(&both, &[], &SfzLimits::DEFAULT).is_ok());
+    let one = SfzLimits {
+        ignored_names: 1,
+        ..SfzLimits::DEFAULT
+    };
+    let missing = "zzaaa=1\n<region> sample=pluck.wav\n<region> sample=gone.wav\n";
+    let dir = scratch_dir();
+    let root = pluck_bank(dir.path(), &[("a.sfz", missing)]);
+    assert_eq!(
+        refusal(load(&root, &one)),
+        UnsafeBank::IgnoredNames { limit: 1 }
+    );
+    assert_eq!(
+        load(&root, &SfzLimits::DEFAULT)
+            .expect("loads")
+            .ignored("a")
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn regions_and_listings_share_one_parse_budget() {
+    let limits = SfzLimits {
+        loader_bytes: 16 << 10,
+        ..SfzLimits::DEFAULT
+    };
+    let region_cost =
+        std::mem::size_of::<opentab_audio::SfzRegion>() + std::mem::size_of::<usize>() + 9;
+    let regions = "<region> sample=pluck.wav\n".repeat((8 << 10) / region_cost);
+    let listed = format!("<group> {}\n", distinct_opcodes(100));
+    assert!(text_with(&regions, &[], &limits).is_ok());
+    assert!(text_with(&listed, &[], &limits).is_ok());
+    assert_eq!(
+        refusal(text_with(&(regions + &listed), &[], &limits)),
+        UnsafeBank::LoaderBudget
+    );
+}

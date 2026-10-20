@@ -70,7 +70,7 @@ impl IncludeSource for MemoryIncludes<'_> {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Expanded {
     pub(crate) text: String,
     pub(crate) included: HashSet<PathBuf>,
@@ -185,7 +185,14 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
             includes: 0,
             bank_includes: 0,
             stack: Vec::new(),
-            out: Expanded::default(),
+            out: Expanded {
+                text: String::new(),
+                included: HashSet::new(),
+                includes: 0,
+                listing: Listing::capped(limits.ignored_names, limits.loader_bytes),
+                read_bytes: 0,
+                steps: 0,
+            },
             in_path: false,
         }
     }
@@ -193,6 +200,16 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
     pub(crate) fn after_includes(mut self, used: u64) -> Self {
         self.bank_includes = used;
         self
+    }
+
+    pub(crate) fn listing_budget(mut self, bytes: u64) -> Self {
+        self.out.listing.allow(bytes);
+        self
+    }
+
+    fn note(&mut self, name: &str, reason: IgnoreReason) -> Result<(), BankError> {
+        self.out.listing.note(name, SfzScope::File, reason);
+        self.out.listing.check()
     }
 
     pub(crate) fn run(self, key: &Path, text: &str) -> Result<Expanded, BankError> {
@@ -279,25 +296,19 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
         self.push(rest)
     }
 
-    fn define(&mut self, line: &str) {
+    fn define(&mut self, line: &str) -> Result<(), BankError> {
         let body = line[DEFINE.len()..].trim_start();
         let name_end = body.find(char::is_whitespace).unwrap_or(body.len());
         let (name, value) = body.split_at(name_end);
         let value = value.trim();
         let Some(bare) = name.strip_prefix(VARIABLE) else {
-            self.out
-                .listing
-                .note(DEFINE, SfzScope::File, IgnoreReason::UnknownDirective);
-            return;
+            return self.note(DEFINE, IgnoreReason::UnknownDirective);
         };
         if bare.is_empty()
             || bare.len() > self.limits.define_name_bytes
             || !bare.chars().all(is_name_char)
         {
-            self.out
-                .listing
-                .note(DEFINE, SfzScope::File, IgnoreReason::UnknownDirective);
-            return;
+            return self.note(DEFINE, IgnoreReason::UnknownDirective);
         }
         self.defines.count += 1;
         self.defines.bytes += (bare.len() + value.len()) as u64;
@@ -311,6 +322,7 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
         self.defines
             .values
             .insert(bare.to_owned(), value.to_owned());
+        Ok(())
     }
 
     fn check_defines(&self) -> Result<(), BankError> {
@@ -337,10 +349,7 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
         substituted?;
         self.count_read(resolved.len())?;
         if resolved.contains(VARIABLE) {
-            self.out
-                .listing
-                .note(INCLUDE, SfzScope::File, IgnoreReason::UnresolvedVariable);
-            return Ok(());
+            return self.note(INCLUDE, IgnoreReason::UnresolvedVariable);
         }
         if depth + 1 > self.limits.include_depth {
             return Err(unsafe_bank(UnsafeBank::IncludeTooDeep {
@@ -370,10 +379,7 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
                 }
                 self.count_read(bytes.len())?;
                 let Some(text) = decode_text(&bytes) else {
-                    self.out
-                        .listing
-                        .note(INCLUDE, SfzScope::File, IgnoreReason::MissingInclude);
-                    return Ok(());
+                    return self.note(INCLUDE, IgnoreReason::MissingInclude);
                 };
                 let text = text.to_owned();
                 drop(bytes);
@@ -383,18 +389,8 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
                 self.stack.pop();
                 self.push("\n")
             }
-            Opened::Missing => {
-                self.out
-                    .listing
-                    .note(INCLUDE, SfzScope::File, IgnoreReason::MissingInclude);
-                Ok(())
-            }
-            Opened::Outside => {
-                self.out
-                    .listing
-                    .note(INCLUDE, SfzScope::File, IgnoreReason::PathOutsideBank);
-                Ok(())
-            }
+            Opened::Missing => self.note(INCLUDE, IgnoreReason::MissingInclude),
+            Opened::Outside => self.note(INCLUDE, IgnoreReason::PathOutsideBank),
             Opened::TooLarge => Err(unsafe_bank(UnsafeBank::SfzFileTooLarge {
                 limit_kib: self.limits.file_bytes / KIB,
             })),
@@ -439,15 +435,13 @@ impl<'a, S: IncludeSource> Preprocessor<'a, S> {
             }
             let trimmed = line.trim_start();
             if trimmed.starts_with(DEFINE) {
-                self.define(trimmed);
+                self.define(trimmed)?;
                 self.check_defines()?;
             } else if line.contains(INCLUDE) {
                 self.include_line(line, key, depth)?;
             } else if trimmed.starts_with(DIRECTIVE) {
                 let name = trimmed.split(char::is_whitespace).next().unwrap_or("#");
-                self.out
-                    .listing
-                    .note(name, SfzScope::File, IgnoreReason::UnknownDirective);
+                self.note(name, IgnoreReason::UnknownDirective)?;
             } else {
                 self.substitute(line)?;
                 self.push("\n")?;

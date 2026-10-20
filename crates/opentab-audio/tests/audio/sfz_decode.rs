@@ -4,8 +4,9 @@ use opentab_audio::{
 };
 use opentab_testkit::banks::{
     ExtraCodebook, FilledComments, FlacOverrides, FlacSpec, SAMPLE_RATE, SINE_BIN, SINE_PACKETS,
-    VorbisSpec, WavOverrides, WavSpec, flac16, mono_points, ogg_start_pages, samples, sine_ogg,
-    stereo_points, wav16, write_flac, write_flac_with, write_vorbis, write_wav, write_wav_with,
+    VorbisSpec, WavOverrides, WavSpec, flac16, mono_points, ogg_start_pages, reseal_ogg, samples,
+    sine_ogg, stereo_points, wav16, write_flac, write_flac_with, write_vorbis, write_wav,
+    write_wav_with,
 };
 
 fn expected(points: &[i32], bits: u32) -> Vec<f32> {
@@ -433,4 +434,32 @@ fn a_vorbis_vendor_string_beyond_the_comment_budget_is_refused() {
     );
     long.vendor_text = Some(1000);
     assert!(decode_audio(&write_vorbis(&long), &SfzLimits::DEFAULT).is_ok());
+}
+
+const OGG_CRC_OFFSET: usize = 22;
+
+#[test]
+fn an_ogg_page_whose_checksum_does_not_match_is_refused() {
+    let good = sine_ogg();
+    assert!(decode_audio(&good, &SfzLimits::DEFAULT).is_ok());
+    let mut body = good.clone();
+    let last = body.len() - 1;
+    body[last] ^= 0x01;
+    assert_eq!(
+        unsafe_reason(decode_audio(&body, &SfzLimits::DEFAULT)),
+        UnsafeBank::OggChecksum
+    );
+    let mut stored = good.clone();
+    stored[OGG_CRC_OFFSET] ^= 0x80;
+    assert_eq!(
+        unsafe_reason(decode_audio(&stored, &SfzLimits::DEFAULT)),
+        UnsafeBank::OggChecksum
+    );
+    reseal_ogg(&mut body);
+    assert_ne!(
+        decode_audio(&body, &SfzLimits::DEFAULT).err(),
+        Some(BankError::Unsafe {
+            reason: UnsafeBank::OggChecksum
+        })
+    );
 }

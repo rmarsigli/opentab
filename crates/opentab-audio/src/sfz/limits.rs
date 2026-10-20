@@ -11,6 +11,7 @@ pub const SFZ_MAX_DEFINE_NAME_BYTES: usize = 64;
 pub const SFZ_MAX_LINE_BYTES: u64 = 64 << 10;
 pub const SFZ_MAX_READ_BYTES: u64 = 32 << 20;
 pub const SFZ_MAX_LISTED_ENTRIES: u64 = 1 << 20;
+pub const SFZ_MAX_IGNORED_NAMES: u64 = 4096;
 pub const SFZ_MAX_PATH_BYTES: usize = 1024;
 pub const SFZ_MAX_PATH_LOOKUPS: u64 = 1 << 16;
 pub const SFZ_MAX_VORBIS_COMMENT_BYTES: u64 = 1 << 20;
@@ -45,6 +46,7 @@ pub struct SfzLimits {
     pub line_bytes: u64,
     pub read_bytes: u64,
     pub listed_entries: u64,
+    pub ignored_names: u64,
     pub path_bytes: usize,
     pub path_lookups: u64,
     pub folder_entries: u64,
@@ -80,6 +82,7 @@ impl SfzLimits {
         line_bytes: SFZ_MAX_LINE_BYTES,
         read_bytes: SFZ_MAX_READ_BYTES,
         listed_entries: SFZ_MAX_LISTED_ENTRIES,
+        ignored_names: SFZ_MAX_IGNORED_NAMES,
         path_bytes: SFZ_MAX_PATH_BYTES,
         path_lookups: SFZ_MAX_PATH_LOOKUPS,
         folder_entries: SFZ_MAX_FOLDER_ENTRIES,

@@ -10,6 +10,10 @@ const LENGTH_FIELD_BYTES: u64 = 4;
 const PAGE_HEADER_BYTES: usize = 27;
 const PAGE_SERIAL: usize = 14;
 const PAGE_SEGMENTS: usize = 26;
+const PAGE_CRC: usize = 22;
+const PAGE_CRC_BYTES: usize = 4;
+const CRC_POLYNOMIAL: u32 = 0x04C1_1DB7;
+const CRC_TABLE: [u32; 256] = crc_table();
 const COMMENT_ENTRY_BYTES: u64 = 48;
 const COMMENT_COPIES: u64 = 2;
 const BOOK_BYTES: u64 = 4096;
@@ -95,6 +99,37 @@ fn lookup1_values(entries: u32, dimensions: u16) -> u64 {
     if entries == 0 { 0 } else { low.max(1) }
 }
 
+const fn crc_table() -> [u32; 256] {
+    let mut table = [0u32; 256];
+    let mut index = 0;
+    while index < 256 {
+        let mut value = (index as u32) << 24;
+        let mut bit = 0;
+        while bit < 8 {
+            value = if value & 0x8000_0000 != 0 {
+                (value << 1) ^ CRC_POLYNOMIAL
+            } else {
+                value << 1
+            };
+            bit += 1;
+        }
+        table[index] = value;
+        index += 1;
+    }
+    table
+}
+
+fn page_crc(page: &[u8]) -> u32 {
+    page.iter().enumerate().fold(0u32, |crc, (at, byte)| {
+        let byte = if (PAGE_CRC..PAGE_CRC + PAGE_CRC_BYTES).contains(&at) {
+            0
+        } else {
+            *byte
+        };
+        (crc << 8) ^ CRC_TABLE[usize::from((crc >> 24) as u8 ^ byte)]
+    })
+}
+
 pub(crate) fn check_pages(bytes: &[u8]) -> Result<(), BankError> {
     let mut at = 0usize;
     let mut serial: Option<u32> = None;
@@ -122,10 +157,18 @@ pub(crate) fn check_pages(bytes: &[u8]) -> Result<(), BankError> {
             .get(at + PAGE_HEADER_BYTES..table_end)
             .ok_or_else(damaged)?;
         let body: usize = table.iter().map(|segment| usize::from(*segment)).sum();
-        at = table_end + body;
-        if at > bytes.len() {
-            return Err(damaged());
+        let end = table_end + body;
+        let page = bytes.get(at..end).ok_or_else(damaged)?;
+        let stored = u32::from_le_bytes([
+            header[PAGE_CRC],
+            header[PAGE_CRC + 1],
+            header[PAGE_CRC + 2],
+            header[PAGE_CRC + 3],
+        ]);
+        if page_crc(page) != stored {
+            return Err(refuse(UnsafeBank::OggChecksum));
         }
+        at = end;
     }
     Ok(())
 }

@@ -127,4 +127,8 @@ pub enum UnsafeBank {
     UnreadableFolder,
     #[error("an Ogg Vorbis sample declares text longer than the file")]
     VorbisComments,
+    #[error("an instrument lists more than {limit} different opcodes or headers OpenTab ignores")]
+    IgnoredNames { limit: u64 },
+    #[error("an Ogg sample has a page whose checksum does not match")]
+    OggChecksum,
 }

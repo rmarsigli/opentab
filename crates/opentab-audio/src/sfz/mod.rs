@@ -23,12 +23,12 @@ pub use limits::{
     SFZ_MAX_AUDIO_FILE_BYTES, SFZ_MAX_BANK_INCLUDES, SFZ_MAX_BANK_TEXT_BYTES,
     SFZ_MAX_DECODED_BYTES, SFZ_MAX_DEFINE_BYTES, SFZ_MAX_DEFINE_NAME_BYTES, SFZ_MAX_DEFINES,
     SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_FILE_BYTES, SFZ_MAX_FOLDER_DEPTH, SFZ_MAX_FOLDER_ENTRIES,
-    SFZ_MAX_INCLUDE_DEPTH, SFZ_MAX_INCLUDES, SFZ_MAX_LINE_BYTES, SFZ_MAX_LISTED_ENTRIES,
-    SFZ_MAX_LOADER_BYTES, SFZ_MAX_PATH_BYTES, SFZ_MAX_PATH_LOOKUPS, SFZ_MAX_READ_BYTES,
-    SFZ_MAX_REGIONS, SFZ_MAX_SAMPLE_CHANNELS, SFZ_MAX_SAMPLE_FRAMES, SFZ_MAX_SAMPLE_RATE,
-    SFZ_MAX_SFZ_FILES, SFZ_MAX_SIDECAR_BYTES, SFZ_MAX_VOICES, SFZ_MAX_VOICES_PER_NOTE,
-    SFZ_MAX_VORBIS_COMMENT_BYTES, SFZ_MAX_VORBIS_ENTRIES, SFZ_MAX_VORBIS_SETUP_BYTES,
-    SFZ_MIN_SAMPLE_RATE, SfzLimits,
+    SFZ_MAX_IGNORED_NAMES, SFZ_MAX_INCLUDE_DEPTH, SFZ_MAX_INCLUDES, SFZ_MAX_LINE_BYTES,
+    SFZ_MAX_LISTED_ENTRIES, SFZ_MAX_LOADER_BYTES, SFZ_MAX_PATH_BYTES, SFZ_MAX_PATH_LOOKUPS,
+    SFZ_MAX_READ_BYTES, SFZ_MAX_REGIONS, SFZ_MAX_SAMPLE_CHANNELS, SFZ_MAX_SAMPLE_FRAMES,
+    SFZ_MAX_SAMPLE_RATE, SFZ_MAX_SFZ_FILES, SFZ_MAX_SIDECAR_BYTES, SFZ_MAX_VOICES,
+    SFZ_MAX_VOICES_PER_NOTE, SFZ_MAX_VORBIS_COMMENT_BYTES, SFZ_MAX_VORBIS_ENTRIES,
+    SFZ_MAX_VORBIS_SETUP_BYTES, SFZ_MIN_SAMPLE_RATE, SfzLimits,
 };
 pub use listing::{IgnoreReason, IgnoredOpcode, SfzScope};
 pub use mapping::{SIDECAR_NAME, SIDECAR_VERSION};
@@ -40,7 +40,7 @@ use cache::SampleCache;
 use limits::{KIB, MIB};
 use listing::Listing;
 use mapping::ProgramMap;
-use parse::{parse, region_cost};
+use parse::{parse, parse_measured, region_cost};
 use paths::{BankFs, PathProblem, ReadProblem, read_capped, refusal};
 use text::{FsIncludes, MemoryIncludes, Preprocessor, decode_text};
 
@@ -175,10 +175,23 @@ pub fn measure_sfz_text(
     let root_dir = PathBuf::new();
     let measured =
         Preprocessor::new(&mut source, limits, &root_dir).run_measured(Path::new("root.sfz"), text);
-    let steps = measured.steps;
-    let result = measured.result.and_then(|expanded| {
-        let mut parsed = parse(&expanded.text, limits, limits.loader_bytes)?;
-        parsed.listing.merge(expanded.listing);
+    let expanded = match measured.result {
+        Ok(expanded) => expanded,
+        Err(error) => {
+            return SfzTextRun {
+                result: Err(error),
+                steps: measured.steps,
+            };
+        }
+    };
+    let budget = limits.loader_bytes.saturating_sub(expanded.listing.bytes());
+    let run = parse_measured(&expanded.text, limits, budget);
+    let steps = measured.steps.saturating_add(run.steps);
+    let result = run.result.and_then(|mut parsed| {
+        parsed
+            .listing
+            .allow(limits.loader_bytes.saturating_sub(parsed.bytes));
+        parsed.listing.merge(expanded.listing)?;
         Ok(SfzText {
             regions: parsed.regions,
             ignored: parsed.listing.entries(),
@@ -209,6 +222,13 @@ enum Expansion {
 }
 
 impl Loader<'_> {
+    fn remaining(&self) -> u64 {
+        self.limits
+            .loader_bytes
+            .saturating_sub(self.loader_bytes)
+            .saturating_sub(self.fs.cache_bytes())
+    }
+
     fn count_text(&mut self, bytes: usize) -> Result<(), BankError> {
         self.text_bytes = self.text_bytes.saturating_add(bytes as u64);
         if self.text_bytes > self.limits.bank_text_bytes {
@@ -230,12 +250,14 @@ impl Loader<'_> {
         };
         let root_dir = file.parent().unwrap_or(file).to_path_buf();
         let limits = self.limits;
+        let budget = self.remaining();
         let mut source = FsIncludes {
             fs: &mut self.fs,
             cap: limits.file_bytes,
         };
         let expanded = Preprocessor::new(&mut source, limits, &root_dir)
             .after_includes(self.include_count)
+            .listing_budget(budget)
             .run(file, text)?;
         self.include_count = self.include_count.saturating_add(expanded.includes);
         self.count_text(
@@ -291,12 +313,14 @@ impl Loader<'_> {
         file: &Path,
         expanded: text::Expanded,
     ) -> Result<SfzInstrument, BankError> {
-        let budget = self.limits.loader_bytes.saturating_sub(self.loader_bytes);
+        let remaining = self.remaining();
+        let budget = remaining.saturating_sub(expanded.listing.bytes());
         let parsed = parse(&expanded.text, self.limits, budget)?;
         drop(expanded.text);
         let root_dir = file.parent().unwrap_or(file).to_path_buf();
         let mut listing = parsed.listing;
-        listing.merge(expanded.listing);
+        listing.allow(remaining.saturating_sub(parsed.bytes));
+        listing.merge(expanded.listing)?;
         let mut kept = Vec::new();
         for region in parsed.regions {
             match self.sample(&root_dir, &region.sample)? {
@@ -304,6 +328,7 @@ impl Loader<'_> {
                 Err(reason) => listing.note("sample", SfzScope::Region, reason),
             }
         }
+        listing.check()?;
         let retained: u64 = kept
             .iter()
             .map(|play| region_cost(&play.region))

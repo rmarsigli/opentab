@@ -10,6 +10,9 @@ const DEFAULT_RELEASE: f32 = 0.001;
 const DEFAULT_OFF_TIME: f32 = 0.006;
 const DEFAULT_KEYCENTER: u8 = 60;
 const DEFAULT_KEYTRACK: i32 = 100;
+const SLOTS: usize = 128;
+const SLOT_TABLES: u64 = 3;
+const SETTINGS_STEPS: u64 = SLOT_TABLES * SLOTS as u64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Token<'a> {
@@ -99,7 +102,7 @@ struct Settings {
     amplitude: Option<f32>,
     pan: Option<f32>,
     amp_veltrack: Option<f32>,
-    amp_velcurve: Vec<VelocityPoint>,
+    amp_velcurve: Slots<f32>,
     attack: Option<f32>,
     hold: Option<f32>,
     decay: Option<f32>,
@@ -120,8 +123,38 @@ struct Settings {
     seq_position: Option<u8>,
     trigger: Option<TriggerSetting>,
     sw_last: Option<u8>,
-    cc_low: Vec<(u8, u8)>,
-    cc_high: Vec<(u8, u8)>,
+    cc_low: Slots<u8>,
+    cc_high: Slots<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Slots<T: Copy>([Option<T>; SLOTS]);
+
+impl<T: Copy> Default for Slots<T> {
+    fn default() -> Slots<T> {
+        Slots([None; SLOTS])
+    }
+}
+
+impl<T: Copy> Slots<T> {
+    fn set(&mut self, index: u8, value: T) {
+        if let Some(slot) = self.0.get_mut(usize::from(index)) {
+            *slot = Some(value);
+        }
+    }
+
+    fn get(&self, index: usize) -> Option<T> {
+        self.0.get(index).copied().flatten()
+    }
+
+    fn inherit(&mut self, parent: &Slots<T>) -> u64 {
+        for (mine, theirs) in self.0.iter_mut().zip(parent.0.iter()) {
+            if mine.is_none() {
+                *mine = *theirs;
+            }
+        }
+        SLOTS as u64
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,24 +169,9 @@ fn fill<T: Clone>(slot: &mut Option<T>, parent: &Option<T>) {
     }
 }
 
-fn merge_points(own: &mut Vec<VelocityPoint>, parent: &[VelocityPoint]) {
-    for point in parent {
-        if !own.iter().any(|mine| mine.velocity == point.velocity) {
-            own.push(*point);
-        }
-    }
-}
-
-fn merge_pairs(own: &mut Vec<(u8, u8)>, parent: &[(u8, u8)]) {
-    for pair in parent {
-        if !own.iter().any(|mine| mine.0 == pair.0) {
-            own.push(*pair);
-        }
-    }
-}
-
 impl Settings {
-    fn inherit(&mut self, parent: &Settings) {
+    fn inherit(&mut self, parent: &Settings) -> u64 {
+        let mut steps = 0;
         fill(&mut self.sample, &parent.sample);
         fill(&mut self.lokey, &parent.lokey);
         fill(&mut self.hikey, &parent.hikey);
@@ -167,7 +185,7 @@ impl Settings {
         fill(&mut self.amplitude, &parent.amplitude);
         fill(&mut self.pan, &parent.pan);
         fill(&mut self.amp_veltrack, &parent.amp_veltrack);
-        merge_points(&mut self.amp_velcurve, &parent.amp_velcurve);
+        steps += self.amp_velcurve.inherit(&parent.amp_velcurve);
         fill(&mut self.attack, &parent.attack);
         fill(&mut self.hold, &parent.hold);
         fill(&mut self.decay, &parent.decay);
@@ -188,8 +206,9 @@ impl Settings {
         fill(&mut self.seq_position, &parent.seq_position);
         fill(&mut self.trigger, &parent.trigger);
         fill(&mut self.sw_last, &parent.sw_last);
-        merge_pairs(&mut self.cc_low, &parent.cc_low);
-        merge_pairs(&mut self.cc_high, &parent.cc_high);
+        steps += self.cc_low.inherit(&parent.cc_low);
+        steps += self.cc_high.inherit(&parent.cc_high);
+        steps
     }
 }
 
@@ -211,12 +230,19 @@ pub(crate) struct Control {
     pub(crate) sw_default: Option<u8>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Parsed {
     pub(crate) regions: Vec<SfzRegion>,
     pub(crate) control: Control,
     pub(crate) listing: Listing,
     pub(crate) bytes: u64,
+    closed: u64,
+    steps: u64,
+}
+
+pub(crate) struct ParseRun {
+    pub(crate) result: Result<Parsed, BankError>,
+    pub(crate) steps: u64,
 }
 
 pub(crate) fn region_cost(region: &SfzRegion) -> u64 {
@@ -474,20 +500,15 @@ fn apply_numbered(
     let name = assign.name;
     if let Some(velocity) = suffix_number(name, "amp_velcurve_") {
         if let Some(gain) = assign.float(value, 0.0, 1.0) {
-            settings
-                .amp_velcurve
-                .retain(|point| point.velocity != velocity);
-            settings.amp_velcurve.push(VelocityPoint { velocity, gain });
+            settings.amp_velcurve.set(velocity, gain);
         }
     } else if let Some(controller) = suffix_number(name, "locc") {
         if let Some(low) = assign.byte(value) {
-            settings.cc_low.retain(|pair| pair.0 != controller);
-            settings.cc_low.push((controller, low));
+            settings.cc_low.set(controller, low);
         }
     } else if let Some(controller) = suffix_number(name, "hicc") {
         if let Some(high) = assign.byte(value) {
-            settings.cc_high.retain(|pair| pair.0 != controller);
-            settings.cc_high.push((controller, high));
+            settings.cc_high.set(controller, high);
         }
     } else if let Some(controller) = suffix_number(name, "set_cc") {
         if assign.scope != SfzScope::Control {
@@ -559,30 +580,25 @@ fn finish(
         Some(frame) => u64::try_from(frame).ok(),
         None => None,
     };
-    let mut amp_velcurve = settings.amp_velcurve;
-    amp_velcurve.sort_by_key(|point| point.velocity);
+    let mut amp_velcurve: Vec<VelocityPoint> = Vec::new();
     let mut cc_ranges: Vec<CcRange> = Vec::new();
-    for (controller, low) in &settings.cc_low {
-        cc_ranges.push(CcRange {
-            controller: *controller,
-            low: *low,
-            high: MAX_NOTE as u8,
-        });
-    }
-    for (controller, high) in &settings.cc_high {
-        match cc_ranges
-            .iter_mut()
-            .find(|range| range.controller == *controller)
-        {
-            Some(range) => range.high = *high,
-            None => cc_ranges.push(CcRange {
-                controller: *controller,
-                low: 0,
-                high: *high,
-            }),
+    for (index, number) in (0..SLOTS).zip(0u8..) {
+        if let Some(gain) = settings.amp_velcurve.get(index) {
+            amp_velcurve.push(VelocityPoint {
+                velocity: number,
+                gain,
+            });
+        }
+        let low = settings.cc_low.get(index);
+        let high = settings.cc_high.get(index);
+        if low.is_some() || high.is_some() {
+            cc_ranges.push(CcRange {
+                controller: number,
+                low: low.unwrap_or(0),
+                high: high.unwrap_or(MAX_NOTE as u8),
+            });
         }
     }
-    cc_ranges.sort_by_key(|range| range.controller);
     Ok(Some(SfzRegion {
         sample,
         lokey: settings.lokey.unwrap_or(0),
@@ -629,6 +645,7 @@ struct Scopes {
     master: Settings,
     group: Settings,
     region: Settings,
+    scratch: Settings,
     header: Header,
 }
 
@@ -652,58 +669,68 @@ impl Scopes {
         if self.header != Header::Region {
             return Ok(());
         }
+        if parsed.closed >= limits.regions {
+            return Err(BankError::Unsafe {
+                reason: UnsafeBank::TooManyRegions {
+                    limit: limits.regions,
+                },
+            });
+        }
+        parsed.closed += 1;
         let mut settings = std::mem::take(&mut self.region);
-        settings.inherit(&self.group);
-        settings.inherit(&self.master);
-        settings.inherit(&self.global);
+        let mut steps = SETTINGS_STEPS;
+        steps += settings.inherit(&self.group);
+        steps += settings.inherit(&self.master);
+        steps += settings.inherit(&self.global);
+        steps += SETTINGS_STEPS;
+        parsed.steps = parsed.steps.saturating_add(steps);
         if let Some(region) = finish(
             settings,
             &parsed.control.default_path,
             limits.path_bytes,
             &mut parsed.listing,
         )? {
-            if parsed.regions.len() as u64 >= limits.regions {
-                return Err(BankError::Unsafe {
-                    reason: UnsafeBank::TooManyRegions {
-                        limit: limits.regions,
-                    },
-                });
-            }
             let cost = region_cost(&region);
-            if parsed.bytes.saturating_add(cost) > budget {
+            if parsed
+                .bytes
+                .saturating_add(cost)
+                .saturating_add(parsed.listing.bytes())
+                > budget
+            {
                 return Err(BankError::Unsafe {
                     reason: UnsafeBank::LoaderBudget,
                 });
             }
             parsed.bytes += cost;
+            parsed.listing.allow(budget - parsed.bytes);
             parsed.regions.push(region);
         }
         Ok(())
     }
 }
 
-fn open_header(scopes: &mut Scopes, name: &str, listing: &mut Listing) {
+fn open_header(scopes: &mut Scopes, name: &str, listing: &mut Listing) -> u64 {
     let lower = name.trim().to_ascii_lowercase();
-    scopes.header = match lower.as_str() {
-        "control" => Header::Control,
+    let (header, cleared) = match lower.as_str() {
+        "control" => (Header::Control, 0),
         "global" => {
             scopes.global = Settings::default();
             scopes.master = Settings::default();
             scopes.group = Settings::default();
-            Header::Global
+            (Header::Global, 3)
         }
         "master" => {
             scopes.master = Settings::default();
             scopes.group = Settings::default();
-            Header::Master
+            (Header::Master, 2)
         }
         "group" => {
             scopes.group = Settings::default();
-            Header::Group
+            (Header::Group, 1)
         }
         "region" => {
             scopes.region = Settings::default();
-            Header::Region
+            (Header::Region, 1)
         }
         other => {
             listing.note(
@@ -711,37 +738,61 @@ fn open_header(scopes: &mut Scopes, name: &str, listing: &mut Listing) {
                 SfzScope::File,
                 IgnoreReason::Unsupported,
             );
-            Header::Ignored
+            (Header::Ignored, 0)
         }
     };
+    scopes.header = header;
+    cleared * SETTINGS_STEPS
 }
 
 pub(crate) fn parse(text: &str, limits: &SfzLimits, budget: u64) -> Result<Parsed, BankError> {
-    let mut parsed = Parsed::default();
+    parse_measured(text, limits, budget).result
+}
+
+pub(crate) fn parse_measured(text: &str, limits: &SfzLimits, budget: u64) -> ParseRun {
+    let mut parsed = Parsed {
+        regions: Vec::new(),
+        control: Control::default(),
+        listing: Listing::capped(limits.ignored_names, budget),
+        bytes: 0,
+        closed: 0,
+        steps: 0,
+    };
     let mut scopes = Scopes {
         global: Settings::default(),
         master: Settings::default(),
         group: Settings::default(),
         region: Settings::default(),
+        scratch: Settings::default(),
         header: Header::Before,
     };
+    parsed.steps = 5 * SETTINGS_STEPS;
+    let outcome = parse_lines(text, limits, budget, &mut scopes, &mut parsed);
+    let steps = parsed.steps;
+    ParseRun {
+        result: outcome.map(|()| parsed),
+        steps,
+    }
+}
+
+fn parse_lines(
+    text: &str,
+    limits: &SfzLimits,
+    budget: u64,
+    scopes: &mut Scopes,
+    parsed: &mut Parsed,
+) -> Result<(), BankError> {
     for line in text.lines() {
+        parsed.steps = parsed.steps.saturating_add(line.len() as u64 + 1);
         for token in tokens(line) {
             match token {
                 Token::Header(name) => {
-                    scopes.close_region(&mut parsed, limits, budget)?;
-                    open_header(&mut scopes, name, &mut parsed.listing);
+                    scopes.close_region(parsed, limits, budget)?;
+                    let cleared = open_header(scopes, name, &mut parsed.listing);
+                    parsed.steps = parsed.steps.saturating_add(cleared);
                 }
                 Token::Opcode(raw_name, value) => {
-                    let listed = parsed.listing.bytes();
-                    apply_token(&mut scopes, &mut parsed, raw_name, value);
-                    if parsed.listing.bytes() > listed
-                        && parsed.bytes.saturating_add(parsed.listing.bytes()) > budget
-                    {
-                        return Err(BankError::Unsafe {
-                            reason: UnsafeBank::LoaderBudget,
-                        });
-                    }
+                    apply_token(scopes, parsed, raw_name, value);
                 }
                 Token::Junk => {
                     if scopes.header != Header::Ignored {
@@ -751,10 +802,10 @@ pub(crate) fn parse(text: &str, limits: &SfzLimits, budget: u64) -> Result<Parse
                     }
                 }
             }
+            parsed.listing.check()?;
         }
     }
-    scopes.close_region(&mut parsed, limits, budget)?;
-    Ok(parsed)
+    scopes.close_region(parsed, limits, budget)
 }
 
 fn apply_token(scopes: &mut Scopes, parsed: &mut Parsed, raw_name: &str, value: &str) {
@@ -780,13 +831,13 @@ fn apply_token(scopes: &mut Scopes, parsed: &mut Parsed, raw_name: &str, value: 
                 scope,
                 listing: &mut parsed.listing,
             };
-            let mut ignored = Settings::default();
+            let ignored = &mut scopes.scratch;
             match name.as_str() {
                 "default_path" | "sw_default" => {
-                    apply(&mut ignored, &mut parsed.control, &mut assign, value);
+                    apply(ignored, &mut parsed.control, &mut assign, value);
                 }
                 _ if suffix_number(&name, "set_cc").is_some() || is_silent(&name) => {
-                    apply_numbered(&mut ignored, &mut parsed.control, &mut assign, value);
+                    apply_numbered(ignored, &mut parsed.control, &mut assign, value);
                 }
                 _ => assign.unsupported(),
             }

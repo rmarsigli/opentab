@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::{BankError, UnsafeBank};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SfzScope {
     File,
@@ -43,10 +45,13 @@ struct ListingKey {
     reason: IgnoreReason,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Listing {
     entries: BTreeMap<ListingKey, u32>,
     bytes: u64,
+    names: u64,
+    allowance: u64,
+    refused: Option<UnsafeBank>,
 }
 
 const ENTRY_OVERHEAD_BYTES: u64 = 96;
@@ -69,33 +74,68 @@ pub(crate) fn fold_digits(name: &str) -> String {
 }
 
 impl Listing {
-    pub(crate) fn note(&mut self, name: &str, scope: SfzScope, reason: IgnoreReason) {
-        let key = ListingKey {
-            name: fold_digits(name),
-            scope,
-            reason,
-        };
+    pub(crate) fn capped(names: u64, allowance: u64) -> Listing {
+        Listing {
+            entries: BTreeMap::new(),
+            bytes: 0,
+            names,
+            allowance,
+            refused: None,
+        }
+    }
+
+    pub(crate) fn allow(&mut self, allowance: u64) {
+        self.allowance = allowance;
+    }
+
+    fn admit(&mut self, key: ListingKey, count: u32) {
+        if let Some(total) = self.entries.get_mut(&key) {
+            *total = total.saturating_add(count);
+            return;
+        }
+        if self.refused.is_some() {
+            return;
+        }
+        if self.entries.len() as u64 >= self.names {
+            self.refused = Some(UnsafeBank::IgnoredNames { limit: self.names });
+            return;
+        }
         let cost = key.name.len() as u64 + ENTRY_OVERHEAD_BYTES;
-        let count = self.entries.entry(key).or_insert_with(|| {
-            self.bytes += cost;
-            0
-        });
-        *count = count.saturating_add(1);
+        if self.bytes.saturating_add(cost) > self.allowance {
+            self.refused = Some(UnsafeBank::LoaderBudget);
+            return;
+        }
+        self.bytes += cost;
+        self.entries.insert(key, count);
+    }
+
+    pub(crate) fn note(&mut self, name: &str, scope: SfzScope, reason: IgnoreReason) {
+        self.admit(
+            ListingKey {
+                name: fold_digits(name),
+                scope,
+                reason,
+            },
+            1,
+        );
+    }
+
+    pub(crate) fn check(&self) -> Result<(), BankError> {
+        match self.refused {
+            Some(reason) => Err(BankError::Unsafe { reason }),
+            None => Ok(()),
+        }
     }
 
     pub(crate) fn bytes(&self) -> u64 {
         self.bytes
     }
 
-    pub(crate) fn merge(&mut self, other: Listing) {
+    pub(crate) fn merge(&mut self, other: Listing) -> Result<(), BankError> {
         for (key, count) in other.entries {
-            let cost = key.name.len() as u64 + ENTRY_OVERHEAD_BYTES;
-            let total = self.entries.entry(key).or_insert_with(|| {
-                self.bytes += cost;
-                0
-            });
-            *total = total.saturating_add(count);
+            self.admit(key, count);
         }
+        self.check()
     }
 
     pub(crate) fn entries(&self) -> Vec<IgnoredOpcode> {
