@@ -1,13 +1,15 @@
 use std::fs;
+use std::time::Duration;
 
 use opentab_audio::{
-    ArchiveKind, BankError, BankFormat, BankId, BankSource, InstallError, InstallProgress,
-    InstallStage, UnsafeBank, check_download_url,
+    ArchiveKind, BankError, BankFormat, BankId, BankManager, BankSource, DownloadTimeouts,
+    InstallCancel, InstallError, InstallProgress, InstallStage, InstalledBank, UnsafeBank,
+    check_download_url,
 };
 use opentab_testkit::archives::{
     SevenFile, SevenFolder, SevenMethod, UNIX_LINK_ATTRIBUTES, seven_zip,
 };
-use opentab_testkit::http::{Declared, LoopbackServer, Reply, closed_loopback_url};
+use opentab_testkit::http::{ClosedPort, Declared, Ending, Header, LoopbackServer, Pace, Reply};
 
 use crate::bank_manager::{
     assert_clean, entry_for, listing, manager_in, manager_with, sfz_without_sidecar, tree, zip_tree,
@@ -22,23 +24,39 @@ fn id(text: &str) -> BankId {
 
 fn ignore(_: InstallProgress) {}
 
+struct Attempt {
+    dir: tempfile::TempDir,
+    result: Result<InstalledBank, InstallError>,
+    manager: BankManager,
+}
+
+fn install_with(
+    reply: Reply,
+    archive: ArchiveKind,
+    format: BankFormat,
+    expected: &[u8],
+    timeouts: DownloadTimeouts,
+) -> Attempt {
+    let dir = scratch_dir();
+    let server = LoopbackServer::start(vec![reply]);
+    let entry = entry_for("test-bank", format, archive, &server.url(PATH), expected);
+    let mut manager = manager_with(dir.path(), vec![entry]).with_download_timeouts(timeouts);
+    let result = manager.install(&id("test-bank"), &mut ignore);
+    drop(server);
+    Attempt {
+        dir,
+        result,
+        manager,
+    }
+}
+
 fn install_from(
     reply: Reply,
     archive: ArchiveKind,
     format: BankFormat,
     expected: &[u8],
-) -> (
-    tempfile::TempDir,
-    Result<opentab_audio::InstalledBank, InstallError>,
-    opentab_audio::BankManager,
-) {
-    let dir = scratch_dir();
-    let server = LoopbackServer::start(vec![reply]);
-    let entry = entry_for("test-bank", format, archive, &server.url(PATH), expected);
-    let mut manager = manager_with(dir.path(), vec![entry]);
-    let result = manager.install(&id("test-bank"), &mut ignore);
-    drop(server);
-    (dir, result, manager)
+) -> Attempt {
+    install_with(reply, archive, format, expected, DownloadTimeouts::DEFAULT)
 }
 
 #[test]
@@ -98,7 +116,11 @@ fn a_hash_mismatch_refuses_and_leaves_nothing() {
     let mut wrong = tiny_bytes().to_vec();
     let last = wrong.len() - 1;
     wrong[last] ^= 0x55;
-    let (_dir, result, manager) = install_from(
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_from(
         Reply::ok(PATH, wrong),
         ArchiveKind::Raw,
         BankFormat::Sf2,
@@ -114,11 +136,12 @@ fn a_hash_mismatch_refuses_and_leaves_nothing() {
 #[test]
 fn a_refused_connection_is_an_offline_error() {
     let dir = scratch_dir();
+    let closed = ClosedPort::reserve();
     let entry = entry_for(
         "offline",
         BankFormat::Sf2,
         ArchiveKind::Raw,
-        &closed_loopback_url(PATH),
+        &closed.url(PATH),
         tiny_bytes(),
     );
     let mut manager = manager_with(dir.path(), vec![entry]);
@@ -139,9 +162,13 @@ fn a_truncated_body_refuses_and_leaves_nothing() {
             body: tiny_bytes().to_vec(),
             declared,
             cut: Some(size / 2),
+            ..Reply::ok(PATH, Vec::new())
         };
-        let (_dir, result, manager) =
-            install_from(reply, ArchiveKind::Raw, BankFormat::Sf2, tiny_bytes());
+        let Attempt {
+            dir: _dir,
+            result,
+            manager,
+        } = install_from(reply, ArchiveKind::Raw, BankFormat::Sf2, tiny_bytes());
         match result {
             Err(InstallError::Truncated { expected, received }) => {
                 assert_eq!(expected, size as u64);
@@ -164,9 +191,13 @@ fn a_body_longer_than_the_catalogue_size_refuses() {
             body: longer.clone(),
             declared,
             cut: None,
+            ..Reply::ok(PATH, Vec::new())
         };
-        let (_dir, result, manager) =
-            install_from(reply, ArchiveKind::Raw, BankFormat::Sf2, tiny_bytes());
+        let Attempt {
+            dir: _dir,
+            result,
+            manager,
+        } = install_from(reply, ArchiveKind::Raw, BankFormat::Sf2, tiny_bytes());
         assert_eq!(
             result,
             Err(InstallError::TooLarge {
@@ -186,9 +217,13 @@ fn a_shorter_declared_length_refuses_before_the_body() {
         body: tiny_bytes().to_vec(),
         declared: Declared::Bytes(10),
         cut: Some(10),
+        ..Reply::ok(PATH, Vec::new())
     };
-    let (_dir, result, manager) =
-        install_from(reply, ArchiveKind::Raw, BankFormat::Sf2, tiny_bytes());
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_from(reply, ArchiveKind::Raw, BankFormat::Sf2, tiny_bytes());
     assert!(matches!(
         result,
         Err(InstallError::Truncated { received: 10, .. })
@@ -204,9 +239,13 @@ fn a_server_error_is_reported_with_its_status() {
         body: b"missing".to_vec(),
         declared: Declared::Exact,
         cut: None,
+        ..Reply::ok(PATH, Vec::new())
     };
-    let (_dir, result, manager) =
-        install_from(reply, ArchiveKind::Raw, BankFormat::Sf2, tiny_bytes());
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_from(reply, ArchiveKind::Raw, BankFormat::Sf2, tiny_bytes());
     assert_eq!(result, Err(InstallError::Http { status: 404 }));
     assert_clean(&manager);
 }
@@ -217,14 +256,15 @@ fn plain_http_is_accepted_only_for_loopback_hosts() {
         "https://example.org/a.sf2",
         "http://127.0.0.1:9/a.sf2",
         "http://127.8.9.10/a.sf2",
-        "http://localhost:8080/a.sf2",
-        "http://LOCALHOST/a.sf2",
         "http://[::1]:9/a.sf2",
     ] {
         assert_eq!(check_download_url(allowed), Ok(()), "{allowed}");
     }
     for refused in [
         "http://example.org/a.sf2",
+        "http://localhost:8080/a.sf2",
+        "http://LOCALHOST/a.sf2",
+        "http://localhost./a.sf2",
         "http://10.0.0.1/a.sf2",
         "http://0.0.0.0/a.sf2",
         "http://localhost.example.org/a.sf2",
@@ -273,7 +313,11 @@ fn a_zip_sfz_bank_installs_with_its_program_map() {
     let source_dir = scratch_dir();
     let source = sfz_without_sidecar(source_dir.path());
     let archive = zip_tree(&source, "Tiny/");
-    let (_dir, result, manager) = install_from(
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_from(
         Reply::ok(PATH, archive.clone()),
         ArchiveKind::Zip,
         BankFormat::Sfz,
@@ -289,7 +333,11 @@ fn a_zip_sfz_bank_installs_with_its_program_map() {
 
 #[test]
 fn a_catalogue_format_mismatch_refuses() {
-    let (_dir, result, manager) = install_from(
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_from(
         Reply::ok(PATH, tiny_bytes().to_vec()),
         ArchiveKind::Raw,
         BankFormat::Sfz,
@@ -338,7 +386,11 @@ fn a_seven_zip_bank_with_deflate_bzip2_and_lzma2_folders_installs() {
     let folders = seven_files(&source);
     assert!(folders.iter().all(|folder| folder.files.len() >= 2));
     let archive = seven_zip(&folders, &[String::from("Seven/Empty")]);
-    let (_dir, result, manager) = install_from(
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_from(
         Reply::ok(PATH, archive.clone()),
         ArchiveKind::SevenZip,
         BankFormat::Sfz,
@@ -376,7 +428,7 @@ fn seven_with(name: &str, attributes: Option<u32>) -> Vec<u8> {
     )
 }
 
-fn unsafe_reason(result: Result<opentab_audio::InstalledBank, InstallError>) -> UnsafeBank {
+fn unsafe_reason(result: Result<InstalledBank, InstallError>) -> UnsafeBank {
     match result {
         Err(InstallError::Bank(BankError::Unsafe { reason })) => reason,
         other => panic!("expected an unsafe refusal, got {other:?}"),
@@ -393,7 +445,11 @@ fn seven_zip_entries_escaping_the_bank_folder_are_refused() {
         "C:evil.sfz",
     ] {
         let archive = seven_with(name, None);
-        let (dir, result, manager) = install_from(
+        let Attempt {
+            dir,
+            result,
+            manager,
+        } = install_from(
             Reply::ok(PATH, archive.clone()),
             ArchiveKind::SevenZip,
             BankFormat::Sfz,
@@ -409,7 +465,11 @@ fn seven_zip_entries_escaping_the_bank_folder_are_refused() {
 #[test]
 fn seven_zip_links_are_refused() {
     let archive = seven_with("a.wav", Some(UNIX_LINK_ATTRIBUTES));
-    let (_dir, result, manager) = install_from(
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_from(
         Reply::ok(PATH, archive.clone()),
         ArchiveKind::SevenZip,
         BankFormat::Sfz,
@@ -417,6 +477,11 @@ fn seven_zip_links_are_refused() {
     );
     assert_eq!(unsafe_reason(result), UnsafeBank::ArchiveLink);
     assert_clean(&manager);
+}
+
+struct BombCase {
+    archive: Vec<u8>,
+    reason: UnsafeBank,
 }
 
 #[test]
@@ -427,6 +492,7 @@ fn seven_zip_solid_bombs_stop_at_the_limits() {
         entries: 4,
         depth: 2,
         name_bytes: 40,
+        ..opentab_audio::ImportLimits::DEFAULT
     };
     let solid = |sizes: &[usize]| {
         seven_zip(
@@ -447,17 +513,20 @@ fn seven_zip_solid_bombs_stop_at_the_limits() {
         )
     };
     let cases = [
-        (
-            solid(&[550, 550]),
-            UnsafeBank::BankTooLarge { limit_mib: 0 },
-        ),
-        (solid(&[601]), UnsafeBank::BankFileTooLarge { limit_mib: 0 }),
-        (
-            solid(&[1, 1, 1, 1, 1]),
-            UnsafeBank::TooManyFiles { limit: 4 },
-        ),
+        BombCase {
+            archive: solid(&[550, 550]),
+            reason: UnsafeBank::BankTooLarge { limit_mib: 0 },
+        },
+        BombCase {
+            archive: solid(&[601]),
+            reason: UnsafeBank::BankFileTooLarge { limit_mib: 0 },
+        },
+        BombCase {
+            archive: solid(&[1, 1, 1, 1, 1]),
+            reason: UnsafeBank::TooManyFiles { limit: 4 },
+        },
     ];
-    for (archive, reason) in cases {
+    for BombCase { archive, reason } in cases {
         let dir = scratch_dir();
         let server = LoopbackServer::start(vec![Reply::ok(PATH, archive.clone())]);
         let entry = entry_for(
@@ -523,13 +592,7 @@ fn an_orphan_folder_from_a_crashed_install_is_replaced() {
     assert_eq!(fs::read(bank.path).expect("bank"), tiny_bytes());
 }
 
-fn install_seven(
-    archive: Vec<u8>,
-) -> (
-    tempfile::TempDir,
-    Result<opentab_audio::InstalledBank, InstallError>,
-    opentab_audio::BankManager,
-) {
+fn install_seven(archive: Vec<u8>) -> Attempt {
     install_from(
         Reply::ok(PATH, archive.clone()),
         ArchiveKind::SevenZip,
@@ -555,7 +618,11 @@ fn one_file_seven(method: SevenMethod, declared: Option<u64>) -> Vec<u8> {
 
 #[test]
 fn a_seven_zip_declared_size_over_the_cap_refuses_before_decoding() {
-    let (_dir, result, manager) = install_seven(one_file_seven(SevenMethod::Copy, Some(2 << 30)));
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_seven(one_file_seven(SevenMethod::Copy, Some(2 << 30)));
     assert_eq!(
         unsafe_reason(result),
         UnsafeBank::BankFileTooLarge { limit_mib: 1024 }
@@ -565,7 +632,11 @@ fn a_seven_zip_declared_size_over_the_cap_refuses_before_decoding() {
 
 #[test]
 fn a_seven_zip_method_outside_the_allowed_list_is_refused() {
-    let (_dir, result, manager) = install_seven(one_file_seven(SevenMethod::Ppmd, None));
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_seven(one_file_seven(SevenMethod::Ppmd, None));
     assert!(
         matches!(
             result,
@@ -574,4 +645,148 @@ fn a_seven_zip_method_outside_the_allowed_list_is_refused() {
         "{result:?}"
     );
     assert_clean(&manager);
+}
+
+fn stalling(stall_millis: u64) -> DownloadTimeouts {
+    DownloadTimeouts {
+        stall: Duration::from_millis(stall_millis),
+        ..DownloadTimeouts::DEFAULT
+    }
+}
+
+#[test]
+fn a_server_that_goes_quiet_after_the_headers_is_an_offline_error() {
+    let size = tiny_bytes().len();
+    for cut in [0, size / 2] {
+        let reply = Reply {
+            cut: Some(cut),
+            ending: Ending::Hold,
+            ..Reply::ok(PATH, tiny_bytes().to_vec())
+        };
+        let attempt = install_with(
+            reply,
+            ArchiveKind::Raw,
+            BankFormat::Sf2,
+            tiny_bytes(),
+            stalling(200),
+        );
+        assert!(
+            matches!(attempt.result, Err(InstallError::Offline { .. })),
+            "{cut}: {:?}",
+            attempt.result
+        );
+        assert_clean(&attempt.manager);
+    }
+}
+
+#[test]
+fn a_download_slower_than_its_deadline_is_an_offline_error() {
+    let size = tiny_bytes().len();
+    let reply = Reply {
+        pace: Some(Pace {
+            chunk: size.div_ceil(30),
+            pause_millis: 100,
+        }),
+        ..Reply::ok(PATH, tiny_bytes().to_vec())
+    };
+    let timeouts = DownloadTimeouts {
+        deadline_floor: Duration::from_millis(100),
+        min_bytes_per_second: u64::MAX,
+        ..DownloadTimeouts::DEFAULT
+    };
+    assert_eq!(timeouts.deadline(size as u64), Duration::from_millis(1_100));
+    let attempt = install_with(
+        reply,
+        ArchiveKind::Raw,
+        BankFormat::Sf2,
+        tiny_bytes(),
+        timeouts,
+    );
+    assert!(
+        matches!(attempt.result, Err(InstallError::Offline { .. })),
+        "{:?}",
+        attempt.result
+    );
+    assert_clean(&attempt.manager);
+}
+
+#[test]
+fn a_cancel_during_the_download_stops_it_and_leaves_nothing() {
+    let dir = scratch_dir();
+    let server = LoopbackServer::start(vec![Reply::ok(PATH, tiny_bytes().to_vec())]);
+    let entry = entry_for(
+        "tiny",
+        BankFormat::Sf2,
+        ArchiveKind::Raw,
+        &server.url(PATH),
+        tiny_bytes(),
+    );
+    let mut manager = manager_with(dir.path(), vec![entry]);
+    let cancel = InstallCancel::new();
+    let mut stages: Vec<InstallStage> = Vec::new();
+    let result = manager.install_with(
+        &id("tiny"),
+        &mut |progress| {
+            stages.push(progress.stage);
+            cancel.cancel();
+        },
+        &cancel,
+    );
+    assert_eq!(result, Err(InstallError::Cancelled));
+    assert_eq!(stages, vec![InstallStage::Downloading]);
+    assert_clean(&manager);
+    assert_eq!(server.requests(), vec![String::from(PATH)]);
+}
+
+#[test]
+fn a_cancel_before_the_download_never_connects() {
+    let dir = scratch_dir();
+    let server = LoopbackServer::start(vec![Reply::ok(PATH, tiny_bytes().to_vec())]);
+    let entry = entry_for(
+        "tiny",
+        BankFormat::Sf2,
+        ArchiveKind::Raw,
+        &server.url(PATH),
+        tiny_bytes(),
+    );
+    let mut manager = manager_with(dir.path(), vec![entry]);
+    let cancel = InstallCancel::new();
+    cancel.cancel();
+    assert!(cancel.is_cancelled());
+    assert_eq!(
+        manager.install_with(&id("tiny"), &mut ignore, &cancel),
+        Err(InstallError::Cancelled)
+    );
+    assert_clean(&manager);
+    assert_eq!(server.requests(), Vec::<String>::new());
+}
+
+#[test]
+fn a_loopback_redirect_is_not_followed() {
+    let dir = scratch_dir();
+    let server = LoopbackServer::start(vec![
+        Reply {
+            status: 302,
+            headers: vec![Header {
+                name: String::from("Location"),
+                value: String::from("/moved.sf2"),
+            }],
+            ..Reply::ok(PATH, Vec::new())
+        },
+        Reply::ok("/moved.sf2", tiny_bytes().to_vec()),
+    ]);
+    let entry = entry_for(
+        "tiny",
+        BankFormat::Sf2,
+        ArchiveKind::Raw,
+        &server.url(PATH),
+        tiny_bytes(),
+    );
+    let mut manager = manager_with(dir.path(), vec![entry]);
+    assert_eq!(
+        manager.install(&id("tiny"), &mut ignore),
+        Err(InstallError::Http { status: 302 })
+    );
+    assert_clean(&manager);
+    assert_eq!(server.requests(), vec![String::from(PATH)]);
 }

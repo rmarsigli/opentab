@@ -357,6 +357,20 @@ impl SfzBank {
     }
 
     pub fn load_with_limits(root: &Path, limits: &SfzLimits) -> Result<SfzBank, BankError> {
+        SfzBank::build(root, limits, None)
+    }
+
+    pub(crate) fn referenced_files(root: &Path) -> Result<Vec<PathBuf>, BankError> {
+        let mut referenced = Vec::new();
+        SfzBank::build(root, &SfzLimits::DEFAULT, Some(&mut referenced))?;
+        Ok(referenced)
+    }
+
+    fn build(
+        root: &Path,
+        limits: &SfzLimits,
+        mut referenced: Option<&mut Vec<PathBuf>>,
+    ) -> Result<SfzBank, BankError> {
         let fs = BankFs::open(root, limits)?;
         let files = fs.sfz_files(limits)?;
         let sidecar = match read_capped(&fs.root().join(SIDECAR_NAME), limits.sidecar_bytes) {
@@ -382,6 +396,9 @@ impl SfzBank {
         let mut included: HashSet<PathBuf> = HashSet::new();
         for file in &files {
             if let Expansion::Done(expanded) = loader.expand(file)? {
+                if let Some(list) = referenced.as_deref_mut() {
+                    list.push(file.clone());
+                }
                 included.extend(expanded.included);
             }
         }
@@ -415,6 +432,15 @@ impl SfzBank {
         let listed_entries = loader.fs.listed();
         let path_lookups = loader.fs.lookups();
         let lookup_steps = loader.fs.steps();
+        if let Some(list) = referenced {
+            list.extend(included.iter().cloned());
+            list.extend(loader.samples.iter().cloned());
+            if sidecar.is_some() {
+                list.push(canonical_root.join(SIDECAR_NAME));
+            }
+            list.sort();
+            list.dedup();
+        }
         let cache = SampleCache::new(loader.samples, *limits);
         Ok(SfzBank {
             shared: Arc::new(SfzShared {

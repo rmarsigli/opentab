@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use opentab_audio::{
     ArchiveKind, BankError, BankFormat, BankId, BankManager, BankRef, BankSource, CatalogueEntry,
-    ImportLimits, SIDECAR_NAME, UnsafeBank, check_download_url, default_catalogue, sidecar_for,
+    DAMAGED_SUFFIX, ImportLimits, InstalledBank, PREFERENCES_NAME, REGISTRY_NAME, SIDECAR_NAME,
+    UnsafeBank, check_download_url, default_catalogue, sidecar_for,
 };
 use opentab_testkit::archives::{ZipItem, zip_archive};
 use opentab_testkit::banks::{SIDECAR_FILE, tiny_sfz};
@@ -122,7 +123,7 @@ pub fn zip_tree(root: &Path, prefix: &str) -> Vec<u8> {
     zip_archive(&items)
 }
 
-fn refused(result: Result<opentab_audio::InstalledBank, BankError>) -> UnsafeBank {
+fn refused(result: Result<InstalledBank, BankError>) -> UnsafeBank {
     match result {
         Err(BankError::Unsafe { reason }) => reason,
         other => panic!("expected an unsafe refusal, got {other:?}"),
@@ -136,6 +137,7 @@ fn small_limits() -> ImportLimits {
         entries: 4,
         depth: 2,
         name_bytes: 40,
+        ..ImportLimits::DEFAULT
     }
 }
 
@@ -326,45 +328,77 @@ fn a_special_file_inside_an_imported_folder_is_refused() {
     assert_clean(&manager);
 }
 
-fn folder_of(dir: &Path, files: &[(&str, usize)]) -> PathBuf {
+#[derive(Debug, Clone, Copy)]
+struct SourceFile {
+    name: &'static str,
+    bytes: usize,
+}
+
+const fn file(name: &'static str, bytes: usize) -> SourceFile {
+    SourceFile { name, bytes }
+}
+
+const REGION: &[u8] = b"<region> sample=b.wav\n";
+
+fn folder_of(dir: &Path, files: &[SourceFile]) -> PathBuf {
     let root = dir.join("bank");
-    for (name, length) in files {
-        let path = root.join(name);
+    for item in files {
+        let path = root.join(item.name);
         fs::create_dir_all(path.parent().expect("parent")).expect("folders");
-        fs::write(path, vec![7u8; *length]).expect("file");
+        let mut data = vec![b' '; item.bytes];
+        if item.name.ends_with(".sfz") && item.bytes >= REGION.len() {
+            data[..REGION.len()].copy_from_slice(REGION);
+        }
+        fs::write(path, data).expect("file");
     }
     root
 }
 
+struct LimitCase {
+    files: Vec<SourceFile>,
+    reason: UnsafeBank,
+}
+
 #[test]
 fn imports_stop_at_the_named_limits() {
-    let cases: [(&[(&str, usize)], UnsafeBank); 5] = [
-        (
-            &[("a.sfz", 500), ("b.wav", 501)],
-            UnsafeBank::BankTooLarge { limit_mib: 0 },
-        ),
-        (
-            &[("a.sfz", 601)],
-            UnsafeBank::BankFileTooLarge { limit_mib: 0 },
-        ),
-        (
-            &[("a.sfz", 1), ("b", 1), ("c", 1), ("d", 1), ("e", 1)],
-            UnsafeBank::TooManyFiles { limit: 4 },
-        ),
-        (
-            &[("a/b/c/d.sfz", 1)],
-            UnsafeBank::FolderTooDeep { limit: 2 },
-        ),
-        (
-            &[("a-very-long-file-name-that-goes-on-and-on.sfz", 1)],
-            UnsafeBank::NameTooLong { limit: 40 },
-        ),
+    let cases = [
+        LimitCase {
+            files: vec![file("a.sfz", 500), file("b.wav", 501)],
+            reason: UnsafeBank::BankTooLarge { limit_mib: 0 },
+        },
+        LimitCase {
+            files: vec![file("a.sfz", 601)],
+            reason: UnsafeBank::BankFileTooLarge { limit_mib: 0 },
+        },
+        LimitCase {
+            files: vec![
+                file("a.sfz", 1),
+                file("b", 1),
+                file("c", 1),
+                file("d", 1),
+                file("e", 1),
+            ],
+            reason: UnsafeBank::TooManyFiles { limit: 4 },
+        },
+        LimitCase {
+            files: vec![file("a/b/c/d.sfz", 1)],
+            reason: UnsafeBank::FolderTooDeep { limit: 2 },
+        },
+        LimitCase {
+            files: vec![file("a-very-long-file-name-that-goes-on-and-on.sfz", 1)],
+            reason: UnsafeBank::NameTooLong { limit: 40 },
+        },
     ];
-    for (files, reason) in cases {
+    for case in cases {
         let dir = scratch_dir();
-        let source = folder_of(dir.path(), files);
+        let source = folder_of(dir.path(), &case.files);
         let mut manager = manager_in(dir.path()).with_limits(small_limits());
-        assert_eq!(refused(manager.import(&source)), reason, "{files:?}");
+        assert_eq!(
+            refused(manager.import(&source)),
+            case.reason,
+            "{:?}",
+            case.files
+        );
         assert_clean(&manager);
     }
 }
@@ -436,6 +470,11 @@ fn zip_symlink_entries_are_refused() {
     assert_clean(&manager);
 }
 
+struct ZipCase {
+    items: Vec<ZipItem>,
+    reason: UnsafeBank,
+}
+
 #[test]
 fn zip_bombs_stop_at_the_declared_limits() {
     let big = |name: &str, length: usize| ZipItem::File {
@@ -443,37 +482,45 @@ fn zip_bombs_stop_at_the_declared_limits() {
         data: vec![0u8; length],
     };
     let cases = [
-        (
-            vec![big("a.sfz", 550), big("b.wav", 550)],
-            UnsafeBank::BankTooLarge { limit_mib: 0 },
-        ),
-        (
-            vec![big("a.sfz", 5_000)],
-            UnsafeBank::BankFileTooLarge { limit_mib: 0 },
-        ),
-        (
-            (0..5)
+        ZipCase {
+            items: vec![big("a.sfz", 550), big("b.wav", 550)],
+            reason: UnsafeBank::BankTooLarge { limit_mib: 0 },
+        },
+        ZipCase {
+            items: vec![big("a.sfz", 5_000)],
+            reason: UnsafeBank::BankFileTooLarge { limit_mib: 0 },
+        },
+        ZipCase {
+            items: (0..5)
                 .map(|index| big(&format!("{index}.sfz"), 1))
                 .collect(),
-            UnsafeBank::TooManyFiles { limit: 4 },
-        ),
-        (
-            vec![big("a/b/c/d.sfz", 1)],
-            UnsafeBank::FolderTooDeep { limit: 2 },
-        ),
+            reason: UnsafeBank::TooManyFiles { limit: 4 },
+        },
+        ZipCase {
+            items: vec![big("a/b/c/d.sfz", 1)],
+            reason: UnsafeBank::FolderTooDeep { limit: 2 },
+        },
     ];
-    for (items, reason) in cases {
+    for case in cases {
         let dir = scratch_dir();
-        let archive = zip_file(dir.path(), &items);
+        let archive = zip_file(dir.path(), &case.items);
         let mut manager = manager_in(dir.path()).with_limits(small_limits());
-        assert_eq!(refused(manager.import(&archive)), reason);
+        assert_eq!(refused(manager.import(&archive)), case.reason);
         assert_clean(&manager);
     }
 }
 
 #[test]
 fn bank_ids_follow_the_naming_rule() {
-    for good in ["a", "musescore-general", "bank-2", "x9"] {
+    for good in [
+        "a",
+        "musescore-general",
+        "bank-2",
+        "x9",
+        "console",
+        "com10",
+        "aux-bank",
+    ] {
         assert_eq!(BankId::new(good).expect(good).as_str(), good);
     }
     for bad in [
@@ -487,6 +534,14 @@ fn bank_ids_follow_the_naming_rule() {
         "../a",
         "built-in",
         &"a".repeat(65),
+        "con",
+        "nul",
+        "aux",
+        "prn",
+        "com1",
+        "com9",
+        "lpt1",
+        "lpt9",
     ] {
         assert!(BankId::new(bad).is_err(), "{bad:?}");
     }
@@ -497,35 +552,80 @@ fn bank_ids_follow_the_naming_rule() {
     );
 }
 
+struct Pinned {
+    id: &'static str,
+    url: &'static str,
+    size: u64,
+    sha256: &'static str,
+}
+
+const PINNED: [Pinned; 9] = [
+    Pinned {
+        id: "musescore-general",
+        url: "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf2",
+        size: 215_614_036,
+        sha256: "ee51d2c4b1525e70f19a45909c4fd7a2e26d91d115fa89dbf5a6bc413d8b9bf3",
+    },
+    Pinned {
+        id: "spanish-guitar",
+        url: "https://github.com/freepats/spanish-classical-guitar/releases/download/v1.0.0/SpanishClassicalGuitar-20190618.zip",
+        size: 4_943_846,
+        sha256: "173f775222991061291767724d57c7c21242a3c3254407b266aabd548df23dbb",
+    },
+    Pinned {
+        id: "fsbs-clean",
+        url: "https://github.com/freepats/electric-guitar-FSBS-clean/releases/download/2026-08-07/EGuitarFSBS-clean-bridge-small-SFZ%2BFLAC-20260807.7z",
+        size: 3_096_261,
+        sha256: "07c8cdf94dc9b4875ff6c43e51440d84f939a45530060c0761093a56d4a1f032",
+    },
+    Pinned {
+        id: "finger-bass-yr",
+        url: "https://github.com/freepats/electric-bass-YR/releases/download/2019-09-30/FingerBassYR-SFZ%2BFLAC-20190930.7z",
+        size: 3_252_347,
+        sha256: "36f87ec9eb086ef25050312522aacf71213c582f46989e0c5a12681304596587",
+    },
+    Pinned {
+        id: "muldjordkit",
+        url: "https://github.com/freepats/muldjordkit/releases/download/2020-10-18/MuldjordKit-SF2-20201018.7z",
+        size: 54_877_940,
+        sha256: "aef4c9e0a96f9a899a7838f65ff07565f6af247bbb4ff31e24dba3331a671a96",
+    },
+    Pinned {
+        id: "emilyguitar",
+        url: "https://github.com/sfzinstruments/karoryfer.emilyguitar/releases/download/v1.001/Karoryfer.Emilyguitar.v1.001.zip",
+        size: 103_484_350,
+        sha256: "ffef3b28972763820bee73660a25cf47ea6e13b184342fd5d325a5631598cacb",
+    },
+    Pinned {
+        id: "lately-bass",
+        url: "https://github.com/freepats/lately-bass/releases/download/2024-04-09/LatelyBass-SFZ%2BFLAC-20240409.7z",
+        size: 1_181_315,
+        sha256: "3cb6d4081b39cea265011a21f05a424fc72845abfd17d7409ac16acc7122a3e0",
+    },
+    Pinned {
+        id: "sams-sonor",
+        url: "https://github.com/sfzinstruments/SamsSonor/archive/ef3e32058924ed1c3335e86d03094d3f310a9104.zip",
+        size: 36_203_868,
+        sha256: "fcbca4dd398666f2908995218394c3af938817580304316f618dead41eaaff2c",
+    },
+    Pinned {
+        id: "meatbass",
+        url: "https://github.com/sfzinstruments/karoryfer.meatbass/releases/download/v1.001/Karoryfer.Meatbass.v1.001.zip",
+        size: 255_425_351,
+        sha256: "bc053061d4f39fb76ba56bc1f323efa228d1f63757c331738812479bcf04fe96",
+    },
+];
+
 #[test]
 fn the_catalogue_lists_the_nine_verified_banks() {
     let entries = default_catalogue();
-    let ids: Vec<&str> = entries.iter().map(|entry| entry.id.as_str()).collect();
-    assert_eq!(
-        ids,
-        [
-            "musescore-general",
-            "spanish-guitar",
-            "fsbs-clean",
-            "finger-bass-yr",
-            "muldjordkit",
-            "emilyguitar",
-            "lately-bass",
-            "sams-sonor",
-            "meatbass"
-        ]
-    );
-    for entry in &entries {
-        assert!(entry.url.starts_with("https://"), "{}", entry.id);
+    assert_eq!(entries.len(), PINNED.len());
+    for (entry, pinned) in entries.iter().zip(PINNED.iter()) {
+        assert_eq!(entry.id.as_str(), pinned.id);
+        assert_eq!(entry.url, pinned.url, "{}", pinned.id);
+        assert_eq!(entry.size, pinned.size, "{}", pinned.id);
+        assert_eq!(entry.sha256, pinned.sha256, "{}", pinned.id);
         assert_eq!(check_download_url(&entry.url), Ok(()));
-        assert_eq!(entry.sha256.len(), 64);
-        assert!(
-            entry
-                .sha256
-                .chars()
-                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-        );
-        assert!(entry.size > 1_000_000);
         assert!(entry.licence_text.len() > 1_000, "{}", entry.id);
         assert!(entry.licence_url.starts_with("https://"));
     }
@@ -538,17 +638,15 @@ fn the_catalogue_lists_the_nine_verified_banks() {
         attributed,
         ["musescore-general", "muldjordkit", "sams-sonor"]
     );
-    let general = &entries[0];
-    assert_eq!(general.size, 215_614_036);
+    assert!(entries[0].licence_text.contains("Frank Wen"));
+    let sevens: Vec<&str> = entries
+        .iter()
+        .filter(|entry| entry.archive == ArchiveKind::SevenZip)
+        .map(|entry| entry.id.as_str())
+        .collect();
     assert_eq!(
-        general.sha256,
-        "ee51d2c4b1525e70f19a45909c4fd7a2e26d91d115fa89dbf5a6bc413d8b9bf3"
-    );
-    assert!(general.licence_text.contains("Frank Wen"));
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry.archive == ArchiveKind::SevenZip)
+        sevens,
+        ["fsbs-clean", "finger-bass-yr", "muldjordkit", "lately-bass"]
     );
     let default = BankManager::open(&scratch_dir().path().join("data")).expect("opens");
     assert_eq!(default.catalogue(), entries.as_slice());
@@ -582,4 +680,226 @@ fn the_program_map_heuristic_names_families_and_drums() {
     assert_eq!(program(0), None);
     assert_eq!(record.drums.as_deref(), Some("Rock Kit.sfz"));
     assert_eq!(record.default.as_deref(), Some("Bassoon.sfz"));
+}
+
+fn bank_files(manager: &BankManager, bank: &InstalledBank) -> BTreeMap<String, Vec<u8>> {
+    tree(&manager.root().join("banks").join(bank.id.as_str()))
+}
+
+#[test]
+fn a_folder_import_copies_only_the_sf2_it_finds() {
+    let dir = scratch_dir();
+    let downloads = dir.path().join("Downloads");
+    fs::create_dir_all(downloads.join("photos")).expect("folders");
+    fs::write(downloads.join("notes.txt"), "private notes").expect("notes");
+    fs::write(downloads.join("photos/cat.jpg"), vec![9u8; 4_000]).expect("photo");
+    write_tiny_sf2(&downloads, "My Bank.sf2");
+    fs::write(downloads.join("._My Bank.sf2"), [0x00, 0x05, 0x16, 0x07]).expect("metadata");
+    let mut manager = manager_in(dir.path());
+    let bank = manager.import(&downloads).expect("the bank imports");
+    assert_eq!(bank.format, BankFormat::Sf2);
+    let copied = bank_files(&manager, &bank);
+    assert_eq!(
+        copied.keys().cloned().collect::<Vec<String>>(),
+        [String::from("My Bank.sf2")]
+    );
+    assert_eq!(copied["My Bank.sf2"], tiny_bytes());
+    assert_eq!(bank.bytes, tiny_bytes().len() as u64);
+}
+
+#[test]
+fn a_folder_import_copies_only_the_files_the_sfz_instruments_reference() {
+    let dir = scratch_dir();
+    let source = sfz_without_sidecar(dir.path());
+    let expected = tree(&source);
+    fs::write(source.join("notes.pdf"), vec![1u8; 3_000]).expect("pdf");
+    fs::create_dir_all(source.join("private")).expect("private");
+    fs::write(source.join("private/letter.txt"), "dear").expect("letter");
+    fs::write(source.join("Samples/unused.wav"), vec![2u8; 100]).expect("unused");
+    let mut manager = manager_in(dir.path());
+    let bank = manager.import(&source).expect("the bank imports");
+    assert_eq!(bank.format, BankFormat::Sfz);
+    let mut copied = tree(&bank.path);
+    assert!(copied.remove(SIDECAR_NAME).is_some());
+    assert_eq!(copied, expected);
+    let bytes: u64 = expected.values().map(|data| data.len() as u64).sum();
+    assert_eq!(bank.bytes, bytes);
+}
+
+#[cfg(unix)]
+#[test]
+fn an_over_budget_folder_is_refused_before_anything_is_copied() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch_dir();
+    let source = folder_of(
+        dir.path(),
+        &[
+            file("a.sfz", 300),
+            file("b.wav", 400),
+            file("unrelated.txt", 50),
+        ],
+    );
+    let instrument = b"<region> sample=a-locked.wav\n<region> sample=b.wav\n";
+    let mut text = vec![b' '; 300];
+    text[..instrument.len()].copy_from_slice(instrument);
+    fs::write(source.join("a.sfz"), text).expect("instrument");
+    let locked = source.join("a-locked.wav");
+    fs::write(&locked, vec![3u8; 400]).expect("locked");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("chmod");
+    let mut manager = manager_in(dir.path()).with_limits(small_limits());
+    let outcome = manager.import(&source);
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o644)).expect("chmod back");
+    assert_eq!(refused(outcome), UnsafeBank::BankTooLarge { limit_mib: 0 });
+    assert_clean(&manager);
+}
+
+#[test]
+fn an_import_named_after_a_windows_device_gets_a_portable_id() {
+    let dir = scratch_dir();
+    let source = write_tiny_sf2(dir.path(), "Aux.sf2");
+    let mut manager = manager_in(dir.path());
+    let bank = manager.import(&source).expect("imports");
+    assert_eq!(bank.id.as_str(), "aux-bank");
+}
+
+#[test]
+fn zip_entries_with_names_windows_reserves_are_refused() {
+    for name in [
+        "NUL",
+        "Samples/con.wav",
+        "aux",
+        "COM1.sfz",
+        "lpt9",
+        "prn.txt",
+        "Samples/a.wav.",
+        "Samples/a.wav ",
+        "folder./a.sfz",
+    ] {
+        let dir = scratch_dir();
+        let archive = zip_file(
+            dir.path(),
+            &[
+                ZipItem::File {
+                    name: String::from("ok.sfz"),
+                    data: b"<region> sample=a.wav".to_vec(),
+                },
+                ZipItem::File {
+                    name: name.to_owned(),
+                    data: b"data".to_vec(),
+                },
+            ],
+        );
+        let mut manager = manager_in(dir.path());
+        assert_eq!(
+            refused(manager.import(&archive)),
+            UnsafeBank::ReservedName,
+            "{name:?}"
+        );
+        assert_clean(&manager);
+    }
+}
+
+#[test]
+fn a_macos_zip_imports_without_its_metadata_files() {
+    let dir = scratch_dir();
+    let source = sfz_without_sidecar(dir.path());
+    let mut items: Vec<ZipItem> = tree(&source)
+        .into_iter()
+        .map(|(name, data)| ZipItem::File {
+            name: format!("Tiny/{name}"),
+            data,
+        })
+        .collect();
+    for name in [
+        "__MACOSX/Tiny/Programs/._guitar.sfz",
+        "__MACOSX/._Tiny",
+        "Tiny/Programs/._bass.sfz",
+        "Tiny/._Samples",
+    ] {
+        items.push(ZipItem::File {
+            name: name.to_owned(),
+            data: vec![0x00, 0x05, 0x16, 0x07, 0xFF, 0xFE],
+        });
+    }
+    let archive = dir.path().join("mac.zip");
+    fs::write(&archive, zip_archive(&items)).expect("zip");
+    let mut manager = manager_in(dir.path());
+    let bank = manager.import(&archive).expect("imports");
+    assert!(bank.path.ends_with("Tiny"));
+    let mut copied = tree(&bank.path);
+    assert!(copied.remove(SIDECAR_NAME).is_some());
+    assert_eq!(copied, tree(&source));
+}
+
+#[test]
+fn a_damaged_registry_is_set_aside_and_the_manager_opens_empty() {
+    let dir = scratch_dir();
+    let source = write_tiny_sf2(dir.path(), "kept.sf2");
+    let mut manager = manager_in(dir.path());
+    manager.import(&source).expect("imports");
+    let registry = manager.root().join(REGISTRY_NAME);
+    let preferences = manager.root().join(PREFERENCES_NAME);
+    fs::write(&registry, b"{ not json").expect("damaged");
+    fs::write(&preferences, b"{\"version\": 99, \"families\": {}}").expect("future");
+    let reopened = manager_in(dir.path());
+    assert!(reopened.list().is_empty());
+    assert!(reopened.assignments().is_empty());
+    let problems = reopened.problems();
+    assert_eq!(problems.len(), 2, "{problems:?}");
+    let aside = |path: &Path| {
+        let mut name = path.as_os_str().to_owned();
+        name.push(DAMAGED_SUFFIX);
+        PathBuf::from(name)
+    };
+    assert_eq!(problems[0].path, registry);
+    assert_eq!(problems[0].moved_to, Some(aside(&registry)));
+    assert_eq!(problems[1].moved_to, Some(aside(&preferences)));
+    assert!(problems.iter().all(|problem| !problem.message.is_empty()));
+    assert_eq!(fs::read(aside(&registry)).expect("kept"), b"{ not json");
+    assert!(!registry.exists());
+    fs::write(&registry, b"[]").expect("damaged again");
+    let again = manager_in(dir.path());
+    let mut second = registry.as_os_str().to_owned();
+    second.push(DAMAGED_SUFFIX);
+    second.push("-2");
+    assert_eq!(again.problems()[0].moved_to, Some(PathBuf::from(second)));
+    assert_eq!(
+        fs::read(aside(&registry)).expect("first kept"),
+        b"{ not json"
+    );
+    let mut fresh = manager_in(dir.path());
+    assert!(fresh.problems().is_empty());
+    fresh.import(&source).expect("imports again");
+    assert_eq!(manager_in(dir.path()).list().len(), 1);
+}
+
+#[test]
+fn a_zip_that_unpacks_far_beyond_its_size_is_refused() {
+    let dir = scratch_dir();
+    let archive = zip_file(
+        dir.path(),
+        &[
+            ZipItem::File {
+                name: String::from("a.sfz"),
+                data: b"<region> sample=a.wav".to_vec(),
+            },
+            ZipItem::File {
+                name: String::from("a.wav"),
+                data: vec![0u8; 200_000],
+            },
+        ],
+    );
+    let packed = fs::metadata(&archive).expect("zip").len();
+    assert!(packed * 20 < 200_000, "{packed} bytes packed");
+    let limits = ImportLimits {
+        archive_ratio: 20,
+        ratio_floor_bytes: 1_000,
+        ..ImportLimits::DEFAULT
+    };
+    let mut manager = manager_in(dir.path()).with_limits(limits);
+    assert_eq!(
+        refused(manager.import(&archive)),
+        UnsafeBank::ArchiveRatio { ratio: 20 }
+    );
+    assert_clean(&manager);
 }

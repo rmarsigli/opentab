@@ -5,6 +5,23 @@ use serde::{Deserialize, Serialize};
 use crate::{BUILT_IN_BANK_NAME, BankError};
 
 pub const BANK_ID_MAX_BYTES: usize = 64;
+const RESERVED_DEVICES: [&str; 6] = ["con", "prn", "aux", "nul", "conin$", "conout$"];
+const NUMBERED_DEVICES: [&str; 2] = ["com", "lpt"];
+const DEVICE_DIGITS: [&str; 13] = [
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u{b9}", "\u{b2}", "\u{b3}",
+];
+const RESERVED_SUFFIX: &str = "-bank";
+
+pub(crate) fn windows_reserved(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
+    let lowered = stem.to_lowercase();
+    RESERVED_DEVICES.contains(&lowered.as_str())
+        || NUMBERED_DEVICES.iter().any(|prefix| {
+            lowered
+                .strip_prefix(prefix)
+                .is_some_and(|digit| DEVICE_DIGITS.contains(&digit))
+        })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -28,7 +45,7 @@ impl BankId {
             && !text.starts_with('-')
             && !text.ends_with('-')
             && !text.contains("--");
-        if !shaped || text == BUILT_IN_BANK_NAME {
+        if !shaped || text == BUILT_IN_BANK_NAME || windows_reserved(text) {
             return Err(bad_name(text));
         }
         Ok(BankId(text.to_owned()))
@@ -53,6 +70,9 @@ impl BankId {
         }
         if slug.is_empty() || slug == BUILT_IN_BANK_NAME {
             slug = String::from("bank");
+        }
+        if windows_reserved(&slug) {
+            slug.push_str(RESERVED_SUFFIX);
         }
         slug
     }

@@ -45,6 +45,8 @@ pub enum InstallError {
     HashMismatch { expected: String, actual: String },
     #[error("the download failed: {message}")]
     Network { message: String },
+    #[error("the download was cancelled, and nothing was installed")]
+    Cancelled,
     #[error("{0}")]
     Bank(#[from] BankError),
 }

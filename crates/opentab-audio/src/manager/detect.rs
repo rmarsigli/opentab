@@ -4,7 +4,8 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::manager::copy::storage;
+use crate::manager::copy::{Listed, ListedKind, Survey, storage, survey};
+use crate::manager::limits::ImportLimits;
 use crate::{BankError, SF3_UNSUPPORTED, SIDECAR_NAME, SIDECAR_VERSION};
 
 const SF2_EXTENSION: &str = "sf2";
@@ -200,9 +201,8 @@ fn has_extension(path: &Path, wanted: &str) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case(wanted))
 }
 
-fn relative_name(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
+fn portable_name(relative: &Path) -> String {
+    relative
         .components()
         .filter_map(|component| match component {
             Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
@@ -212,52 +212,45 @@ fn relative_name(root: &Path, path: &Path) -> String {
         .join("/")
 }
 
-fn walk(root: &Path) -> Result<Found, BankError> {
+fn descend(survey: &Survey) -> PathBuf {
+    let mut root = PathBuf::new();
+    loop {
+        let children: Vec<&Listed> = survey
+            .entries
+            .iter()
+            .filter(|entry| entry.relative.parent() == Some(root.as_path()))
+            .take(2)
+            .collect();
+        match children.as_slice() {
+            [only] if only.kind == ListedKind::Folder => root = only.relative.clone(),
+            _ => return root,
+        }
+    }
+}
+
+pub(crate) fn classify(survey: &Survey) -> Result<Detected, BankError> {
+    let root = descend(survey);
     let mut found = Found::default();
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(folder) = pending.pop() {
-        for entry in fs::read_dir(&folder).map_err(|error| storage(&folder, &error))? {
-            let entry = entry.map_err(|error| storage(&folder, &error))?;
-            let path = entry.path();
-            let kind = entry.file_type().map_err(|error| storage(&path, &error))?;
-            if kind.is_dir() {
-                pending.push(path);
-            } else if kind.is_file() {
-                if has_extension(&path, SFZ_EXTENSION) {
-                    found.sfz.push(relative_name(root, &path));
-                } else if has_extension(&path, SF2_EXTENSION) {
-                    found.sf2.push(path);
-                } else if has_extension(&path, SF3_EXTENSION) {
-                    found.sf3 += 1;
-                }
-            }
+    for entry in &survey.entries {
+        if entry.kind != ListedKind::File {
+            continue;
+        }
+        let Ok(inside) = entry.relative.strip_prefix(&root) else {
+            continue;
+        };
+        if has_extension(inside, SFZ_EXTENSION) {
+            found.sfz.push(portable_name(inside));
+        } else if has_extension(inside, SF2_EXTENSION) {
+            found.sf2.push(survey.root.join(&entry.relative));
+        } else if has_extension(inside, SF3_EXTENSION) {
+            found.sf3 += 1;
         }
     }
     found.sfz.sort();
     found.sf2.sort();
-    Ok(found)
-}
-
-pub(crate) fn descend(content: &Path) -> Result<PathBuf, BankError> {
-    let mut root = content.to_path_buf();
-    loop {
-        let entries: Vec<fs::DirEntry> = fs::read_dir(&root)
-            .map_err(|error| storage(&root, &error))?
-            .collect::<Result<_, _>>()
-            .map_err(|error| storage(&root, &error))?;
-        match entries.as_slice() {
-            [only] if only.file_type().is_ok_and(|kind| kind.is_dir()) => root = only.path(),
-            _ => return Ok(root),
-        }
-    }
-}
-
-pub(crate) fn detect(content: &Path) -> Result<Detected, BankError> {
-    let root = descend(content)?;
-    let found = walk(&root)?;
     if !found.sfz.is_empty() {
         return Ok(Detected::Sfz {
-            root,
+            root: survey.root.join(root),
             files: found.sfz,
         });
     }
@@ -278,6 +271,10 @@ pub(crate) fn detect(content: &Path) -> Result<Detected, BankError> {
             ),
         }),
     }
+}
+
+pub(crate) fn detect(content: &Path, limits: ImportLimits) -> Result<Detected, BankError> {
+    classify(&survey(content, limits)?)
 }
 
 fn stem(file: &str) -> String {

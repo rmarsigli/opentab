@@ -157,4 +157,14 @@ pub enum UnsafeBank {
     ArchiveEscape,
     #[error("the archive holds a symbolic link, which OpenTab does not unpack")]
     ArchiveLink,
+    #[error("the archive lists the same file twice")]
+    ArchiveDuplicate,
+    #[error(
+        "the archive holds a file name that Windows reserves (such as CON, NUL, COM1 or LPT1) or that ends with a dot or a space"
+    )]
+    ReservedName,
+    #[error("the archive unpacks to more than {ratio} times its own size")]
+    ArchiveRatio { ratio: u64 },
+    #[error("a file of the bank changed while OpenTab copied it; try the import again")]
+    BankChanged,
 }

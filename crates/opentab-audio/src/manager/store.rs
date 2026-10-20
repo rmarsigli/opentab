@@ -16,6 +16,28 @@ pub const STORE_VERSION: u32 = 1;
 pub const REGISTRY_NAME: &str = "banks.json";
 pub const PREFERENCES_NAME: &str = "preferences.json";
 const TEMPORARY_SUFFIX: &str = ".tmp";
+pub const DAMAGED_SUFFIX: &str = ".damaged";
+const SET_ASIDE_ATTEMPTS: u32 = 1000;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoreProblem {
+    pub path: PathBuf,
+    pub moved_to: Option<PathBuf>,
+    pub message: String,
+}
+
+enum ReadFailure {
+    Unreadable(BankError),
+    Damaged(BankError),
+}
+
+impl ReadFailure {
+    fn error(self) -> BankError {
+        match self {
+            ReadFailure::Unreadable(error) | ReadFailure::Damaged(error) => error,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -134,33 +156,90 @@ fn broken(path: &Path, reason: impl std::fmt::Display) -> BankError {
     }
 }
 
-pub(crate) fn read<T: DeserializeOwned + Default>(
+fn read_checked<T: DeserializeOwned + Default>(
     path: &Path,
     version: fn(&T) -> u32,
-) -> Result<T, BankError> {
+) -> Result<T, ReadFailure> {
     let file = match File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(T::default()),
-        Err(error) => return Err(storage(path, &error)),
+        Err(error) => return Err(ReadFailure::Unreadable(storage(path, &error))),
     };
     let mut bytes = Vec::new();
     file.take(STORE_MAX_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| storage(path, &error))?;
+        .map_err(|error| ReadFailure::Unreadable(storage(path, &error)))?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > STORE_MAX_BYTES {
-        return Err(broken(path, "the file is too large"));
+        return Err(ReadFailure::Damaged(broken(path, "the file is too large")));
     }
-    let value: T = serde_json::from_slice(&bytes).map_err(|error| broken(path, error))?;
+    let value: T = serde_json::from_slice(&bytes)
+        .map_err(|error| ReadFailure::Damaged(broken(path, error)))?;
     if version(&value) != STORE_VERSION {
-        return Err(broken(
+        return Err(ReadFailure::Damaged(broken(
             path,
             format!(
                 "it has version {}, and OpenTab reads version {STORE_VERSION}",
                 version(&value)
             ),
-        ));
+        )));
     }
     Ok(value)
+}
+
+pub(crate) fn read<T: DeserializeOwned + Default>(
+    path: &Path,
+    version: fn(&T) -> u32,
+) -> Result<T, BankError> {
+    read_checked(path, version).map_err(ReadFailure::error)
+}
+
+fn set_aside(path: &Path) -> std::io::Result<PathBuf> {
+    for attempt in 1..=SET_ASIDE_ATTEMPTS {
+        let mut name = path.as_os_str().to_owned();
+        name.push(DAMAGED_SUFFIX);
+        if attempt > 1 {
+            name.push(format!("-{attempt}"));
+        }
+        let candidate = PathBuf::from(name);
+        if fs::symlink_metadata(&candidate).is_err() {
+            fs::rename(path, &candidate)?;
+            return Ok(candidate);
+        }
+    }
+    Err(std::io::Error::other(
+        "no free name to set the damaged file aside",
+    ))
+}
+
+pub(crate) fn read_or_set_aside<T: DeserializeOwned + Default>(
+    path: &Path,
+    version: fn(&T) -> u32,
+    problems: &mut Vec<StoreProblem>,
+) -> T {
+    match read_checked(path, version) {
+        Ok(value) => value,
+        Err(ReadFailure::Damaged(error)) => {
+            let moved = set_aside(path);
+            let message = match &moved {
+                Ok(_) => error.to_string(),
+                Err(failure) => format!("{error}; it could not be set aside: {failure}"),
+            };
+            problems.push(StoreProblem {
+                path: path.to_path_buf(),
+                moved_to: moved.ok(),
+                message,
+            });
+            T::default()
+        }
+        Err(ReadFailure::Unreadable(error)) => {
+            problems.push(StoreProblem {
+                path: path.to_path_buf(),
+                moved_to: None,
+                message: error.to_string(),
+            });
+            T::default()
+        }
+    }
 }
 
 pub(crate) fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), BankError> {

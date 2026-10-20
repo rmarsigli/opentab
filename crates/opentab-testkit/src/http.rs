@@ -7,12 +7,31 @@ const STOP_PATH: &str = "/__opentab_stop";
 const REQUEST_LIMIT: usize = 16 * 1024;
 const LOOPBACK: &str = "127.0.0.1:0";
 const SAFETY_SECONDS: u64 = 30;
+const DRAIN_BYTES: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Declared {
     Exact,
     Absent,
     Bytes(u64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ending {
+    Close,
+    Hold,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pace {
+    pub chunk: usize,
+    pub pause_millis: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Header {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +41,9 @@ pub struct Reply {
     pub body: Vec<u8>,
     pub declared: Declared,
     pub cut: Option<usize>,
+    pub ending: Ending,
+    pub pace: Option<Pace>,
+    pub headers: Vec<Header>,
 }
 
 impl Reply {
@@ -32,6 +54,9 @@ impl Reply {
             body,
             declared: Declared::Exact,
             cut: None,
+            ending: Ending::Close,
+            pace: None,
+            headers: Vec::new(),
         }
     }
 }
@@ -58,6 +83,27 @@ fn read_request(stream: &mut TcpStream) -> Option<String> {
     line.split(' ').nth(1).map(str::to_owned)
 }
 
+fn send_body(stream: &mut TcpStream, body: &[u8], pace: Option<Pace>) -> std::io::Result<()> {
+    let Some(pace) = pace else {
+        return stream.write_all(body);
+    };
+    for piece in body.chunks(pace.chunk.max(1)) {
+        stream.write_all(piece)?;
+        stream.flush()?;
+        std::thread::sleep(Duration::from_millis(pace.pause_millis));
+    }
+    Ok(())
+}
+
+fn hold(stream: &mut TcpStream) {
+    let mut sink = [0u8; DRAIN_BYTES];
+    while let Ok(read) = stream.read(&mut sink) {
+        if read == 0 {
+            break;
+        }
+    }
+}
+
 fn answer(stream: &mut TcpStream, reply: Option<&Reply>) {
     let Some(reply) = reply else {
         let _ = stream
@@ -70,12 +116,19 @@ fn answer(stream: &mut TcpStream, reply: Option<&Reply>) {
         Declared::Bytes(bytes) => head.push_str(&format!("Content-Length: {bytes}\r\n")),
         Declared::Absent => {}
     }
+    for header in &reply.headers {
+        head.push_str(&format!("{}: {}\r\n", header.name, header.value));
+    }
     head.push_str("\r\n");
     let sent = reply.cut.unwrap_or(reply.body.len()).min(reply.body.len());
-    let _ = stream
+    let written = stream
         .write_all(head.as_bytes())
-        .and_then(|()| stream.write_all(&reply.body[..sent]))
+        .and_then(|()| stream.flush())
+        .and_then(|()| send_body(stream, &reply.body[..sent], reply.pace))
         .and_then(|()| stream.flush());
+    if written.is_ok() && reply.ending == Ending::Hold {
+        hold(stream);
+    }
 }
 
 fn serve(listener: TcpListener, replies: Vec<Reply>) -> Vec<String> {
@@ -149,15 +202,23 @@ impl Drop for LoopbackServer {
     }
 }
 
-pub fn closed_loopback_url(path: &str) -> String {
-    let listener = match TcpListener::bind(LOOPBACK) {
-        Ok(listener) => listener,
-        Err(error) => panic!("cannot reserve a loopback port: {error}"),
-    };
-    let address = match listener.local_addr() {
-        Ok(address) => address,
-        Err(error) => panic!("the reserved port has no address: {error}"),
-    };
-    drop(listener);
-    format!("http://{address}{path}")
+pub struct ClosedPort {
+    reservation: TcpListener,
+}
+
+impl ClosedPort {
+    pub fn reserve() -> ClosedPort {
+        match TcpListener::bind(LOOPBACK) {
+            Ok(reservation) => ClosedPort { reservation },
+            Err(error) => panic!("cannot reserve a loopback port: {error}"),
+        }
+    }
+
+    pub fn url(&self, path: &str) -> String {
+        let port = match self.reservation.local_addr() {
+            Ok(address) => address.port(),
+            Err(error) => panic!("the reserved port has no address: {error}"),
+        };
+        format!("http://[::1]:{port}{path}")
+    }
 }

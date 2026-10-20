@@ -3,6 +3,8 @@ pub const BANK_MAX_FILE_BYTES: u64 = 1 << 30;
 pub const BANK_MAX_ENTRIES: u64 = 200_000;
 pub const BANK_MAX_DEPTH: u64 = 16;
 pub const BANK_MAX_NAME_BYTES: u64 = 1024;
+pub const ARCHIVE_MAX_RATIO: u64 = 100;
+pub const ARCHIVE_RATIO_FLOOR_BYTES: u64 = 64 << 20;
 pub const STORE_MAX_BYTES: u64 = 16 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -12,6 +14,8 @@ pub struct ImportLimits {
     pub entries: u64,
     pub depth: u64,
     pub name_bytes: u64,
+    pub archive_ratio: u64,
+    pub ratio_floor_bytes: u64,
 }
 
 impl ImportLimits {
@@ -21,6 +25,8 @@ impl ImportLimits {
         entries: BANK_MAX_ENTRIES,
         depth: BANK_MAX_DEPTH,
         name_bytes: BANK_MAX_NAME_BYTES,
+        archive_ratio: ARCHIVE_MAX_RATIO,
+        ratio_floor_bytes: ARCHIVE_RATIO_FLOOR_BYTES,
     };
 }
 

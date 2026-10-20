@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -5,7 +6,8 @@ use std::path::{Path, PathBuf};
 use sevenz_rust2::{ArchiveEntry, ArchiveReader, Password};
 use zip::ZipArchive;
 
-use crate::manager::copy::{Budget, refuse, storage};
+use crate::manager::copy::{Budget, is_mac_metadata, refuse, storage};
+use crate::manager::id::windows_reserved;
 use crate::{BankError, UnsafeBank};
 
 const TYPE_MASK: u32 = 0o170000;
@@ -64,6 +66,9 @@ pub(crate) fn confine(name: &str, budget: &Budget) -> Result<Option<PathBuf>, Ba
         if part.contains(':') {
             return Err(refuse(UnsafeBank::ArchiveEscape));
         }
+        if part.ends_with('.') || part.ends_with(' ') || windows_reserved(part) {
+            return Err(refuse(UnsafeBank::ReservedName));
+        }
         relative.push(part);
         depth += 1;
     }
@@ -97,11 +102,40 @@ fn place(root: &Path, relative: &Path) -> Result<PathBuf, BankError> {
     fs::create_dir_all(&parent).map_err(|error| storage(&parent, &error))?;
     inside(root, &parent)?;
     if fs::symlink_metadata(&target).is_ok() {
-        return Err(BankError::Invalid {
-            reason: format!("the archive lists {} twice", relative.display()),
-        });
+        return Err(refuse(UnsafeBank::ArchiveDuplicate));
     }
     Ok(target)
+}
+
+#[derive(Default)]
+struct Seen {
+    files: HashSet<String>,
+}
+
+impl Seen {
+    fn file(&mut self, relative: &Path) -> Result<(), BankError> {
+        let key = relative.to_string_lossy().to_lowercase();
+        if !self.files.insert(key) {
+            return Err(refuse(UnsafeBank::ArchiveDuplicate));
+        }
+        Ok(())
+    }
+}
+
+fn kept(relative: Option<PathBuf>) -> Option<PathBuf> {
+    relative.filter(|path| !is_mac_metadata(path))
+}
+
+fn archive_bytes(archive: &Path) -> Result<u64, BankError> {
+    fs::metadata(archive)
+        .map(|metadata| metadata.len())
+        .map_err(|error| storage(archive, &error))
+}
+
+struct ZipPlanned {
+    index: usize,
+    relative: PathBuf,
+    kind: EntryKind,
 }
 
 fn canonical_root(target: &Path) -> Result<PathBuf, BankError> {
@@ -111,33 +145,50 @@ fn canonical_root(target: &Path) -> Result<PathBuf, BankError> {
 }
 
 pub(crate) fn unzip(archive: &Path, target: &Path, budget: &mut Budget) -> Result<(), BankError> {
+    budget.unpacking(archive_bytes(archive)?);
     let file = File::open(archive).map_err(|error| storage(archive, &error))?;
     let mut zip = ZipArchive::new(BufReader::new(file)).map_err(|error| invalid("zip", error))?;
     let count = zip.len();
     budget.entries(u64::try_from(count).unwrap_or(u64::MAX))?;
     let mut declared = 0u64;
+    let mut seen = Seen::default();
+    let mut plan = Vec::with_capacity(count);
     for index in 0..count {
         let entry = zip
             .by_index_raw(index)
             .map_err(|error| invalid("zip", error))?;
         declared = declared.saturating_add(entry.size());
         budget.declared(entry.size(), declared)?;
-    }
-    let root = canonical_root(target)?;
-    for index in 0..count {
-        let mut entry = zip.by_index(index).map_err(|error| invalid("zip", error))?;
         let mode_kind = match entry.unix_mode() {
             Some(mode) => unix_kind(mode)?,
             None => None,
         };
-        let Some(relative) = confine(entry.name(), budget)? else {
+        let Some(relative) = kept(confine(entry.name(), budget)?) else {
             continue;
         };
-        if entry.is_dir() || mode_kind == Some(EntryKind::Folder) {
-            make_folder(&root, &relative)?;
+        let kind = if entry.is_dir() || mode_kind == Some(EntryKind::Folder) {
+            EntryKind::Folder
         } else {
-            let path = place(&root, &relative)?;
-            budget.write(&mut entry, &path)?;
+            seen.file(&relative)?;
+            EntryKind::File
+        };
+        plan.push(ZipPlanned {
+            index,
+            relative,
+            kind,
+        });
+    }
+    let root = canonical_root(target)?;
+    for planned in plan {
+        match planned.kind {
+            EntryKind::Folder => make_folder(&root, &planned.relative)?,
+            EntryKind::File => {
+                let mut entry = zip
+                    .by_index(planned.index)
+                    .map_err(|error| invalid("zip", error))?;
+                let path = place(&root, &planned.relative)?;
+                budget.write(&mut entry, &path)?;
+            }
         }
     }
     Ok(())
@@ -171,6 +222,7 @@ struct Planned {
 }
 
 pub(crate) fn unseven(archive: &Path, target: &Path, budget: &mut Budget) -> Result<(), BankError> {
+    budget.unpacking(archive_bytes(archive)?);
     let file = File::open(archive).map_err(|error| storage(archive, &error))?;
     let mut reader = ArchiveReader::new(BufReader::new(file), Password::empty())
         .map_err(|error| invalid("7z", error))?;
@@ -188,7 +240,8 @@ pub(crate) fn unseven(archive: &Path, target: &Path, budget: &mut Budget) -> Res
     }
     budget.entries(u64::try_from(listing.files.len()).unwrap_or(u64::MAX))?;
     let mut declared = 0u64;
-    let mut plan = std::collections::HashMap::new();
+    let mut seen = Seen::default();
+    let mut plan = HashMap::new();
     for entry in &listing.files {
         declared = declared.saturating_add(entry.size);
         budget.declared(entry.size, declared)?;
@@ -196,9 +249,19 @@ pub(crate) fn unseven(archive: &Path, target: &Path, budget: &mut Budget) -> Res
         let relative = if entry.is_anti_item {
             None
         } else {
-            confine(&entry.name, budget)?
+            kept(confine(&entry.name, budget)?)
         };
-        plan.insert(entry.name.clone(), Planned { relative, kind });
+        if kind == EntryKind::File
+            && let Some(relative) = &relative
+        {
+            seen.file(relative)?;
+        }
+        if plan
+            .insert(entry.name.clone(), Planned { relative, kind })
+            .is_some()
+        {
+            return Err(refuse(UnsafeBank::ArchiveDuplicate));
+        }
     }
     let root = canonical_root(target)?;
     let mut failure: Option<BankError> = None;
@@ -223,7 +286,7 @@ pub(crate) fn unseven(archive: &Path, target: &Path, budget: &mut Budget) -> Res
 fn extract_seven(
     entry: &ArchiveEntry,
     data: &mut dyn Read,
-    plan: &std::collections::HashMap<String, Planned>,
+    plan: &HashMap<String, Planned>,
     root: &Path,
     budget: &mut Budget,
 ) -> Result<(), BankError> {
@@ -259,6 +322,141 @@ mod tests {
             .expect("entry");
         writer.write_all(data).expect("data");
         writer.finish().expect("finished").into_inner()
+    }
+
+    use opentab_testkit::archives::{ZipItem, zip_archive};
+
+    fn files_zip(names: &[&str]) -> Vec<u8> {
+        let items: Vec<ZipItem> = names
+            .iter()
+            .map(|name| ZipItem::File {
+                name: (*name).to_owned(),
+                data: b"<region> sample=a.wav".to_vec(),
+            })
+            .collect();
+        zip_archive(&items)
+    }
+
+    fn unzip_into_empty(bytes: Vec<u8>) -> Result<Vec<String>, BankError> {
+        let dir = tempfile::tempdir().expect("scratch");
+        let archive = dir.path().join("a.zip");
+        fs::write(&archive, bytes).expect("zip");
+        let target = dir.path().join("target");
+        fs::create_dir_all(&target).expect("target");
+        let mut budget = Budget::new(ImportLimits::DEFAULT);
+        let outcome = unzip(&archive, &target, &mut budget);
+        let mut left: Vec<String> = fs::read_dir(&target)
+            .expect("listing")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        outcome.map(|()| left.clone()).map_err(|error| {
+            assert_eq!(left, Vec::<String>::new(), "{error:?} came after a write");
+            error
+        })
+    }
+
+    fn replaced(mut bytes: Vec<u8>, from: &[u8], to: &[u8]) -> Vec<u8> {
+        let mut start = 0;
+        while let Some(found) = bytes[start..]
+            .windows(from.len())
+            .position(|window| window == from)
+        {
+            let at = start + found;
+            bytes[at..at + to.len()].copy_from_slice(to);
+            start = at + to.len();
+        }
+        bytes
+    }
+
+    struct HostileLast {
+        name: &'static str,
+        reason: UnsafeBank,
+    }
+
+    #[test]
+    fn a_hostile_last_zip_entry_is_refused_before_any_write() {
+        let cases = [
+            HostileLast {
+                name: "../evil.sfz",
+                reason: UnsafeBank::ArchiveEscape,
+            },
+            HostileLast {
+                name: "Samples/NUL",
+                reason: UnsafeBank::ReservedName,
+            },
+        ];
+        for case in cases {
+            assert_eq!(
+                unzip_into_empty(files_zip(&["a.sfz", "Samples/b.wav", case.name])),
+                Err(refuse(case.reason))
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_zip_entries_are_unsafe_and_refused_before_any_write() {
+        assert_eq!(
+            unzip_into_empty(files_zip(&["a.sfz", "A.SFZ"])),
+            Err(refuse(UnsafeBank::ArchiveDuplicate))
+        );
+        let twice = replaced(files_zip(&["a.sfz", "b.sfz"]), b"b.sfz", b"a.sfz");
+        assert_eq!(unzip_into_empty(twice), Ok(vec![String::from("a.sfz")]));
+        assert_eq!(
+            unzip_into_empty(files_zip(&["a.sfz", "b.sfz"])),
+            Ok(vec![String::from("a.sfz"), String::from("b.sfz")])
+        );
+    }
+
+    #[test]
+    fn mac_metadata_entries_are_not_unpacked() {
+        let names = unzip_into_empty(files_zip(&[
+            "a.sfz",
+            "__MACOSX/._a.sfz",
+            "Samples/._b.wav",
+            "Samples/b.wav",
+        ]))
+        .expect("unpacks");
+        assert_eq!(names, vec![String::from("Samples"), String::from("a.sfz")]);
+    }
+
+    #[test]
+    fn names_windows_reserves_are_refused_lexically() {
+        let budget = Budget::new(ImportLimits::DEFAULT);
+        for name in [
+            "CON",
+            "con.wav",
+            "Nul.txt",
+            "AUX",
+            "prn",
+            "COM1",
+            "com9.sfz",
+            "LPT1",
+            "lpt9",
+            "COM\u{b9}",
+            "conin$",
+            "a/aux/b.wav",
+            "a.wav.",
+            "a.wav ",
+            "dir./a",
+            "nul .txt",
+        ] {
+            assert_eq!(
+                confine(name, &budget),
+                Err(refuse(UnsafeBank::ReservedName)),
+                "{name:?}"
+            );
+        }
+        for name in [
+            "console.wav",
+            "com10.wav",
+            "auxiliary/a.wav",
+            "a.wav",
+            "nully.sfz",
+        ] {
+            assert!(confine(name, &budget).is_ok(), "{name:?}");
+        }
     }
 
     #[test]

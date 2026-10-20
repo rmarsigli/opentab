@@ -20,21 +20,25 @@ use opentab_model::{InstrumentFamily, Score};
 pub use catalogue::{ArchiveKind, CatalogueEntry, default_catalogue};
 pub use detect::{SidecarProgram, SidecarRecord, sidecar_for};
 pub use download::{
-    DOWNLOAD_CONNECT_SECONDS, DOWNLOAD_REDIRECTS, DOWNLOAD_RESPONSE_SECONDS, check_download_url,
+    DOWNLOAD_CONNECT_SECONDS, DOWNLOAD_DEADLINE_FLOOR_SECONDS, DOWNLOAD_MIN_BYTES_PER_SECOND,
+    DOWNLOAD_REDIRECTS, DOWNLOAD_RESPONSE_SECONDS, DOWNLOAD_STALL_SECONDS, DownloadTimeouts,
+    InstallCancel, check_download_url,
 };
 pub use id::{BANK_ID_MAX_BYTES, BankId, BankRef};
 pub use install::{InstallError, InstallProgress, InstallStage};
 pub use limits::{
-    BANK_MAX_BYTES, BANK_MAX_DEPTH, BANK_MAX_ENTRIES, BANK_MAX_FILE_BYTES, BANK_MAX_NAME_BYTES,
-    ImportLimits, STORE_MAX_BYTES,
+    ARCHIVE_MAX_RATIO, ARCHIVE_RATIO_FLOOR_BYTES, BANK_MAX_BYTES, BANK_MAX_DEPTH, BANK_MAX_ENTRIES,
+    BANK_MAX_FILE_BYTES, BANK_MAX_NAME_BYTES, ImportLimits, STORE_MAX_BYTES,
 };
 pub use location::{DATA_DIR_NAME, DATA_DIR_VARIABLE, default_data_dir};
 pub use plan::{Fallback, FallbackReason, LoadedVoices, SoundPlan, TrackSound};
-pub use store::{BankSource, PREFERENCES_NAME, REGISTRY_NAME, STORE_VERSION};
+pub use store::{
+    BankSource, DAMAGED_SUFFIX, PREFERENCES_NAME, REGISTRY_NAME, STORE_VERSION, StoreProblem,
+};
 
-use copy::{Budget, copy_file, copy_tree, refuse, storage};
+use copy::{Budget, Listed, ListedKind, copy_files, listed_file, refuse, storage};
 use detect::Detected;
-use download::Expected;
+use download::{Expected, Fetch};
 use store::{Preferences, Registry, StoredBank, StoredFormat};
 
 use crate::{
@@ -124,8 +128,10 @@ pub struct BankManager {
     root: PathBuf,
     catalogue: Vec<CatalogueEntry>,
     limits: ImportLimits,
+    timeouts: DownloadTimeouts,
     registry: Registry,
     preferences: Preferences,
+    problems: Vec<StoreProblem>,
 }
 
 fn create_folder(path: &Path) -> Result<(), BankError> {
@@ -151,9 +157,20 @@ fn stale(entry: &Path) -> bool {
     file.try_lock().is_ok()
 }
 
-fn clear_stale(staging: &Path) -> Result<(), BankError> {
-    for entry in fs::read_dir(staging).map_err(|error| storage(staging, &error))? {
-        let path = entry.map_err(|error| storage(staging, &error))?.path();
+fn clear_stale(staging: &Path, problems: &mut Vec<StoreProblem>) {
+    let listing = match fs::read_dir(staging) {
+        Ok(listing) => listing,
+        Err(error) => {
+            problems.push(StoreProblem {
+                path: staging.to_path_buf(),
+                moved_to: None,
+                message: storage(staging, &error).to_string(),
+            });
+            return;
+        }
+    };
+    for entry in listing.flatten() {
+        let path = entry.path();
         if !stale(&path) {
             continue;
         }
@@ -162,9 +179,14 @@ fn clear_stale(staging: &Path) -> Result<(), BankError> {
         } else {
             fs::remove_file(&path)
         };
-        removed.map_err(|error| storage(&path, &error))?;
+        if let Err(error) = removed {
+            problems.push(StoreProblem {
+                message: storage(&path, &error).to_string(),
+                path,
+                moved_to: None,
+            });
+        }
     }
-    Ok(())
 }
 
 fn extension_is(path: &Path, wanted: &str) -> bool {
@@ -245,26 +267,45 @@ impl BankManager {
         create_folder(&root.join(BANKS_FOLDER))?;
         let staging = root.join(STAGING_FOLDER);
         create_folder(&staging)?;
-        clear_stale(&staging)?;
-        let registry: Registry = store::read(&root.join(REGISTRY_NAME), |registry: &Registry| {
-            registry.version
-        })?;
-        let preferences: Preferences =
-            store::read(&root.join(PREFERENCES_NAME), |preferences: &Preferences| {
-                preferences.version
-            })?;
+        let lock_path = root.join(LOCK_NAME);
+        let lock = lock_file(&lock_path)?;
+        lock.lock().map_err(|error| storage(&lock_path, &error))?;
+        let mut problems = Vec::new();
+        clear_stale(&staging, &mut problems);
+        let registry: Registry = store::read_or_set_aside(
+            &root.join(REGISTRY_NAME),
+            |registry: &Registry| registry.version,
+            &mut problems,
+        );
+        let preferences: Preferences = store::read_or_set_aside(
+            &root.join(PREFERENCES_NAME),
+            |preferences: &Preferences| preferences.version,
+            &mut problems,
+        );
+        drop(lock);
         Ok(BankManager {
             root,
             catalogue: entries,
             limits: ImportLimits::DEFAULT,
+            timeouts: DownloadTimeouts::DEFAULT,
             registry,
             preferences,
+            problems,
         })
     }
 
     pub fn with_limits(mut self, limits: ImportLimits) -> BankManager {
         self.limits = limits;
         self
+    }
+
+    pub fn with_download_timeouts(mut self, timeouts: DownloadTimeouts) -> BankManager {
+        self.timeouts = timeouts;
+        self
+    }
+
+    pub fn problems(&self) -> &[StoreProblem] {
+        &self.problems
     }
 
     pub fn root(&self) -> &Path {
@@ -395,24 +436,61 @@ impl BankManager {
         Err(BankError::BadName { text: base })
     }
 
+    fn folder_files(&self, source: &Path) -> Result<Vec<Listed>, BankError> {
+        let survey = copy::survey(source, self.limits)?;
+        let wanted = match detect::classify(&survey)? {
+            Detected::Sf2 { file } => vec![file],
+            Detected::Sfz { root, .. } => SfzBank::referenced_files(&root)?,
+        };
+        let mut files = Vec::with_capacity(wanted.len());
+        for path in wanted {
+            let listed = path
+                .strip_prefix(source)
+                .ok()
+                .and_then(|relative| survey.find(relative))
+                .ok_or_else(|| refuse(UnsafeBank::BankChanged))?;
+            if listed.kind == ListedKind::File {
+                files.push(listed.clone());
+            }
+        }
+        Ok(files)
+    }
+
     pub fn import(&mut self, path: &Path) -> Result<InstalledBank, BankError> {
         let source = path.canonicalize().map_err(|error| storage(path, &error))?;
         let metadata = fs::metadata(&source).map_err(|error| storage(&source, &error))?;
-        let staging = self.stage()?;
-        let content = staging.path.join(CONTENT_FOLDER);
-        create_folder(&content)?;
         let mut budget = Budget::new(self.limits);
-        if metadata.is_dir() {
-            copy_tree(&source, &content, &mut budget)?;
+        let staging = if metadata.is_dir() {
+            let files = self.folder_files(&source)?;
+            copy::budget_files(&files, &budget)?;
+            let staging = self.stage()?;
+            let content = staging.path.join(CONTENT_FOLDER);
+            create_folder(&content)?;
+            copy_files(&source, &files, &content, &mut budget)?;
+            staging
         } else if metadata.is_file() {
             match sniff(&source)? {
-                FileKind::Zip => archive::unzip(&source, &content, &mut budget)?,
+                FileKind::Zip => {
+                    let staging = self.stage()?;
+                    let content = staging.path.join(CONTENT_FOLDER);
+                    create_folder(&content)?;
+                    archive::unzip(&source, &content, &mut budget)?;
+                    staging
+                }
                 FileKind::Sf2 => {
-                    budget.entry()?;
-                    let name = source.file_name().ok_or_else(|| BankError::Unsupported {
+                    let unnamed = || BankError::Unsupported {
                         message: UNKNOWN_FILE.to_owned(),
-                    })?;
-                    copy_file(&source, &content.join(name), &mut budget)?;
+                    };
+                    let folder = source.parent().ok_or_else(unnamed)?;
+                    let name = source.file_name().ok_or_else(unnamed)?;
+                    let listed = listed_file(&source, PathBuf::from(name))?;
+                    let files = [listed];
+                    copy::budget_files(&files, &budget)?;
+                    let staging = self.stage()?;
+                    let content = staging.path.join(CONTENT_FOLDER);
+                    create_folder(&content)?;
+                    copy_files(folder, &files, &content, &mut budget)?;
+                    staging
                 }
                 FileKind::SevenZip => {
                     return Err(BankError::Unsupported {
@@ -437,7 +515,8 @@ impl BankManager {
             }
         } else {
             return Err(refuse(UnsafeBank::SpecialFile));
-        }
+        };
+        let content = staging.path.join(CONTENT_FOLDER);
         let finished = Finished {
             id: None,
             name: hint_of(&source),
@@ -454,7 +533,7 @@ impl BankManager {
         content: &Path,
         finished: Finished,
     ) -> Result<InstalledBank, BankError> {
-        let validated = match detect::detect(content)? {
+        let validated = match detect::detect(content, self.limits)? {
             Detected::Sf2 { file } => {
                 let bank = Sf2Bank::open(&file)?;
                 Validated {
@@ -565,6 +644,15 @@ impl BankManager {
         id: &BankId,
         progress: &mut dyn FnMut(InstallProgress),
     ) -> Result<InstalledBank, InstallError> {
+        self.install_with(id, progress, &InstallCancel::new())
+    }
+
+    pub fn install_with(
+        &mut self,
+        id: &BankId,
+        progress: &mut dyn FnMut(InstallProgress),
+        cancel: &InstallCancel,
+    ) -> Result<InstalledBank, InstallError> {
         let entry = self
             .catalogue
             .iter()
@@ -575,6 +663,7 @@ impl BankManager {
             return Ok(self.installed(stored));
         }
         check_download_url(&entry.url)?;
+        cancel.check()?;
         let staging = self.stage()?;
         let download = staging.path.join(DOWNLOAD_NAME);
         download::fetch(
@@ -584,8 +673,13 @@ impl BankManager {
                 sha256: &entry.sha256,
             },
             &download,
+            &Fetch {
+                timeouts: &self.timeouts,
+                cancel,
+            },
             progress,
         )?;
+        cancel.check()?;
         progress(InstallProgress {
             stage: InstallStage::Unpacking,
             done: 0,
@@ -617,6 +711,7 @@ impl BankManager {
             done: entry.size,
             total: entry.size,
         });
+        cancel.check()?;
         let finished = Finished {
             id: Some(entry.id.clone()),
             name: entry.name.clone(),
