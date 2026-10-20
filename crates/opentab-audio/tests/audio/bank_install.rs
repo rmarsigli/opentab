@@ -152,32 +152,102 @@ fn a_refused_connection_is_an_offline_error() {
     assert_clean(&manager);
 }
 
+fn cut_reply(declared: Declared, ending: Ending) -> Reply {
+    Reply {
+        declared,
+        cut: Some(tiny_bytes().len() / 2),
+        ending,
+        ..Reply::ok(PATH, tiny_bytes().to_vec())
+    }
+}
+
 #[test]
-fn a_truncated_body_refuses_and_leaves_nothing() {
+fn a_body_the_server_ends_cleanly_short_is_truncated() {
     let size = tiny_bytes().len();
-    for declared in [Declared::Exact, Declared::Absent] {
-        let reply = Reply {
-            path: PATH.to_owned(),
-            status: 200,
-            body: tiny_bytes().to_vec(),
-            declared,
-            cut: Some(size / 2),
-            ..Reply::ok(PATH, Vec::new())
-        };
+    let Attempt {
+        dir: _dir,
+        result,
+        manager,
+    } = install_from(
+        cut_reply(Declared::Absent, Ending::Close),
+        ArchiveKind::Raw,
+        BankFormat::Sf2,
+        tiny_bytes(),
+    );
+    match result {
+        Err(InstallError::Truncated { expected, received }) => {
+            assert_eq!(expected, size as u64);
+            assert_eq!(received, (size / 2) as u64);
+        }
+        other => panic!("expected a truncated download, got {other:?}"),
+    }
+    assert_clean(&manager);
+}
+
+struct DroppedCase {
+    declared: Declared,
+    ending: Ending,
+}
+
+fn dropped_connections() -> Vec<DroppedCase> {
+    let mut cases = vec![DroppedCase {
+        declared: Declared::Exact,
+        ending: Ending::Close,
+    }];
+    if cfg!(target_os = "linux") {
+        cases.push(DroppedCase {
+            declared: Declared::Absent,
+            ending: Ending::Reset,
+        });
+        cases.push(DroppedCase {
+            declared: Declared::Exact,
+            ending: Ending::Reset,
+        });
+    }
+    cases
+}
+
+#[test]
+fn a_connection_that_drops_mid_body_is_an_offline_error() {
+    for case in dropped_connections() {
         let Attempt {
             dir: _dir,
             result,
             manager,
-        } = install_from(reply, ArchiveKind::Raw, BankFormat::Sf2, tiny_bytes());
-        match result {
-            Err(InstallError::Truncated { expected, received }) => {
-                assert_eq!(expected, size as u64);
-                assert!(received <= (size / 2) as u64, "{declared:?}");
-            }
-            other => panic!("expected a truncated download for {declared:?}, got {other:?}"),
-        }
+        } = install_from(
+            cut_reply(case.declared, case.ending),
+            ArchiveKind::Raw,
+            BankFormat::Sf2,
+            tiny_bytes(),
+        );
+        assert!(
+            matches!(result, Err(InstallError::Offline { .. })),
+            "{:?} {:?}: {result:?}",
+            case.declared,
+            case.ending
+        );
         assert_clean(&manager);
     }
+}
+
+#[test]
+fn huge_custom_timeouts_are_clamped_instead_of_panicking() {
+    let timeouts = DownloadTimeouts {
+        connect: Duration::MAX,
+        response: Duration::MAX,
+        stall: Duration::MAX,
+        deadline_floor: Duration::MAX,
+        min_bytes_per_second: 1,
+    };
+    let attempt = install_with(
+        Reply::ok(PATH, tiny_bytes().to_vec()),
+        ArchiveKind::Raw,
+        BankFormat::Sf2,
+        tiny_bytes(),
+        timeouts,
+    );
+    let bank = attempt.result.expect("installs");
+    assert_eq!(fs::read(&bank.path).expect("installed"), tiny_bytes());
 }
 
 #[test]
@@ -789,4 +859,127 @@ fn a_loopback_redirect_is_not_followed() {
     );
     assert_clean(&manager);
     assert_eq!(server.requests(), vec![String::from(PATH)]);
+}
+
+struct Cancelled {
+    result: Result<InstalledBank, InstallError>,
+    seen: Vec<InstallProgress>,
+    manager: BankManager,
+    _dir: tempfile::TempDir,
+}
+
+fn cancel_when(
+    archive: ArchiveKind,
+    format: BankFormat,
+    bytes: Vec<u8>,
+    when: fn(&InstallProgress) -> bool,
+) -> Cancelled {
+    let dir = scratch_dir();
+    let server = LoopbackServer::start(vec![Reply::ok(PATH, bytes.clone())]);
+    let entry = entry_for("cancelled", format, archive, &server.url(PATH), &bytes);
+    let mut manager = manager_with(dir.path(), vec![entry]);
+    let cancel = InstallCancel::new();
+    let mut seen: Vec<InstallProgress> = Vec::new();
+    let result = manager.install_with(
+        &id("cancelled"),
+        &mut |progress| {
+            seen.push(progress);
+            if when(&progress) {
+                cancel.cancel();
+            }
+        },
+        &cancel,
+    );
+    drop(server);
+    Cancelled {
+        result,
+        seen,
+        manager,
+        _dir: dir,
+    }
+}
+
+struct ArchiveCase {
+    kind: ArchiveKind,
+    bytes: Vec<u8>,
+}
+
+fn unpacked_files(seen: &[InstallProgress]) -> usize {
+    seen.iter()
+        .filter(|progress| progress.stage == InstallStage::Unpacking && progress.done > 0)
+        .count()
+}
+
+fn first_unpacked_file(progress: &InstallProgress) -> bool {
+    progress.stage == InstallStage::Unpacking && progress.done > 0
+}
+
+#[test]
+fn a_cancel_while_unpacking_stops_before_the_next_entry() {
+    let source_dir = scratch_dir();
+    let source = sfz_without_sidecar(source_dir.path());
+    let zip = zip_tree(&source, "Tiny/");
+    let seven = seven_zip(&seven_files(&source), &[]);
+    let archives = [
+        ArchiveCase {
+            kind: ArchiveKind::Zip,
+            bytes: zip,
+        },
+        ArchiveCase {
+            kind: ArchiveKind::SevenZip,
+            bytes: seven,
+        },
+    ];
+    for ArchiveCase { kind, bytes } in archives {
+        let complete = cancel_when(kind, BankFormat::Sfz, bytes.clone(), |_| false);
+        assert!(complete.result.is_ok(), "{kind:?}: {:?}", complete.result);
+        assert!(unpacked_files(&complete.seen) > 2, "{kind:?}");
+        let cancelled = cancel_when(kind, BankFormat::Sfz, bytes, first_unpacked_file);
+        assert_eq!(cancelled.result, Err(InstallError::Cancelled), "{kind:?}");
+        assert_eq!(unpacked_files(&cancelled.seen), 1, "{kind:?}");
+        assert!(
+            cancelled
+                .seen
+                .iter()
+                .all(|progress| progress.stage != InstallStage::Registering)
+        );
+        assert_clean(&cancelled.manager);
+    }
+}
+
+#[test]
+fn a_cancel_after_unpacking_stops_before_the_bank_is_validated() {
+    let cancelled = cancel_when(
+        ArchiveKind::Raw,
+        BankFormat::Sf2,
+        tiny_bytes().to_vec(),
+        |progress| progress.stage == InstallStage::Unpacking,
+    );
+    assert_eq!(cancelled.result, Err(InstallError::Cancelled));
+    let stages: Vec<InstallStage> = cancelled
+        .seen
+        .iter()
+        .map(|progress| progress.stage)
+        .filter(|stage| *stage != InstallStage::Downloading)
+        .collect();
+    assert_eq!(stages, [InstallStage::Verifying, InstallStage::Unpacking]);
+    assert_clean(&cancelled.manager);
+}
+
+#[test]
+fn a_cancel_after_validation_registers_nothing() {
+    let cancelled = cancel_when(
+        ArchiveKind::Raw,
+        BankFormat::Sf2,
+        tiny_bytes().to_vec(),
+        |progress| progress.stage == InstallStage::Registering,
+    );
+    assert_eq!(cancelled.result, Err(InstallError::Cancelled));
+    assert_clean(&cancelled.manager);
+    assert!(
+        BankManager::with_catalogue(cancelled.manager.root(), Vec::new())
+            .expect("reopens")
+            .list()
+            .is_empty()
+    );
 }

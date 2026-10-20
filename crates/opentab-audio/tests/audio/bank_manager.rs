@@ -294,38 +294,117 @@ fn files_that_are_not_banks_are_refused_with_a_message() {
 }
 
 #[cfg(unix)]
+fn mkfifo(path: &Path) {
+    let made = std::process::Command::new("mkfifo").arg(path).status();
+    assert!(
+        made.is_ok_and(|status| status.success()),
+        "mkfifo is available"
+    );
+}
+
+#[cfg(unix)]
 #[test]
-fn a_symlink_inside_an_imported_folder_is_refused() {
+fn links_and_special_files_the_bank_never_uses_are_skipped() {
     let dir = scratch_dir();
     let source = sfz_without_sidecar(dir.path());
+    let expected = tree(&source);
     std::os::unix::fs::symlink("/etc/hostname", source.join("Samples/link.wav")).expect("link");
-    let mut manager = manager_in(dir.path());
-    assert_eq!(refused(manager.import(&source)), UnsafeBank::BankSymlink);
-    assert_clean(&manager);
-}
-
-#[cfg(unix)]
-#[test]
-fn a_symlinked_folder_inside_an_import_is_refused() {
-    let dir = scratch_dir();
-    let source = sfz_without_sidecar(dir.path());
-    std::os::unix::fs::symlink("/etc", source.join("Programs/etc")).expect("link");
-    let mut manager = manager_in(dir.path());
-    assert_eq!(refused(manager.import(&source)), UnsafeBank::BankSymlink);
-    assert_clean(&manager);
-}
-
-#[cfg(unix)]
-#[test]
-fn a_special_file_inside_an_imported_folder_is_refused() {
-    let dir = scratch_dir();
-    let source = sfz_without_sidecar(dir.path());
+    std::os::unix::fs::symlink("/etc", source.join("Programs/etc")).expect("folder link");
+    mkfifo(&source.join("Samples/pipe.wav"));
     let socket = std::os::unix::net::UnixListener::bind(source.join("Samples/socket"))
         .expect("a socket file");
     let mut manager = manager_in(dir.path());
-    assert_eq!(refused(manager.import(&source)), UnsafeBank::SpecialFile);
+    let bank = manager.import(&source).expect("the bank imports");
     drop(socket);
+    let mut copied = tree(&bank.path);
+    assert!(copied.remove(SIDECAR_NAME).is_some());
+    assert_eq!(copied, expected);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_import_skips_a_stray_link_beside_its_sf2() {
+    let dir = scratch_dir();
+    let downloads = dir.path().join("Downloads");
+    fs::create_dir_all(&downloads).expect("folder");
+    write_tiny_sf2(&downloads, "My Bank.sf2");
+    std::os::unix::fs::symlink("/etc/hostname", downloads.join("shortcut")).expect("link");
+    std::os::unix::fs::symlink("/etc/hostname", downloads.join("Other.sf2")).expect("sf2 link");
+    let mut manager = manager_in(dir.path());
+    let bank = manager.import(&downloads).expect("the bank imports");
+    assert_eq!(
+        bank_files(&manager, &bank)
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>(),
+        [String::from("My Bank.sf2")]
+    );
+    let lonely = dir.path().join("Lonely");
+    fs::create_dir_all(&lonely).expect("folder");
+    std::os::unix::fs::symlink(downloads.join("My Bank.sf2"), lonely.join("Bank.sf2"))
+        .expect("link");
+    assert_eq!(refused(manager.import(&lonely)), UnsafeBank::BankSymlink);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_the_bank_uses_is_refused() {
+    let dir = scratch_dir();
+    let source = sfz_without_sidecar(dir.path());
+    let elsewhere = dir.path().join("elsewhere.flac");
+    fs::rename(source.join("Samples/kick.flac"), &elsewhere).expect("moved");
+    std::os::unix::fs::symlink(&elsewhere, source.join("Samples/kick.flac")).expect("link");
+    let mut manager = manager_in(dir.path());
+    assert_eq!(refused(manager.import(&source)), UnsafeBank::BankSymlink);
     assert_clean(&manager);
+    let other = scratch_dir();
+    let source = sfz_without_sidecar(other.path());
+    let instrument = source.join("Programs/lead.sfz");
+    let text = fs::read(&instrument).expect("instrument");
+    fs::write(other.path().join("lead.sfz"), text).expect("moved");
+    fs::remove_file(&instrument).expect("removed");
+    std::os::unix::fs::symlink(other.path().join("lead.sfz"), &instrument).expect("link");
+    let mut manager = manager_in(other.path());
+    assert_eq!(refused(manager.import(&source)), UnsafeBank::BankSymlink);
+    assert_clean(&manager);
+}
+
+#[cfg(unix)]
+#[test]
+fn an_include_swapped_for_a_pipe_is_refused_and_never_read_in_place() {
+    let dir = scratch_dir();
+    let source = sfz_without_sidecar(dir.path());
+    let include = source.join("Programs/includes/hats.txt");
+    fs::remove_file(&include).expect("removed");
+    mkfifo(&include);
+    let mut manager = manager_in(dir.path());
+    assert_eq!(refused(manager.import(&source)), UnsafeBank::SpecialFile);
+    assert_clean(&manager);
+}
+
+#[cfg(unix)]
+#[test]
+fn skipped_entries_do_not_count_towards_the_entry_limit() {
+    let dir = scratch_dir();
+    let source = folder_of(dir.path(), &[file("a.sfz", 30), file("b.wav", 10)]);
+    for name in ["c", "d", "e"] {
+        std::os::unix::fs::symlink("/etc/hostname", source.join(name)).expect("link");
+    }
+    let mut manager = manager_in(dir.path()).with_limits(small_limits());
+    let bank = manager.import(&source).expect("the bank imports");
+    let mut copied = tree(&bank.path);
+    assert!(copied.remove(SIDECAR_NAME).is_some());
+    assert_eq!(
+        copied.keys().cloned().collect::<Vec<String>>(),
+        [String::from("a.sfz"), String::from("b.wav")]
+    );
+    for name in ["f", "g"] {
+        std::os::unix::fs::symlink("/etc/hostname", source.join(name)).expect("link");
+    }
+    assert_eq!(
+        refused(manager.import(&source)),
+        UnsafeBank::TooManyFiles { limit: 4 }
+    );
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -726,33 +805,6 @@ fn a_folder_import_copies_only_the_files_the_sfz_instruments_reference() {
     assert_eq!(bank.bytes, bytes);
 }
 
-#[cfg(unix)]
-#[test]
-fn an_over_budget_folder_is_refused_before_anything_is_copied() {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = scratch_dir();
-    let source = folder_of(
-        dir.path(),
-        &[
-            file("a.sfz", 300),
-            file("b.wav", 400),
-            file("unrelated.txt", 50),
-        ],
-    );
-    let instrument = b"<region> sample=a-locked.wav\n<region> sample=b.wav\n";
-    let mut text = vec![b' '; 300];
-    text[..instrument.len()].copy_from_slice(instrument);
-    fs::write(source.join("a.sfz"), text).expect("instrument");
-    let locked = source.join("a-locked.wav");
-    fs::write(&locked, vec![3u8; 400]).expect("locked");
-    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("chmod");
-    let mut manager = manager_in(dir.path()).with_limits(small_limits());
-    let outcome = manager.import(&source);
-    fs::set_permissions(&locked, fs::Permissions::from_mode(0o644)).expect("chmod back");
-    assert_eq!(refused(outcome), UnsafeBank::BankTooLarge { limit_mib: 0 });
-    assert_clean(&manager);
-}
-
 #[test]
 fn an_import_named_after_a_windows_device_gets_a_portable_id() {
     let dir = scratch_dir();
@@ -840,7 +892,7 @@ fn a_damaged_registry_is_set_aside_and_the_manager_opens_empty() {
     let registry = manager.root().join(REGISTRY_NAME);
     let preferences = manager.root().join(PREFERENCES_NAME);
     fs::write(&registry, b"{ not json").expect("damaged");
-    fs::write(&preferences, b"{\"version\": 99, \"families\": {}}").expect("future");
+    fs::write(&preferences, b"{\"version\": 0, \"families\": {}}").expect("unknown");
     let reopened = manager_in(dir.path());
     assert!(reopened.list().is_empty());
     assert!(reopened.assignments().is_empty());
@@ -902,4 +954,48 @@ fn a_zip_that_unpacks_far_beyond_its_size_is_refused() {
         UnsafeBank::ArchiveRatio { ratio: 20 }
     );
     assert_clean(&manager);
+}
+
+#[test]
+fn a_store_from_a_newer_opentab_is_reported_and_left_untouched() {
+    let dir = scratch_dir();
+    let source = write_tiny_sf2(dir.path(), "kept.sf2");
+    let mut manager = manager_in(dir.path());
+    manager.import(&source).expect("imports");
+    let registry = manager.root().join(REGISTRY_NAME);
+    let preferences = manager.root().join(PREFERENCES_NAME);
+    let newer_registry = b"{\"version\": 2, \"banks\": [], \"shelves\": []}".to_vec();
+    let newer_preferences = b"{\"version\": 7, \"families\": {}}".to_vec();
+    fs::write(&registry, &newer_registry).expect("newer registry");
+    fs::write(&preferences, &newer_preferences).expect("newer preferences");
+    let mut reopened = manager_in(dir.path());
+    let problems = reopened.problems().to_vec();
+    assert_eq!(problems.len(), 2, "{problems:?}");
+    assert_eq!(problems[0].path, registry);
+    assert_eq!(problems[1].path, preferences);
+    assert!(problems.iter().all(|problem| problem.moved_to.is_none()));
+    assert!(
+        problems
+            .iter()
+            .all(|problem| problem.message.contains("newer"))
+    );
+    assert!(reopened.list().is_empty());
+    assert!(matches!(
+        reopened.import(&source),
+        Err(BankError::Storage { .. })
+    ));
+    assert!(matches!(
+        reopened.assign(opentab_model::InstrumentFamily::Piano, BankRef::BuiltIn),
+        Err(BankError::Storage { .. })
+    ));
+    assert_eq!(fs::read(&registry).expect("kept"), newer_registry);
+    assert_eq!(fs::read(&preferences).expect("kept"), newer_preferences);
+    assert_eq!(
+        listing(manager.root())
+            .iter()
+            .filter(|name| name.contains(DAMAGED_SUFFIX))
+            .count(),
+        0
+    );
+    assert_eq!(listing(&manager.staging_dir()), Vec::<String>::new());
 }
