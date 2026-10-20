@@ -6,6 +6,7 @@ use opentab_playback::{
     ScoreTime, Seconds, Speed,
 };
 
+use crate::chase::ChaseIndex;
 use crate::command::{
     BarRange, CommandQueue, CommandReceiver, CommandSender, QueueFull, TransportCommand,
     command_queue,
@@ -95,12 +96,6 @@ struct Sounding {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ChaseSlots {
-    states: [ChannelState; CHANNELS],
-    seen: [bool; CHANNELS],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct LoopSpan {
     range: BarRange,
     end: ScoreTime,
@@ -174,7 +169,8 @@ pub struct Transport {
     muted: Vec<bool>,
     soloed: Vec<bool>,
     sounding: Vec<Sounding>,
-    chase: Vec<ChaseSlots>,
+    chases: ChaseIndex,
+    chase_steps: u64,
     visited: Vec<bool>,
     clock: u64,
     scratch_left: Vec<f32>,
@@ -313,6 +309,7 @@ impl Transport {
         let tracks = performance.tracks.len();
         let bars = timeline.bar_count();
         let leads = lead_ins(&performance, &timeline);
+        let chases = ChaseIndex::new(&performance);
         let CommandQueue { sender, receiver } = command_queue();
         let status = Arc::new(StatusCell::new());
         let mut transport = Transport {
@@ -344,13 +341,8 @@ impl Transport {
                 };
                 tracks
             ],
-            chase: vec![
-                ChaseSlots {
-                    states: [ChannelState::default(); CHANNELS],
-                    seen: [false; CHANNELS],
-                };
-                tracks
-            ],
+            chases,
+            chase_steps: 0,
             visited: vec![false; bars],
             clock: 0,
             scratch_left: vec![0.0; BLOCK_FRAMES],
@@ -379,6 +371,10 @@ impl Transport {
 
     pub fn clock(&self) -> u64 {
         self.clock
+    }
+
+    pub fn chase_steps(&self) -> u64 {
+        self.chase_steps
     }
 
     pub fn played_bars(&self) -> Vec<usize> {
@@ -609,51 +605,13 @@ impl Transport {
     }
 
     fn chase(&mut self, at: ScoreTime) {
-        let performance = &self.performance;
-        for (slots, setup) in self.chase.iter_mut().zip(&performance.tracks) {
-            slots.seen = [false; CHANNELS];
-            for entry in &setup.channels {
-                let index = usize::from(entry.channel.get());
-                if let (Some(seen), Some(state)) =
-                    (slots.seen.get_mut(index), slots.states.get_mut(index))
-                    && !*seen
-                {
-                    *seen = true;
-                    *state = entry.state;
-                }
+        let voices = &mut self.voices;
+        let steps = self.chases.restore(&self.performance, at, |chased| {
+            if let Some(voice) = voices.get_mut(chased.track) {
+                voice.handle(chased.channel, &chased.message);
             }
-        }
-        let prefix = performance.events.partition_point(|event| event.at <= at);
-        for event in performance.events.iter().take(prefix) {
-            let index = usize::from(event.channel.get());
-            if let Some(slots) = self.chase.get_mut(event.track)
-                && slots.seen.get(index).copied().unwrap_or(false)
-                && let Some(state) = slots.states.get_mut(index)
-            {
-                state.apply(event.message);
-            }
-        }
-        for ((setup, slots), voice) in performance
-            .tracks
-            .iter()
-            .zip(&self.chase)
-            .zip(self.voices.iter_mut())
-        {
-            let mut emitted = [false; CHANNELS];
-            for entry in &setup.channels {
-                let index = usize::from(entry.channel.get());
-                let state = match emitted.get_mut(index) {
-                    Some(done) if !*done => {
-                        *done = true;
-                        slots.states.get(index).copied().unwrap_or(entry.state)
-                    }
-                    _ => entry.state,
-                };
-                for message in state.messages() {
-                    voice.handle(entry.channel, &message);
-                }
-            }
-        }
+        });
+        self.chase_steps = self.chase_steps.saturating_add(steps);
     }
 
     fn silence(&mut self) {

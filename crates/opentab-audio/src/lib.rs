@@ -5,6 +5,7 @@ mod builtin;
 mod bus;
 
 mod bank;
+mod chase;
 mod command;
 mod error;
 mod gm;

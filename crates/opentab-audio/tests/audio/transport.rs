@@ -1134,3 +1134,86 @@ fn a_bend_sounding_at_the_loop_end_is_reset_at_the_wrap() {
     }
     assert!(checked > 0);
 }
+
+fn events_in_bar(performance: &Performance, bar: usize) -> u64 {
+    let bars = &performance.order.bars;
+    let start = bars[bar].start;
+    let end = bars.get(bar + 1).map(|next| next.start);
+    performance
+        .events
+        .iter()
+        .filter(|event| event.at >= start && end.is_none_or(|end| event.at < end))
+        .count() as u64
+}
+
+fn events_before_bar(performance: &Performance, bar: usize) -> u64 {
+    let start = performance.order.bars[bar].start;
+    performance
+        .events
+        .iter()
+        .filter(|event| event.at <= start)
+        .count() as u64
+}
+
+#[test]
+fn a_seek_or_a_loop_wrap_chases_at_most_the_events_of_one_bar() {
+    let mut scan_would_exceed = false;
+    for name in SEEK_FIXTURES {
+        let performance = performance(&fixture(name), Profile::Musical);
+        let bars = performance.order.bars.len();
+        let mut session = Session::new(
+            performance.clone(),
+            built_in_voices(&performance, RATE),
+            config(RATE),
+        )
+        .expect("session");
+        let mut left = vec![0.0f32; 512];
+        let mut right = vec![0.0f32; 512];
+        session.handle.send(TransportCommand::Play).expect("send");
+        session.transport.process(&mut left, &mut right);
+        for bar in (0..bars).rev().chain(0..bars) {
+            let before = session.transport.chase_steps();
+            session
+                .handle
+                .send(TransportCommand::Seek(bar))
+                .expect("send");
+            session.transport.process(&mut left, &mut right);
+            assert_eq!(session.handle.status().played_bar, bar, "{name}");
+            let steps = session.transport.chase_steps() - before;
+            assert!(
+                steps <= events_in_bar(&performance, bar),
+                "{name} bar {bar}: {steps} steps"
+            );
+            scan_would_exceed |=
+                events_before_bar(&performance, bar) > events_in_bar(&performance, bar);
+        }
+        if bars < 2 {
+            continue;
+        }
+        let first = bars - 2;
+        session
+            .handle
+            .send(TransportCommand::Loop(range(first, bars - 1)))
+            .expect("send");
+        session.transport.process(&mut left, &mut right);
+        let mut wraps = 0;
+        let mut previous = session.handle.status().played_bar;
+        while wraps < 2 {
+            let before = session.transport.chase_steps();
+            session.transport.process(&mut left, &mut right);
+            let now = session.handle.status().played_bar;
+            if now < previous {
+                wraps += 1;
+                let steps = session.transport.chase_steps() - before;
+                assert!(
+                    steps <= events_in_bar(&performance, first),
+                    "{name} wrap {wraps}: {steps} steps"
+                );
+            } else {
+                assert_eq!(session.transport.chase_steps(), before, "{name}");
+            }
+            previous = now;
+        }
+    }
+    assert!(scan_would_exceed);
+}
