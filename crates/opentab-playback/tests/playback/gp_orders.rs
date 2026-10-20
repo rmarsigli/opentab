@@ -11,6 +11,7 @@ const GP8_ORDERS: &str = include_str!("../data/gp8-play-orders.txt");
 const FIXTURE_ORDERS: &str = include_str!("../../../../xtask/src/fixtures/play-orders.json");
 const GP8_EXPERIMENTS: usize = 54;
 const T4_EXPERIMENTS: usize = 4;
+const LOOK_AHEAD_EXPERIMENTS: usize = 4;
 const DIRECTION_FIXTURES: usize = 12;
 const REFERENCE_LIMIT: usize = 1 << 16;
 
@@ -51,7 +52,14 @@ fn the_data_holds_every_gp8_experiment() {
         .iter()
         .filter(|row| row.name.starts_with("m3-t4-"))
         .count();
-    assert_eq!((t1, t4, all.len()), (GP8_EXPERIMENTS, T4_EXPERIMENTS, 58));
+    let look_ahead = all
+        .iter()
+        .filter(|row| row.name.starts_with("m3-fw-"))
+        .count();
+    assert_eq!(
+        (t1, t4, look_ahead, all.len()),
+        (GP8_EXPERIMENTS, T4_EXPERIMENTS, LOOK_AHEAD_EXPERIMENTS, 62)
+    );
 }
 
 #[test]
@@ -72,7 +80,10 @@ fn every_gp8_experiment_plays_in_guitar_pros_order() {
         );
         matched += 1;
     }
-    assert_eq!(matched, GP8_EXPERIMENTS + T4_EXPERIMENTS);
+    assert_eq!(
+        matched,
+        GP8_EXPERIMENTS + T4_EXPERIMENTS + LOOK_AHEAD_EXPERIMENTS
+    );
 }
 
 fn root() -> PathBuf {

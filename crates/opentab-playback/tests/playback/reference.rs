@@ -179,6 +179,18 @@ impl Score<'_> {
         self.goal(jump).filter(|goal| *goal > from)
     }
 
+    fn armed_goal(&self, from: usize, memory: &Memory, jump: DirectionJump) -> Option<usize> {
+        let armed = match jump {
+            DirectionJump::DaCoda => DirectionTarget::Coda,
+            _ => DirectionTarget::DoubleCoda,
+        };
+        if memory.fired.contains(&jump) || !memory.released.contains(&armed) {
+            None
+        } else {
+            self.coda_goal(from, jump)
+        }
+    }
+
     fn bounce_or_step(&self, cursor: &mut Cursor) {
         let bar = &self.bars[cursor.bar];
         match bar.repeat_end {
@@ -221,12 +233,13 @@ impl Score<'_> {
             }
             let mut moved = false;
             for other in self.jumps_of(probe.bar) {
-                let returning =
-                    !matches!(other, DirectionJump::DaCoda | DirectionJump::DaDoubleCoda);
-                if !returning {
-                    continue;
-                }
-                if let Some(goal) = self.return_goal(&probe, &seen, other) {
+                let goal = match other {
+                    DirectionJump::DaCoda | DirectionJump::DaDoubleCoda => {
+                        self.armed_goal(probe.bar, &seen, other)
+                    }
+                    _ => self.return_goal(&probe, &seen, other),
+                };
+                if let Some(goal) = goal {
                     self.take(&mut probe, &mut seen, other, goal);
                     moved = true;
                     break;

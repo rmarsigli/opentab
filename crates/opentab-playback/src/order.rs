@@ -274,6 +274,13 @@ impl<'s> Plan<'s> {
         None
     }
 
+    fn released_fires(&self, state: &State, jump: DirectionJump) -> Option<usize> {
+        if state.fired & jump_bit(jump) != 0 || !Plan::released(state, jump) {
+            return None;
+        }
+        self.valid_forward(state.index, jump)
+    }
+
     fn holds(&self, probe: &State, origin: usize, jump: DirectionJump) -> bool {
         self.jumps[probe.index].iter().any(|other| {
             if probe.fired & jump_bit(*other) != 0 {
@@ -297,15 +304,17 @@ impl<'s> Plan<'s> {
             if self.holds(&probe, origin, jump) {
                 return true;
             }
-            let fired = self.jumps[probe.index]
-                .iter()
-                .filter(|other| other.is_return())
-                .find_map(|other| {
-                    self.return_fires(&probe, *other).map(|target| Firing {
-                        jump: *other,
-                        target,
-                    })
-                });
+            let fired = self.jumps[probe.index].iter().find_map(|other| {
+                let target = if other.is_return() {
+                    self.return_fires(&probe, *other)
+                } else {
+                    self.released_fires(&probe, *other)
+                };
+                target.map(|target| Firing {
+                    jump: *other,
+                    target,
+                })
+            });
             match fired {
                 Some(firing) => self.fire(&mut probe, firing.jump, firing.target),
                 None => self.close(&mut probe),

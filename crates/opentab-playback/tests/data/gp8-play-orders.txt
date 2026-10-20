@@ -56,3 +56,7 @@ m3-t4-y1-ignored-double-coda-ahead | 8 | 1 DoubleCoda; 2 DaCoda; 3 DaDoubleCoda;
 m3-t4-y3-valid-double-coda-ahead | 8 | 1 DaCoda; 2 DaDoubleCoda; 4 Coda; 6 DoubleCoda | 0 1 2 6 7
 m3-t4-x2-earlier-twin-and-late-to-coda | 8 | 1 DaCoda; 3 Coda; 4 DaCoda | 0 1 2 3 4 5 6 7
 m3-t4-x3-two-to-codas-before-the-coda | 8 | 1 DaCoda; 2 DaCoda; 4 Coda | 0 1 2 4 5 6 7
+m3-fw-l1-tocoda-active-fine-ahead | 8 | 1 DaCapoAlFine; 2 DaCoda; 3 Fine; 4 DaCapo; 5 Coda | 0 1 0 1 2 3
+m3-fw-l2-tocoda-idle-fine-ahead | 8 | 1 DaCoda; 2 Fine; 3 DaCapo; 4 Coda | 0 1 2 3 0 1 4 5 6 7
+m3-fw-l3-doublecoda-tocoda-fires-ahead | 8 | 1 DaDoubleCoda; 2 DaCoda; 3 DaCapoAlCoda; 4 DaCapoAlDoubleCoda; 5 Coda; 6 DoubleCoda | 0 1 2 3 0 1 6 7
+m3-fw-l4-doublecoda-active-fine-ahead | 8 | 1 DaCapoAlFine; 2 DaDoubleCoda; 3 Fine; 4 DaCapo; 5 DoubleCoda | 0 1 0 1 2 3
