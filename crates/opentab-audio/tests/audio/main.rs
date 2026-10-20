@@ -1,4 +1,7 @@
 mod arb;
+mod bank_install;
+mod bank_manager;
+mod bank_resolve;
 mod bus;
 mod corpus;
 mod export;
