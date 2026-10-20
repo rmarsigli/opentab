@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use clap::error::ErrorKind;
 use serde::Serialize;
 
-use crate::error::{CliError, EXIT_INPUT, EXIT_USAGE, ErrorBody, ErrorEnvelope};
+use crate::error::{CliError, EXIT_USAGE, ErrorBody, ErrorEnvelope};
 use crate::text::{escape_controls, escape_controls_keeping_lines};
 
 pub struct Rendered<T> {
@@ -30,7 +30,7 @@ pub fn emit<T: Serialize>(rendered: &Rendered<T>, json: bool) -> Result<(), CliE
 
 pub fn failure(error: &CliError, json: bool) -> ExitCode {
     print_error(error.body(), json, escape_controls);
-    ExitCode::from(EXIT_INPUT)
+    ExitCode::from(error.exit_code())
 }
 
 pub fn usage(error: &clap::Error, json_hint: bool) -> ExitCode {

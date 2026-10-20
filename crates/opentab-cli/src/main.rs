@@ -19,6 +19,8 @@ mod play;
 #[cfg(not(feature = "live"))]
 #[path = "play_off.rs"]
 mod play;
+#[cfg(any(feature = "live", test))]
+mod playing;
 mod render;
 mod sound;
 mod soundbank;

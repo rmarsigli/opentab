@@ -9,6 +9,8 @@ use serde::Serialize;
 
 pub const EXIT_USAGE: u8 = 1;
 pub const EXIT_INPUT: u8 = 2;
+#[cfg(any(feature = "live", test))]
+pub const EXIT_INTERRUPTED: u8 = 130;
 
 #[derive(Debug)]
 pub enum CliError {
@@ -44,8 +46,13 @@ pub enum CliError {
     SoundBank {
         message: String,
     },
+    SoundBankPolicy {
+        message: String,
+    },
     #[cfg(not(feature = "live"))]
     LiveUnavailable,
+    #[cfg(any(feature = "live", test))]
+    Interrupted,
     Internal {
         message: String,
     },
@@ -67,8 +74,15 @@ impl From<BankError> for CliError {
 
 impl From<InstallError> for CliError {
     fn from(error: InstallError) -> CliError {
-        CliError::SoundBank {
-            message: error.to_string(),
+        match error {
+            InstallError::Insecure { .. } | InstallError::Address { .. } => {
+                CliError::SoundBankPolicy {
+                    message: error.to_string(),
+                }
+            }
+            _ => CliError::SoundBank {
+                message: error.to_string(),
+            },
         }
     }
 }
@@ -184,6 +198,19 @@ impl CliError {
                 sub_kind: None,
                 line: None,
             },
+            CliError::SoundBankPolicy { message } => ErrorBody {
+                kind: "sound_bank",
+                sub_kind: Some("insecure_address"),
+                message: message.clone(),
+                line: None,
+            },
+            #[cfg(any(feature = "live", test))]
+            CliError::Interrupted => ErrorBody {
+                kind: "interrupted",
+                message: "playback was interrupted".to_string(),
+                sub_kind: None,
+                line: None,
+            },
             #[cfg(not(feature = "live"))]
             CliError::LiveUnavailable => ErrorBody {
                 kind: "live_unavailable",
@@ -198,6 +225,16 @@ impl CliError {
                 line: None,
             },
         }
+    }
+}
+
+impl CliError {
+    pub fn exit_code(&self) -> u8 {
+        #[cfg(any(feature = "live", test))]
+        if matches!(self, CliError::Interrupted) {
+            return EXIT_INTERRUPTED;
+        }
+        EXIT_INPUT
     }
 }
 

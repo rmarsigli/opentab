@@ -318,7 +318,13 @@ fn an_install_from_an_address_that_is_not_https_or_loopback_is_refused() {
         ],
     );
     assert_eq!(result.code, 2);
-    assert_eq!(result.json()["error"]["kind"], json!("sound_bank"));
+    let error = &result.json()["error"];
+    assert_eq!(error["kind"], json!("sound_bank"));
+    assert_eq!(error["sub_kind"], json!("insecure_address"));
+    assert!(
+        error["message"].as_str().unwrap().contains("(https)"),
+        "{error}"
+    );
 }
 
 #[test]
