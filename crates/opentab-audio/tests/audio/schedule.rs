@@ -1,14 +1,16 @@
 use num_rational::Ratio;
-use opentab_audio::{SampleRate, Scheduler, frame_at};
-use opentab_playback::{MidiMessage, PlaybackOptions, Speed, perform};
+use opentab_audio::{SampleRate, Session, SessionConfig, frame_at, render_session};
+use opentab_playback::{Performance, PlaybackOptions, ScoreTime, Speed, TempoMap, perform};
 use opentab_testkit::arb_score;
 use proptest::prelude::*;
 use proptest::test_runner::{FileFailurePersistence, RngSeed};
 
+use crate::recording::{Heard, heard, recorders};
 use crate::support::{PROFILES, fixture, performance};
 
 const PROPERTY_SEED: u64 = 0x0074_3113;
 const PERCENT: i128 = 100;
+const TAIL_FRAMES: u64 = 2;
 
 fn config() -> ProptestConfig {
     ProptestConfig {
@@ -18,28 +20,60 @@ fn config() -> ProptestConfig {
     }
 }
 
-fn expected_frame(
-    tempo: &opentab_playback::TempoMap,
-    at: opentab_playback::ScoreTime,
-    percent: u16,
-    rate: SampleRate,
-) -> u64 {
+fn exact_frames(tempo: &TempoMap, at: ScoreTime, percent: u16, rate: SampleRate) -> Ratio<i128> {
     let normal = tempo.seconds_at(at, Speed::NORMAL).expect("seconds");
-    let exact = Ratio::new(normal.numer(), normal.denom())
+    Ratio::new(normal.numer(), normal.denom())
         * Ratio::from_integer(i128::from(rate.hz()) * PERCENT)
-        / Ratio::from_integer(i128::from(percent));
-    u64::try_from(exact.floor().to_integer()).expect("frame")
+        / Ratio::from_integer(i128::from(percent))
+}
+
+fn expected_frame(tempo: &TempoMap, at: ScoreTime, percent: u16, rate: SampleRate) -> u64 {
+    u64::try_from(exact_frames(tempo, at, percent, rate).floor().to_integer()).expect("frame")
 }
 
 fn arb_rate() -> impl Strategy<Value = SampleRate> {
     prop::sample::select(SampleRate::SUPPORTED.to_vec())
 }
 
+fn session_heard(performance: &Performance, percent: u16, rate: SampleRate) -> Vec<Vec<Heard>> {
+    let recorders = recorders(performance);
+    let config = SessionConfig {
+        rate,
+        speed: Speed::new(percent).expect("speed"),
+        ..SessionConfig::default()
+    };
+    let mut session = Session::new(performance.clone(), recorders.voices, config).expect("session");
+    let frames =
+        expected_frame(&performance.tempo, performance.order.end(), percent, rate) + TAIL_FRAMES;
+    let last = performance.events.last().map_or(0, |event| {
+        expected_frame(&performance.tempo, event.at, percent, rate) + TAIL_FRAMES
+    });
+    render_session(&mut session, &[], frames.max(last)).expect("render");
+    recorders.logs.iter().map(heard).collect()
+}
+
+fn expected_heard(performance: &Performance, percent: u16, rate: SampleRate) -> Vec<Vec<Heard>> {
+    (0..performance.tracks.len())
+        .map(|track| {
+            performance
+                .events
+                .iter()
+                .filter(|event| event.track == track)
+                .map(|event| Heard {
+                    frame: expected_frame(&performance.tempo, event.at, percent, rate),
+                    channel: event.channel,
+                    message: event.message,
+                })
+                .collect()
+        })
+        .collect()
+}
+
 proptest! {
     #![proptest_config(config())]
 
     #[test]
-    fn every_event_lands_on_the_floor_of_its_exact_time_at_any_speed(
+    fn every_event_reaches_its_synth_on_the_floor_of_its_exact_time_at_any_speed(
         score in arb_score(),
         percent in 25u16..=200,
         rate in arb_rate(),
@@ -48,20 +82,16 @@ proptest! {
             let Ok(performance) = perform(&score, &PlaybackOptions { profile }) else {
                 continue;
             };
+            let expected = expected_heard(&performance, percent, rate);
+            let logs = session_heard(&performance, percent, rate);
+            prop_assert_eq!(logs, expected);
             let speed = Speed::new(percent).expect("speed");
-            let scheduler = Scheduler::new(&performance, speed, rate).expect("schedule");
-            prop_assert_eq!(scheduler.events().len(), performance.events.len());
-            let mut previous = 0;
-            for (sampled, event) in scheduler.events().iter().zip(&performance.events) {
-                prop_assert_eq!(sampled.frame, expected_frame(&performance.tempo, event.at, percent, rate));
-                prop_assert_eq!(sampled.track, event.track);
-                prop_assert_eq!(sampled.channel, event.channel);
-                prop_assert_eq!(sampled.message, event.message);
-                prop_assert!(sampled.frame >= previous);
-                previous = sampled.frame;
+            for event in &performance.events {
+                prop_assert_eq!(
+                    frame_at(&performance.tempo, event.at, speed, rate).expect("frame"),
+                    expected_frame(&performance.tempo, event.at, percent, rate)
+                );
             }
-            let yielded: Vec<_> = scheduler.clone().collect();
-            prop_assert_eq!(yielded.as_slice(), scheduler.events());
         }
     }
 }
@@ -73,14 +103,16 @@ fn half_speed_doubles_every_frame_and_double_speed_halves_it() {
         let performance = performance(&score, profile);
         let rate = SampleRate::STUDIO;
         let at = |percent: u16| -> Vec<u64> {
-            Scheduler::new(&performance, Speed::new(percent).expect("speed"), rate)
-                .expect("schedule")
-                .map(|event| event.frame)
+            session_heard(&performance, percent, rate)
+                .iter()
+                .flatten()
+                .map(|heard| heard.frame)
                 .collect()
         };
         let normal = at(100);
         let half = at(50);
         let double = at(200);
+        assert_eq!(normal.len(), performance.events.len());
         assert!(normal.iter().any(|frame| *frame > 0));
         for ((normal, half), double) in normal.iter().zip(&half).zip(&double) {
             assert!(
@@ -89,34 +121,7 @@ fn half_speed_doubles_every_frame_and_double_speed_halves_it() {
             );
             assert_eq!(*double, normal / 2);
         }
-        let last = performance.events.last().expect("events");
-        assert_eq!(
-            frame_at(
-                &performance.tempo,
-                last.at,
-                Speed::new(50).expect("speed"),
-                rate
-            )
-            .expect("frame"),
-            *half.last().expect("last")
-        );
     }
-}
-
-#[test]
-fn the_scheduler_peeks_without_consuming() {
-    let performance = performance(
-        &fixture("note-effects.gp"),
-        opentab_playback::Profile::Musical,
-    );
-    let mut scheduler =
-        Scheduler::new(&performance, Speed::NORMAL, SampleRate::STUDIO).expect("schedule");
-    let first = *scheduler.peek().expect("first");
-    assert_eq!(scheduler.next(), Some(first));
-    assert!(matches!(
-        scheduler.events()[0].message,
-        MidiMessage::Bank { .. } | MidiMessage::Program { .. }
-    ));
 }
 
 const COVERAGE_SCORES: usize = 128;
@@ -138,21 +143,11 @@ fn the_frame_property_sees_many_positive_and_fractional_frames() {
                 continue;
             };
             performed += 1;
-            let speed = Speed::new(COVERAGE_PERCENT).expect("speed");
-            let scheduler = Scheduler::new(&performance, speed, rate).expect("schedule");
-            for (sampled, event) in scheduler.events().iter().zip(&performance.events) {
-                let normal = performance
-                    .tempo
-                    .seconds_at(event.at, Speed::NORMAL)
-                    .expect("seconds");
-                let exact = Ratio::new(normal.numer(), normal.denom())
-                    * Ratio::from_integer(i128::from(rate.hz()) * PERCENT)
-                    / Ratio::from_integer(i128::from(COVERAGE_PERCENT));
-                assert_eq!(
-                    sampled.frame,
-                    u64::try_from(exact.floor().to_integer()).expect("frame")
-                );
-                positive += usize::from(sampled.frame > 0);
+            let logs = session_heard(&performance, COVERAGE_PERCENT, rate);
+            assert_eq!(logs, expected_heard(&performance, COVERAGE_PERCENT, rate));
+            for event in &performance.events {
+                let exact = exact_frames(&performance.tempo, event.at, COVERAGE_PERCENT, rate);
+                positive += usize::from(exact >= Ratio::from_integer(1));
                 fractional += usize::from(!exact.is_integer());
             }
         }

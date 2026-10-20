@@ -46,7 +46,7 @@ pub use rate::SampleRate;
 pub use render::{
     BLOCK_FRAMES, MAX_FRAMES, RENDER_TAIL_MS, RenderedAudio, TRACK_HEADROOM, full_length,
 };
-pub use schedule::{SampledEvent, Scheduler, frame_at};
+pub use schedule::frame_at;
 pub use session::{
     BUILT_IN_BANK_NAME, RenderReport, ScriptStep, Session, TrackBackend, render_session,
 };

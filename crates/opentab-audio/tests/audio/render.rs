@@ -1,11 +1,12 @@
 use std::sync::{Arc, Mutex};
 
 use opentab_audio::{
-    AudioError, DRUM_DECAY_MS, MELODIC_RELEASE_MS, RENDER_TAIL_MS, SampleRate, Scheduler, Synth,
+    AudioError, DRUM_DECAY_MS, MELODIC_RELEASE_MS, RENDER_TAIL_MS, SampleRate, Synth, frame_at,
     full_length,
 };
 use opentab_playback::{Channel, MidiMessage, Performance, Profile, Speed};
 
+use crate::recording::unit_of;
 use crate::support::{
     PROFILES, built_in_voices, fixture, performance, render, render_all, render_frames,
 };
@@ -94,14 +95,13 @@ fn every_track_hears_its_own_events_at_their_exact_frames() {
                 audio.frames,
                 full_length(&performance, rate).expect("length")
             );
-            let scheduler = Scheduler::new(&performance, Speed::NORMAL, rate).expect("schedule");
             for (track, log) in logs.iter().enumerate() {
-                let expected: Vec<Heard> = scheduler
-                    .events()
+                let expected: Vec<Heard> = performance
+                    .events
                     .iter()
                     .filter(|event| event.track == track)
                     .map(|event| Heard {
-                        frame: event.frame,
+                        frame: unit_of(&performance.tempo, event.at, rate) / 100,
                         channel: event.channel,
                         message: event.message,
                     })
@@ -135,7 +135,7 @@ fn a_render_needs_one_synth_per_track() {
 fn the_render_ends_a_fixed_tail_after_the_score() {
     let performance = performance(&fixture("durations.gp"), Profile::Musical);
     let rate = SampleRate::STUDIO;
-    let end = opentab_audio::frame_at(
+    let end = frame_at(
         &performance.tempo,
         performance.order.end(),
         Speed::NORMAL,
@@ -155,10 +155,11 @@ fn the_render_ends_a_fixed_tail_after_the_score() {
 }
 
 fn last_note_off(performance: &Performance, rate: SampleRate) -> u64 {
-    Scheduler::new(performance, Speed::NORMAL, rate)
-        .expect("schedule")
+    performance
+        .events
+        .iter()
         .filter(|event| matches!(event.message, MidiMessage::NoteOff { .. }))
-        .map(|event| event.frame)
+        .map(|event| frame_at(&performance.tempo, event.at, Speed::NORMAL, rate).expect("frame"))
         .max()
         .expect("a note-off")
 }

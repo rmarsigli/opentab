@@ -1,5 +1,5 @@
-use opentab_audio::{BuiltInSynth, SampleRate, Scheduler, Synth, encode_wav, full_length};
-use opentab_playback::{PlaybackOptions, Speed, perform};
+use opentab_audio::{BuiltInSynth, SampleRate, Synth, encode_wav, full_length};
+use opentab_playback::{PlaybackOptions, perform};
 use opentab_testkit::arb_score;
 use proptest::prelude::*;
 use proptest::test_runner::{FileFailurePersistence, RngSeed};
@@ -39,7 +39,7 @@ proptest! {
                 performance.tracks.iter().map(|_| BuiltInSynth::new(rate)).collect();
             let mut left = [0.0; STEP_FRAMES];
             let mut right = [0.0; STEP_FRAMES];
-            for event in Scheduler::new(&performance, Speed::NORMAL, rate).expect("schedule") {
+            for event in &performance.events {
                 let synth = &mut synths[event.track];
                 synth.handle(event.channel, &event.message);
                 synth.render(&mut left, &mut right);
