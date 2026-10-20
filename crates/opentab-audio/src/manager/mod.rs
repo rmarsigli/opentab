@@ -511,9 +511,6 @@ impl BankManager {
         let mut filled: HashSet<PathBuf> = HashSet::new();
         loop {
             for listed in wanted {
-                if let Some(reason) = listed.kind.refusal() {
-                    return Err(refuse(reason));
-                }
                 let target = probe.join(&listed.relative);
                 fs::remove_file(&target).map_err(|error| storage(&target, &error))?;
                 copy_head(

@@ -463,6 +463,9 @@ pub(crate) fn take_copied() -> Vec<PathBuf> {
 }
 
 fn open_listed(source: &Path, listed: &Listed) -> Result<File, BankError> {
+    if let Some(reason) = listed.kind.refusal() {
+        return Err(refuse(reason));
+    }
     let file = open_source(source).map_err(|error| {
         if is_link_refusal(&error) {
             refuse(UnsafeBank::BankSymlink)
@@ -489,9 +492,6 @@ pub(crate) fn copy_listed(
     target: &Path,
     budget: &mut Budget,
 ) -> Result<(), BankError> {
-    if let Some(reason) = listed.kind.refusal() {
-        return Err(refuse(reason));
-    }
     let mut file = open_listed(source, listed)?;
     budget.declared(listed.bytes, budget.bytes.saturating_add(listed.bytes))?;
     #[cfg(test)]

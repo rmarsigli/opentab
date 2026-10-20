@@ -371,6 +371,20 @@ fn a_link_the_bank_uses_is_refused() {
 
 #[cfg(unix)]
 #[test]
+fn a_special_file_the_bank_uses_is_refused() {
+    let dir = scratch_dir();
+    let source = sfz_without_sidecar(dir.path());
+    let instrument = source.join("Programs/lead.sfz");
+    fs::remove_file(&instrument).expect("removed");
+    let socket = std::os::unix::net::UnixListener::bind(&instrument).expect("a socket file");
+    let mut manager = manager_in(dir.path());
+    assert_eq!(refused(manager.import(&source)), UnsafeBank::SpecialFile);
+    drop(socket);
+    assert_clean(&manager);
+}
+
+#[cfg(unix)]
+#[test]
 fn an_include_swapped_for_a_pipe_is_refused_and_never_read_in_place() {
     let dir = scratch_dir();
     let source = sfz_without_sidecar(dir.path());
