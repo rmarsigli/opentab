@@ -10,7 +10,7 @@ use proptest::prelude::*;
 use proptest::sample::select;
 
 use crate::effects::{arb_beat_effects, arb_note_effects};
-use crate::text::{arb_meta_text, arb_text, arb_text_for};
+use crate::text::{arb_any_text, arb_meta_text, arb_text_for};
 
 const MAX_VOICES_PER_BAR: usize = 2;
 const MAX_STAVES_PER_TRACK: usize = 2;
@@ -666,11 +666,11 @@ fn arb_master_bar_seed(gp_writable: bool) -> impl Strategy<Value = MasterBarSeed
 }
 
 fn arb_payload() -> impl Strategy<Value = OpaquePayload> {
-    (arb_text(8), arb_text(32)).prop_map(|(format, data)| OpaquePayload { format, data })
+    (arb_any_text(8), arb_any_text(32)).prop_map(|(format, data)| OpaquePayload { format, data })
 }
 
 fn arb_container_entry() -> impl Strategy<Value = ContainerEntry> {
-    (arb_text(16), vec(any::<u8>(), 0..=MAX_CONTAINER_BYTES)).prop_map(|(name, data)| {
+    (arb_any_text(16), vec(any::<u8>(), 0..=MAX_CONTAINER_BYTES)).prop_map(|(name, data)| {
         ContainerEntry::File {
             name,
             data: Base64Bytes(data),
@@ -763,7 +763,7 @@ fn arb_document_seed(gp_writable: bool) -> BoxedStrategy<DocumentSeed> {
             vec(arb_payload(), 0..=MAX_EXTENSION_PAYLOADS),
             vec(arb_container_entry(), 0..=MAX_CONTAINER_ENTRIES),
             option::of(
-                (any::<usize>(), arb_text(16))
+                (any::<usize>(), arb_any_text(16))
                     .prop_map(|(position, name)| ScoreEntrySeed { position, name }),
             ),
         )

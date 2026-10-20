@@ -24,7 +24,15 @@ fn control_characters_are_escaped_in_human_info() {
         result.stdout
     );
     assert!(!result.stdout.chars().any(|c| c.is_control() && c != '\n'));
-    assert_eq!(result.stdout.lines().count(), 7);
+    let lines: Vec<&str> = result.stdout.lines().collect();
+    assert_eq!(
+        lines[6..],
+        [
+            "diagnostics: 1",
+            "  {\"kind\":\"unwritable_text\",\"element\":null,\"field\":\"meta.title\",\"code\":27}",
+        ]
+    );
+    assert_eq!(lines.len(), 8);
 }
 
 #[test]

@@ -9,6 +9,7 @@ const ACCENTED: [char; 8] = ['é', 'ñ', 'ü', 'ç', 'ø', 'ß', 'Ω', 'ж'];
 const WIDE: [char; 6] = ['日', '本', '語', '한', '글', 'あ'];
 const EMOJI: [char; 6] = ['🎸', '🥁', '🎼', '😀', '🎶', '🤘'];
 const MARKUP: [char; 6] = ['<', '>', '&', ']', '\'', '\t'];
+const UNWRITABLE: [char; 6] = ['\u{0}', '\u{7}', '\r', '\u{1B}', '\u{FFFE}', '\u{FFFF}'];
 const REPLACEMENT: char = '?';
 
 fn writable(character: char) -> char {
@@ -28,6 +29,7 @@ fn arb_char() -> impl Strategy<Value = char> {
         2 => select(ACCENTED.to_vec()),
         2 => select(WIDE.to_vec()),
         2 => select(EMOJI.to_vec()),
+        1 => select(UNWRITABLE.to_vec()),
         1 => any::<char>(),
     ]
 }
@@ -43,12 +45,12 @@ fn arb_char_for(gp_writable: bool) -> BoxedStrategy<char> {
     if gp_writable {
         arb_writable_char().boxed()
     } else {
-        arb_char().boxed()
+        arb_char().prop_map(writable).boxed()
     }
 }
 
-pub fn arb_text(max_chars: usize) -> impl Strategy<Value = String> {
-    arb_text_for(max_chars, false)
+pub fn arb_any_text(max_chars: usize) -> impl Strategy<Value = String> {
+    vec(arb_char(), 0..=max_chars).prop_map(|chars| chars.into_iter().collect())
 }
 
 pub fn arb_text_for(max_chars: usize, gp_writable: bool) -> impl Strategy<Value = String> {

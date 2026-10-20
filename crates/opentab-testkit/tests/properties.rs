@@ -1,9 +1,9 @@
 use opentab_model::{
     AutomationValue, Clef, ContainerEntry, Diagnostic, Dynamic, Finger, Fraction, Grace,
-    JumpDestination, NoteKind, NoteValue, Score, Tap, TempoUnit, TrackMidi, Transpose, Voice,
-    diagnose, from_json, to_json,
+    JumpDestination, NoteKind, NoteValue, Score, Tap, TempoUnit, TextForm, TrackMidi, Transpose,
+    Voice, diagnose, from_json, to_json, unwritable_character,
 };
-use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with, min_beats_for_bar};
+use opentab_testkit::{ScoreGenConfig, arb_any_text, arb_score, arb_score_with, min_beats_for_bar};
 use proptest::prelude::*;
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::{Config, RngAlgorithm, TestError, TestRng, TestRunner};
@@ -66,6 +66,26 @@ proptest! {
     fn round_tripped_scores_still_diagnose_clean(score in arb_score()) {
         let back = from_json(&to_json(&score).expect("serialises")).expect("generated score must parse");
         prop_assert_eq!(diagnose(&back), Vec::new());
+    }
+
+    #[test]
+    fn arbitrary_titles_round_trip_and_are_diagnosed_as_the_text_rule_predicts(
+        score in arb_score(),
+        title in arb_any_text(24),
+    ) {
+        let mut titled = score;
+        titled.meta.title = title.clone();
+        let expected: Vec<Diagnostic> = unwritable_character(&title, TextForm::Literal)
+            .map(|character| Diagnostic::UnwritableText {
+                element: None,
+                field: "meta.title".to_string(),
+                code: u32::from(character),
+            })
+            .into_iter()
+            .collect();
+        prop_assert_eq!(diagnose(&titled), expected);
+        let back = from_json(&to_json(&titled).expect("serialises")).expect("parses");
+        prop_assert_eq!(back, titled);
     }
 
     #[test]

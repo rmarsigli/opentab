@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 
 use opentab_gp::{GpError, Refusal, read_gp, write_gp};
 use opentab_model::{
-    AutomationValue, Balance, DrumArticulation, DrumElement, DrumKit, InstrumentKind,
-    InstrumentSet, Level, NoteKind, OpaquePayload, Pitch, Score, TrackMidi, gm_drum_kit,
+    AutomationValue, Balance, InstrumentKind, InstrumentSet, Level, NoteKind, OpaquePayload, Pitch,
+    Score, TrackMidi, gm_drum_kit,
 };
 use opentab_testkit::{ScoreGenConfig, arb_score, arb_score_with};
 use proptest::prelude::*;
@@ -244,13 +244,7 @@ fn writable_scores_read_back_equal() {
     }
 }
 
-const GENUINE_LIMITS: [&str; 5] = [
-    "Character",
-    "HarmonicFret",
-    "Pitch",
-    "RightHandOpen",
-    "TempoPosition",
-];
+const GENUINE_LIMITS: [&str; 4] = ["HarmonicFret", "Pitch", "RightHandOpen", "TempoPosition"];
 const MAX_ROUNDS: usize = 8;
 const GRID: i64 = 3840;
 const MAX_MIDI: u16 = 127;
@@ -262,87 +256,6 @@ fn kind_of(reason: &Refusal) -> String {
         .next()
         .unwrap_or_default()
         .to_string()
-}
-
-fn xml_char(character: char) -> bool {
-    matches!(character,
-        '\t' | '\n' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..)
-}
-
-fn clean(text: &mut String) -> bool {
-    if text.chars().all(xml_char) {
-        return false;
-    }
-    *text = text
-        .chars()
-        .map(|character| if xml_char(character) { character } else { '?' })
-        .collect();
-    true
-}
-
-fn clean_texts(score: &mut Score) -> bool {
-    let meta = &mut score.meta;
-    let mut changed = false;
-    for text in [
-        &mut meta.title,
-        &mut meta.subtitle,
-        &mut meta.artist,
-        &mut meta.album,
-        &mut meta.words,
-        &mut meta.music,
-        &mut meta.copyright,
-        &mut meta.tab_author,
-        &mut meta.instructions,
-        &mut meta.notices,
-    ] {
-        changed |= clean(text);
-    }
-    for master in &mut score.master_bars {
-        if let Some(marker) = &mut master.marker {
-            changed |= clean(&mut marker.text);
-            changed |= clean(&mut marker.letter);
-        }
-    }
-    for track in &mut score.tracks {
-        changed |= clean_kit(&mut track.drum_kit);
-        changed |= clean(&mut track.name);
-        changed |= clean(&mut track.short_name);
-        for sound in &mut track.sounds {
-            changed |= clean(&mut sound.name);
-        }
-        for beat in beats_of(track) {
-            if let Some(text) = &mut beat.effects.text {
-                changed |= clean(text);
-            }
-            if let Some(name) = &mut beat.effects.chord_name {
-                changed |= clean(name);
-            }
-        }
-    }
-    changed
-}
-
-fn clean_kit(kit: &mut Option<DrumKit>) -> bool {
-    let Some(found) = kit else {
-        return false;
-    };
-    let mut changed = false;
-    let mut elements: Vec<DrumElement> = found.elements().to_vec();
-    for element in &mut elements {
-        changed |= clean(&mut element.name);
-        changed |= clean(&mut element.kind);
-        changed |= clean(&mut element.soundbank);
-    }
-    let mut articulations: Vec<DrumArticulation> = found.articulations().to_vec();
-    for articulation in &mut articulations {
-        changed |= clean(&mut articulation.name);
-        changed |= clean(&mut articulation.technique_symbol);
-        changed |= clean(&mut articulation.rse_sound);
-    }
-    if changed {
-        *kit = Some(DrumKit::new(elements, articulations).expect("cleaning keeps the kit valid"));
-    }
-    changed
 }
 
 fn beats_of(track: &mut opentab_model::Track) -> impl Iterator<Item = &mut opentab_model::Beat> {
@@ -369,7 +282,6 @@ fn terminating(denom: i64) -> bool {
 fn clean_kind(score: &mut Score, kind: &str) -> bool {
     let mut changed = false;
     match kind {
-        "Character" => changed = clean_texts(score),
         "TempoPosition" => {
             for master in &mut score.master_bars {
                 let bar = master.time_signature.bar_length();

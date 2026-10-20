@@ -1,5 +1,10 @@
+use std::cell::Cell;
+
 use opentab_gp::{GpError, Refusal, write_gp};
-use opentab_model::{Diagnostic, DrumKit, Marker, Score, Sound, diagnose, gm_drum_kit};
+use opentab_model::{Beat, Diagnostic, DrumKit, Marker, Score, Sound, diagnose, gm_drum_kit};
+use opentab_testkit::{ScoreGenConfig, arb_any_text, arb_score_with};
+use proptest::prelude::*;
+use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 
 use crate::support::Doc;
 
@@ -89,6 +94,17 @@ const FIELDS: [Field; 8] = [
     },
 ];
 
+fn chord_name(score: &mut Score, text: String) {
+    score.tracks[0].staves[0].bars[0].voices[0].beats[0]
+        .effects
+        .chord_name = Some(text);
+}
+
+const ESCAPED_FIELDS: [Field; 1] = [Field {
+    name: "chord name",
+    edit: chord_name,
+}];
+
 const KIT_FIELDS: [Field; 2] = [
     Field {
         name: "kit element",
@@ -160,6 +176,10 @@ fn text_the_writer_refuses_is_exactly_the_text_diagnose_reports() {
         check(&Doc::default().read(), &FIELDS),
         FIELDS.len() * literal
     );
+    assert_eq!(
+        check(&Doc::default().read(), &ESCAPED_FIELDS),
+        ESCAPED_FIELDS.len() * escaped
+    );
     let drums = Doc {
         instrument: "drumKit".to_string(),
         tuning: "0 0 0 0 0 0".to_string(),
@@ -168,4 +188,137 @@ fn text_the_writer_refuses_is_exactly_the_text_diagnose_reports() {
     }
     .read();
     assert_eq!(check(&drums, &KIT_FIELDS), KIT_FIELDS.len() * escaped);
+}
+
+const ARBITRARY_CASES: u32 = 256;
+const MAX_ARBITRARY_CHARS: usize = 16;
+const MIN_OUTCOMES: usize = 16;
+const PLACED_FIELDS: [&str; 9] = [
+    "title",
+    "notices",
+    "marker",
+    "letter",
+    "beat",
+    "track",
+    "short name",
+    "sound",
+    "chord name",
+];
+
+fn first_beat(score: &mut Score) -> Option<&mut Beat> {
+    score
+        .tracks
+        .first_mut()?
+        .staves
+        .first_mut()?
+        .bars
+        .first_mut()?
+        .voices
+        .first_mut()?
+        .beats
+        .first_mut()
+}
+
+fn place(score: &mut Score, field: usize, text: String) -> bool {
+    match PLACED_FIELDS[field % PLACED_FIELDS.len()] {
+        "beat" => match first_beat(score) {
+            Some(beat) => {
+                beat.effects.text = Some(text);
+                true
+            }
+            None => false,
+        },
+        "chord name" => match first_beat(score) {
+            Some(beat) => {
+                beat.effects.chord_name = Some(text);
+                true
+            }
+            None => false,
+        },
+        "sound" => match score.tracks[0].sounds.first_mut() {
+            Some(sound) => {
+                sound.name = text;
+                true
+            }
+            None => false,
+        },
+        name => match FIELDS.iter().find(|known| known.name == name) {
+            Some(known) => {
+                (known.edit)(score, text);
+                true
+            }
+            None => false,
+        },
+    }
+}
+
+fn unwritable_codes(score: &Score) -> Vec<u32> {
+    diagnose(score)
+        .iter()
+        .filter_map(|diagnostic| match diagnostic {
+            Diagnostic::UnwritableText { code, .. } => Some(*code),
+            _ => None,
+        })
+        .collect()
+}
+
+#[derive(Default)]
+struct Outcomes {
+    refused: Cell<usize>,
+    written: Cell<usize>,
+}
+
+#[test]
+fn arbitrary_text_is_diagnosed_exactly_when_the_writer_refuses_it() {
+    let strategy = (
+        arb_score_with(ScoreGenConfig {
+            gp_writable: true,
+            ..ScoreGenConfig::default()
+        }),
+        any::<usize>(),
+        arb_any_text(MAX_ARBITRARY_CHARS),
+    );
+    let outcomes = Outcomes::default();
+    let mut runner = TestRunner::new_with_rng(
+        Config {
+            cases: ARBITRARY_CASES,
+            failure_persistence: None,
+            ..Config::default()
+        },
+        TestRng::deterministic_rng(RngAlgorithm::ChaCha),
+    );
+    let result = runner.run(&strategy, |(base, field, text)| {
+        prop_assume!(write_gp(&base).is_ok());
+        let mut score = base.clone();
+        prop_assume!(place(&mut score, field, text.clone()));
+        let codes = unwritable_codes(&score);
+        match write_gp(&score) {
+            Ok(_) => {
+                prop_assert_eq!(codes, Vec::<u32>::new(), "{:?}", text);
+                outcomes.written.set(outcomes.written.get() + 1);
+            }
+            Err(GpError::Unsupported {
+                reason: Refusal::Character { code },
+                ..
+            }) => {
+                prop_assert_eq!(codes, vec![code], "{:?}", text);
+                outcomes.refused.set(outcomes.refused.get() + 1);
+            }
+            Err(other) => return Err(TestCaseError::fail(format!("{other} for {text:?}"))),
+        }
+        Ok(())
+    });
+    if let Err(error) = result {
+        panic!("{error}");
+    }
+    assert!(
+        outcomes.refused.get() >= MIN_OUTCOMES,
+        "{}",
+        outcomes.refused.get()
+    );
+    assert!(
+        outcomes.written.get() >= MIN_OUTCOMES,
+        "{}",
+        outcomes.written.get()
+    );
 }

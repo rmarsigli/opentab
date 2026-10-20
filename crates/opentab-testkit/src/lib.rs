@@ -12,6 +12,7 @@ use proptest::prelude::Strategy;
 
 pub use fill::min_beats_for_bar;
 pub use seed::ScoreGenConfig;
+pub use text::arb_any_text;
 
 pub fn arb_score() -> impl Strategy<Value = Score> {
     arb_score_with(ScoreGenConfig::default())

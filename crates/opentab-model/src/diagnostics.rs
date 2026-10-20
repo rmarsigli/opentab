@@ -564,6 +564,14 @@ impl Report {
             if let Some(text) = &beat.effects.text {
                 self.text(Some(beat.id.0), "effects.text", text, TextForm::Literal);
             }
+            if let Some(name) = &beat.effects.chord_name {
+                self.text(
+                    Some(beat.id.0),
+                    "effects.chord_name",
+                    name,
+                    TextForm::Escaped,
+                );
+            }
             for note in &beat.notes {
                 self.id(note.id.0);
                 self.note(track, note.id, note.kind, expected.articulations);
