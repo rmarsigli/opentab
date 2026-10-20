@@ -1,14 +1,19 @@
 mod apply;
+mod audio;
 mod disk;
 mod errors;
 mod escaping;
+mod export;
 mod formats;
 mod gp;
 mod hostile;
 mod info;
 mod new;
+#[cfg(not(feature = "live"))]
+mod play;
 mod render;
 mod render_pages;
+mod soundbank;
 mod support;
 mod unicode;
 mod usage;

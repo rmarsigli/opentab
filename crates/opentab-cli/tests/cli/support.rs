@@ -31,6 +31,21 @@ pub fn run(args: &[&str]) -> Run {
     summarise(output)
 }
 
+pub fn run_in(data: &Path, args: &[&str]) -> Run {
+    let output = Command::new(env!("CARGO_BIN_EXE_opentab"))
+        .args(args)
+        .env("OPENTAB_DATA_DIR", data)
+        .output()
+        .expect("spawn opentab");
+    summarise(output)
+}
+
+pub fn gp_fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/gp")
+        .join(name)
+}
+
 #[cfg(unix)]
 pub fn run_os(args: &[&std::ffi::OsStr]) -> Run {
     let output = Command::new(env!("CARGO_BIN_EXE_opentab"))
