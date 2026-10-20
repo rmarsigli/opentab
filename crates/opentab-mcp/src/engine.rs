@@ -1,19 +1,30 @@
 use std::path::Path;
 
+use opentab_audio::{Transport, TransportCommand, TransportHandle};
 use opentab_command::{Command, Info};
 use opentab_files::{Overwrite, format_of, read_score, require_regular_file, write_score};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::args::{self, ApplyArgs, ExportArgs, OpenArgs, RenderArgs, SessionArgs};
+use crate::args::{
+    self, ApplyArgs, AssignArgs, ExportArgs, ExportMidiArgs, InstallArgs, NoArgs, OpenArgs,
+    RenderArgs, SessionArgs, SoundArgs,
+};
+use crate::audio;
+use crate::banks;
 use crate::error::ToolError;
+use crate::midi::export_midi;
+use crate::player::{Active, Launch, Player, StatusWire, Worker};
 use crate::render::{RenderedPage, render};
+use crate::report::Details;
 use crate::session::{Session, Sessions};
+use crate::sound::prepare;
 use crate::tools::ToolName;
 
 pub enum Reply {
     Json(Value),
     Image { png: Vec<u8>, report: Value },
+    Audio { wav: Vec<u8>, report: Value },
 }
 
 pub enum CallError {
@@ -75,9 +86,24 @@ pub struct Closed {
     pub closed: String,
 }
 
+#[derive(Serialize)]
+pub struct Playing {
+    #[serde(flatten)]
+    pub status: StatusWire,
+    #[serde(flatten)]
+    pub details: Details,
+}
+
 #[derive(Default)]
 pub struct Engine {
     sessions: Sessions,
+    player: Player,
+}
+
+fn deliver(transport: &mut Transport, handle: &mut TransportHandle, command: TransportCommand) {
+    while handle.send(command).is_err() {
+        transport.process(&mut [], &mut []);
+    }
 }
 
 impl Engine {
@@ -105,6 +131,19 @@ impl Engine {
             ToolName::Redo => self.redo(args::parse(name, arguments)?),
             ToolName::Export => self.export(args::parse(name, arguments)?),
             ToolName::Close => self.close(args::parse(name, arguments)?),
+            ToolName::ExportMidi => self.export_midi(args::parse(name, arguments)?),
+            ToolName::RenderAudio => self.render_audio(args::parse(name, arguments)?),
+            ToolName::Play => self.play(args::parse(name, arguments)?),
+            ToolName::Stop => self.stop(args::parse(name, arguments)?),
+            ToolName::Status => self.status(args::parse(name, arguments)?),
+            ToolName::Soundbanks => self.soundbanks(args::parse(name, arguments)?),
+            ToolName::ImportSoundbank => json(&banks::import(args::parse(name, arguments)?)?),
+            ToolName::InstallSoundbank => json(&banks::install(args::parse::<InstallArgs>(
+                name, arguments,
+            )?)?),
+            ToolName::AssignSoundbank => {
+                json(&banks::assign(args::parse::<AssignArgs>(name, arguments)?)?)
+            }
         }
     }
 
@@ -193,6 +232,64 @@ impl Engine {
             exported: args.path,
             format: format.name(),
         })
+    }
+
+    fn export_midi(&mut self, args: ExportMidiArgs) -> Result<Reply, ToolError> {
+        let session = self.sessions.get(&args.session)?;
+        json(&export_midi(&session.score, args)?)
+    }
+
+    fn render_audio(&mut self, args: SoundArgs) -> Result<Reply, ToolError> {
+        let score = self.sessions.get(&args.session)?.score.clone();
+        let prepared = prepare(&score, args, opentab_audio::SampleRate::default())?;
+        let wav = audio::render(prepared)?;
+        Ok(Reply::Audio {
+            wav: wav.bytes,
+            report: value(&wav.report)?,
+        })
+    }
+
+    fn play(&mut self, args: SoundArgs) -> Result<Reply, ToolError> {
+        let session = args.session.clone();
+        let score = self.sessions.get(&session)?.score.clone();
+        self.player.stop();
+        let worker = Worker::open()?;
+        let prepared = prepare(&score, args, worker.rate())?;
+        let details = prepared.details(&prepared.backends);
+        let commands = prepared.commands();
+        let last_bar = prepared.range.map(|range| range.last);
+        let (mut transport, mut handle) = prepared.session.split();
+        for command in commands {
+            deliver(&mut transport, &mut handle, command);
+        }
+        deliver(&mut transport, &mut handle, TransportCommand::Play);
+        transport.process(&mut [], &mut []);
+        let status = handle.status();
+        worker.launch(Launch {
+            transport,
+            handle,
+            last_bar,
+        })?;
+        self.player.active = Some(Active {
+            worker,
+            session: session.clone(),
+        });
+        json(&Playing {
+            status: StatusWire::of(&session, &status),
+            details,
+        })
+    }
+
+    fn soundbanks(&mut self, _args: NoArgs) -> Result<Reply, ToolError> {
+        json(&banks::list()?)
+    }
+
+    fn stop(&mut self, _args: NoArgs) -> Result<Reply, ToolError> {
+        json(&self.player.stop())
+    }
+
+    fn status(&mut self, _args: NoArgs) -> Result<Reply, ToolError> {
+        json(&self.player.status()?)
     }
 
     fn close(&mut self, args: SessionArgs) -> Result<Reply, ToolError> {

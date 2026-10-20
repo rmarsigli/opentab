@@ -1,9 +1,15 @@
 mod args;
+mod audio;
+mod banks;
 mod engine;
 mod error;
+mod midi;
+mod player;
 mod render;
+mod report;
 mod server;
 mod session;
+mod sound;
 mod tools;
 mod wire;
 

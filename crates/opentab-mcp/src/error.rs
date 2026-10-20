@@ -1,5 +1,7 @@
+use opentab_audio::{AudioError, BankError, InstallError, OutputError};
 use opentab_command::CommandError;
 use opentab_files::FileError;
+use opentab_playback::PlaybackError;
 use serde::Serialize;
 
 pub const MAX_MESSAGE_CHARS: usize = 1_000;
@@ -85,6 +87,36 @@ fn command_sub_kind(source: &CommandError) -> Option<String> {
 impl From<FileError> for ToolError {
     fn from(error: FileError) -> ToolError {
         ToolError::new(error.kind(), error.to_string())
+    }
+}
+
+impl From<AudioError> for ToolError {
+    fn from(error: AudioError) -> ToolError {
+        ToolError::new("audio", error.to_string())
+    }
+}
+
+impl From<OutputError> for ToolError {
+    fn from(error: OutputError) -> ToolError {
+        ToolError::new("audio", error.to_string())
+    }
+}
+
+impl From<PlaybackError> for ToolError {
+    fn from(error: PlaybackError) -> ToolError {
+        ToolError::new("audio", error.to_string())
+    }
+}
+
+impl From<BankError> for ToolError {
+    fn from(error: BankError) -> ToolError {
+        ToolError::new("sound_bank", error.to_string())
+    }
+}
+
+impl From<InstallError> for ToolError {
+    fn from(error: InstallError) -> ToolError {
+        ToolError::new("sound_bank", error.to_string())
     }
 }
 

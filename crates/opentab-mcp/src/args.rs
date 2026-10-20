@@ -70,6 +70,49 @@ pub struct ExportArgs {
     pub path: String,
 }
 
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileArg {
+    Gp,
+    #[default]
+    Musical,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ExportMidiArgs {
+    pub session: String,
+    pub path: String,
+    pub profile: Option<ProfileArg>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SoundArgs {
+    pub session: String,
+    pub bars: Option<BarsArg>,
+    pub tracks: Option<TrackArg>,
+    pub speed: Option<u16>,
+    pub profile: Option<ProfileArg>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct NoArgs {}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct InstallArgs {
+    pub id: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct AssignArgs {
+    pub instrument: String,
+    pub bank: String,
+}
+
 impl TrackArg {
     pub fn numbers(self) -> Vec<u32> {
         match self {
@@ -139,6 +182,31 @@ mod tests {
         assert_eq!(args.scale.unwrap().text(), "3/2");
         assert!(matches!(args.staff, Some(StaffArg::Tab)));
         assert_eq!(args.page, Some(2));
+    }
+
+    #[test]
+    fn sound_arguments_take_bars_tracks_speed_and_a_profile_and_refuse_the_rest() {
+        let args: SoundArgs = parse(
+            "render_audio",
+            object(json!({"session": "s", "bars": "2-3", "tracks": [1, 2], "speed": 50, "profile": "gp"})),
+        )
+        .unwrap();
+        assert_eq!(args.bars.unwrap().text(), "2-3");
+        assert_eq!(args.tracks.unwrap().numbers(), vec![1, 2]);
+        assert_eq!(args.speed, Some(50));
+        assert_eq!(args.profile, Some(ProfileArg::Gp));
+        for value in [
+            json!({"session": "s", "speed": -1}),
+            json!({"session": "s", "speed": 100_000}),
+            json!({"session": "s", "profile": "loud"}),
+            json!({"session": "s", "metronome": true}),
+            json!({"bars": 1}),
+        ] {
+            let error = parse::<SoundArgs>("play", object(value.clone())).unwrap_err();
+            assert_eq!(error.kind, "usage", "{value}");
+        }
+        assert!(parse::<NoArgs>("stop", None).is_ok());
+        assert!(parse::<NoArgs>("stop", object(json!({"x": 1}))).is_err());
     }
 
     #[test]
