@@ -11,7 +11,7 @@ use proptest::prelude::*;
 use proptest::test_runner::{FileFailurePersistence, RngSeed};
 
 use crate::recording::{Heard, SynthModel, heard, notes, recorders, recording, unit_of};
-use crate::support::{PROFILES, built_in_voices, config, fixture, performance};
+use crate::support::{PROFILES, built_in_voices, config, fixture, fixture_names, performance};
 
 const PROPERTY_SEED: u64 = 0x0074_3115;
 const SEEK_FIXTURES: [&str; 6] = [
@@ -500,6 +500,20 @@ fn count_in_expectation(
     played: usize,
     percent: u16,
 ) -> CountInExpectation {
+    count_in_heard_by(
+        performance,
+        played,
+        percent,
+        &vec![true; performance.tracks.len()],
+    )
+}
+
+fn count_in_heard_by(
+    performance: &Performance,
+    played: usize,
+    percent: u16,
+    audible: &[bool],
+) -> CountInExpectation {
     let tempo = &performance.tempo;
     let bar = &performance.order.bars[played];
     let bar_end = ScoreTime::new(bar.start.whole_notes() + bar.length).expect("time");
@@ -511,6 +525,7 @@ fn count_in_expectation(
         .filter(
             |event| matches!(event.message, MidiMessage::NoteOn { velocity, .. } if velocity > 0),
         )
+        .filter(|event| audible[event.track])
         .map(|event| unit_of(tempo, event.at, RATE))
         .find(|unit| (origin..origin + length).contains(unit))
         .unwrap_or(origin);
@@ -1216,4 +1231,120 @@ fn a_seek_or_a_loop_wrap_chases_at_most_the_events_of_one_bar() {
         }
     }
     assert!(scan_would_exceed);
+}
+
+struct QuietFirst {
+    name: String,
+    performance: Performance,
+    bar: usize,
+    track: usize,
+}
+
+fn with_late_track(name: &str, late: usize) -> Performance {
+    let mut score = fixture(name);
+    score.anacrusis = true;
+    if let Some(track) = score.tracks.get_mut(late) {
+        for staff in &mut track.staves {
+            if let Some(bar) = staff.bars.first_mut() {
+                for voice in &mut bar.voices {
+                    let keep = voice.beats.len().saturating_sub(1);
+                    voice.beats.drain(..keep);
+                }
+            }
+        }
+    }
+    performance(&score, Profile::Musical)
+}
+
+fn first_note_frame(log: &[Heard]) -> Option<u64> {
+    log.iter()
+        .filter(
+            |heard| matches!(heard.message, MidiMessage::NoteOn { velocity, .. } if velocity > 0),
+        )
+        .map(|heard| heard.frame)
+        .min()
+}
+
+#[test]
+fn the_count_in_ends_on_the_first_note_of_a_track_that_is_heard() {
+    let percent = 100u16;
+    let mut found: Vec<QuietFirst> = Vec::new();
+    for name in fixture_names() {
+        let tracks = performance(&fixture(&name), Profile::Musical).tracks.len();
+        for late in 0..tracks.min(2) {
+            let performance = with_late_track(&name, late);
+            let all = count_in_expectation(&performance, 0, percent);
+            for track in 0..tracks {
+                let mut hearing = vec![true; tracks];
+                hearing[track] = false;
+                if count_in_heard_by(&performance, 0, percent, &hearing).lead > all.lead {
+                    found.push(QuietFirst {
+                        name: name.clone(),
+                        performance: performance.clone(),
+                        bar: 0,
+                        track,
+                    });
+                }
+            }
+        }
+    }
+    assert!(!found.is_empty());
+    for case in &found {
+        let performance = &case.performance;
+        let tracks = performance.tracks.len();
+        let others: Vec<usize> = (0..tracks).filter(|track| *track != case.track).collect();
+        for solo in [false, true] {
+            let mut hearing = vec![true; tracks];
+            hearing[case.track] = false;
+            let expected = count_in_heard_by(&performance, case.bar, percent, &hearing);
+            let recorders = recorders(&performance);
+            let click = recording();
+            let mut session = Session::with_click(
+                performance.clone(),
+                recorders.voices,
+                click.synth,
+                count_in_config(percent),
+            )
+            .expect("session");
+            if solo {
+                for track in &others {
+                    session
+                        .handle
+                        .send(TransportCommand::Solo(*track, true))
+                        .expect("send");
+                }
+            } else {
+                session
+                    .handle
+                    .send(TransportCommand::Mute(case.track, true))
+                    .expect("send");
+            }
+            session
+                .handle
+                .send(TransportCommand::Seek(case.bar))
+                .expect("send");
+            session.handle.send(TransportCommand::Play).expect("send");
+            let bar = &performance.order.bars[case.bar];
+            let tempo = &performance.tempo;
+            let length = unit_of(
+                tempo,
+                ScoreTime::new(bar.start.whole_notes() + bar.length).expect("time"),
+                RATE,
+            ) - unit_of(tempo, bar.start, RATE);
+            let count_in = length / u64::from(percent);
+            render_session(&mut session, &[], count_in + 10).expect("render");
+            let logs: Vec<Vec<Heard>> = recorders.logs.iter().map(heard).collect();
+            assert_eq!(
+                clicks_of(&heard(&click.log)),
+                expected.clicks,
+                "{}",
+                case.name
+            );
+            let first = others
+                .iter()
+                .filter_map(|track| first_note_frame(&logs[*track]))
+                .min();
+            assert_eq!(first, Some(count_in), "{} bar {}", case.name, case.bar);
+        }
+    }
 }

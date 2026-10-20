@@ -115,6 +115,13 @@ struct CountInRun {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BarLead {
+    bar: usize,
+    track: usize,
+    lead: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CountInClick {
     index: usize,
     due: u64,
@@ -162,7 +169,7 @@ pub struct Transport {
     span: Option<LoopSpan>,
     wrapped: bool,
     count_in: Option<CountInRun>,
-    leads: Vec<u64>,
+    leads: Vec<BarLead>,
     metronome: bool,
     counts_in: bool,
     chase_at: Option<ScoreTime>,
@@ -230,10 +237,10 @@ fn sound_uses(performance: &Performance, track: usize) -> Vec<SoundUse> {
     uses
 }
 
-fn lead_ins(performance: &Performance, timeline: &Timeline) -> Vec<u64> {
+fn lead_ins(performance: &Performance, timeline: &Timeline) -> Vec<BarLead> {
     let bars = timeline.bar_count();
-    let mut leads = vec![0; bars];
-    let mut found = vec![false; bars];
+    let mut leads: Vec<BarLead> = Vec::new();
+    let mut marked: Vec<Option<usize>> = vec![None; performance.tracks.len()];
     let mut bar = 0;
     for (event, unit) in performance.events.iter().zip(&timeline.events) {
         let MidiMessage::NoteOn { velocity, .. } = event.message else {
@@ -253,16 +260,24 @@ fn lead_ins(performance: &Performance, timeline: &Timeline) -> Vec<u64> {
         let (Some(start), Some(end)) = (timeline.bars.get(bar), timeline.bars.get(bar + 1)) else {
             continue;
         };
-        if let (Some(lead), Some(seen)) = (leads.get_mut(bar), found.get_mut(bar))
-            && !*seen
+        if let Some(mark) = marked.get_mut(event.track)
+            && *mark != Some(bar)
             && *start <= *unit
             && *unit < *end
         {
-            *seen = true;
-            *lead = unit - start;
+            *mark = Some(bar);
+            leads.push(BarLead {
+                bar,
+                track: event.track,
+                lead: unit - start,
+            });
         }
     }
     leads
+}
+
+fn audible(muted: bool, soloed: bool, soloing: bool) -> bool {
+    !muted && (!soloing || soloed)
 }
 
 fn strike(click: &mut dyn Synth, downbeat: bool) {
@@ -550,7 +565,7 @@ impl Transport {
         let first_click = *self.timeline.bar_clicks.get(bar)?;
         let end_click = *self.timeline.bar_clicks.get(bar + 1)?;
         let lead = if self.position == origin {
-            self.leads.get(bar).copied().unwrap_or(0)
+            self.audible_lead(bar)
         } else {
             0
         };
@@ -571,6 +586,26 @@ impl Transport {
             end_click,
             struck: 0,
         })
+    }
+
+    fn track_audible(&self, track: usize, soloing: bool) -> bool {
+        let muted = self.muted.get(track).copied().unwrap_or(false);
+        let soloed = self.soloed.get(track).copied().unwrap_or(false);
+        audible(muted, soloed, soloing)
+    }
+
+    fn audible_lead(&self, bar: usize) -> u64 {
+        let soloing = self.soloed.iter().any(|soloed| *soloed);
+        let first = self.leads.partition_point(|entry| entry.bar < bar);
+        let last = self.leads.partition_point(|entry| entry.bar <= bar);
+        self.leads
+            .get(first..last)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|entry| self.track_audible(entry.track, soloing))
+            .map(|entry| entry.lead)
+            .min()
+            .unwrap_or(0)
     }
 
     fn move_to(&mut self, bar: usize) {
@@ -839,7 +874,7 @@ impl Transport {
             voice.render(scratch_left, scratch_right);
             let muted = self.muted.get(track).copied().unwrap_or(false);
             let soloed = self.soloed.get(track).copied().unwrap_or(false);
-            if !muted && (!soloing || soloed) {
+            if audible(muted, soloed, soloing) {
                 add_to_bus(bus_left, scratch_left);
                 add_to_bus(bus_right, scratch_right);
             }
