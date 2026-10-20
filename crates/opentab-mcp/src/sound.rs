@@ -1,14 +1,27 @@
 use opentab_audio::{
     BarRange, SampleRate, Session, SessionConfig, TrackBackend, TransportCommand, played_range,
+    range_frames,
 };
 use opentab_model::Score;
-use opentab_playback::{PlaybackOptions, Profile, Speed, perform};
+use opentab_playback::{
+    MAX_SPEED, MIN_SPEED, Performance, PlaybackOptions, Profile, Speed, perform,
+};
 use opentab_render::{BarSpan, SelectionError, parse_bars};
 
 use crate::args::{ProfileArg, SoundArgs};
 use crate::banks::open_manager;
 use crate::error::ToolError;
 use crate::report::{BarsWire, Details, backends_wire, unplayed_wire, warnings_wire};
+
+pub struct Planned {
+    pub performance: Performance,
+    pub range: Option<BarRange>,
+    pub tracks: Vec<usize>,
+    pub track_count: usize,
+    pub profile: ProfileArg,
+    pub speed: Speed,
+    pub bars: Option<BarSpan>,
+}
 
 pub struct Prepared {
     pub session: Session,
@@ -65,7 +78,7 @@ fn select_tracks(score: &Score, chosen: &[u32]) -> Result<Vec<usize>, ToolError>
 
 fn source_range(
     score: &Score,
-    performance: &opentab_playback::Performance,
+    performance: &Performance,
     span: BarSpan,
 ) -> Result<BarRange, ToolError> {
     let count = score.master_bars.len();
@@ -93,7 +106,21 @@ fn source_range(
     })
 }
 
-pub fn prepare(score: &Score, args: SoundArgs, rate: SampleRate) -> Result<Prepared, ToolError> {
+fn speed_of(percent: Option<u32>) -> Result<Speed, ToolError> {
+    let Some(percent) = percent else {
+        return Ok(Speed::NORMAL);
+    };
+    u16::try_from(percent)
+        .ok()
+        .and_then(|narrow| Speed::new(narrow).ok())
+        .ok_or_else(|| {
+            ToolError::invalid_input(format!(
+                "speed {percent} % is outside {MIN_SPEED}..={MAX_SPEED} %"
+            ))
+        })
+}
+
+pub fn plan(score: &Score, args: SoundArgs) -> Result<Planned, ToolError> {
     let chosen = args
         .tracks
         .map(|tracks| tracks.numbers())
@@ -114,21 +141,9 @@ pub fn prepare(score: &Score, args: SoundArgs, rate: SampleRate) -> Result<Prepa
         Some(span) => Some(source_range(score, &performance, span)?),
         None => None,
     };
-    let speed = Speed::new(args.speed.unwrap_or(Speed::NORMAL.percent()))
-        .map_err(|error| ToolError::invalid_input(error.to_string()))?;
-    let manager = open_manager()?;
-    let plan = manager.resolve(score);
-    let loaded = manager.load_voices(&plan, rate);
-    let config = SessionConfig {
-        rate,
-        speed,
-        metronome: false,
-        count_in: false,
-    };
-    let session = Session::new(performance, loaded.voices, config)?;
-    Ok(Prepared {
-        session,
-        backends: loaded.backends,
+    let speed = speed_of(args.speed)?;
+    Ok(Planned {
+        performance,
         range,
         tracks,
         track_count: score.tracks.len(),
@@ -136,6 +151,46 @@ pub fn prepare(score: &Score, args: SoundArgs, rate: SampleRate) -> Result<Prepa
         speed,
         bars,
     })
+}
+
+impl Planned {
+    pub fn music_frames(&self, rate: SampleRate) -> Result<u64, ToolError> {
+        let range = match self.range {
+            Some(range) => range,
+            None => match self.performance.order.bars.len().checked_sub(1) {
+                Some(last) => BarRange { first: 0, last },
+                None => return Ok(0),
+            },
+        };
+        Ok(range_frames(&self.performance, range, self.speed, rate)?)
+    }
+
+    pub fn build(self, score: &Score, rate: SampleRate) -> Result<Prepared, ToolError> {
+        let manager = open_manager()?;
+        let plan = manager.resolve(score);
+        let loaded = manager.load_voices(&plan, rate);
+        let config = SessionConfig {
+            rate,
+            speed: self.speed,
+            metronome: false,
+            count_in: false,
+        };
+        let session = Session::new(self.performance, loaded.voices, config)?;
+        Ok(Prepared {
+            session,
+            backends: loaded.backends,
+            range: self.range,
+            tracks: self.tracks,
+            track_count: self.track_count,
+            profile: self.profile,
+            speed: self.speed,
+            bars: self.bars,
+        })
+    }
+}
+
+pub fn prepare(score: &Score, args: SoundArgs, rate: SampleRate) -> Result<Prepared, ToolError> {
+    plan(score, args)?.build(score, rate)
 }
 
 impl Prepared {
@@ -166,9 +221,6 @@ impl Prepared {
 
     pub fn commands(&self) -> Vec<TransportCommand> {
         let mut commands = Vec::new();
-        if let Some(range) = self.range {
-            commands.push(TransportCommand::Seek(range.first));
-        }
         if self.tracks.len() < self.track_count {
             commands.extend(
                 self.tracks
@@ -176,6 +228,10 @@ impl Prepared {
                     .map(|track| TransportCommand::Solo(*track, true)),
             );
         }
+        commands.push(
+            self.range
+                .map_or(TransportCommand::Play, TransportCommand::PlayRange),
+        );
         commands
     }
 }

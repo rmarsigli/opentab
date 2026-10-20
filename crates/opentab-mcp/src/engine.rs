@@ -3,6 +3,7 @@ use std::path::Path;
 use opentab_audio::{Transport, TransportCommand, TransportHandle};
 use opentab_command::{Command, Info};
 use opentab_files::{Overwrite, format_of, read_score, require_regular_file, write_score};
+use opentab_model::Score;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -30,6 +31,37 @@ pub enum Reply {
 pub enum CallError {
     UnknownTool,
     Tool(ToolError),
+}
+
+pub struct RenderJob {
+    pub score: Score,
+    pub args: SoundArgs,
+}
+
+pub enum Job {
+    Render(Box<RenderJob>),
+    Install(InstallArgs),
+}
+
+pub enum Outcome {
+    Done(Reply),
+    Deferred(Job),
+}
+
+impl Job {
+    pub fn run(self) -> Result<Reply, ToolError> {
+        match self {
+            Job::Render(job) => {
+                let RenderJob { score, args } = *job;
+                let wav = audio::render(&score, args)?;
+                Ok(Reply::Audio {
+                    wav: wav.bytes,
+                    report: value(&wav.report)?,
+                })
+            }
+            Job::Install(args) => json(&banks::install(args)?),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -111,7 +143,7 @@ impl Engine {
         &mut self,
         tool: &str,
         arguments: Option<Map<String, Value>>,
-    ) -> Result<Reply, CallError> {
+    ) -> Result<Outcome, CallError> {
         let tool = ToolName::parse(tool).ok_or(CallError::UnknownTool)?;
         self.dispatch(tool, arguments).map_err(CallError::Tool)
     }
@@ -120,9 +152,9 @@ impl Engine {
         &mut self,
         tool: ToolName,
         arguments: Option<Map<String, Value>>,
-    ) -> Result<Reply, ToolError> {
+    ) -> Result<Outcome, ToolError> {
         let name = tool.name();
-        match tool {
+        let reply = match tool {
             ToolName::Open => self.open(args::parse(name, arguments)?),
             ToolName::Info => self.info(args::parse(name, arguments)?),
             ToolName::Render => self.render(args::parse(name, arguments)?),
@@ -132,19 +164,22 @@ impl Engine {
             ToolName::Export => self.export(args::parse(name, arguments)?),
             ToolName::Close => self.close(args::parse(name, arguments)?),
             ToolName::ExportMidi => self.export_midi(args::parse(name, arguments)?),
-            ToolName::RenderAudio => self.render_audio(args::parse(name, arguments)?),
+            ToolName::RenderAudio => return self.render_audio(args::parse(name, arguments)?),
             ToolName::Play => self.play(args::parse(name, arguments)?),
             ToolName::Stop => self.stop(args::parse(name, arguments)?),
             ToolName::Status => self.status(args::parse(name, arguments)?),
             ToolName::Soundbanks => self.soundbanks(args::parse(name, arguments)?),
             ToolName::ImportSoundbank => json(&banks::import(args::parse(name, arguments)?)?),
-            ToolName::InstallSoundbank => json(&banks::install(args::parse::<InstallArgs>(
-                name, arguments,
-            )?)?),
+            ToolName::InstallSoundbank => {
+                return Ok(Outcome::Deferred(Job::Install(args::parse(
+                    name, arguments,
+                )?)));
+            }
             ToolName::AssignSoundbank => {
                 json(&banks::assign(args::parse::<AssignArgs>(name, arguments)?)?)
             }
-        }
+        };
+        reply.map(Outcome::Done)
     }
 
     fn open(&mut self, args: OpenArgs) -> Result<Reply, ToolError> {
@@ -239,14 +274,12 @@ impl Engine {
         json(&export_midi(&session.score, args)?)
     }
 
-    fn render_audio(&mut self, args: SoundArgs) -> Result<Reply, ToolError> {
+    fn render_audio(&mut self, args: SoundArgs) -> Result<Outcome, ToolError> {
         let score = self.sessions.get(&args.session)?.score.clone();
-        let prepared = prepare(&score, args, opentab_audio::SampleRate::default())?;
-        let wav = audio::render(prepared)?;
-        Ok(Reply::Audio {
-            wav: wav.bytes,
-            report: value(&wav.report)?,
-        })
+        Ok(Outcome::Deferred(Job::Render(Box::new(RenderJob {
+            score,
+            args,
+        }))))
     }
 
     fn play(&mut self, args: SoundArgs) -> Result<Reply, ToolError> {
@@ -257,19 +290,13 @@ impl Engine {
         let prepared = prepare(&score, args, worker.rate())?;
         let details = prepared.details(&prepared.backends);
         let commands = prepared.commands();
-        let last_bar = prepared.range.map(|range| range.last);
         let (mut transport, mut handle) = prepared.session.split();
         for command in commands {
             deliver(&mut transport, &mut handle, command);
         }
-        deliver(&mut transport, &mut handle, TransportCommand::Play);
         transport.process(&mut [], &mut []);
         let status = handle.status();
-        worker.launch(Launch {
-            transport,
-            handle,
-            last_bar,
-        })?;
+        worker.launch(Launch { transport, handle })?;
         self.player.active = Some(Active {
             worker,
             session: session.clone(),
@@ -294,6 +321,7 @@ impl Engine {
 
     fn close(&mut self, args: SessionArgs) -> Result<Reply, ToolError> {
         self.sessions.remove(&args.session)?;
+        self.player.close(&args.session);
         json(&Closed {
             closed: args.session,
         })

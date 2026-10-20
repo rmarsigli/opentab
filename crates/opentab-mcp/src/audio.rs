@@ -1,12 +1,11 @@
-use opentab_audio::{
-    BarRange, RENDER_TAIL_MS, SampleRate, ScriptStep, TransportCommand, encode_wav, range_frames,
-    render_session,
-};
+use opentab_audio::{RENDER_TAIL_MS, SampleRate, ScriptStep, encode_wav, render_session};
+use opentab_model::Score;
 use serde::Serialize;
 
+use crate::args::SoundArgs;
 use crate::error::ToolError;
 use crate::report::Details;
-use crate::sound::Prepared;
+use crate::sound::plan;
 
 pub const RENDER_LIMIT_SECONDS: u64 = 60;
 pub const WAV_MIME: &str = "audio/wav";
@@ -42,41 +41,20 @@ pub fn too_long(seconds: f64) -> ToolError {
     ))
 }
 
-fn music_frames(prepared: &Prepared) -> Result<u64, ToolError> {
-    let performance = prepared.session.transport.performance();
-    let range = match prepared.range {
-        Some(range) => range,
-        None => match performance.order.bars.len().checked_sub(1) {
-            Some(last) => BarRange { first: 0, last },
-            None => return Ok(0),
-        },
-    };
-    Ok(range_frames(
-        performance,
-        range,
-        prepared.speed,
-        prepared.session.transport.rate(),
-    )?)
-}
-
-pub fn render(mut prepared: Prepared) -> Result<Wav, ToolError> {
-    let rate = prepared.session.transport.rate();
-    let music = music_frames(&prepared)?;
+pub fn render(score: &Score, args: SoundArgs) -> Result<Wav, ToolError> {
+    let rate = SampleRate::default();
+    let planned = plan(score, args)?;
+    let music = planned.music_frames(rate)?;
     let total = music.saturating_add(rate.frames_of_millis(RENDER_TAIL_MS));
     if !within_limit(total, rate) {
         return Err(too_long(total as f64 / f64::from(rate.hz())));
     }
-    let mut script: Vec<ScriptStep> = prepared
+    let mut prepared = planned.build(score, rate)?;
+    let script: Vec<ScriptStep> = prepared
         .commands()
         .into_iter()
         .map(|command| ScriptStep { frame: 0, command })
         .collect();
-    if prepared.range.is_some() {
-        script.push(ScriptStep {
-            frame: music,
-            command: TransportCommand::Pause,
-        });
-    }
     let audio = render_session(&mut prepared.session, &script, total)?;
     let bytes = encode_wav(&audio);
     let backends = prepared.backends.clone();

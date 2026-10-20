@@ -92,7 +92,7 @@ pub struct SoundArgs {
     pub session: String,
     pub bars: Option<BarsArg>,
     pub tracks: Option<TrackArg>,
-    pub speed: Option<u16>,
+    pub speed: Option<u32>,
     pub profile: Option<ProfileArg>,
 }
 
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(args.profile, Some(ProfileArg::Gp));
         for value in [
             json!({"session": "s", "speed": -1}),
-            json!({"session": "s", "speed": 100_000}),
+            json!({"session": "s", "speed": 4_294_967_296_u64}),
             json!({"session": "s", "profile": "loud"}),
             json!({"session": "s", "metronome": true}),
             json!({"bars": 1}),

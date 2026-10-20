@@ -2,12 +2,13 @@ use std::io::Cursor;
 use std::path::Path;
 
 use hound::{SampleFormat, WavReader};
-use midly::{Smf, Timing};
+use midly::{MidiMessage, Smf, Timing, TrackEventKind};
+use opentab_playback::{PlaybackOptions, Profile, perform};
 use opentab_testkit::banks::tiny_sf2;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use crate::support::{Server, ToolReply, fixture};
+use crate::support::{Server, ToolReply, fixture, read_fixture};
 
 const REPEATS: &str = "repeats.gp";
 const RATE: u32 = 48_000;
@@ -212,8 +213,9 @@ fn bad_selections_are_invalid_input_and_the_server_keeps_serving() {
         (json!({"bars": "1-99"}), "1-99"),
         (json!({"tracks": 99}), "track 99"),
         (json!({"tracks": [0]}), "track 0"),
-        (json!({"speed": 24}), "speed"),
-        (json!({"speed": 201}), "speed"),
+        (json!({"speed": 24}), "speed 24 %"),
+        (json!({"speed": 201}), "speed 201 %"),
+        (json!({"speed": 70_000}), "speed 70000 %"),
     ] {
         let mut arguments = arguments;
         arguments["session"] = json!(session);
@@ -221,6 +223,11 @@ fn bad_selections_are_invalid_input_and_the_server_keeps_serving() {
         assert_eq!(error["kind"], "invalid_input", "{arguments}");
         assert!(message(&error).contains(phrase), "{arguments}: {error}");
     }
+    let error = failed_render(
+        &mut server,
+        json!({"session": session, "speed": 4_294_967_296_u64}),
+    );
+    assert_eq!(error["kind"], "usage");
     let error = failed_render(&mut server, json!({"session": session, "bars": "5-"}));
     assert_eq!(error["kind"], "usage");
     let error = failed_render(&mut server, json!({"session": session, "bars": "3-1"}));
@@ -269,6 +276,38 @@ fn parsed(path: &Path) -> (Timing, usize) {
     (smf.header.timing, smf.tracks.len())
 }
 
+fn midi_notes(path: &Path) -> usize {
+    let bytes = std::fs::read(path).expect("the MIDI file exists");
+    let smf = Smf::parse(&bytes).expect("a valid Standard MIDI File");
+    smf.tracks
+        .iter()
+        .flatten()
+        .filter(|event| {
+            matches!(
+                event.kind,
+                TrackEventKind::Midi {
+                    message: MidiMessage::NoteOn { vel, .. },
+                    ..
+                } if vel > 0
+            )
+        })
+        .count()
+}
+
+fn performed_notes(name: &str, profile: Profile) -> usize {
+    perform(&read_fixture(name), &PlaybackOptions { profile })
+        .expect("performs")
+        .events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.message,
+                opentab_playback::MidiMessage::NoteOn { velocity, .. } if velocity > 0
+            )
+        })
+        .count()
+}
+
 #[test]
 fn export_midi_writes_a_file_that_reparses_with_the_profile_timing() {
     let (data, mut server) = started();
@@ -291,6 +330,13 @@ fn export_midi_writes_a_file_that_reparses_with_the_profile_timing() {
     assert_eq!(gp_timing, metrical(&explicit["ppq"]));
     assert_ne!(default["ppq"], explicit["ppq"]);
     assert!(musical_tracks >= 2 && gp_tracks >= 2);
+    let notes = performed_notes("tempo-ramp.gp", Profile::Musical);
+    assert!(notes > 0);
+    assert_eq!(midi_notes(&musical), notes);
+    assert_eq!(
+        midi_notes(&gp),
+        performed_notes("tempo-ramp.gp", Profile::Gp)
+    );
     assert_eq!(
         default["bytes"].as_u64().unwrap(),
         std::fs::metadata(&musical).unwrap().len()
@@ -443,6 +489,39 @@ fn play_starts_at_the_source_bar_and_a_second_play_replaces_the_first() {
     let error = server.fails("play", json!({"session": session, "speed": 300}));
     assert_eq!(error["kind"], "invalid_input");
     assert_eq!(status(&mut server)["state"], "idle");
+}
+
+#[cfg(not(feature = "live"))]
+#[test]
+fn closing_the_playing_session_stops_its_playback() {
+    let (_data, mut server) = started();
+    let session = server.open(&fixture(REPEATS));
+    let other = server.open(&fixture("multi-track.gp"));
+    server.ok("play", json!({"session": session, "speed": 25}));
+    server.ok("close", json!({"session": other}));
+    assert_eq!(status(&mut server)["state"], "playing");
+    server.ok("close", json!({"session": session}));
+    let after = status(&mut server);
+    assert_eq!(after["state"], "idle");
+    assert_eq!(after["session"], Value::Null);
+    let error = server.fails("play", json!({"session": session}));
+    assert_eq!(error["kind"], "invalid_input");
+    assert_eq!(status(&mut server)["state"], "idle");
+    assert_eq!(server.ok("stop", json!({}))["state"], "idle");
+}
+
+#[test]
+fn the_length_cap_is_checked_before_any_sound_bank_is_opened() {
+    let data = TempDir::new().expect("a temp dir");
+    let not_a_folder = data.path().join("file");
+    std::fs::write(&not_a_folder, b"x").unwrap();
+    let mut server = Server::start_in(&not_a_folder);
+    let session = server.open(&fixture(REPEATS));
+    let error = failed_render(&mut server, json!({"session": session, "speed": 25}));
+    assert_eq!(error["kind"], "invalid_input");
+    assert!(message(&error).contains("limited to 60 seconds"), "{error}");
+    let error = failed_render(&mut server, json!({"session": session, "bars": "1"}));
+    assert_eq!(error["kind"], "sound_bank", "{error}");
 }
 
 #[test]
