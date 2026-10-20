@@ -1,4 +1,7 @@
-use opentab_model::{DirectionJump, DirectionTarget, Directions, NoteValue, Score};
+use opentab_model::{
+    DirectionJump, DirectionTarget, Directions, Fraction, NoteValue, Score, Tempo, TempoChange,
+    TempoUnit,
+};
 
 use crate::fixtures::FixtureError;
 use crate::fixtures::sketch::{Sketch, TrackSetup, beat, duration, fretted, voice};
@@ -12,6 +15,22 @@ const PLAIN: Mark = Mark {
     targets: &[],
     jumps: &[],
 };
+
+struct TempoMark {
+    bar: usize,
+    numerator: i64,
+    denominator: i64,
+    bpm: f64,
+}
+
+const fn tempo_at(bar: usize, numerator: i64, denominator: i64, bpm: f64) -> TempoMark {
+    TempoMark {
+        bar,
+        numerator,
+        denominator,
+        bpm,
+    }
+}
 
 struct Mark {
     bar: usize,
@@ -258,6 +277,59 @@ pub fn fine_repeats() -> Result<Score, FixtureError> {
                 },
                 2,
             ),
+        ],
+    )
+}
+
+fn with_tempi(mut score: Score, marks: &[TempoMark]) -> Result<Score, FixtureError> {
+    for mark in marks {
+        let master = score
+            .master_bars
+            .get_mut(mark.bar)
+            .ok_or_else(|| FixtureError::new(format!("no master bar {}", mark.bar)))?;
+        master.tempo_changes.push(TempoChange {
+            position: Fraction::new(mark.numerator, mark.denominator),
+            bpm: Tempo::new(mark.bpm)?,
+            unit: TempoUnit::Quarter,
+            linear: false,
+        });
+    }
+    Ok(score)
+}
+
+pub fn tempo_self_repeats() -> Result<Score, FixtureError> {
+    let score = directed(
+        "Tempo held through one-bar repeats",
+        5,
+        &[closes(opens(at(1)), 3), closes(opens(at(2)), 3)],
+    )?;
+    with_tempi(
+        score,
+        &[
+            tempo_at(0, 0, 1, 120.0),
+            tempo_at(1, 1, 2, 90.0),
+            tempo_at(3, 0, 1, 140.0),
+        ],
+    )
+}
+
+pub fn tempo_forward_jump() -> Result<Score, FixtureError> {
+    let score = directed(
+        "Tempo held over a jump to the Coda",
+        6,
+        &[
+            targets(1, &[DirectionTarget::Segno]),
+            jumps(2, &[DirectionJump::DaCoda]),
+            jumps(3, &[DirectionJump::DaSegnoAlCoda]),
+            targets(4, &[DirectionTarget::Coda]),
+        ],
+    )?;
+    with_tempi(
+        score,
+        &[
+            tempo_at(0, 0, 1, 100.0),
+            tempo_at(2, 0, 1, 140.0),
+            tempo_at(3, 0, 1, 70.0),
         ],
     )
 }

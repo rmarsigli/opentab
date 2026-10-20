@@ -11,8 +11,14 @@ use crate::oracle_allowances::{
     ALLOWED_DIFFERENCES, Rule, TempoAt, bend_ticks, explains, named, off_grid_ticks,
 };
 use crate::oracle_side::{CONDUCTOR_TRACK, Note, Onset, Selection, Side, Slot, TrackValue, side};
+use crate::smf::SmfText;
 
-const GOLDEN_FIXTURES: usize = 31;
+const GOLDEN_FIXTURES: usize = 35;
+const SWING_FIXTURE: &str = "triplet-feel.gp";
+const UNISON_FIXTURE: &str = "unisons.gp";
+const UNEQUAL_UNISONS: usize = 8;
+const TITLE_KIND: u8 = 0x03;
+const COPYRIGHT_KIND: u8 = 0x02;
 const TICKS_PER_QUARTER_TIMES: i64 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -30,6 +36,7 @@ pub enum Aspect {
     TimeSignatures,
     KeySignatures,
     Expansion,
+    Texts,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -475,6 +482,13 @@ pub fn compare(context: &Context, ours: &Side, gp: &Side) -> Verdict {
             format!("{:?} against {:?}", ours.keys, gp.keys),
         );
     }
+    if ours.texts != gp.texts {
+        differ(
+            &mut verdict,
+            Aspect::Texts,
+            format!("{:?} against {:?}", ours.texts, gp.texts),
+        );
+    }
     verdict
 }
 
@@ -554,21 +568,13 @@ fn profile_gp_exports_what_guitar_pro_exports_for_every_golden() {
     assert_eq!(unique.len(), ALLOWED_DIFFERENCES.len());
 }
 
-fn swing_experiment() -> (Vec<u8>, Vec<u8>) {
-    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
-    (
-        std::fs::read(data.join("m3-t11-swing.gp")).expect("experiment score"),
-        std::fs::read(data.join("m3-t11-swing.mid")).expect("GP export of the experiment"),
-    )
-}
-
 #[test]
-fn m3_t11_profile_gp_swings_every_feel_and_rhythm_as_guitar_pro_exports_it() {
-    let (bytes, golden) = swing_experiment();
-    let case = case_of("m3-t11-swing.gp", &bytes, &golden);
+fn profile_gp_swings_every_feel_and_rhythm_as_guitar_pro_exports_it() {
+    let case = case(SWING_FIXTURE);
     let verdict = compare(&case.context, &case.ours, &case.gp);
     assert!(verdict.differences.is_empty(), "{:#?}", verdict.differences);
-    let score = read_gp(&bytes).expect("experiment reads");
+    let bytes = std::fs::read(root().join("fixtures/gp").join(SWING_FIXTURE)).expect("fixture");
+    let score = read_gp(&bytes).expect("fixture reads");
     let feels: BTreeSet<TripletFeel> = score
         .master_bars
         .iter()
@@ -588,7 +594,7 @@ fn m3_t11_profile_gp_swings_every_feel_and_rhythm_as_guitar_pro_exports_it() {
     .expect("perform");
     let unswung = export_midi(&straight, Profile::Gp).expect("export");
     let verdict = compare(
-        &context("m3-t11-swing.gp", &straight, &performance),
+        &context(SWING_FIXTURE, &straight, &performance),
         &side(&unswung),
         &case.gp,
     );
@@ -600,6 +606,128 @@ fn m3_t11_profile_gp_swings_every_feel_and_rhythm_as_guitar_pro_exports_it() {
         "{:#?}",
         verdict.differences
     );
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Strike {
+    channel: u8,
+    key: u8,
+    tick: u64,
+}
+
+fn strike(note: &Note) -> Strike {
+    Strike {
+        channel: note.onset.channel,
+        key: note.onset.key,
+        tick: note.onset.tick,
+    }
+}
+
+fn strikes(notes: &[Note]) -> BTreeMap<Strike, Vec<Note>> {
+    let mut out: BTreeMap<Strike, Vec<Note>> = BTreeMap::new();
+    for note in notes {
+        out.entry(strike(note)).or_default().push(*note);
+    }
+    out
+}
+
+#[test]
+fn guitar_pro_writes_both_notes_of_an_unequal_unison_and_we_keep_the_louder_and_longer() {
+    let case = case(UNISON_FIXTURE);
+    let ours = strikes(&case.ours.notes);
+    let gp = strikes(&case.gp.notes);
+    let unequal: Vec<(&Strike, &Vec<Note>)> = gp
+        .iter()
+        .filter(|(_, notes)| notes.len() == 2 && notes[0].onset.velocity != notes[1].onset.velocity)
+        .collect();
+    assert_eq!(unequal.len(), UNEQUAL_UNISONS, "{gp:#?}");
+    let mut louder_first = 0;
+    let mut louder_second = 0;
+    for (at, pair) in &unequal {
+        if pair[0].onset.velocity > pair[1].onset.velocity {
+            louder_first += 1;
+        } else {
+            louder_second += 1;
+        }
+        let kept = ours.get(at).expect("our merged note");
+        assert_eq!(kept.len(), 1, "{at:?}");
+        let loudest = pair.iter().map(|note| note.onset.velocity).max();
+        let longest = pair.iter().map(|note| note.length).max();
+        assert_eq!(Some(kept[0].onset.velocity), loudest, "{at:?}");
+        assert_eq!(Some(kept[0].length), longest, "{at:?}");
+    }
+    assert!(louder_first > 0 && louder_second > 0);
+    assert!(
+        unequal
+            .iter()
+            .any(|(_, pair)| pair[0].length != pair[1].length)
+    );
+    assert!(
+        unequal
+            .iter()
+            .any(|(_, pair)| pair[0].onset.track != pair[1].onset.track)
+    );
+    let staggered: Vec<(Note, Note)> = case
+        .gp
+        .notes
+        .iter()
+        .flat_map(|early| {
+            case.gp.notes.iter().filter_map(move |late| {
+                let same =
+                    early.onset.channel == late.onset.channel && early.onset.key == late.onset.key;
+                let inside = early.onset.tick < late.onset.tick
+                    && late.onset.tick < early.onset.tick + early.length;
+                (same && inside).then_some((*early, *late))
+            })
+        })
+        .collect();
+    assert_eq!(staggered.len(), 1, "{staggered:?}");
+    let (early, late) = staggered[0];
+    let cut = ours.get(&strike(&early)).expect("our earlier note");
+    assert_eq!(cut[0].length, late.onset.tick - early.onset.tick);
+    let verdict = compare(&case.context, &case.ours, &case.gp);
+    assert!(verdict.differences.is_empty(), "{:#?}", verdict.differences);
+    assert!(verdict.used.contains("restrike-cut"));
+}
+
+fn conductor_text(side: &Side, kind: u8) -> Option<&SmfText> {
+    side.texts
+        .iter()
+        .find(|text| text.track == CONDUCTOR_TRACK && text.kind == kind)
+}
+
+#[test]
+fn the_conductor_track_carries_the_title_and_copyright_as_guitar_pro_writes_them() {
+    let metadata = case("metadata.gp");
+    accepts(&metadata, &metadata.ours);
+    let title = conductor_text(&metadata.gp, TITLE_KIND).expect("GP's title");
+    assert_eq!((title.tick, title.text.is_empty()), (0, false));
+    assert!(conductor_text(&metadata.gp, COPYRIGHT_KIND).is_some());
+    let mut untitled = metadata.ours.clone();
+    untitled
+        .texts
+        .retain(|text| !(text.track == CONDUCTOR_TRACK && text.kind == TITLE_KIND));
+    rejects(&metadata, &untitled, Aspect::Texts);
+    let mut uncredited = metadata.ours.clone();
+    uncredited
+        .texts
+        .retain(|text| !(text.track == CONDUCTOR_TRACK && text.kind == COPYRIGHT_KIND));
+    rejects(&metadata, &uncredited, Aspect::Texts);
+    let mut renamed = metadata.ours.clone();
+    renamed.texts[0].text.push(b'!');
+    rejects(&metadata, &renamed, Aspect::Texts);
+    let blank = case("from-scratch.gp");
+    accepts(&blank, &blank.ours);
+    assert!(conductor_text(&blank.gp, TITLE_KIND).is_none());
+    let mut titled = blank.ours.clone();
+    titled.texts.push(SmfText {
+        track: CONDUCTOR_TRACK,
+        tick: 0,
+        kind: TITLE_KIND,
+        text: Vec::new(),
+    });
+    titled.texts.sort();
+    rejects(&blank, &titled, Aspect::Texts);
 }
 
 fn aspects(case: &Case, ours: &Side) -> BTreeSet<Aspect> {

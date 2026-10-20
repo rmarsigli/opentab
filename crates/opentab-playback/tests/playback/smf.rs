@@ -6,6 +6,7 @@ const SYSEX_END: u8 = 0xf7;
 const TEMPO: u8 = 0x51;
 const TIME_SIGNATURE: u8 = 0x58;
 const KEY_SIGNATURE: u8 = 0x59;
+const TEXT_KINDS: [u8; 3] = [0x01, 0x02, 0x03];
 const STATUS_BIT: u8 = 0x80;
 const KIND_MASK: u8 = 0xf0;
 const CHANNEL_MASK: u8 = 0x0f;
@@ -39,10 +40,19 @@ pub struct SmfEvent {
     pub kind: SmfKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SmfText {
+    pub track: usize,
+    pub tick: u64,
+    pub kind: u8,
+    pub text: Vec<u8>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Smf {
     pub division: u16,
     pub events: Vec<SmfEvent>,
+    pub texts: Vec<SmfText>,
 }
 
 struct Cursor<'a> {
@@ -91,6 +101,7 @@ pub fn read_smf(bytes: &[u8]) -> Smf {
         at: 8 + header,
     };
     let mut events = Vec::new();
+    let mut texts = Vec::new();
     for track in 0..usize::try_from(tracks).expect("tracks") {
         assert_eq!(cursor.take(4), TRACK);
         let length = usize::try_from(big(cursor.take(4))).expect("length");
@@ -104,6 +115,14 @@ pub fn read_smf(bytes: &[u8]) -> Smf {
                 let kind = cursor.byte();
                 let size = usize::try_from(cursor.quantity()).expect("size");
                 let data = cursor.take(size);
+                if TEXT_KINDS.contains(&kind) {
+                    texts.push(SmfText {
+                        track,
+                        tick,
+                        kind,
+                        text: data.to_vec(),
+                    });
+                }
                 let event = match kind {
                     TEMPO => SmfKind::Tempo {
                         micros: u32::try_from(big(data)).expect("tempo"),
@@ -181,5 +200,9 @@ pub fn read_smf(bytes: &[u8]) -> Smf {
             });
         }
     }
-    Smf { division, events }
+    Smf {
+        division,
+        events,
+        texts,
+    }
 }

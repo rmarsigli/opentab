@@ -66,7 +66,7 @@ const fn tempo_event(
     }
 }
 
-pub const ALLOWED_DIFFERENCES: [Allowance; 13] = [
+pub const ALLOWED_DIFFERENCES: [Allowance; 17] = [
     tempo_event(
         "tempo-1920-floor",
         FLOOR_REASON,
@@ -126,6 +126,38 @@ pub const ALLOWED_DIFFERENCES: [Allowance; 13] = [
         tempo_at(7680, 500_000),
         &[TempoDefect::DottedQuarterAsFiveQuarters],
     ),
+    tempo_event(
+        "tempo-forward-jump-5760-floor",
+        FLOOR_REASON,
+        "tempo-forward-jump.gp",
+        tempo_at(5760, 857_142),
+        tempo_at(5760, 857_143),
+        &[TempoDefect::MicrosFloored],
+    ),
+    tempo_event(
+        "tempo-self-repeats-2880-floor",
+        FLOOR_REASON,
+        "tempo-self-repeats.gp",
+        tempo_at(2880, 666_666),
+        tempo_at(2880, 666_667),
+        &[TempoDefect::MicrosFloored],
+    ),
+    tempo_event(
+        "tempo-self-repeats-4800-floor",
+        FLOOR_REASON,
+        "tempo-self-repeats.gp",
+        tempo_at(4800, 666_666),
+        tempo_at(4800, 666_667),
+        &[TempoDefect::MicrosFloored],
+    ),
+    tempo_event(
+        "tempo-self-repeats-6720-floor",
+        FLOOR_REASON,
+        "tempo-self-repeats.gp",
+        tempo_at(6720, 666_666),
+        tempo_at(6720, 666_667),
+        &[TempoDefect::MicrosFloored],
+    ),
     Allowance {
         name: "off-grid-length",
         reason: "a tuplet note whose exact start or end falls between ticks: GP rounds each length on its own (69 for 68.57), we round both ends half up from the absolute position (M3-D4)",
@@ -153,7 +185,7 @@ pub const ALLOWED_DIFFERENCES: [Allowance; 13] = [
     },
     Allowance {
         name: "restrike-cut",
-        reason: "GP lets one key sound twice on one channel (unison tracks or staves sharing a channel), which synths release together; we end the earlier note at the re-strike and keep one note, at the louder velocity, for a same-tick unison (M3 Task 11 rulings I1 and N1), so GP's notes are compared after the same cut",
+        reason: "GP lets one key sound twice on one channel (unison voices, staves or tracks sharing a channel), which synths release together; for a same-tick unison GP writes both note-ons, each at its own beat's velocity and with its own note-off, bent or not [unisons]; we end the earlier note at the re-strike and keep one note, at the louder velocity and the longer length, for a same-tick unison (M3 Task 11 rulings I1 and N1), so GP's notes are compared after the same cut",
         rule: Rule::RestrikeCut,
     },
 ];

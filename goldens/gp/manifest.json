@@ -809,6 +809,37 @@
       ]
     },
     {
+      "fixture": "tempo-forward-jump.gp",
+      "sha256": "92482e9c9d761584bf6964d9c089d2ccd63ae95d75813f15eb9070719d612594",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "adfef7d6f991f9d869914496c4f62408bbdeea1dd70bf630da86f04737d10c09",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "0ba75d9ceee06aeb7deaf8449fe291f7003e3a3dd5035713d1c4a147591f1b2e",
+          "byte_identical": true
+        },
+        {
+          "path": "png/tempo-forward-jump#1.png",
+          "sha256": "43963eb4e70cf7a685de7fc80a3044d8ac076159d48e7a5ed9fc09929c4ba464",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "c0d29f4363ded6202f9b676415387b8a381637672566ded8c5337be2063bf245",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
       "fixture": "tempo-ramp.gp",
       "sha256": "4547f4739cddfd7328f81156603a10d725f3e3fc23d920ad484da04bb340b94b",
       "outputs": [
@@ -835,6 +866,37 @@
         {
           "path": "resave.gpif",
           "sha256": "997301dc3a4f179cc0d0e87f51b2380d2a559627475e9c8e8cdd1c243ccdb670",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "tempo-self-repeats.gp",
+      "sha256": "c9a881d6ddbeb321c54264b8810075525c3d0f50b11df8d012b1bc1cdff15270",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "c745fc66ba12698d5c0e057cf83e406274b97d523490245a8e1bc13d3c049af0",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "09453175735f26e3eafc194586ddad233a7e684d7f935eb1df182503cc420d81",
+          "byte_identical": true
+        },
+        {
+          "path": "png/tempo-self-repeats#1.png",
+          "sha256": "88144c61ef67988fb616f469a312b3d0eddcaf4fd1e59ae814617384a7eb7c23",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "f60c2a878cddfc48f5dcf245ff82c75a5bbdc4f42dd2ceb71ab84785e845596e",
           "byte_identical": true
         }
       ]
@@ -933,6 +995,67 @@
       ]
     },
     {
+      "fixture": "triplet-feel.gp",
+      "sha256": "34df2f56ee5461cb80cb6fd696461341de12bef4c5c520d8416f74449f6d875b",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "310c68e05238d1282e44dd814daa00d7bfcbca1b8f5c5597c91ed190d29a4257",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "5399cbbd457ee05db46a391e336ebf81241d5a72cb1a68914b1359c2854763c8",
+          "byte_identical": true
+        },
+        {
+          "path": "png/triplet-feel#01.png",
+          "sha256": "6499ec257393d657190c448e35ee010cec23c6d61ac2018b4a7f16d08fbb6cb5",
+          "byte_identical": true
+        },
+        {
+          "path": "png/triplet-feel#02.png",
+          "sha256": "fd71cd0c099ac7c1bcf3c3fcd84c6f6e858ebfcf0ca7c65d23b2b089b1316606",
+          "byte_identical": true
+        },
+        {
+          "path": "png/triplet-feel#03.png",
+          "sha256": "58bf7193774d88b3c3c896efe02c6954a12123b00c74d2668eb5dcdb83407ac3",
+          "byte_identical": true
+        },
+        {
+          "path": "png/triplet-feel#04.png",
+          "sha256": "7b68dd273bbffa1b7a383d45a95dbff7ab4978ffb238fdde05a03bbf26020135",
+          "byte_identical": true
+        },
+        {
+          "path": "png/triplet-feel#05.png",
+          "sha256": "56ef5cdcf866b80ce153e39dd6e5b021be789eb791bc99933ac64c113940774d",
+          "byte_identical": true
+        },
+        {
+          "path": "png/triplet-feel#06.png",
+          "sha256": "12cc7e6c7a89a8fbc1e8aeb6d1ad9b6c35f87828ecfbd9969996ec2b8ee29449",
+          "byte_identical": true
+        },
+        {
+          "path": "png/triplet-feel#07.png",
+          "sha256": "46533e87ffcf6dd01cd42b725ee1243fc2077e89cad9fdc8257a6dffcf36310c",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "8054ad97ab4d0c71c2233b1aa1cce47f9227a173bc5e555d7ec422104765135c",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
       "fixture": "tunings.gp",
       "sha256": "5b019109f042e9b62ff67b1f9e6ae552aec26a770fe5cd9403dbccfc3f4da2e1",
       "outputs": [
@@ -959,6 +1082,37 @@
         {
           "path": "resave.gpif",
           "sha256": "2ea750744dee08ab54058a82ba10f4046b23da40d0cd349ce4fd2effd80f705f",
+          "byte_identical": true
+        }
+      ]
+    },
+    {
+      "fixture": "unisons.gp",
+      "sha256": "1df4acda5e0f2f2431f17c4f791c0d934591343ce0a113145d20006396ba0916",
+      "outputs": [
+        {
+          "path": "export.gp5",
+          "sha256": null,
+          "byte_identical": false
+        },
+        {
+          "path": "export.mid",
+          "sha256": "7cce5fe803ba366292a00ddacfdc219e927e0f344f9c18cb29de9edb847456cc",
+          "byte_identical": true
+        },
+        {
+          "path": "export.musicxml",
+          "sha256": "41c30f20510c35a81b5ba2710379b3e03d87d4e7638f285ae9f0903fcafd58d5",
+          "byte_identical": true
+        },
+        {
+          "path": "png/unisons#1.png",
+          "sha256": "688a03bb22cc3107e5866a6e72f88dfabdc1fb0a277ffa05c68b50b69c340ff0",
+          "byte_identical": true
+        },
+        {
+          "path": "resave.gpif",
+          "sha256": "c3b9f88aef4b4b8268c5ea7193587ef05538970d614d2be30658449a04d3129c",
           "byte_identical": true
         }
       ]

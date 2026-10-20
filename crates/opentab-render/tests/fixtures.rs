@@ -245,8 +245,18 @@ fn tempo() {
 }
 
 #[test]
+fn tempo_forward_jump() {
+    check("tempo-forward-jump", "", &default_options());
+}
+
+#[test]
 fn tempo_ramp() {
     check("tempo-ramp", "", &default_options());
+}
+
+#[test]
+fn tempo_self_repeats() {
+    check("tempo-self-repeats", "", &default_options());
 }
 
 #[test]
@@ -260,8 +270,18 @@ fn trill() {
 }
 
 #[test]
+fn triplet_feel() {
+    check("triplet-feel", "", &default_options());
+}
+
+#[test]
 fn tunings() {
     check("tunings", "", &default_options());
+}
+
+#[test]
+fn unisons() {
+    check("unisons", "", &default_options());
 }
 
 #[test]
@@ -283,5 +303,5 @@ fn every_committed_fixture_has_a_snapshot_test() {
         let test = format!("fn {}() {{", name.replace('-', "_"));
         assert!(source.contains(&test), "no snapshot test for {name}");
     }
-    assert_eq!(names.len(), 31);
+    assert_eq!(names.len(), 35);
 }

@@ -9,7 +9,7 @@ use crate::support::{
 
 const HASH_FILE: &str = "tests/data/wav-hashes.txt";
 const BLESS_VARIABLE: &str = "OPENTAB_BLESS_WAV";
-const EXPECTED_FIXTURES: usize = 31;
+const EXPECTED_FIXTURES: usize = 35;
 const CD_FIXTURE: &str = "note-effects.gp";
 
 #[test]

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::oracle_allowances::TempoAt;
-use crate::smf::{SmfKind, read_smf};
+use crate::smf::{SmfKind, SmfText, read_smf};
 
 pub const CONDUCTOR_TRACK: usize = 0;
 const DATA_ENTRY: u8 = 6;
@@ -71,6 +71,7 @@ pub struct Side {
     pub tempi: Vec<TempoAt>,
     pub times: Vec<SignatureAt>,
     pub keys: BTreeMap<usize, Vec<SignatureAt>>,
+    pub texts: Vec<SmfText>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -103,6 +104,7 @@ pub fn side(bytes: &[u8]) -> Side {
             .map(|event| event.track + 1)
             .max()
             .unwrap_or(0),
+        texts: smf.texts.clone(),
         ..Side::default()
     };
     let mut open: BTreeMap<Slot, Vec<Onset>> = BTreeMap::new();

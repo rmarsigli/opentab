@@ -5,6 +5,8 @@ mod midi;
 mod music;
 mod playing;
 mod sketch;
+mod swing;
+mod unisons;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -52,7 +54,7 @@ pub struct Family {
 
 type Builder = fn() -> Result<Score, FixtureError>;
 
-const BUILDERS: [(&str, Builder); 31] = [
+const BUILDERS: [(&str, Builder); 35] = [
     ("metadata.gp", music::metadata),
     ("signatures.gp", music::signatures),
     ("repeats.gp", music::repeats),
@@ -84,6 +86,10 @@ const BUILDERS: [(&str, Builder); 31] = [
     ("tremolo-bar.gp", playing::tremolo_bar),
     ("trill.gp", playing::trill),
     ("drums.gp", drums::drums),
+    ("tempo-self-repeats.gp", directions::tempo_self_repeats),
+    ("tempo-forward-jump.gp", directions::tempo_forward_jump),
+    ("triplet-feel.gp", swing::triplet_feel),
+    ("unisons.gp", unisons::unisons),
 ];
 
 pub const PLAY_ORDERS: &str = include_str!("play-orders.json");
