@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
@@ -567,6 +567,91 @@ fn note_children_are_listed_and_checked_against_the_writer_order() {
         ])
         .is_some()
     );
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct NotePair {
+    first: String,
+    second: String,
+}
+
+const LEDGERED_SWAP: [&str; 2] = ["LetRing", "Vibrato"];
+
+fn note_pairs(gpif: &str, pairs: &mut BTreeSet<NotePair>) -> usize {
+    let notes = note_children(gpif);
+    for children in &notes {
+        for (index, first) in children.iter().enumerate() {
+            for second in &children[index + 1..] {
+                pairs.insert(NotePair {
+                    first: first.clone(),
+                    second: second.clone(),
+                });
+            }
+        }
+    }
+    notes.len()
+}
+
+fn rank(name: &str) -> usize {
+    NOTE_ORDER
+        .iter()
+        .position(|known| *known == name)
+        .unwrap_or_else(|| panic!("{name} is not in the note order"))
+}
+
+fn files_under(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+        .expect("a readable directory")
+        .map(|entry| entry.expect("entry").path())
+        .collect();
+    paths.sort();
+    paths
+}
+
+#[test]
+fn the_note_order_agrees_with_every_pair_guitar_pro_and_our_writer_wrote() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut guitar_pro = BTreeSet::new();
+    let mut gp_notes = 0usize;
+    for golden in files_under(&root.join("goldens/gp")) {
+        let resave = golden.join("resave.gpif");
+        if resave.is_file() {
+            let text = std::fs::read_to_string(&resave).expect("resave.gpif");
+            gp_notes += note_pairs(&text, &mut guitar_pro);
+        }
+    }
+    let mut ours = BTreeSet::new();
+    for fixture in files_under(&root.join("fixtures/gp")) {
+        let score = opentab_gp::read_gp(&std::fs::read(&fixture).expect("fixture")).expect("read");
+        let bytes = opentab_gp::write_gp(&score).expect("write");
+        note_pairs(&crate::anchors::gpif_text(&bytes), &mut ours);
+    }
+    assert!(gp_notes >= 464, "{gp_notes} notes in the goldens");
+    let swap = NotePair {
+        first: LEDGERED_SWAP[0].to_string(),
+        second: LEDGERED_SWAP[1].to_string(),
+    };
+    let swapped = NotePair {
+        first: swap.second.clone(),
+        second: swap.first.clone(),
+    };
+    assert!(guitar_pro.contains(&swap));
+    assert!(ours.contains(&swapped));
+    for pair in &guitar_pro {
+        if *pair != swap {
+            assert!(rank(&pair.first) < rank(&pair.second), "GP wrote {pair:?}");
+            assert!(
+                !ours.contains(&NotePair {
+                    first: pair.second.clone(),
+                    second: pair.first.clone(),
+                }),
+                "our writer reverses {pair:?}"
+            );
+        }
+    }
+    for pair in &ours {
+        assert!(rank(&pair.first) < rank(&pair.second), "we wrote {pair:?}");
+    }
 }
 
 const KIT_ROOT: [&str; 5] = ["GPIF", "Tracks", "Track", "InstrumentSet", "Elements"];
