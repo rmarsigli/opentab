@@ -1,4 +1,6 @@
-use crate::sfz::limits::SfzLimits;
+use std::rc::Rc;
+
+use crate::sfz::limits::{KIB, SfzLimits};
 use crate::sfz::listing::{IgnoreReason, Listing, SfzScope};
 use crate::sfz::region::{CcRange, Envelope, LoopMode, OffMode, SfzRegion, Trigger, VelocityPoint};
 use crate::{BankError, UnsafeBank};
@@ -89,7 +91,7 @@ fn tokens(line: &str) -> Vec<Token<'_>> {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 struct Settings {
-    sample: Option<String>,
+    sample: Option<Rc<str>>,
     lokey: Option<u8>,
     hikey: Option<u8>,
     lovel: Option<u8>,
@@ -380,7 +382,7 @@ fn is_silent(name: &str) -> bool {
 fn apply(settings: &mut Settings, control: &mut Control, assign: &mut Assign<'_>, value: &str) {
     let name = assign.name;
     match name {
-        "sample" => settings.sample = Some(value.to_owned()),
+        "sample" => settings.sample = Some(Rc::from(value)),
         "key" => {
             if let Some(note) = assign.note(value) {
                 settings.lokey = Some(note);
@@ -683,6 +685,12 @@ impl Scopes {
         steps += settings.inherit(&self.master);
         steps += settings.inherit(&self.global);
         steps += SETTINGS_STEPS;
+        let path = settings
+            .sample
+            .as_deref()
+            .map_or(0, str::len)
+            .saturating_add(parsed.control.default_path.len());
+        steps += path.min(limits.path_bytes) as u64;
         parsed.steps = parsed.steps.saturating_add(steps);
         if let Some(region) = finish(
             settings,
@@ -784,6 +792,13 @@ fn parse_lines(
 ) -> Result<(), BankError> {
     for line in text.lines() {
         parsed.steps = parsed.steps.saturating_add(line.len() as u64 + 1);
+        if line.len() as u64 > limits.line_bytes {
+            return Err(BankError::Unsafe {
+                reason: UnsafeBank::LineTooLong {
+                    limit_kib: limits.line_bytes / KIB,
+                },
+            });
+        }
         for token in tokens(line) {
             match token {
                 Token::Header(name) => {
@@ -792,7 +807,7 @@ fn parse_lines(
                     parsed.steps = parsed.steps.saturating_add(cleared);
                 }
                 Token::Opcode(raw_name, value) => {
-                    apply_token(scopes, parsed, raw_name, value);
+                    apply_token(scopes, parsed, limits, raw_name, value)?;
                 }
                 Token::Junk => {
                     if scopes.header != Header::Ignored {
@@ -808,7 +823,13 @@ fn parse_lines(
     scopes.close_region(parsed, limits, budget)
 }
 
-fn apply_token(scopes: &mut Scopes, parsed: &mut Parsed, raw_name: &str, value: &str) {
+fn apply_token(
+    scopes: &mut Scopes,
+    parsed: &mut Parsed,
+    limits: &SfzLimits,
+    raw_name: &str,
+    value: &str,
+) -> Result<(), BankError> {
     let name = raw_name.to_ascii_lowercase();
     let header = scopes.header;
     match header {
@@ -824,7 +845,7 @@ fn apply_token(scopes: &mut Scopes, parsed: &mut Parsed, raw_name: &str, value: 
                 parsed
                     .listing
                     .note(&name, scope, IgnoreReason::UnresolvedVariable);
-                return;
+                return Ok(());
             }
             let mut assign = Assign {
                 name: &name,
@@ -844,13 +865,20 @@ fn apply_token(scopes: &mut Scopes, parsed: &mut Parsed, raw_name: &str, value: 
         }
         _ => {
             let Some((settings, scope)) = scopes.current() else {
-                return;
+                return Ok(());
             };
+            if name == "sample" && value.len() > limits.path_bytes {
+                return Err(BankError::Unsafe {
+                    reason: UnsafeBank::PathTooLong {
+                        limit: limits.path_bytes as u64,
+                    },
+                });
+            }
             if (name.contains(VARIABLE) || value.contains(VARIABLE)) && name != "sample" {
                 parsed
                     .listing
                     .note(&name, scope, IgnoreReason::UnresolvedVariable);
-                return;
+                return Ok(());
             }
             let mut assign = Assign {
                 name: &name,
@@ -860,4 +888,5 @@ fn apply_token(scopes: &mut Scopes, parsed: &mut Parsed, raw_name: &str, value: 
             apply(settings, &mut parsed.control, &mut assign, value);
         }
     }
+    Ok(())
 }

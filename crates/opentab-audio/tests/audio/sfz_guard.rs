@@ -518,7 +518,7 @@ fn define_lookups_stay_linear_because_names_are_capped() {
         .map(|length| format!("#define ${} 1\n", "N".repeat(length)))
         .collect();
     let uses = format!(
-        "<region> sample=a.wav {}\n",
+        "<region> sample=a.wav\n{}\n",
         format!("${} ", "M".repeat(200)).repeat(100)
     );
     let text = defines + &uses;
@@ -1025,5 +1025,124 @@ fn regions_and_listings_share_one_parse_budget() {
     assert_eq!(
         refusal(text_with(&(regions + &listed), &[], &limits)),
         UnsafeBank::LoaderBudget
+    );
+}
+
+fn inherited_generator(value_bytes: usize, uses: usize, region_lines: usize) -> String {
+    format!(
+        "#define $a {}\n#define $r {}\n<group> sample=*{}\n{}\n",
+        "a".repeat(value_bytes),
+        "<region>".repeat(8000),
+        "$a".repeat(uses),
+        "$r".repeat(region_lines)
+    )
+}
+
+#[test]
+fn sample_values_past_the_path_cap_are_refused_before_they_are_stored() {
+    let over = UnsafeBank::PathTooLong { limit: 1024 };
+    for text in [
+        format!("<region> sample={}\n", "s".repeat(1025)),
+        format!("<group> sample=*{}\n<region>\n", "g".repeat(1024)),
+        format!("<global> sample=$zz{}\n<region>\n", "v".repeat(1022)),
+        format!("#define $a {}\n<master> sample=$a$a\n", "d".repeat(600)),
+        inherited_generator(1024, 2, 1),
+    ] {
+        assert_eq!(refusal(text_with(&text, &[], &SfzLimits::DEFAULT)), over);
+    }
+    let at = format!("<region> sample={}\n", "s".repeat(1024));
+    assert_eq!(
+        text_with(&at, &[], &SfzLimits::DEFAULT)
+            .expect("parses")
+            .regions
+            .len(),
+        1
+    );
+    let generator = format!("<group> sample=*{}\n<region>\n", "g".repeat(1023));
+    let parsed = text_with(&generator, &[], &SfzLimits::DEFAULT).expect("parses");
+    assert!(parsed.regions.is_empty());
+    assert!(
+        parsed
+            .ignored
+            .iter()
+            .any(|entry| entry.reason == IgnoreReason::Generator)
+    );
+    let dir = scratch_dir();
+    let root = pluck_bank(
+        dir.path(),
+        &[
+            ("a.sfz", "<region> sample=pluck.wav\n"),
+            ("b.sfz", &generator),
+        ],
+    );
+    assert!(load(&root, &SfzLimits::DEFAULT).is_ok());
+    let over_generator = format!("<group> sample=*{}\n<region>\n", "g".repeat(1024));
+    let root = pluck_bank(dir.path(), &[("b.sfz", &over_generator)]);
+    assert_eq!(refusal(load(&root, &SfzLimits::DEFAULT)), over);
+}
+
+#[test]
+fn the_inherited_generator_bomb_is_refused_with_bounded_work() {
+    let text = inherited_generator(1024, 240, 12);
+    let expanded = (text.len() + 240 * 1024 + 12 * 8000 * 8) as u64;
+    let wide = SfzLimits {
+        line_bytes: 1 << 20,
+        ..SfzLimits::DEFAULT
+    };
+    for (limits, reason) in [
+        (
+            SfzLimits::DEFAULT,
+            UnsafeBank::LineTooLong { limit_kib: 64 },
+        ),
+        (wide, UnsafeBank::PathTooLong { limit: 1024 }),
+    ] {
+        let run = measure_sfz_text(&text, &BTreeMap::new(), &limits);
+        assert_eq!(
+            run.result.map(|parsed| parsed.regions.len()),
+            Err(BankError::Unsafe { reason })
+        );
+        assert!(
+            run.steps <= STEP_FACTOR * expanded,
+            "{} steps for {expanded} expanded bytes",
+            run.steps
+        );
+    }
+}
+
+#[test]
+fn expanded_lines_past_the_line_cap_are_refused() {
+    let limits = SfzLimits {
+        line_bytes: 1024,
+        ..SfzLimits::DEFAULT
+    };
+    let define = format!("#define $r {}\n", "<region>".repeat(100));
+    assert!(text_with(&format!("{define}$r\n$r\n"), &[], &limits).is_ok());
+    assert_eq!(
+        refusal(text_with(&format!("{define}$r$r\n"), &[], &limits)),
+        UnsafeBank::LineTooLong { limit_kib: 1 }
+    );
+    let fragment = "<region>".repeat(70);
+    let include = format!("{} #include \"f.sfz\"\n", "<region>".repeat(70));
+    assert_eq!(
+        refusal(text_with(&include, &[("f.sfz", &fragment)], &limits)),
+        UnsafeBank::LineTooLong { limit_kib: 1 }
+    );
+}
+
+#[test]
+fn one_name_under_many_scopes_and_reasons_counts_once_against_the_name_cap() {
+    let limits = SfzLimits {
+        ignored_names: 1,
+        ..SfzLimits::DEFAULT
+    };
+    let one =
+        "<region> sample=pluck.wav zzq=1 zzq=$v\n<group> zzq=1\n<global> zzq=1\n<master> zzq=1\n";
+    let parsed = text_with(one, &[], &limits).expect("one name fits a cap of one");
+    assert_eq!(parsed.ignored.len(), 5);
+    assert!(parsed.ignored.iter().all(|entry| entry.name == "zzq"));
+    let two = format!("{one}<region> sample=pluck.wav yyq=1\n");
+    assert_eq!(
+        refusal(text_with(&two, &[], &limits)),
+        UnsafeBank::IgnoredNames { limit: 1 }
     );
 }

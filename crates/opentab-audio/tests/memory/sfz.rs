@@ -32,6 +32,10 @@ const INCLUDE_ROOTS: usize = 200;
 const BYTES_PER_INCLUDE: usize = 4096;
 const PACKET_COPIES: usize = 2;
 const SPARSE_BYTES: u64 = 1 << 30;
+const SHARED_REGION_LINES: usize = 4;
+const REGIONS_PER_LINE: usize = 8000;
+const SHARED_SAMPLE_BYTES: usize = 1023;
+const BYTES_PER_SHARED_REGION: usize = 64;
 
 fn allocated(region: &Region<'_, std::alloc::System>) -> usize {
     region.change().bytes_allocated
@@ -346,4 +350,28 @@ pub fn include_bombs_stop_at_the_bank_include_cap() {
     );
     let cap = usize::try_from(SFZ_MAX_BANK_INCLUDES).unwrap_or(usize::MAX);
     assert!(spent <= cap * BYTES_PER_INCLUDE, "{spent} bytes");
+}
+
+pub fn an_inherited_sample_is_shared_not_copied_per_region() {
+    let text = format!(
+        "#define $r {}\n<group> sample=*{}\n{}",
+        "<region>".repeat(REGIONS_PER_LINE),
+        "a".repeat(SHARED_SAMPLE_BYTES),
+        "$r\n".repeat(SHARED_REGION_LINES)
+    );
+    let regions = SHARED_REGION_LINES * REGIONS_PER_LINE;
+    let parsing = Region::new(GLOBAL);
+    let result = parse_sfz_text(&text, &BTreeMap::new(), &SfzLimits::DEFAULT);
+    let spent = allocated(&parsing);
+    let parsed = result.expect("every region is a listed generator");
+    assert!(parsed.regions.is_empty());
+    let expanded = parsed.expanded_bytes;
+    let bound = TEXT_FACTOR * expanded + BYTES_PER_SHARED_REGION * regions + SLACK_BYTES;
+    let copies = regions * SHARED_SAMPLE_BYTES;
+    println!("shared sample: {spent} bytes allocated for {regions} regions, bound {bound}");
+    assert!(
+        spent <= bound,
+        "{spent} bytes for {regions} regions over {expanded} expanded bytes"
+    );
+    assert!(bound < copies, "the bound {bound} must sit below {copies}");
 }

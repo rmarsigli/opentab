@@ -203,5 +203,6 @@ fn main() {
     sfz::the_vorbis_setup_estimate_covers_what_lewton_allocates();
     sfz::symlink_bombs_are_refused_before_listing();
     sfz::include_bombs_stop_at_the_bank_include_cap();
-    println!("memory: 12 checks passed");
+    sfz::an_inherited_sample_is_shared_not_copied_per_region();
+    println!("memory: 13 checks passed");
 }

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ops::Bound;
 
 use crate::{BankError, UnsafeBank};
 
@@ -50,6 +51,7 @@ pub(crate) struct Listing {
     entries: BTreeMap<ListingKey, u32>,
     bytes: u64,
     names: u64,
+    distinct: u64,
     allowance: u64,
     refused: Option<UnsafeBank>,
 }
@@ -79,6 +81,7 @@ impl Listing {
             entries: BTreeMap::new(),
             bytes: 0,
             names,
+            distinct: 0,
             allowance,
             refused: None,
         }
@@ -96,7 +99,8 @@ impl Listing {
         if self.refused.is_some() {
             return;
         }
-        if self.entries.len() as u64 >= self.names {
+        let known = self.knows_name(&key);
+        if !known && self.distinct >= self.names {
             self.refused = Some(UnsafeBank::IgnoredNames { limit: self.names });
             return;
         }
@@ -106,7 +110,25 @@ impl Listing {
             return;
         }
         self.bytes += cost;
+        if !known {
+            self.distinct += 1;
+        }
         self.entries.insert(key, count);
+    }
+
+    fn knows_name(&self, key: &ListingKey) -> bool {
+        let before = self
+            .entries
+            .range((Bound::Unbounded, Bound::Excluded(key)))
+            .next_back();
+        let after = self
+            .entries
+            .range((Bound::Excluded(key), Bound::Unbounded))
+            .next();
+        before
+            .into_iter()
+            .chain(after)
+            .any(|(other, _)| other.name == key.name)
     }
 
     pub(crate) fn note(&mut self, name: &str, scope: SfzScope, reason: IgnoreReason) {
