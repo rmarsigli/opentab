@@ -6,7 +6,8 @@ use opentab_model::{OpaquePayload, Score, TimeSignature};
 use zip::ZipArchive;
 
 use crate::corpus::corpus_paths;
-use crate::rich::{FRAME_OFFSETS, SOUND_MARKER, rich};
+use crate::rich::{FRAME_OFFSETS, SOUND_MARKER, rich, rich_gpif, sync};
+use crate::support::read_gpif;
 use crate::support::{SCORE_ENTRY, document_payloads, payloads};
 
 pub fn gpif_text(bytes: &[u8]) -> String {
@@ -217,6 +218,44 @@ fn inserting_inside_a_repeat_counts_every_pass() {
     assert_eq!(sync_of(&points, FRAME_OFFSETS[0]), Some((3, Some(0))));
     assert_eq!(sync_of(&points, FRAME_OFFSETS[1]), Some((6, Some(3))));
     assert_eq!(sync_of(&points, FRAME_OFFSETS[2]), Some((7, Some(4))));
+}
+
+const SEGNO_REPLAY: &str = "4000";
+
+fn segno_score() -> Score {
+    let gpif = rich_gpif()
+        .replace(
+            "<Text><![CDATA[Verse]]></Text></Section>",
+            "<Text><![CDATA[Verse]]></Text></Section><Directions><Target>Segno</Target></Directions>",
+        )
+        .replace(
+            "<Time>4/4</Time><Bars>3</Bars>",
+            "<Time>4/4</Time><Directions><Jump>DaSegno</Jump></Directions><Bars>3</Bars>",
+        )
+        .replace(
+            "</Automations><RSE><Master>",
+            &format!("{}</Automations><RSE><Master>", sync(7, 3, 1, SEGNO_REPLAY)),
+        );
+    read_gpif(&gpif)
+}
+
+#[test]
+fn sync_points_follow_the_play_order_through_directions() {
+    let score = segno_score();
+    let unchanged = points(&written(&score));
+    assert_eq!(sync_of(&unchanged, SEGNO_REPLAY), Some((7, Some(3))));
+    let mut moved = score.clone();
+    apply(&mut moved, &insert(3)).expect("insert inside the segno section");
+    let points = points(&written(&moved));
+    assert_eq!(sync_of(&points, FRAME_OFFSETS[0]), Some((2, Some(0))));
+    assert_eq!(sync_of(&points, FRAME_OFFSETS[1]), Some((4, Some(2))));
+    assert_eq!(sync_of(&points, FRAME_OFFSETS[2]), Some((6, Some(4))));
+    assert_eq!(sync_of(&points, SEGNO_REPLAY), Some((9, Some(4))));
+    let again = read_gp(&write_gp(&moved).expect("write")).expect("read back");
+    assert_eq!(
+        write_gp(&again).expect("rewrite"),
+        write_gp(&moved).expect("write")
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use opentab_model::{
     DIRECTION_JUMPS, DIRECTION_TARGETS, Diagnostic, DirectionJump, DirectionTarget, Directions,
-    JumpDestination, MasterBarId, Score, diagnose, from_json, to_json,
+    JumpDestination, MasterBarId, Score, diagnose, from_json, source_order, to_json,
 };
 use serde_json::{Value, json};
 
@@ -419,4 +419,39 @@ fn distinct_names_in_one_bar_are_not_duplicates() {
         diagnostic,
         Diagnostic::DuplicateJump { .. } | Diagnostic::DuplicateTarget { .. }
     )));
+}
+
+fn played_sources(directions: &[Directions]) -> Vec<usize> {
+    let mut score = Score::new();
+    for placed in directions {
+        let mut bar = master_bar(&mut score, 4, 4);
+        bar.directions = placed.clone();
+        score.master_bars.push(bar);
+    }
+    let order = source_order(&score.master_bars);
+    assert!(!order.truncated);
+    order.bars.iter().map(|bar| bar.source).collect()
+}
+
+fn placed(targets: &[DirectionTarget], jumps: &[DirectionJump]) -> Directions {
+    Directions {
+        targets: targets.to_vec(),
+        jumps: jumps.to_vec(),
+    }
+}
+
+#[test]
+fn the_source_order_follows_a_da_segno_al_coda() {
+    let none = Directions::default();
+    let order = played_sources(&[
+        none.clone(),
+        placed(&[DirectionTarget::Segno], &[]),
+        placed(&[], &[DirectionJump::DaCoda]),
+        placed(&[], &[DirectionJump::DaSegnoAlCoda]),
+        placed(&[DirectionTarget::Coda], &[]),
+        none,
+    ]);
+    assert_eq!(order, vec![0, 1, 2, 3, 1, 2, 4, 5]);
+    let order = source_order(&[]);
+    assert!(order.bars.is_empty() && !order.truncated);
 }

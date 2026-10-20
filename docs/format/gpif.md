@@ -206,7 +206,7 @@ The other master automation type seen is `SyncPoint`. It aligns bars with a back
 2. A bar with `AlternateEndings` starts an ending group. The group runs through the following bars that have no endings of their own, and stops at the next repeat start. On pass p, a bar in a group whose endings do not include p is skipped.
 3. At a repeat end with count c, while the pass is below c, the pass grows by one and playback jumps back to the start of the section, or to the first bar if no section was opened.
 
-None of these 5 examples has `Directions`, so the rule ignores them; §5.1 adds them. The other automations in GPIF (tempo, the track's `Sound` automations and the `DSPParam` automations under `RSE`) all name a plain master bar index in `Bar`.
+None of these 5 examples has `Directions`; §5.1 adds them. OpenTab has one play order for every use: `opentab_model::source_order` implements §5 and §5.1, the GPIF reader and writer place sync points with it, and playback builds its timed order on it. The other automations in GPIF (tempo, the track's `Sound` automations and the `DSPParam` automations under `RSE`) all name a plain master bar index in `Bar`.
 
 ### 5.1 Play order with directions
 
@@ -730,7 +730,7 @@ Kept data that names a master bar by index is **anchored** to that master bar wh
 - the `BarIndex` of a sync point;
 - the `Offset` of a lyrics line.
 
-On write, the index is rewritten to the master bar's current position, so it follows inserted and removed bars. A sync point's `Bar` is recomputed in playback order (§5), and any difference GP's file had from that order is kept.
+On write, the index is rewritten to the master bar's current position, so it follows inserted and removed bars. A sync point's `Bar` is recomputed in playback order (§5 and §5.1, directions included), and any difference GP's file had from that order is kept.
 
 When an anchored master bar has been removed:
 

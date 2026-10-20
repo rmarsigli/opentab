@@ -12,6 +12,7 @@ mod ids;
 mod json;
 mod master_bar;
 mod midi;
+mod play_order;
 mod score;
 mod track;
 
@@ -46,6 +47,7 @@ pub use midi::{
     MAX_PROGRAM, MidiBank, MidiChannel, Sound, SoundOverride, SoundRef, TrackMidi,
     automations_in_order, check_program, on_automation_grid,
 };
+pub use play_order::{MAX_PLAYED_BARS, PlayedSource, SourceOrder, source_order};
 pub use score::{BeatPath, NotePath, Score, ScoreMeta, VoicePath};
 pub use track::{
     Bar, Beat, Clef, Instrument, InstrumentKind, Note, NoteKind, Pitch, Staff, Track, Transpose,

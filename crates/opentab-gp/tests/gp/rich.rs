@@ -16,7 +16,7 @@ pub const MASTER_MARKER: &str = "<XProperty id=\"1124139010\">";
 pub const HOPO_DESTINATION: &str = "<Property name=\"HopoDestination\">";
 pub const FRAME_OFFSETS: [&str; 3] = ["1000", "2000", "3000"];
 
-fn sync(bar: usize, index: usize, occurrence: usize, frame: &str) -> String {
+pub fn sync(bar: usize, index: usize, occurrence: usize, frame: &str) -> String {
     format!(
         concat!(
             "<Automation><Type>SyncPoint</Type><Linear>false</Linear><Bar>{}</Bar>",

@@ -1,4 +1,4 @@
-use opentab_model::MasterBar;
+use opentab_model::{MasterBar, source_order};
 
 use crate::dom::{Element, Node};
 
@@ -14,8 +14,6 @@ pub(crate) const OFFSET: &str = "Offset";
 pub(crate) const VALUE: &str = "Value";
 pub(crate) const BAR_INDEX: &str = "BarIndex";
 pub(crate) const BAR_OCCURRENCE: &str = "BarOccurrence";
-const MAX_UNROLL_STEPS: usize = 1 << 22;
-const ENDINGS: u32 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SiteKind {
@@ -174,47 +172,10 @@ pub(crate) struct Playback {
 impl Playback {
     pub fn of(master_bars: &[MasterBar]) -> Playback {
         let mut positions = vec![Vec::new(); master_bars.len()];
-        let mut index = 0usize;
-        let mut start = 0usize;
-        let mut pass = 1u32;
-        let mut ending: Option<u8> = None;
-        let mut jumped = false;
-        let mut played = 0usize;
-        for _ in 0..MAX_UNROLL_STEPS {
-            let Some(bar) = master_bars.get(index) else {
-                break;
-            };
-            if bar.repeat_start && !jumped {
-                start = index;
-                pass = 1;
-            }
-            jumped = false;
-            if bar.alternate_endings != 0 {
-                ending = Some(bar.alternate_endings);
-            } else if bar.repeat_start {
-                ending = None;
-            }
-            if let Some(mask) = ending {
-                let covered = pass <= ENDINGS && mask & (1u8 << (pass - 1)) != 0;
-                if !covered {
-                    index += 1;
-                    continue;
-                }
-            }
-            if let Some(slot) = positions.get_mut(index) {
+        for (played, bar) in source_order(master_bars).bars.iter().enumerate() {
+            if let Some(slot) = positions.get_mut(bar.source) {
                 slot.push(played);
             }
-            played += 1;
-            if let Some(count) = bar.repeat_end
-                && pass < u32::from(count)
-            {
-                pass += 1;
-                index = start;
-                ending = None;
-                jumped = true;
-                continue;
-            }
-            index += 1;
         }
         Playback { positions }
     }
