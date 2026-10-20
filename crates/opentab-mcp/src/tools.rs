@@ -105,7 +105,9 @@ impl ToolName {
             ToolName::Export => {
                 "Write the session's current score to a path ending in .gp or .opentab.json; the suffix picks the format. Other suffixes are refused. An existing file at that path is replaced."
             }
-            ToolName::Close => "Close a session and forget its score and history. Playback of that session stops.",
+            ToolName::Close => {
+                "Close a session and forget its score and history. Playback of that session stops."
+            }
             ToolName::ExportMidi => {
                 "Write the session's current score as a Standard MIDI File to a path ending in .mid. profile \"gp\" copies Guitar Pro's timing, \"musical\" (the default) plays tempo ramps smoothly. An existing file at that path is replaced. Returns the file, its size, the profile, the length in seconds, the played bars (source bar numbers from 1, repeats followed) and the features that are not played."
             }
