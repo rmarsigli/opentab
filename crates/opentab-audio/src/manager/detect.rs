@@ -194,7 +194,7 @@ struct Found {
     sfz: Vec<String>,
     sf2: Vec<PathBuf>,
     sf3: usize,
-    unusable_sf2: Option<UnsafeBank>,
+    unusable: Option<UnsafeBank>,
 }
 
 fn has_extension(path: &Path, wanted: &str) -> bool {
@@ -239,12 +239,12 @@ pub(crate) fn classify(survey: &Survey) -> Result<Detected, BankError> {
         let Ok(inside) = entry.relative.strip_prefix(&root) else {
             continue;
         };
-        if has_extension(inside, SFZ_EXTENSION) {
-            found.sfz.push(portable_name(inside));
-        } else if let Some(reason) = entry.kind.refusal() {
-            if has_extension(inside, SF2_EXTENSION) {
-                found.unusable_sf2.get_or_insert(reason);
+        if let Some(reason) = entry.kind.refusal() {
+            if has_extension(inside, SF2_EXTENSION) || has_extension(inside, SFZ_EXTENSION) {
+                found.unusable.get_or_insert(reason);
             }
+        } else if has_extension(inside, SFZ_EXTENSION) {
+            found.sfz.push(portable_name(inside));
         } else if has_extension(inside, SF2_EXTENSION) {
             found.sf2.push(survey.root.join(&entry.relative));
         } else if has_extension(inside, SF3_EXTENSION) {
@@ -260,7 +260,7 @@ pub(crate) fn classify(survey: &Survey) -> Result<Detected, BankError> {
         });
     }
     if found.sf2.is_empty()
-        && let Some(reason) = found.unusable_sf2
+        && let Some(reason) = found.unusable
     {
         return Err(BankError::Unsafe { reason });
     }

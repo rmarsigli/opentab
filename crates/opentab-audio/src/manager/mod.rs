@@ -549,6 +549,7 @@ impl BankManager {
     }
 
     pub fn import(&mut self, path: &Path) -> Result<InstalledBank, BankError> {
+        self.refresh()?;
         let source = path.canonicalize().map_err(|error| storage(path, &error))?;
         let metadata = fs::metadata(&source).map_err(|error| storage(&source, &error))?;
         let mut budget = Budget::new(self.limits);
@@ -757,6 +758,7 @@ impl BankManager {
         if let Some(stored) = self.stored(id) {
             return Ok(self.installed(stored));
         }
+        self.refresh()?;
         check_download_url(&entry.url)?;
         let staging = self.stage()?;
         let download = staging.path.join(DOWNLOAD_NAME);

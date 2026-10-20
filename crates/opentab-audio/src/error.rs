@@ -99,7 +99,9 @@ pub enum UnsafeBank {
     TooManyDefines { limit: u64 },
     #[error("variable definitions hold more than {limit_kib} KiB")]
     DefineTextTooLarge { limit_kib: u64 },
-    #[error("the bank folder holds more than {limit} entries")]
+    #[error(
+        "this holds more than {limit} files and folders; pick the sound bank's own folder instead of a larger folder that contains it"
+    )]
     TooManyFiles { limit: u64 },
     #[error("the bank folders are nested more than {limit} levels deep")]
     FolderTooDeep { limit: u64 },

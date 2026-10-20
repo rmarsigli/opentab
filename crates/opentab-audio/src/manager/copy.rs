@@ -9,6 +9,7 @@ const CHUNK_BYTES: usize = 64 * 1024;
 const MIB_SHIFT: u32 = 20;
 const MAC_METADATA_FOLDER: &str = "__MACOSX";
 const MAC_METADATA_PREFIX: &str = "._";
+const CANDIDATE_EXTENSIONS: [&str; 2] = ["sf2", "sfz"];
 
 pub(crate) fn storage(path: &Path, error: &io::Error) -> BankError {
     BankError::Storage {
@@ -387,6 +388,53 @@ fn same_folder(path: &Path, expected: FileIdentity) -> Result<(), BankError> {
     Ok(())
 }
 
+fn is_candidate_name(relative: &Path) -> bool {
+    relative.extension().is_some_and(|extension| {
+        CANDIDATE_EXTENSIONS
+            .iter()
+            .any(|wanted| extension.eq_ignore_ascii_case(wanted))
+    })
+}
+
+fn holds_candidate(folder: &Path, skipped: &mut Budget) -> Result<bool, BankError> {
+    let mut pending = vec![folder.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        let listing = fs::read_dir(&current).map_err(|error| storage(&current, &error))?;
+        for entry in listing {
+            let entry = entry.map_err(|error| storage(&current, &error))?;
+            if is_mac_metadata(Path::new(&entry.file_name())) {
+                continue;
+            }
+            skipped.entry()?;
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path).map_err(|error| storage(&path, &error))?;
+            if listed_kind(&metadata) == ListedKind::Folder {
+                pending.push(path);
+            } else if is_candidate_name(Path::new(&entry.file_name())) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn limit_violation(
+    budget: &Budget,
+    relative: &Path,
+    kind: ListedKind,
+    depth: u64,
+) -> Option<BankError> {
+    if let Err(error) = budget.name(relative) {
+        return Some(error);
+    }
+    if kind == ListedKind::Folder
+        && let Err(error) = budget.depth(depth)
+    {
+        return Some(error);
+    }
+    None
+}
+
 pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankError> {
     let mut budget = Budget::new(limits);
     let mut skipped = Budget::new(limits);
@@ -403,7 +451,6 @@ pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankEr
         for entry in listing {
             let entry = entry.map_err(|error| storage(&folder.source, &error))?;
             let relative = folder.relative.join(entry.file_name());
-            budget.name(&relative)?;
             if is_mac_metadata(Path::new(&entry.file_name())) {
                 skipped.entry()?;
                 continue;
@@ -411,12 +458,21 @@ pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankEr
             let path = entry.path();
             let metadata = fs::symlink_metadata(&path).map_err(|error| storage(&path, &error))?;
             let kind = listed_kind(&metadata);
+            if let Some(error) = limit_violation(&budget, &relative, kind, folder.depth + 1) {
+                let candidate = kind != ListedKind::Folder && is_candidate_name(&relative);
+                if candidate
+                    || (kind == ListedKind::Folder && holds_candidate(&path, &mut skipped)?)
+                {
+                    return Err(error);
+                }
+                skipped.entry()?;
+                continue;
+            }
             match kind {
                 ListedKind::File | ListedKind::Folder => budget.entry()?,
                 ListedKind::Link | ListedKind::Special => skipped.entry()?,
             }
             if kind == ListedKind::Folder {
-                budget.depth(folder.depth + 1)?;
                 pending.push(Pending {
                     source: path,
                     relative: relative.clone(),
@@ -723,6 +779,52 @@ mod tests {
         let listing = survey(&source, ImportLimits::DEFAULT).expect("survey");
         let kinds: Vec<ListedKind> = listing.entries.iter().map(|entry| entry.kind).collect();
         assert_eq!(kinds, [ListedKind::Link]);
+    }
+
+    #[cfg(windows)]
+    fn compress(path: &Path) -> Result<(), String> {
+        let output = std::process::Command::new("compact")
+            .arg("/c")
+            .arg("/exe:xpress4k")
+            .arg(path)
+            .output()
+            .map_err(|error| format!("compact did not start: {error}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(format!("compact exited with {}", output.status))
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_wof_compressed_file_is_listed_as_a_file_and_copied_through_the_reopen() {
+        let dir = tempfile::tempdir().expect("scratch");
+        let source = dir.path().join("source");
+        fs::create_dir_all(&source).expect("source");
+        let data: Vec<u8> = (0..262_144u32)
+            .map(|index| u8::try_from(index / 64 % 251).unwrap_or(0))
+            .collect();
+        let path = source.join("wof.sf2");
+        fs::write(&path, &data).expect("file");
+        if let Err(reason) = compress(&path) {
+            eprintln!("skipped: {reason}");
+            return;
+        }
+        let metadata = fs::symlink_metadata(&path).expect("listed");
+        if !Reparse::of(&metadata).is_placeholder() {
+            eprintln!("skipped: compact left no reparse point on the file");
+            return;
+        }
+        assert!(!Reparse::of(&metadata).is_link());
+        let listing = survey(&source, ImportLimits::DEFAULT).expect("survey");
+        let kinds: Vec<ListedKind> = listing.entries.iter().map(|entry| entry.kind).collect();
+        assert_eq!(kinds, [ListedKind::File]);
+        let target = dir.path().join("target");
+        fs::create_dir_all(&target).expect("target");
+        let mut budget = Budget::new(ImportLimits::DEFAULT);
+        copy_files(&source, &listing.entries, &target, &mut budget).expect("copies");
+        assert_eq!(fs::read(target.join("wof.sf2")).expect("copied"), data);
     }
 
     #[test]
