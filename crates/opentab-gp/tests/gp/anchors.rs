@@ -222,7 +222,14 @@ fn inserting_inside_a_repeat_counts_every_pass() {
 
 const SEGNO_REPLAY: &str = "4000";
 
+const STALE_REPLAY_BAR: usize = 4;
+const REPLAY_BAR: usize = 7;
+
 fn segno_score() -> Score {
+    segno_score_with(REPLAY_BAR)
+}
+
+fn segno_score_with(replay_bar: usize) -> Score {
     let gpif = rich_gpif()
         .replace(
             "<Text><![CDATA[Verse]]></Text></Section>",
@@ -234,7 +241,10 @@ fn segno_score() -> Score {
         )
         .replace(
             "</Automations><RSE><Master>",
-            &format!("{}</Automations><RSE><Master>", sync(7, 3, 1, SEGNO_REPLAY)),
+            &format!(
+                "{}</Automations><RSE><Master>",
+                sync(replay_bar, 3, 1, SEGNO_REPLAY)
+            ),
         );
     read_gpif(&gpif)
 }
@@ -256,6 +266,12 @@ fn sync_points_follow_the_play_order_through_directions() {
         write_gp(&again).expect("rewrite"),
         write_gp(&moved).expect("write")
     );
+}
+
+#[test]
+fn a_stale_sync_bar_is_written_at_its_play_order_position_as_guitar_pro_does() {
+    let points = points(&written(&segno_score_with(STALE_REPLAY_BAR)));
+    assert_eq!(sync_of(&points, SEGNO_REPLAY), Some((7, Some(3))));
 }
 
 #[test]

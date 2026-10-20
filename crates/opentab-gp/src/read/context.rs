@@ -198,14 +198,14 @@ impl Context {
     fn sync_anchor(&mut self, target: &Element) -> Option<Anchor> {
         let index = anchor::nested(target, anchor::VALUE, anchor::BAR_INDEX)?;
         let occurrence = anchor::nested(target, anchor::VALUE, anchor::BAR_OCCURRENCE)?;
-        let bar = i64::try_from(anchor::number(target, anchor::BAR)?).ok()?;
+        anchor::number(target, anchor::BAR)?;
         let id = self.master_id(index)?;
         let master_bars = &self.score.master_bars;
         let playback = self
             .playback
             .get_or_insert_with(|| Playback::of(master_bars));
-        let position = i64::try_from(playback.position(index, occurrence)?).ok()?;
-        Some(Anchor::Sync(id, bar.checked_sub(position)?))
+        playback.position(index, occurrence)?;
+        Some(Anchor::Sync(id))
     }
 
     pub fn keep_attributes(

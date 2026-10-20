@@ -114,13 +114,12 @@ impl<'s> BarAnchors<'s> {
                 anchor::set_number(target, anchor::OFFSET, index);
                 Ok(Outcome::Kept)
             }
-            (SiteKind::Sync, Anchor::Sync(id, delta)) => {
+            (SiteKind::Sync, Anchor::Sync(id)) => {
                 let occurrence = anchor::nested(target, anchor::VALUE, anchor::BAR_OCCURRENCE)
                     .ok_or_else(|| malformed("a sync point lost its bar occurrence"))?;
                 let placed = self.index.get(&id).and_then(|index| {
                     let position = self.playback().position(*index, occurrence)?;
-                    let bar = i64::try_from(position).ok()?.checked_add(delta)?;
-                    Some((*index, usize::try_from(bar).ok()?))
+                    Some((*index, position))
                 });
                 match placed {
                     Some((index, bar)) => {

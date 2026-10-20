@@ -5,6 +5,7 @@ use crate::dom::{Element, Node};
 pub(crate) const ANCHORS: &str = "bars";
 const LOOSE: &str = "-";
 const SYNC_SEPARATOR: char = ':';
+const PLAYED_AT_ITS_POSITION: i64 = 0;
 const SYNC_POINT: &str = "SyncPoint";
 const AUTOMATION: &str = "Automation";
 const LYRICS: &str = "Lyrics";
@@ -32,7 +33,7 @@ pub(crate) struct Site {
 pub(crate) enum Anchor {
     Loose,
     Bar(u64),
-    Sync(u64, i64),
+    Sync(u64),
 }
 
 pub(crate) fn sites(root: &Element) -> Vec<Site> {
@@ -140,7 +141,7 @@ pub(crate) fn render(anchors: &[Anchor]) -> String {
         .map(|anchor| match anchor {
             Anchor::Loose => LOOSE.to_string(),
             Anchor::Bar(id) => id.to_string(),
-            Anchor::Sync(id, delta) => format!("{id}{SYNC_SEPARATOR}{delta}"),
+            Anchor::Sync(id) => format!("{id}{SYNC_SEPARATOR}{PLAYED_AT_ITS_POSITION}"),
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -158,7 +159,10 @@ pub(crate) fn parse(text: &str) -> Option<Vec<Anchor>> {
                 return Some(Anchor::Loose);
             }
             match token.split_once(SYNC_SEPARATOR) {
-                Some((id, delta)) => Some(Anchor::Sync(plain(id)?, plain(delta)?)),
+                Some((id, delta)) => {
+                    plain::<i64>(delta)?;
+                    Some(Anchor::Sync(plain(id)?))
+                }
                 None => Some(Anchor::Bar(plain(token)?)),
             }
         })
