@@ -1,12 +1,10 @@
-use opentab_audio::{
-    BuiltInSynth, SampleRate, Scheduler, Synth, encode_wav, full_length, render_frames,
-};
+use opentab_audio::{BuiltInSynth, SampleRate, Scheduler, Synth, encode_wav, full_length};
 use opentab_playback::{PlaybackOptions, Speed, perform};
 use opentab_testkit::arb_score;
 use proptest::prelude::*;
 use proptest::test_runner::{FileFailurePersistence, RngSeed};
 
-use crate::support::{PROFILES, built_in_voices};
+use crate::support::{PROFILES, built_in_voices, render_frames};
 
 const PROPERTY_SEED: u64 = 0x0074_3114;
 const RENDER_CAP_MS: u32 = 1500;

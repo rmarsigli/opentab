@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use opentab_audio::{
-    Bank, BuiltInBank, RenderedAudio, SampleRate, Sf2Bank, Synth, encode_wav, render_all,
+    AudioError, Bank, BuiltInBank, RenderedAudio, SampleRate, Session, SessionConfig, Sf2Bank,
+    Synth, encode_wav, full_length, render_session,
 };
 use opentab_gp::read_gp;
 use opentab_model::Score;
@@ -46,6 +47,31 @@ pub fn built_in_voices(performance: &Performance, rate: SampleRate) -> Vec<Box<d
         .iter()
         .map(|_| BuiltInBank.instantiate(rate))
         .collect()
+}
+
+pub fn config(rate: SampleRate) -> SessionConfig {
+    SessionConfig {
+        rate,
+        ..SessionConfig::default()
+    }
+}
+
+pub fn render_frames(
+    performance: &Performance,
+    voices: Vec<Box<dyn Synth>>,
+    rate: SampleRate,
+    frames: u64,
+) -> Result<RenderedAudio, AudioError> {
+    let mut session = Session::new(performance.clone(), voices, config(rate))?;
+    render_session(&mut session, &[], frames)
+}
+
+pub fn render_all(
+    performance: &Performance,
+    voices: Vec<Box<dyn Synth>>,
+    rate: SampleRate,
+) -> Result<RenderedAudio, AudioError> {
+    render_frames(performance, voices, rate, full_length(performance, rate)?)
 }
 
 pub fn render(performance: &Performance, rate: SampleRate) -> RenderedAudio {

@@ -1,0 +1,829 @@
+use std::sync::Arc;
+
+use opentab_model::Fraction;
+use opentab_playback::{
+    Channel, ChannelState, MidiMessage, NOTE_OFF_VELOCITY, Performance, PlayOrder, ScoreTime,
+    Seconds, Speed,
+};
+
+use crate::command::{
+    BarRange, CommandReceiver, CommandSender, QueueFull, TransportCommand, command_queue,
+};
+use crate::render::{BLOCK_FRAMES, from_bus, to_bus};
+use crate::status::{StatusCell, TransportState, TransportStatus};
+use crate::timeline::{Timeline, frames_until, is_due, step_of};
+use crate::{AudioError, Limiter, LimiterSettings, SampleRate, SoundUse, Synth};
+
+const CHANNELS: usize = 16;
+const KEYS: usize = 128;
+const PERCENT: i128 = 100;
+pub const CURSOR_STEP: Fraction = Fraction::new_raw(1, 3840);
+pub const CLICK_DOWNBEAT_KEY: u8 = 76;
+pub const CLICK_BEAT_KEY: u8 = 77;
+pub const CLICK_DOWNBEAT_VELOCITY: u8 = 120;
+pub const CLICK_BEAT_VELOCITY: u8 = 90;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SessionConfig {
+    pub rate: SampleRate,
+    pub speed: Speed,
+    pub metronome: bool,
+    pub count_in: bool,
+}
+
+impl Default for SessionConfig {
+    fn default() -> SessionConfig {
+        SessionConfig {
+            rate: SampleRate::default(),
+            speed: Speed::NORMAL,
+            metronome: false,
+            count_in: false,
+        }
+    }
+}
+
+pub fn played_range(order: &PlayOrder, sources: BarRange) -> Option<BarRange> {
+    if sources.first > sources.last {
+        return None;
+    }
+    let first = (sources.first..=sources.last)
+        .filter_map(|source| order.played_of(source).first().copied())
+        .min()?;
+    let inside = |index: usize| {
+        order
+            .bars
+            .get(index)
+            .is_some_and(|bar| (sources.first..=sources.last).contains(&bar.source))
+    };
+    let mut last = first;
+    while inside(last + 1) {
+        last += 1;
+    }
+    Some(BarRange { first, last })
+}
+
+pub fn range_frames(
+    performance: &Performance,
+    range: BarRange,
+    speed: Speed,
+    rate: SampleRate,
+) -> Result<u64, AudioError> {
+    let timeline = Timeline::new(performance, rate)?;
+    let (Some(start), Some(end)) = (
+        timeline.bars.get(range.first),
+        timeline.bars.get(range.last.saturating_add(1)),
+    ) else {
+        return Err(AudioError::BarRange {
+            first: range.first,
+            last: range.last,
+            bars: timeline.bar_count(),
+        });
+    };
+    if range.first > range.last {
+        return Err(AudioError::BarRange {
+            first: range.first,
+            last: range.last,
+            bars: timeline.bar_count(),
+        });
+    }
+    Ok(frames_until(*end, *start, step_of(speed)))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Sounding {
+    keys: [[u8; KEYS]; CHANNELS],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ChaseSlots {
+    states: [ChannelState; CHANNELS],
+    seen: [bool; CHANNELS],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LoopSpan {
+    range: BarRange,
+    end: ScoreTime,
+    end_unit: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CountInRun {
+    elapsed: u64,
+    length: u64,
+    origin: u64,
+    next_click: usize,
+    end_click: usize,
+}
+
+pub struct Transport {
+    performance: Performance,
+    timeline: Timeline,
+    voices: Vec<Box<dyn Synth>>,
+    click: Box<dyn Synth>,
+    rate: SampleRate,
+    commands: CommandReceiver,
+    status: Arc<StatusCell>,
+    state: TransportState,
+    step: u64,
+    position: u64,
+    next_event: usize,
+    next_click: usize,
+    bar: usize,
+    span: Option<LoopSpan>,
+    wrapped: bool,
+    count_in: Option<CountInRun>,
+    metronome: bool,
+    counts_in: bool,
+    chase_at: Option<ScoreTime>,
+    muted: Vec<bool>,
+    soloed: Vec<bool>,
+    sounding: Vec<Sounding>,
+    chase: Vec<ChaseSlots>,
+    visited: Vec<bool>,
+    clock: u64,
+    scratch_left: Vec<f32>,
+    scratch_right: Vec<f32>,
+    bus_left: Vec<i64>,
+    bus_right: Vec<i64>,
+    limiter: Limiter,
+}
+
+pub struct TransportHandle {
+    commands: CommandSender,
+    status: Arc<StatusCell>,
+}
+
+impl TransportHandle {
+    pub fn send(&mut self, command: TransportCommand) -> Result<(), QueueFull> {
+        self.commands.send(command)
+    }
+
+    pub fn status(&self) -> TransportStatus {
+        self.status.read()
+    }
+}
+
+fn sound_uses(performance: &Performance, track: usize) -> Vec<SoundUse> {
+    let mut states = [ChannelState::default(); CHANNELS];
+    if let Some(setup) = performance.tracks.get(track) {
+        for entry in setup.channels.iter().rev() {
+            if let Some(state) = states.get_mut(usize::from(entry.channel.get())) {
+                *state = entry.state;
+            }
+        }
+    }
+    let mut uses: Vec<SoundUse> = Vec::new();
+    for event in performance
+        .events
+        .iter()
+        .filter(|event| event.track == track)
+    {
+        let Some(state) = states.get_mut(usize::from(event.channel.get())) else {
+            continue;
+        };
+        state.apply(event.message);
+        if let MidiMessage::NoteOn { velocity, .. } = event.message
+            && velocity > 0
+        {
+            let found = SoundUse {
+                channel: event.channel,
+                bank: state.bank,
+                program: state.program,
+            };
+            if !uses.contains(&found) {
+                uses.push(found);
+            }
+        }
+    }
+    uses
+}
+
+fn strike(click: &mut dyn Synth, downbeat: bool) {
+    let (key, velocity) = if downbeat {
+        (CLICK_DOWNBEAT_KEY, CLICK_DOWNBEAT_VELOCITY)
+    } else {
+        (CLICK_BEAT_KEY, CLICK_BEAT_VELOCITY)
+    };
+    click.handle(Channel::DRUMS, &MidiMessage::NoteOn { key, velocity });
+    click.handle(
+        Channel::DRUMS,
+        &MidiMessage::NoteOff {
+            key,
+            velocity: NOTE_OFF_VELOCITY,
+        },
+    );
+}
+
+fn add_to_bus(bus: &mut [i64], samples: &[f32]) {
+    for (target, sample) in bus.iter_mut().zip(samples) {
+        *target = target.saturating_add(to_bus(*sample));
+    }
+}
+
+impl Transport {
+    pub(crate) fn create(
+        performance: Performance,
+        mut voices: Vec<Box<dyn Synth>>,
+        mut click: Box<dyn Synth>,
+        config: SessionConfig,
+    ) -> Result<(Transport, TransportHandle), AudioError> {
+        if voices.len() != performance.tracks.len() {
+            return Err(AudioError::VoiceCount {
+                voices: voices.len(),
+                tracks: performance.tracks.len(),
+            });
+        }
+        let timeline = Timeline::new(&performance, config.rate)?;
+        for (track, voice) in voices.iter_mut().enumerate() {
+            voice.reset();
+            voice.prepare(&sound_uses(&performance, track));
+        }
+        click.reset();
+        let tracks = performance.tracks.len();
+        let bars = timeline.bar_count();
+        let (sender, receiver) = command_queue();
+        let status = Arc::new(StatusCell::new());
+        let mut transport = Transport {
+            performance,
+            timeline,
+            voices,
+            click,
+            rate: config.rate,
+            commands: receiver,
+            status: Arc::clone(&status),
+            state: TransportState::Stopped,
+            step: step_of(config.speed),
+            position: 0,
+            next_event: 0,
+            next_click: 0,
+            bar: 0,
+            span: None,
+            wrapped: false,
+            count_in: None,
+            metronome: config.metronome,
+            counts_in: config.count_in,
+            chase_at: None,
+            muted: vec![false; tracks],
+            soloed: vec![false; tracks],
+            sounding: vec![
+                Sounding {
+                    keys: [[0; KEYS]; CHANNELS]
+                };
+                tracks
+            ],
+            chase: vec![
+                ChaseSlots {
+                    states: [ChannelState::default(); CHANNELS],
+                    seen: [false; CHANNELS],
+                };
+                tracks
+            ],
+            visited: vec![false; bars],
+            clock: 0,
+            scratch_left: vec![0.0; BLOCK_FRAMES],
+            scratch_right: vec![0.0; BLOCK_FRAMES],
+            bus_left: vec![0; BLOCK_FRAMES],
+            bus_right: vec![0; BLOCK_FRAMES],
+            limiter: Limiter::new(LimiterSettings::DEFAULT, config.rate),
+        };
+        transport.publish();
+        Ok((
+            transport,
+            TransportHandle {
+                commands: sender,
+                status,
+            },
+        ))
+    }
+
+    pub fn rate(&self) -> SampleRate {
+        self.rate
+    }
+
+    pub fn performance(&self) -> &Performance {
+        &self.performance
+    }
+
+    pub fn clock(&self) -> u64 {
+        self.clock
+    }
+
+    pub fn played_bars(&self) -> Vec<usize> {
+        self.visited
+            .iter()
+            .enumerate()
+            .filter(|(_, visited)| **visited)
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let frames = left.len().min(right.len());
+        let (left, left_rest) = left.split_at_mut(frames);
+        let (right, right_rest) = right.split_at_mut(frames);
+        left_rest.fill(0.0);
+        right_rest.fill(0.0);
+        self.apply_commands();
+        let mut done = 0;
+        while done < frames {
+            self.settle();
+            let remaining = frames - done;
+            let run = usize::try_from(self.next_run())
+                .unwrap_or(usize::MAX)
+                .clamp(1, remaining.min(BLOCK_FRAMES));
+            self.mix(&mut left[done..done + run], &mut right[done..done + run]);
+            self.advance(run as u64);
+            done += run;
+        }
+        self.clock = self.clock.saturating_add(frames as u64);
+        self.publish();
+    }
+
+    fn apply_commands(&mut self) {
+        while let Some(word) = self.commands.receive() {
+            if let Some(command) = word {
+                self.apply(command);
+            }
+        }
+    }
+
+    fn running(&self) -> bool {
+        matches!(
+            self.state,
+            TransportState::Playing | TransportState::CountIn
+        )
+    }
+
+    fn apply(&mut self, command: TransportCommand) {
+        match command {
+            TransportCommand::Play => {
+                if matches!(self.state, TransportState::Stopped | TransportState::Paused) {
+                    self.start();
+                }
+            }
+            TransportCommand::Pause => {
+                if self.running() {
+                    self.silence();
+                    self.count_in = None;
+                    self.state = TransportState::Paused;
+                }
+            }
+            TransportCommand::Stop => {
+                self.silence();
+                self.count_in = None;
+                self.state = TransportState::Stopped;
+                if self.timeline.bar_count() > 0 {
+                    self.move_to(0);
+                }
+            }
+            TransportCommand::Seek(bar) => {
+                if bar < self.timeline.bar_count() {
+                    if self
+                        .span
+                        .is_some_and(|span| !(span.range.first..=span.range.last).contains(&bar))
+                    {
+                        self.span = None;
+                    }
+                    self.move_to(bar);
+                    if self.running() {
+                        self.chase_now();
+                    }
+                }
+            }
+            TransportCommand::Loop(range) => self.set_loop(range),
+            TransportCommand::ClearLoop => self.span = None,
+            TransportCommand::Speed(speed) => self.step = step_of(speed),
+            TransportCommand::Mute(track, muted) => {
+                if let Some(flag) = self.muted.get_mut(track) {
+                    *flag = muted;
+                }
+            }
+            TransportCommand::Solo(track, soloed) => {
+                if let Some(flag) = self.soloed.get_mut(track) {
+                    *flag = soloed;
+                }
+            }
+            TransportCommand::Metronome(on) => self.metronome = on,
+            TransportCommand::CountIn(on) => self.counts_in = on,
+        }
+    }
+
+    fn set_loop(&mut self, range: BarRange) {
+        if range.first > range.last || range.last >= self.timeline.bar_count() {
+            return;
+        }
+        let (Some(end_unit), Some(end)) = (
+            self.timeline.bars.get(range.last + 1).copied(),
+            self.end_of_bar(range.last),
+        ) else {
+            return;
+        };
+        self.span = Some(LoopSpan {
+            range,
+            end,
+            end_unit,
+        });
+        if !(range.first..=range.last).contains(&self.bar) {
+            self.move_to(range.first);
+            if self.running() {
+                self.chase_now();
+            }
+        }
+    }
+
+    fn end_of_bar(&self, bar: usize) -> Option<ScoreTime> {
+        let bars = &self.performance.order.bars;
+        match bars.get(bar + 1) {
+            Some(next) => Some(next.start),
+            None => bars.get(bar).map(|_| self.performance.order.end()),
+        }
+    }
+
+    fn start(&mut self) {
+        self.chase_now();
+        self.wrapped = false;
+        self.count_in = if self.counts_in {
+            self.count_in_run()
+        } else {
+            None
+        };
+        self.state = if self.count_in.is_some() {
+            TransportState::CountIn
+        } else {
+            TransportState::Playing
+        };
+    }
+
+    fn count_in_run(&self) -> Option<CountInRun> {
+        let bar = self.bar;
+        let origin = *self.timeline.bars.get(bar)?;
+        let end = *self.timeline.bars.get(bar + 1)?;
+        let length = end.checked_sub(origin).filter(|length| *length > 0)?;
+        Some(CountInRun {
+            elapsed: 0,
+            length,
+            origin,
+            next_click: *self.timeline.bar_clicks.get(bar)?,
+            end_click: *self.timeline.bar_clicks.get(bar + 1)?,
+        })
+    }
+
+    fn move_to(&mut self, bar: usize) {
+        let Some((start, unit)) = self
+            .performance
+            .order
+            .bars
+            .get(bar)
+            .map(|played| played.start)
+            .zip(self.timeline.bars.get(bar).copied())
+        else {
+            return;
+        };
+        self.silence();
+        self.position = unit;
+        self.bar = bar;
+        self.next_event = self
+            .performance
+            .events
+            .partition_point(|event| event.at < start);
+        self.next_click = self
+            .performance
+            .clicks
+            .partition_point(|click| click.at < start);
+        self.chase_at = Some(start);
+    }
+
+    fn chase_now(&mut self) {
+        if let Some(at) = self.chase_at.take() {
+            self.chase(at);
+        }
+    }
+
+    fn chase(&mut self, at: ScoreTime) {
+        let performance = &self.performance;
+        for (slots, setup) in self.chase.iter_mut().zip(&performance.tracks) {
+            slots.seen = [false; CHANNELS];
+            for entry in &setup.channels {
+                let index = usize::from(entry.channel.get());
+                if let (Some(seen), Some(state)) =
+                    (slots.seen.get_mut(index), slots.states.get_mut(index))
+                    && !*seen
+                {
+                    *seen = true;
+                    *state = entry.state;
+                }
+            }
+        }
+        let prefix = performance.events.partition_point(|event| event.at <= at);
+        for event in performance.events.iter().take(prefix) {
+            let index = usize::from(event.channel.get());
+            if let Some(slots) = self.chase.get_mut(event.track)
+                && slots.seen.get(index).copied().unwrap_or(false)
+                && let Some(state) = slots.states.get_mut(index)
+            {
+                state.apply(event.message);
+            }
+        }
+        for ((setup, slots), voice) in performance
+            .tracks
+            .iter()
+            .zip(&self.chase)
+            .zip(self.voices.iter_mut())
+        {
+            let mut emitted = [false; CHANNELS];
+            for entry in &setup.channels {
+                let index = usize::from(entry.channel.get());
+                let state = match emitted.get_mut(index) {
+                    Some(done) if !*done => {
+                        *done = true;
+                        slots.states.get(index).copied().unwrap_or(entry.state)
+                    }
+                    _ => entry.state,
+                };
+                for message in state.messages() {
+                    voice.handle(entry.channel, &message);
+                }
+            }
+        }
+    }
+
+    fn silence(&mut self) {
+        for (sounding, voice) in self.sounding.iter_mut().zip(self.voices.iter_mut()) {
+            for (channel, keys) in (0u8..).zip(sounding.keys.iter_mut()) {
+                let Some(channel) = Channel::new(channel) else {
+                    continue;
+                };
+                for (key, count) in (0u8..).zip(keys.iter_mut()) {
+                    while *count > 0 {
+                        voice.handle(
+                            channel,
+                            &MidiMessage::NoteOff {
+                                key,
+                                velocity: NOTE_OFF_VELOCITY,
+                            },
+                        );
+                        *count -= 1;
+                    }
+                }
+            }
+        }
+    }
+
+    fn dispatch(&mut self, index: usize) {
+        let Some(event) = self.performance.events.get(index).copied() else {
+            return;
+        };
+        let (Some(voice), Some(sounding)) = (
+            self.voices.get_mut(event.track),
+            self.sounding.get_mut(event.track),
+        ) else {
+            return;
+        };
+        let channel = usize::from(event.channel.get());
+        match event.message {
+            MidiMessage::NoteOn { key, velocity } if velocity > 0 => {
+                if let Some(count) = sounding
+                    .keys
+                    .get_mut(channel)
+                    .and_then(|keys| keys.get_mut(usize::from(key)))
+                {
+                    *count = count.saturating_add(1);
+                }
+                voice.handle(event.channel, &event.message);
+            }
+            MidiMessage::NoteOn { key, .. } | MidiMessage::NoteOff { key, .. } => {
+                if let Some(count) = sounding
+                    .keys
+                    .get_mut(channel)
+                    .and_then(|keys| keys.get_mut(usize::from(key)))
+                    && *count > 0
+                {
+                    *count -= 1;
+                    voice.handle(event.channel, &event.message);
+                }
+            }
+            _ => voice.handle(event.channel, &event.message),
+        }
+    }
+
+    fn settle(&mut self) {
+        loop {
+            let again = match self.state {
+                TransportState::CountIn => self.settle_count_in(),
+                TransportState::Playing => self.settle_playing(),
+                TransportState::Stopped | TransportState::Paused => false,
+            };
+            if !again {
+                return;
+            }
+        }
+    }
+
+    fn settle_count_in(&mut self) -> bool {
+        let step = self.step;
+        let Some(run) = self.count_in.as_mut() else {
+            self.state = TransportState::Playing;
+            return true;
+        };
+        while run.next_click < run.end_click {
+            let (Some(unit), Some(click)) = (
+                self.timeline.clicks.get(run.next_click),
+                self.performance.clicks.get(run.next_click),
+            ) else {
+                break;
+            };
+            if !is_due(unit.saturating_sub(run.origin), run.elapsed, step) {
+                break;
+            }
+            strike(self.click.as_mut(), click.downbeat);
+            run.next_click += 1;
+        }
+        if is_due(run.length, run.elapsed, step) {
+            self.count_in = None;
+            self.state = TransportState::Playing;
+            return true;
+        }
+        false
+    }
+
+    fn visit(&mut self) {
+        while self.bar + 1 < self.timeline.bar_count()
+            && self
+                .timeline
+                .bars
+                .get(self.bar + 1)
+                .is_some_and(|unit| is_due(*unit, self.position, self.step))
+        {
+            self.bar += 1;
+        }
+        if let Some(visited) = self.visited.get_mut(self.bar) {
+            *visited = true;
+        }
+    }
+
+    fn settle_playing(&mut self) -> bool {
+        self.visit();
+        let (position, step) = (self.position, self.step);
+        let limit = self.span.map(|span| span.end);
+        while let (Some(unit), Some(event)) = (
+            self.timeline.events.get(self.next_event),
+            self.performance.events.get(self.next_event),
+        ) {
+            if !is_due(*unit, position, step) || limit.is_some_and(|end| event.at >= end) {
+                break;
+            }
+            self.dispatch(self.next_event);
+            self.next_event += 1;
+        }
+        while let (Some(unit), Some(click)) = (
+            self.timeline.clicks.get(self.next_click),
+            self.performance.clicks.get(self.next_click),
+        ) {
+            if !is_due(*unit, position, step) || limit.is_some_and(|end| click.at >= end) {
+                break;
+            }
+            if self.metronome {
+                strike(self.click.as_mut(), click.downbeat);
+            }
+            self.next_click += 1;
+        }
+        if let Some(span) = self.span
+            && !self.wrapped
+            && is_due(span.end_unit, position, step)
+        {
+            self.move_to(span.range.first);
+            self.chase_now();
+            self.wrapped = true;
+            return true;
+        }
+        if self.next_event >= self.timeline.events.len()
+            && is_due(self.timeline.end, position, step)
+        {
+            self.silence();
+            self.state = TransportState::Stopped;
+            if self.timeline.bar_count() > 0 {
+                self.move_to(0);
+            }
+        }
+        false
+    }
+
+    fn next_run(&self) -> u64 {
+        let step = self.step;
+        match self.state {
+            TransportState::Playing => {
+                let position = self.position;
+                let mut next = u64::MAX;
+                if let Some(unit) = self.timeline.events.get(self.next_event) {
+                    next = next.min(frames_until(*unit, position, step));
+                } else {
+                    next = next.min(frames_until(self.timeline.end, position, step));
+                }
+                if let Some(unit) = self.timeline.clicks.get(self.next_click) {
+                    next = next.min(frames_until(*unit, position, step));
+                }
+                if let Some(span) = self.span {
+                    next = next.min(frames_until(span.end_unit, position, step));
+                }
+                next
+            }
+            TransportState::CountIn => self.count_in.map_or(u64::MAX, |run| {
+                let mut next = frames_until(run.length, run.elapsed, step);
+                if run.next_click < run.end_click
+                    && let Some(unit) = self.timeline.clicks.get(run.next_click)
+                {
+                    next = next.min(frames_until(
+                        unit.saturating_sub(run.origin),
+                        run.elapsed,
+                        step,
+                    ));
+                }
+                next
+            }),
+            TransportState::Stopped | TransportState::Paused => u64::MAX,
+        }
+    }
+
+    fn advance(&mut self, frames: u64) {
+        let units = frames.saturating_mul(self.step);
+        match self.state {
+            TransportState::Playing => {
+                self.position = self.position.saturating_add(units);
+                self.wrapped = false;
+            }
+            TransportState::CountIn => {
+                if let Some(run) = self.count_in.as_mut() {
+                    run.elapsed = run.elapsed.saturating_add(units);
+                }
+            }
+            TransportState::Stopped | TransportState::Paused => {}
+        }
+    }
+
+    fn mix(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let count = left.len().min(right.len()).min(BLOCK_FRAMES);
+        let soloing = self.soloed.iter().any(|soloed| *soloed);
+        let (Some(bus_left), Some(bus_right), Some(scratch_left), Some(scratch_right)) = (
+            self.bus_left.get_mut(..count),
+            self.bus_right.get_mut(..count),
+            self.scratch_left.get_mut(..count),
+            self.scratch_right.get_mut(..count),
+        ) else {
+            return;
+        };
+        bus_left.fill(0);
+        bus_right.fill(0);
+        for (track, voice) in self.voices.iter_mut().enumerate() {
+            voice.render(scratch_left, scratch_right);
+            let muted = self.muted.get(track).copied().unwrap_or(false);
+            let soloed = self.soloed.get(track).copied().unwrap_or(false);
+            if !muted && (!soloing || soloed) {
+                add_to_bus(bus_left, scratch_left);
+                add_to_bus(bus_right, scratch_right);
+            }
+        }
+        self.click.render(scratch_left, scratch_right);
+        add_to_bus(bus_left, scratch_left);
+        add_to_bus(bus_right, scratch_right);
+        self.limiter.process(bus_left, bus_right);
+        for (target, sample) in left.iter_mut().zip(bus_left.iter()) {
+            *target = from_bus(*sample);
+        }
+        for (target, sample) in right.iter_mut().zip(bus_right.iter()) {
+            *target = from_bus(*sample);
+        }
+    }
+
+    fn cursor(&self) -> (usize, usize, Fraction) {
+        let order = &self.performance.order;
+        let Some(last) = order.bars.last() else {
+            return (0, 0, Fraction::new_raw(0, 1));
+        };
+        let reached = self.position.saturating_add(self.step).saturating_sub(1);
+        let found = Seconds::new(i128::from(reached), i128::from(self.rate.hz()) * PERCENT)
+            .ok()
+            .and_then(|seconds| {
+                self.performance
+                    .tempo
+                    .time_at_floor(seconds, Speed::NORMAL, CURSOR_STEP)
+                    .ok()
+            })
+            .and_then(|time| order.position_at(time));
+        match found {
+            Some(position) => (position.played_bar, position.source_bar, position.offset),
+            None => (order.bars.len() - 1, last.source, last.length),
+        }
+    }
+
+    fn publish(&mut self) {
+        let (played_bar, source_bar, offset) = self.cursor();
+        self.status.publish(&TransportStatus {
+            state: self.state,
+            played_bar,
+            source_bar,
+            offset,
+            frame: self.clock,
+        });
+    }
+}

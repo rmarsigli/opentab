@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
-use opentab_audio::{Bank, BuiltInBank, SampleRate, frame_at, render_frames};
+use opentab_audio::{Bank, BuiltInBank, SampleRate, frame_at};
 use opentab_gp::read_gp;
 use opentab_playback::Speed;
 
-use crate::support::{PROFILES, bank_voices, performance, profile_name, tiny_bank, tiny_sfz_bank};
+use crate::support::{
+    PROFILES, bank_voices, performance, profile_name, render_frames, tiny_bank, tiny_sfz_bank,
+};
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;

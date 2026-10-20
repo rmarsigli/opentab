@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use opentab_audio::{RenderedAudio, SampleRate, WAV_HEADER_BYTES, encode_wav, render_all};
+use opentab_audio::{RenderedAudio, SampleRate, WAV_HEADER_BYTES, encode_wav};
 use opentab_playback::MidiMessage;
 
 use crate::support::{
-    PROFILES, bank_voices, fixture, fixture_names, performance, profile_name, tiny_sfz_bank,
-    wav_hash,
+    PROFILES, bank_voices, fixture, fixture_names, performance, profile_name, render_all,
+    tiny_sfz_bank, wav_hash,
 };
 
 const HASH_FILE: &str = "tests/data/sfz-wav-hashes.txt";

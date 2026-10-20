@@ -1,8 +1,8 @@
-use opentab_audio::{Limiter, LimiterSettings, SampleRate, encode_wav, pcm16, render_all};
+use opentab_audio::{Limiter, LimiterSettings, SampleRate, encode_wav, pcm16};
 use opentab_playback::Profile;
 
 use crate::support::{
-    PROFILES, bank_voices, fixture, performance, render, tiny_bank, tiny_sfz_bank,
+    PROFILES, bank_voices, fixture, performance, render, render_all, tiny_bank, tiny_sfz_bank,
 };
 
 const BLOCK_FRAMES: usize = 2_400;

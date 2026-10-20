@@ -2,11 +2,13 @@ use std::sync::{Arc, Mutex};
 
 use opentab_audio::{
     AudioError, DRUM_DECAY_MS, MELODIC_RELEASE_MS, RENDER_TAIL_MS, SampleRate, Scheduler, Synth,
-    full_length, render_all, render_frames,
+    full_length,
 };
 use opentab_playback::{Channel, MidiMessage, Performance, Profile, Speed};
 
-use crate::support::{PROFILES, built_in_voices, fixture, performance, render};
+use crate::support::{
+    PROFILES, built_in_voices, fixture, performance, render, render_all, render_frames,
+};
 
 const SILENCE_FIXTURES: [&str; 6] = [
     "note-effects.gp",

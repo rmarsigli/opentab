@@ -13,6 +13,12 @@ pub enum AudioError {
     TooLong { frames: u64 },
     #[error("an event falls at a frame beyond 64 bits")]
     FrameOverflow,
+    #[error("played bars {first}..={last} are not a range of the {bars} played bars")]
+    BarRange {
+        first: usize,
+        last: usize,
+        bars: usize,
+    },
 }
 
 pub const SF3_UNSUPPORTED: &str = "This is an SF3 SoundFont, which keeps its sounds compressed. OpenTab plays SF2 SoundFonts only. Convert the file to SF2 (the free Polyphone editor can do it) and import the SF2 file instead.";

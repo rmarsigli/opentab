@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use opentab_audio::{Bank, SampleRate, Sf2Bank, Sf2Limits, encode_wav, full_length, render_frames};
+use opentab_audio::{Bank, SampleRate, Sf2Bank, Sf2Limits, encode_wav, full_length};
 use opentab_gp::read_gp;
 use opentab_playback::Profile;
 
-use crate::support::{bank_voices, performance, root, wav_hash};
+use crate::support::{bank_voices, performance, render_frames, root, wav_hash};
 
 const BANK_VARIABLE: &str = "OPENTAB_SF2";
 const SCORES_VARIABLE: &str = "OPENTAB_SF2_SCORES";

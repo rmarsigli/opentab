@@ -1,5 +1,6 @@
 use opentab_playback::{Channel, MidiMessage, Performance, ScoreTime, Speed, TempoMap};
 
+use crate::timeline::{step_of, unit_at};
 use crate::{AudioError, SampleRate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -22,9 +23,7 @@ pub fn frame_at(
     speed: Speed,
     rate: SampleRate,
 ) -> Result<u64, AudioError> {
-    let seconds = tempo.seconds_at(at, speed)?;
-    let frame = seconds.floor_scaled(i128::from(rate.hz()))?;
-    u64::try_from(frame).map_err(|_| AudioError::FrameOverflow)
+    Ok(unit_at(tempo, at, rate)? / step_of(speed))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -5,26 +5,34 @@ mod builtin;
 mod bus;
 
 mod bank;
+mod command;
 mod error;
 mod gm;
 mod rate;
 mod render;
 mod schedule;
+mod session;
 mod sf2;
 mod sfz;
+mod status;
 mod synth;
+mod timeline;
+mod transport;
 mod wav;
 
 pub use bank::{BuiltInBank, BuiltInSynth};
 pub use builtin::{DRUM_DECAY_MS, MELODIC_RELEASE_MS, OUTPUT_FRACTION_BITS, SoundingVoice};
 pub use bus::{BUS_FRACTION_BITS, Limiter, LimiterSettings};
+pub use command::{BarRange, COMMAND_CAPACITY, QueueFull, TransportCommand};
 pub use error::{AudioError, BankError, SF3_UNSUPPORTED, UnsafeBank};
 pub use rate::SampleRate;
 pub use render::{
     BLOCK_FRAMES, MAX_FRAMES, RENDER_TAIL_MS, RenderedAudio, TRACK_HEADROOM, full_length,
-    render_all, render_frames,
 };
 pub use schedule::{SampledEvent, Scheduler, frame_at};
+pub use session::{
+    BUILT_IN_BANK_NAME, RenderReport, ScriptStep, Session, TrackBackend, render_session,
+};
 pub use sf2::{
     BankShape, FAULT_LOG_LIMIT, LOADER_FILE_FACTOR, LOADER_SLACK_BYTES, MASTER_VOLUME,
     MAX_FILE_BYTES, MAX_GRID_PRESETS, MAX_LAYERS_PER_NOTE, MAX_PAIRS_PER_PRESET, MAX_REGION_PAIRS,
@@ -45,5 +53,10 @@ pub use sfz::{
     VelocityPoint, VorbisSetupCost, audio_kind, decode_audio, measure_sfz_text, parse_sfz_text,
     vorbis_setup_cost,
 };
-pub use synth::{Bank, BankFormat, BankInstrument, Synth};
+pub use status::{TransportState, TransportStatus};
+pub use synth::{Bank, BankFormat, BankInstrument, SoundUse, Synth};
+pub use transport::{
+    CLICK_BEAT_KEY, CLICK_BEAT_VELOCITY, CLICK_DOWNBEAT_KEY, CLICK_DOWNBEAT_VELOCITY, CURSOR_STEP,
+    SessionConfig, Transport, TransportHandle, played_range, range_frames,
+};
 pub use wav::{WAV_HEADER_BYTES, encode_wav, pcm16};

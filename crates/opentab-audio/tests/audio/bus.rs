@@ -1,10 +1,10 @@
 use opentab_audio::{
-    BUS_FRACTION_BITS, Limiter, LimiterSettings, SampleRate, Synth, TRACK_HEADROOM, render_frames,
+    BUS_FRACTION_BITS, Limiter, LimiterSettings, SampleRate, Synth, TRACK_HEADROOM,
 };
 use opentab_playback::{Channel, MidiMessage, Profile};
 use proptest::prelude::*;
 
-use crate::support::{fixture, performance};
+use crate::support::{fixture, performance, render_frames};
 
 const HOSTILE: [f32; 6] = [
     f32::NAN,
