@@ -7,7 +7,7 @@ use crate::sf2::{SynthFault, SynthStage};
 use crate::sfz::decode::DecodedSample;
 use crate::sfz::region::{LoopMode, OffMode, SfzRegion, Trigger};
 use crate::sfz::{SfzInstrument, SfzShared};
-use crate::{SampleRate, Synth, TRACK_HEADROOM};
+use crate::{SampleRate, SoundUse, Synth, TRACK_HEADROOM};
 
 const CHANNELS: usize = 16;
 const CONTROLLERS: usize = 128;
@@ -306,6 +306,10 @@ impl SfzSynth {
 
     fn instrument_for(&self, channel: u8) -> Option<usize> {
         let state = &self.channels.get(usize::from(channel))?.state;
+        self.instrument_of(channel, state)
+    }
+
+    fn instrument_of(&self, channel: u8, state: &ChannelState) -> Option<usize> {
         if channel == DRUM_CHANNEL || state.bank.msb() == DRUM_BANK_MSB {
             self.shared.map.drums()
         } else {
@@ -632,6 +636,38 @@ impl Synth for SfzSynth {
             MidiMessage::Program { .. } | MidiMessage::Bank { .. } => {
                 if let Some(state) = self.channels.get_mut(usize::from(channel)) {
                     state.state.apply(*message);
+                }
+            }
+        }
+    }
+
+    fn prepare(&mut self, uses: &[SoundUse]) {
+        let mut decoded = vec![false; self.shared.cache.len()];
+        for found in uses {
+            let state = ChannelState {
+                bank: found.bank,
+                program: found.program,
+                ..ChannelState::default()
+            };
+            let Some(instrument) = self
+                .instrument_of(found.channel.get(), &state)
+                .and_then(|index| self.shared.instruments.get(index))
+            else {
+                continue;
+            };
+            for play in &instrument.regions {
+                if let Some(seen) = decoded.get_mut(play.sample)
+                    && !*seen
+                {
+                    *seen = true;
+                    let fetched = self.shared.cache.fetch(play.sample);
+                    if let (Err(error), true) = (fetched.sample, fetched.first_failure) {
+                        self.shared.faults.push(SynthFault {
+                            instance: self.instance,
+                            stage: SynthStage::Handle,
+                            message: error.to_string(),
+                        });
+                    }
                 }
             }
         }

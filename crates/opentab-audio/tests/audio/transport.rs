@@ -599,3 +599,25 @@ fn a_session_renders_identically_in_any_block_split() {
         )));
     }
 }
+
+#[test]
+fn an_sfz_session_decodes_every_sample_it_plays_before_the_first_block() {
+    for name in ["multi-track.gp", "drums.gp", "sound-change.gp"] {
+        let bank = crate::support::tiny_sfz_bank();
+        let performance = performance(&fixture(name), Profile::Musical);
+        let voices = crate::support::bank_voices(&bank, &performance, RATE);
+        assert_eq!(bank.decode_count(), 0);
+        let mut session = Session::new(performance.clone(), voices, config(RATE)).expect("session");
+        let prepared = bank.decode_count();
+        assert!(prepared > 0, "{name}");
+        let frames = song_frames(&performance, 100) + 48_000;
+        let audio = render_session(&mut session, &[], frames).expect("render");
+        assert!(loud(&audio), "{name}");
+        assert_eq!(
+            bank.decode_count(),
+            prepared,
+            "{name} decoded while playing"
+        );
+        assert!(bank.faults().is_empty(), "{:?}", bank.faults());
+    }
+}
