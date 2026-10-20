@@ -153,6 +153,24 @@ fn tracks_and_speed_shape_the_render() {
     );
     assert_eq!(numbers(&last["tracks"]), [1]);
 
+    let everything: Vec<u64> = (1..=count).collect();
+    let audio_of = |server: &mut Server, tracks: Value| {
+        server
+            .call(
+                "render_audio",
+                json!({"session": session, "bars": "1", "tracks": tracks}),
+            )
+            .wav(0)
+    };
+    let default = server
+        .call("render_audio", json!({"session": session, "bars": "1"}))
+        .wav(0);
+    assert_eq!(audio_of(&mut server, json!(everything)), default);
+    let second = audio_of(&mut server, json!([2]));
+    assert_ne!(second, default);
+    assert_ne!(second, audio_of(&mut server, json!([1])));
+    assert_eq!(second.len(), default.len());
+
     let (normal, _) = rendered(&mut server, json!({"session": session, "bars": "1"}));
     let (slow, report) = rendered(
         &mut server,
@@ -413,7 +431,9 @@ fn play_starts_at_the_source_bar_and_a_second_play_replaces_the_first() {
     assert_eq!(replaced["session"], json!(other));
     assert_eq!(replaced["source_bar"], 1);
     assert_eq!(status(&mut server)["session"], json!(other));
-    server.ok("stop", json!({}));
+    let error = server.fails("play", json!({"session": other, "bars": "99"}));
+    assert_eq!(error["kind"], "invalid_input");
+    assert_eq!(status(&mut server)["state"], "idle");
 
     let error = server.fails("play", json!({"session": "session-9"}));
     assert_eq!(error["kind"], "invalid_input");
