@@ -279,6 +279,7 @@ Every limit is a named constant and refuses the bank with a message that names i
 | Decoded audio per bank | 1 GiB |
 | Ogg Vorbis codebook entries per file | 262,144 |
 | Ogg Vorbis codebook memory estimate per file | 32 MiB |
+| Ogg Vorbis codebook dimensions (decode work per packet grows with them, whatever the lookup type) | 256 |
 | Ogg Vorbis comment header estimate per file (the vendor text, 48 bytes per declared comment, plus twice its text) | 1 MiB |
 | Logical streams in an Ogg file (every page header and page checksum is checked before the Ogg reader runs; a wrong checksum refuses the sample) | 1 |
 

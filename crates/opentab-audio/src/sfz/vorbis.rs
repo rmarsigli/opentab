@@ -300,6 +300,11 @@ pub(crate) fn check_setup(packet: &[u8], limits: &SfzLimits) -> Result<VorbisSet
                 limit: limits.vorbis_entries,
             }));
         }
+        if u64::from(dimensions) > limits.vorbis_dimensions {
+            return Err(refuse(UnsafeBank::VorbisDimensions {
+                limit: limits.vorbis_dimensions,
+            }));
+        }
         cost.add(
             BOOK_BYTES + u64::from(entries) * (LENGTH_BYTES + DESC_CAPACITY_BYTES),
             limits,

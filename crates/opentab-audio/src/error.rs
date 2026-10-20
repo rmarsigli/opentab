@@ -137,4 +137,6 @@ pub enum UnsafeBank {
     IgnoredNames { limit: u64 },
     #[error("an Ogg sample has a page whose checksum does not match")]
     OggChecksum,
+    #[error("an Ogg Vorbis sample declares codebooks of more than {limit} dimensions")]
+    VorbisDimensions { limit: u64 },
 }

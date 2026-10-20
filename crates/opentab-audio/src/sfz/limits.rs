@@ -28,6 +28,7 @@ pub const SFZ_MAX_SAMPLE_RATE: u32 = 192_000;
 pub const SFZ_MAX_DECODED_BYTES: u64 = 1 << 30;
 pub const SFZ_MAX_VORBIS_ENTRIES: u64 = 1 << 18;
 pub const SFZ_MAX_VORBIS_SETUP_BYTES: u64 = 32 << 20;
+pub const SFZ_MAX_VORBIS_DIMENSIONS: u64 = 256;
 pub const SFZ_MAX_VOICES: usize = 128;
 pub const SFZ_MAX_VOICES_PER_NOTE: usize = 32;
 
@@ -63,6 +64,7 @@ pub struct SfzLimits {
     pub vorbis_entries: u64,
     pub vorbis_setup_bytes: u64,
     pub vorbis_comment_bytes: u64,
+    pub vorbis_dimensions: u64,
     pub voices: usize,
     pub voices_per_note: usize,
 }
@@ -99,6 +101,7 @@ impl SfzLimits {
         vorbis_entries: SFZ_MAX_VORBIS_ENTRIES,
         vorbis_setup_bytes: SFZ_MAX_VORBIS_SETUP_BYTES,
         vorbis_comment_bytes: SFZ_MAX_VORBIS_COMMENT_BYTES,
+        vorbis_dimensions: SFZ_MAX_VORBIS_DIMENSIONS,
         voices: SFZ_MAX_VOICES,
         voices_per_note: SFZ_MAX_VOICES_PER_NOTE,
     };

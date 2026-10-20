@@ -1,6 +1,6 @@
 use opentab_audio::{
-    AudioKind, BankError, SFZ_MAX_VORBIS_ENTRIES, SfzLimits, UnsafeBank, audio_kind, decode_audio,
-    vorbis_setup_cost,
+    AudioKind, BankError, SFZ_MAX_VORBIS_DIMENSIONS, SFZ_MAX_VORBIS_ENTRIES, SfzLimits, UnsafeBank,
+    audio_kind, decode_audio, vorbis_setup_cost,
 };
 use opentab_testkit::banks::{
     ExtraCodebook, FilledComments, FlacOverrides, FlacSpec, SAMPLE_RATE, SINE_BIN, SINE_PACKETS,
@@ -318,17 +318,48 @@ fn a_vorbis_huffman_tree_beyond_the_setup_budget_is_refused() {
 }
 
 #[test]
+fn a_vorbis_codebook_beyond_the_dimension_cap_is_refused_whatever_its_lookup() {
+    let cap = u16::try_from(SFZ_MAX_VORBIS_DIMENSIONS).expect("cap");
+    for lookup_type in [0u8, 1, 2] {
+        for dimensions in [cap + 1, u16::MAX] {
+            assert_eq!(
+                unsafe_reason(decode_audio(
+                    &with_codebook(2, 1, dimensions, lookup_type),
+                    &SfzLimits::DEFAULT
+                )),
+                UnsafeBank::VorbisDimensions {
+                    limit: SFZ_MAX_VORBIS_DIMENSIONS
+                },
+                "{dimensions} {lookup_type}"
+            );
+        }
+    }
+    assert!(decode_audio(&with_codebook(2, 1, cap, 0), &SfzLimits::DEFAULT).is_ok());
+}
+
+#[test]
 fn a_vorbis_codebook_declaring_huge_lookup_tables_is_refused() {
-    for (entries, dimensions, lookup_type) in [(1000, 65_535, 2u8), (1000, 65_535, 1), (4, 0, 1)] {
+    let tight = SfzLimits {
+        vorbis_dimensions: u64::from(u16::MAX),
+        ..SfzLimits::DEFAULT
+    };
+    for (entries, dimensions, lookup_type) in [(1000, 65_535, 2u8), (1000, 65_535, 1)] {
         assert_eq!(
             unsafe_reason(decode_audio(
                 &with_codebook(entries, 1, dimensions, lookup_type),
-                &SfzLimits::DEFAULT
+                &tight
             )),
             UnsafeBank::VorbisTables,
             "{entries} {dimensions} {lookup_type}"
         );
     }
+    assert_eq!(
+        unsafe_reason(decode_audio(
+            &with_codebook(4, 1, 0, 1),
+            &SfzLimits::DEFAULT
+        )),
+        UnsafeBank::VorbisTables
+    );
 }
 
 #[test]

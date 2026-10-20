@@ -53,11 +53,11 @@ pub use sfz::{
     SFZ_MAX_LISTED_ENTRIES, SFZ_MAX_LOADER_BYTES, SFZ_MAX_PATH_BYTES, SFZ_MAX_PATH_LOOKUPS,
     SFZ_MAX_READ_BYTES, SFZ_MAX_REGIONS, SFZ_MAX_SAMPLE_CHANNELS, SFZ_MAX_SAMPLE_FRAMES,
     SFZ_MAX_SAMPLE_RATE, SFZ_MAX_SFZ_FILES, SFZ_MAX_SIDECAR_BYTES, SFZ_MAX_VOICES,
-    SFZ_MAX_VOICES_PER_NOTE, SFZ_MAX_VORBIS_COMMENT_BYTES, SFZ_MAX_VORBIS_ENTRIES,
-    SFZ_MAX_VORBIS_SETUP_BYTES, SFZ_MIN_SAMPLE_RATE, SIDECAR_NAME, SIDECAR_VERSION, SfzBank,
-    SfzLimits, SfzRegion, SfzScope, SfzSynth, SfzText, SfzTextRun, SkippedInstrument, Trigger,
-    VelocityPoint, VorbisSetupCost, audio_kind, decode_audio, measure_sfz_text, parse_sfz_text,
-    vorbis_setup_cost,
+    SFZ_MAX_VOICES_PER_NOTE, SFZ_MAX_VORBIS_COMMENT_BYTES, SFZ_MAX_VORBIS_DIMENSIONS,
+    SFZ_MAX_VORBIS_ENTRIES, SFZ_MAX_VORBIS_SETUP_BYTES, SFZ_MIN_SAMPLE_RATE, SIDECAR_NAME,
+    SIDECAR_VERSION, SfzBank, SfzLimits, SfzRegion, SfzScope, SfzSynth, SfzText, SfzTextRun,
+    SkippedInstrument, Trigger, VelocityPoint, VorbisSetupCost, audio_kind, decode_audio,
+    measure_sfz_text, parse_sfz_text, vorbis_setup_cost,
 };
 pub use status::{TransportState, TransportStatus};
 pub use synth::{Bank, BankFormat, BankInstrument, SoundUse, Synth};
