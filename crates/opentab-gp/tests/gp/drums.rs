@@ -274,13 +274,19 @@ fn set_children(gpif: &str) -> Vec<String> {
 fn a_canonical_kit_is_typed_and_the_set_keeps_its_child_order() {
     let score = read_gpif(&drum_doc(&canonical_elements()));
     let kit = track(&score).drum_kit.clone().expect("typed");
-    assert_eq!(
-        kit.elements()
-            .iter()
-            .map(|element| (element.name.as_str(), element.kind.as_str(), element.count))
-            .collect::<Vec<_>>(),
-        vec![("Kick", "kickDrum", 1), ("Hat", "hiHat", 1)]
-    );
+    let elements = kit.elements();
+    let names: Vec<&str> = elements
+        .iter()
+        .map(|element| element.name.as_str())
+        .collect();
+    let kinds: Vec<&str> = elements
+        .iter()
+        .map(|element| element.kind.as_str())
+        .collect();
+    let counts: Vec<usize> = elements.iter().map(|element| element.count).collect();
+    assert_eq!(names, ["Kick", "Hat"]);
+    assert_eq!(kinds, ["kickDrum", "hiHat"]);
+    assert_eq!(counts, [1, 1]);
     assert_eq!(kit.key_of(0), Some(35));
     assert_eq!(kit.key_of(1), Some(42));
     assert_eq!(kit.articulations()[1].input_keys, vec![42, 44]);
@@ -602,14 +608,13 @@ fn elements_by_id(gpif: &str, name: &str) -> BTreeMap<String, String> {
 
 fn strings_per_beat(gpif: &str) -> Vec<Vec<usize>> {
     let notes = elements_by_id(gpif, "Note");
-    let mut beats: Vec<(usize, String)> = elements_by_id(gpif, "Beat")
+    let beats: BTreeMap<usize, String> = elements_by_id(gpif, "Beat")
         .into_iter()
         .map(|(id, body)| (id.parse().expect("beat id"), body))
         .collect();
-    beats.sort();
     beats
-        .iter()
-        .filter_map(|(_, beat)| texts(beat, "Notes").first().cloned())
+        .values()
+        .filter_map(|beat| texts(beat, "Notes").first().cloned())
         .map(|ids| {
             ids.split_whitespace()
                 .map(|id| {

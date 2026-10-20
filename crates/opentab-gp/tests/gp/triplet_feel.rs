@@ -6,14 +6,37 @@ use crate::anchors::gpif_text;
 use crate::inventory::master_bar_children;
 use crate::support::{Doc, master_bar, payloads};
 
-const FEEL_NAMES: [(&str, TripletFeel); 6] = [
-    ("Triplet8th", TripletFeel::TripletEighth),
-    ("Triplet16th", TripletFeel::TripletSixteenth),
-    ("Dotted8th", TripletFeel::DottedEighth),
-    ("Dotted16th", TripletFeel::DottedSixteenth),
-    ("Scottish8th", TripletFeel::ScottishEighth),
-    ("Scottish16th", TripletFeel::ScottishSixteenth),
+struct FeelName {
+    name: &'static str,
+    feel: TripletFeel,
+}
+
+const fn feel_name(name: &'static str, feel: TripletFeel) -> FeelName {
+    FeelName { name, feel }
+}
+
+const FEEL_NAMES: [FeelName; 6] = [
+    feel_name("Triplet8th", TripletFeel::TripletEighth),
+    feel_name("Triplet16th", TripletFeel::TripletSixteenth),
+    feel_name("Dotted8th", TripletFeel::DottedEighth),
+    feel_name("Dotted16th", TripletFeel::DottedSixteenth),
+    feel_name("Scottish8th", TripletFeel::ScottishEighth),
+    feel_name("Scottish16th", TripletFeel::ScottishSixteenth),
 ];
+
+struct KeptFeel {
+    element: &'static str,
+    feel: TripletFeel,
+    guard: &'static str,
+}
+
+const fn kept_feel(element: &'static str, feel: TripletFeel, guard: &'static str) -> KeptFeel {
+    KeptFeel {
+        element,
+        feel,
+        guard,
+    }
+}
 
 fn with_master_bar(extra: &str) -> Doc {
     Doc {
@@ -39,7 +62,7 @@ fn set_feel(score: &mut Score, triplet_feel: TripletFeel) -> Command {
 
 #[test]
 fn every_guitar_pro_feel_name_is_typed_and_written_back_unchanged() {
-    for (name, feel) in FEEL_NAMES {
+    for FeelName { name, feel } in FEEL_NAMES {
         let element = format!("<TripletFeel>{name}</TripletFeel>");
         let score = with_master_bar(&element).read();
         assert_eq!(master_bar(&score).triplet_feel, feel, "{name}");
@@ -59,20 +82,25 @@ fn every_guitar_pro_feel_name_is_typed_and_written_back_unchanged() {
 
 #[test]
 fn a_feel_outside_the_writer_form_is_replayed_while_the_feel_is_unchanged() {
-    let cases: [(&str, TripletFeel, &str); 3] = [
-        ("<TripletFeel>None</TripletFeel>", TripletFeel::None, "None"),
-        (
+    let cases = [
+        kept_feel("<TripletFeel>None</TripletFeel>", TripletFeel::None, "None"),
+        kept_feel(
             "<TripletFeel>Swing</TripletFeel>",
             TripletFeel::None,
             "None",
         ),
-        (
+        kept_feel(
             "<TripletFeel> Dotted8th </TripletFeel>",
             TripletFeel::DottedEighth,
             "Dotted8th",
         ),
     ];
-    for (element, feel, guard) in cases {
+    for KeptFeel {
+        element,
+        feel,
+        guard,
+    } in cases
+    {
         let score = with_master_bar(element).read();
         assert_eq!(master_bar(&score).triplet_feel, feel, "{element}");
         assert_eq!(

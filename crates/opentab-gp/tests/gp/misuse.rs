@@ -36,12 +36,12 @@ fn a_restore_master_bar_with_a_foreign_automation_is_refused() {
         panic!("restore_master_bar expected");
     };
     assert_eq!(automations.len(), 1);
-    for (position, sound) in [(Fraction::new(1, 7), 0), (Fraction::from_integer(2), 0)] {
+    for position in [Fraction::new(1, 7), Fraction::from_integer(2)] {
         let mut broken = inverse.clone();
         if let Command::RestoreMasterBar { automations, .. } = &mut broken {
             automations[0].automation.position = position;
             if let AutomationValue::Sound(reference) = &mut automations[0].automation.value {
-                reference.0 = sound;
+                reference.0 = 0;
             }
         }
         refused(&mut score, &broken);

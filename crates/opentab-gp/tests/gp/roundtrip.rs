@@ -128,25 +128,76 @@ impl Coverage {
         }
     }
 
-    fn counts(&self) -> [(&'static str, usize); 15] {
+    fn counts(&self) -> [CoverageCount; 15] {
         [
-            ("notes", self.notes.get()),
-            ("percussion notes", self.percussion.get()),
-            ("payloads", self.payloads.get()),
-            ("tempo changes", self.tempo_changes.get()),
-            ("containers", self.containers.get()),
-            ("second staves", self.second_staves.get()),
-            ("markup titles", self.markup.get()),
-            ("chord names", self.chords.get()),
-            ("sounds", self.sounds.get()),
-            ("sound automations", self.sound_automations.get()),
-            ("mixer automations", self.mixer_automations.get()),
-            ("mixers", self.mixers.get()),
-            ("channels", self.channels.get()),
-            ("sound overrides", self.overrides.get()),
-            ("custom drum kits", self.custom_kits.get()),
+            CoverageCount {
+                name: "notes",
+                count: self.notes.get(),
+            },
+            CoverageCount {
+                name: "percussion notes",
+                count: self.percussion.get(),
+            },
+            CoverageCount {
+                name: "payloads",
+                count: self.payloads.get(),
+            },
+            CoverageCount {
+                name: "tempo changes",
+                count: self.tempo_changes.get(),
+            },
+            CoverageCount {
+                name: "containers",
+                count: self.containers.get(),
+            },
+            CoverageCount {
+                name: "second staves",
+                count: self.second_staves.get(),
+            },
+            CoverageCount {
+                name: "markup titles",
+                count: self.markup.get(),
+            },
+            CoverageCount {
+                name: "chord names",
+                count: self.chords.get(),
+            },
+            CoverageCount {
+                name: "sounds",
+                count: self.sounds.get(),
+            },
+            CoverageCount {
+                name: "sound automations",
+                count: self.sound_automations.get(),
+            },
+            CoverageCount {
+                name: "mixer automations",
+                count: self.mixer_automations.get(),
+            },
+            CoverageCount {
+                name: "mixers",
+                count: self.mixers.get(),
+            },
+            CoverageCount {
+                name: "channels",
+                count: self.channels.get(),
+            },
+            CoverageCount {
+                name: "sound overrides",
+                count: self.overrides.get(),
+            },
+            CoverageCount {
+                name: "custom drum kits",
+                count: self.custom_kits.get(),
+            },
         ]
     }
+}
+
+#[derive(Debug)]
+struct CoverageCount {
+    name: &'static str,
+    count: usize,
 }
 
 struct Outcome {
@@ -188,7 +239,7 @@ fn writable_scores_read_back_equal() {
         outcome.coverage.counts()
     );
     assert_eq!(outcome.accepted, outcome.seen);
-    for (name, count) in outcome.coverage.counts() {
+    for CoverageCount { name, count } in outcome.coverage.counts() {
         assert!(count > 0, "no accepted score had {name}");
     }
 }

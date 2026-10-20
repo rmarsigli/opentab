@@ -282,21 +282,19 @@ fn committed(name: &str) -> Score {
 #[test]
 fn the_playing_fixtures_read_back_typed_and_clean() {
     let ramps = committed("tempo-ramp.gp");
-    let linear: Vec<(usize, bool)> = ramps
+    let bars: Vec<usize> = ramps
         .master_bars
         .iter()
         .enumerate()
-        .flat_map(|(index, master)| {
-            master
-                .tempo_changes
-                .iter()
-                .map(move |change| (index, change.linear))
-        })
+        .flat_map(|(index, master)| master.tempo_changes.iter().map(move |_| index))
         .collect();
-    assert_eq!(
-        linear,
-        vec![(0, true), (2, true), (3, false), (4, true), (5, true)]
-    );
+    let linear: Vec<bool> = ramps
+        .master_bars
+        .iter()
+        .flat_map(|master| master.tempo_changes.iter().map(|change| change.linear))
+        .collect();
+    assert_eq!(bars, [0, 2, 3, 4, 5]);
+    assert_eq!(linear, [true, true, false, true, true]);
     let whammy = committed("tremolo-bar.gp");
     let bars: Vec<TremoloBar> = whammy.tracks[0].staves[0]
         .bars

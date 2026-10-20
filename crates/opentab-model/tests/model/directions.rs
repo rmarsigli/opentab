@@ -103,17 +103,37 @@ const JUMPS: [Expected; 14] = [
     ),
 ];
 
-const TO_CODA: [(DirectionJump, DirectionTarget); 2] = [
-    (DirectionJump::DaCoda, DirectionTarget::Coda),
-    (DirectionJump::DaDoubleCoda, DirectionTarget::DoubleCoda),
+struct ToCoda {
+    jump: DirectionJump,
+    target: DirectionTarget,
+}
+
+const TO_CODA: [ToCoda; 2] = [
+    ToCoda {
+        jump: DirectionJump::DaCoda,
+        target: DirectionTarget::Coda,
+    },
+    ToCoda {
+        jump: DirectionJump::DaDoubleCoda,
+        target: DirectionTarget::DoubleCoda,
+    },
 ];
 
-const TARGET_NAMES: [(DirectionTarget, &str); 5] = [
-    (DirectionTarget::Segno, "segno"),
-    (DirectionTarget::SegnoSegno, "segno_segno"),
-    (DirectionTarget::Coda, "coda"),
-    (DirectionTarget::DoubleCoda, "double_coda"),
-    (DirectionTarget::Fine, "fine"),
+struct TargetName {
+    target: DirectionTarget,
+    name: &'static str,
+}
+
+const fn target_name(target: DirectionTarget, name: &'static str) -> TargetName {
+    TargetName { target, name }
+}
+
+const TARGET_NAMES: [TargetName; 5] = [
+    target_name(DirectionTarget::Segno, "segno"),
+    target_name(DirectionTarget::SegnoSegno, "segno_segno"),
+    target_name(DirectionTarget::Coda, "coda"),
+    target_name(DirectionTarget::DoubleCoda, "double_coda"),
+    target_name(DirectionTarget::Fine, "fine"),
 ];
 
 fn bars(count: usize) -> Score {
@@ -167,9 +187,12 @@ fn every_jump_names_its_destination_and_the_target_it_releases() {
             entry.jump
         );
     }
-    for ((target, name), listed) in TARGET_NAMES.iter().zip(DIRECTION_TARGETS) {
-        assert_eq!(*target, listed);
-        assert_eq!(serde_json::to_value(target).unwrap(), json!(name));
+    for (named, listed) in TARGET_NAMES.iter().zip(DIRECTION_TARGETS) {
+        assert_eq!(named.target, listed);
+        assert_eq!(
+            serde_json::to_value(named.target).unwrap(),
+            json!(named.name)
+        );
     }
     assert!(serde_json::from_value::<DirectionJump>(json!("da_fine")).is_err());
     assert!(serde_json::from_value::<DirectionTarget>(json!("Segno")).is_err());
@@ -194,7 +217,8 @@ fn a_jump_is_dangling_exactly_when_a_target_it_needs_is_missing() {
                         target,
                     })
                     .collect();
-                if let Some((_, target)) = TO_CODA.iter().find(|(jump, _)| *jump == entry.jump)
+                if let Some(ToCoda { target, .. }) =
+                    TO_CODA.iter().find(|to_coda| to_coda.jump == entry.jump)
                     && targets.contains(target)
                     && jump_bar == 1
                 {
@@ -212,7 +236,7 @@ fn a_jump_is_dangling_exactly_when_a_target_it_needs_is_missing() {
 
 #[test]
 fn a_to_coda_is_flagged_exactly_when_no_copy_of_its_target_lies_after_its_bar() {
-    for (jump, target) in TO_CODA {
+    for ToCoda { jump, target } in TO_CODA {
         for jump_bar in 0..3usize {
             for mask in 0u32..8 {
                 let mut score = bars(3);

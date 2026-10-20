@@ -79,9 +79,8 @@ fn every_hundredth_from_one_to_a_thousand_bpm_is_exactly_its_decimal_text() {
 #[test]
 fn every_ten_thousandth_in_sample_ranges_is_exactly_its_decimal_text() {
     let scale = u64::from(TEN_THOUSANDTHS);
-    let ranges = [(1, 2), (130, 140), (999, 1000)];
-    for (low, high) in ranges {
-        for units in low * scale..=high * scale {
+    for range in [1..=2, 130..=140, 999..=1000] {
+        for units in range.start() * scale..=range.end() * scale {
             let text = decimal_text(units, scale, 4);
             assert_eq!(exact_of(&text), Some(fraction(units, scale)), "{text}");
         }

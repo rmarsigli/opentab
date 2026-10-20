@@ -9,32 +9,41 @@ use crate::anchors::gpif_text;
 use crate::inventory::master_bar_children;
 use crate::support::{Doc, master_bar, payloads};
 
-const TARGET_NAMES: [(&str, DirectionTarget); 5] = [
-    ("Segno", DirectionTarget::Segno),
-    ("SegnoSegno", DirectionTarget::SegnoSegno),
-    ("Coda", DirectionTarget::Coda),
-    ("DoubleCoda", DirectionTarget::DoubleCoda),
-    ("Fine", DirectionTarget::Fine),
+struct Named<T> {
+    name: &'static str,
+    value: T,
+}
+
+const fn named<T>(name: &'static str, value: T) -> Named<T> {
+    Named { name, value }
+}
+
+const TARGET_NAMES: [Named<DirectionTarget>; 5] = [
+    named("Segno", DirectionTarget::Segno),
+    named("SegnoSegno", DirectionTarget::SegnoSegno),
+    named("Coda", DirectionTarget::Coda),
+    named("DoubleCoda", DirectionTarget::DoubleCoda),
+    named("Fine", DirectionTarget::Fine),
 ];
 
-const JUMP_NAMES: [(&str, DirectionJump); 14] = [
-    ("DaCapo", DirectionJump::DaCapo),
-    ("DaCapoAlFine", DirectionJump::DaCapoAlFine),
-    ("DaCapoAlCoda", DirectionJump::DaCapoAlCoda),
-    ("DaCapoAlDoubleCoda", DirectionJump::DaCapoAlDoubleCoda),
-    ("DaSegno", DirectionJump::DaSegno),
-    ("DaSegnoAlFine", DirectionJump::DaSegnoAlFine),
-    ("DaSegnoAlCoda", DirectionJump::DaSegnoAlCoda),
-    ("DaSegnoAlDoubleCoda", DirectionJump::DaSegnoAlDoubleCoda),
-    ("DaSegnoSegno", DirectionJump::DaSegnoSegno),
-    ("DaSegnoSegnoAlFine", DirectionJump::DaSegnoSegnoAlFine),
-    ("DaSegnoSegnoAlCoda", DirectionJump::DaSegnoSegnoAlCoda),
-    (
+const JUMP_NAMES: [Named<DirectionJump>; 14] = [
+    named("DaCapo", DirectionJump::DaCapo),
+    named("DaCapoAlFine", DirectionJump::DaCapoAlFine),
+    named("DaCapoAlCoda", DirectionJump::DaCapoAlCoda),
+    named("DaCapoAlDoubleCoda", DirectionJump::DaCapoAlDoubleCoda),
+    named("DaSegno", DirectionJump::DaSegno),
+    named("DaSegnoAlFine", DirectionJump::DaSegnoAlFine),
+    named("DaSegnoAlCoda", DirectionJump::DaSegnoAlCoda),
+    named("DaSegnoAlDoubleCoda", DirectionJump::DaSegnoAlDoubleCoda),
+    named("DaSegnoSegno", DirectionJump::DaSegnoSegno),
+    named("DaSegnoSegnoAlFine", DirectionJump::DaSegnoSegnoAlFine),
+    named("DaSegnoSegnoAlCoda", DirectionJump::DaSegnoSegnoAlCoda),
+    named(
         "DaSegnoSegnoAlDoubleCoda",
         DirectionJump::DaSegnoSegnoAlDoubleCoda,
     ),
-    ("DaCoda", DirectionJump::DaCoda),
-    ("DaDoubleCoda", DirectionJump::DaDoubleCoda),
+    named("DaCoda", DirectionJump::DaCoda),
+    named("DaDoubleCoda", DirectionJump::DaDoubleCoda),
 ];
 
 fn with_directions(directions: &str) -> Doc {
@@ -61,7 +70,11 @@ fn directions_of(gpif: &str) -> String {
 fn every_target_and_jump_name_maps_to_its_own_value_and_back() {
     assert_eq!(TARGET_NAMES.len(), DIRECTION_TARGETS.len());
     assert_eq!(JUMP_NAMES.len(), DIRECTION_JUMPS.len());
-    for (name, target) in TARGET_NAMES {
+    for Named {
+        name,
+        value: target,
+    } in TARGET_NAMES
+    {
         let element = format!("<Directions><Target>{name}</Target></Directions>");
         let score = with_directions(&element).read();
         let bar = master_bar(&score);
@@ -70,7 +83,7 @@ fn every_target_and_jump_name_maps_to_its_own_value_and_back() {
         assert!(payloads(&score, bar.id.0).is_empty(), "{name}");
         assert_eq!(directions_of(&written(&score)), element, "{name}");
     }
-    for (name, jump) in JUMP_NAMES {
+    for Named { name, value: jump } in JUMP_NAMES {
         let element = format!("<Directions><Jump>{name}</Jump></Directions>");
         let score = with_directions(&element).read();
         let bar = master_bar(&score);

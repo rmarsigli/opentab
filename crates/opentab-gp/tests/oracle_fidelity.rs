@@ -26,7 +26,8 @@ const SHOWN_DIFF_LINES: usize = 40;
 const SOUND_CHANGE: &str = "sound-change.gp";
 const SOUND_VARIATION: &str = "/Variation";
 const SOUND_MARKED_BEATS: usize = 8;
-const OVERDRIVE_AND_NYLON_BEATS: (usize, usize) = (6, 2);
+const OVERDRIVE_BEATS: usize = 6;
+const NYLON_BEATS: usize = 2;
 const SOUND_NORMALISATION: &str = "gp_marks_beats_with_their_sound";
 const DIRECTIONS_PREFIX: &str = "directions-";
 const EXPORT_MID: &str = "export.mid";
@@ -47,9 +48,20 @@ const DRUM_SPELLED_PITCH: i32 = -12;
 const NOTATION_PATCH: &str = "/NotationPatch";
 const EMPTIED_NOTATION_PATCH: &str = "<NotationPatch/>";
 const DRUM_PITCHES: [&str; 2] = ["pitch:Properties/Property@ConcertPitch", RESPELLED_PITCH];
-const DRUM_KEYS: [(&str, &str); 2] = [
-    ("pitch:Properties/Property@Fret", "Fret"),
-    ("pitch:Properties/Property@Midi", "Number"),
+struct DrumKey {
+    kind: &'static str,
+    element: &'static str,
+}
+
+const DRUM_KEYS: [DrumKey; 2] = [
+    DrumKey {
+        kind: "pitch:Properties/Property@Fret",
+        element: "Fret",
+    },
+    DrumKey {
+        kind: "pitch:Properties/Property@Midi",
+        element: "Number",
+    },
 ];
 const TEMPO_RAMP: &str = "tempo-ramp.gp";
 const TREMOLO_BAR: &str = "tremolo-bar.gp";
@@ -286,7 +298,12 @@ fn gp_writes_the_track_tuning_on_later_staves(_fixture: &mut Score, golden: &mut
     });
 }
 
-fn notes_with_tracks(score: &Score) -> BTreeMap<ElementId, (&Track, &Note)> {
+struct TrackNote<'s> {
+    track: &'s Track,
+    note: &'s Note,
+}
+
+fn notes_with_tracks(score: &Score) -> BTreeMap<ElementId, TrackNote<'_>> {
     let mut found = BTreeMap::new();
     for track in &score.tracks {
         for staff in &track.staves {
@@ -294,7 +311,7 @@ fn notes_with_tracks(score: &Score) -> BTreeMap<ElementId, (&Track, &Note)> {
                 for voice in &bar.voices {
                     for beat in &voice.beats {
                         for note in &beat.notes {
-                            found.insert(note.id.0, (track, note));
+                            found.insert(note.id.0, TrackNote { track, note });
                         }
                     }
                 }
@@ -334,10 +351,10 @@ fn written_midi(track: &Track, note: &Note) -> Option<i32> {
     Some(sounding - i32::from(transpose.chromatic()) - SEMITONES * i32::from(transpose.octave()))
 }
 
-fn is_drum_note(notes: &BTreeMap<ElementId, (&Track, &Note)>, id: ElementId) -> bool {
+fn is_drum_note(notes: &BTreeMap<ElementId, TrackNote<'_>>, id: ElementId) -> bool {
     notes
         .get(&id)
-        .is_some_and(|(_, note)| matches!(note.kind, NoteKind::Percussion { .. }))
+        .is_some_and(|found| matches!(found.note.kind, NoteKind::Percussion { .. }))
 }
 
 fn respelled_pitches(golden: &Score) -> Vec<(ElementId, Option<i32>, Option<i32>)> {
@@ -350,7 +367,7 @@ fn respelled_pitches(golden: &Score) -> Vec<(ElementId, Option<i32>, Option<i32>
             }
             let written = notes
                 .get(id)
-                .and_then(|(track, note)| written_midi(track, note));
+                .and_then(|found| written_midi(found.track, found.note));
             found.push((*id, spelled_midi(&payload.data), written));
         }
     }
@@ -358,7 +375,7 @@ fn respelled_pitches(golden: &Score) -> Vec<(ElementId, Option<i32>, Option<i32>
 }
 
 fn drum_note_pitch(kind: &str) -> bool {
-    DRUM_PITCHES.contains(&kind) || DRUM_KEYS.iter().any(|(name, _)| *name == kind)
+    DRUM_PITCHES.contains(&kind) || DRUM_KEYS.iter().any(|key| key.kind == kind)
 }
 
 fn gp_writes_an_emptied_notation_patch_on_drum_tracks(_fixture: &mut Score, golden: &mut Score) {
@@ -388,7 +405,7 @@ fn gp_spells_out_drum_note_pitches(_fixture: &mut Score, golden: &mut Score) {
     let notes = notes_with_tracks(golden);
     let mut checked = BTreeSet::new();
     for (id, payloads) in &golden.extensions.0 {
-        let Some((track, note)) = notes.get(id) else {
+        let Some(TrackNote { track, note }) = notes.get(id) else {
             continue;
         };
         let NoteKind::Percussion { articulation } = note.kind else {
@@ -407,9 +424,9 @@ fn gp_spells_out_drum_note_pitches(_fixture: &mut Score, golden: &mut Score) {
                     "{id:?}"
                 );
             }
-            if let Some((_, element)) = DRUM_KEYS.iter().find(|(name, _)| *name == kind) {
+            if let Some(drum_key) = DRUM_KEYS.iter().find(|drum_key| drum_key.kind == kind) {
                 assert_eq!(
-                    element_text(&payload.data, element).map(str::to_string),
+                    element_text(&payload.data, drum_key.element).map(str::to_string),
                     key,
                     "{id:?}"
                 );
@@ -705,16 +722,23 @@ fn gp_marks_beats_with_their_sound(_fixture: &mut Score, golden: &mut Score) {
     });
 }
 
-type BeatPlace = (usize, usize, usize, usize, usize);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BeatPlace {
+    track: usize,
+    staff: usize,
+    bar: usize,
+    voice: usize,
+    beat: usize,
+}
 
 fn beat_at(score: &Score, place: BeatPlace) -> &Beat {
-    let (track, staff, bar, voice, beat) = place;
-    &score.tracks[track].staves[staff].bars[bar].voices[voice].beats[beat]
+    &score.tracks[place.track].staves[place.staff].bars[place.bar].voices[place.voice].beats
+        [place.beat]
 }
 
 fn beat_at_mut(score: &mut Score, place: BeatPlace) -> &mut Beat {
-    let (track, staff, bar, voice, beat) = place;
-    &mut score.tracks[track].staves[staff].bars[bar].voices[voice].beats[beat]
+    &mut score.tracks[place.track].staves[place.staff].bars[place.bar].voices[place.voice].beats
+        [place.beat]
 }
 
 fn voice_runs(score: &Score) -> Vec<Vec<BeatPlace>> {
@@ -726,7 +750,13 @@ fn voice_runs(score: &Score) -> Vec<Vec<BeatPlace>> {
                 for (voice_index, voice) in bar.voices.iter().enumerate() {
                     let run = slots.entry(voice.slot).or_default();
                     for beat_index in 0..voice.beats.len() {
-                        run.push((track_index, staff_index, bar_index, voice_index, beat_index));
+                        run.push(BeatPlace {
+                            track: track_index,
+                            staff: staff_index,
+                            bar: bar_index,
+                            voice: voice_index,
+                            beat: beat_index,
+                        });
                     }
                 }
             }
@@ -764,12 +794,19 @@ fn sharing_key(beat: &Beat) -> Option<Beat> {
     Some(key)
 }
 
+struct KeyedBeat {
+    place: BeatPlace,
+    key: Beat,
+}
+
 fn gp_continues_tremolo_bars_and_shares_their_beats(fixture: &mut Score, _golden: &mut Score) {
     let runs = voice_runs(fixture);
-    let keyed: Vec<(BeatPlace, Beat)> = runs
+    let keyed: Vec<KeyedBeat> = runs
         .iter()
         .flatten()
-        .filter_map(|place| sharing_key(beat_at(fixture, *place)).map(|key| (*place, key)))
+        .filter_map(|place| {
+            sharing_key(beat_at(fixture, *place)).map(|key| KeyedBeat { place: *place, key })
+        })
         .collect();
     for run in &runs {
         let mut previous: Option<i16> = None;
@@ -781,12 +818,15 @@ fn gp_continues_tremolo_bars_and_shares_their_beats(fixture: &mut Score, _golden
             previous = effects.tremolo_bar.map(|bar| bar.destination().value());
         }
     }
-    for (index, (place, key)) in keyed.iter().enumerate() {
-        let Some((first, _)) = keyed[..index].iter().find(|(_, earlier)| earlier == key) else {
+    for (index, keyed_beat) in keyed.iter().enumerate() {
+        let Some(first) = keyed[..index]
+            .iter()
+            .find(|earlier| earlier.key == keyed_beat.key)
+        else {
             continue;
         };
-        let shared = beat_at(fixture, *first).effects.tremolo_bar;
-        beat_at_mut(fixture, *place).effects.tremolo_bar = shared;
+        let shared = beat_at(fixture, first.place).effects.tremolo_bar;
+        beat_at_mut(fixture, keyed_beat.place).effects.tremolo_bar = shared;
     }
 }
 
@@ -1216,7 +1256,8 @@ fn guitar_pro_marks_the_beats_after_each_sound_change_with_the_sound_index() {
     assert_eq!(marks.len(), SOUND_MARKED_BEATS);
     let overdrive = marks.iter().filter(|mark| mark.sound == 1).count();
     let nylon = marks.iter().filter(|mark| mark.sound == 2).count();
-    assert_eq!((overdrive, nylon), OVERDRIVE_AND_NYLON_BEATS);
+    assert_eq!(overdrive, OVERDRIVE_BEATS);
+    assert_eq!(nylon, NYLON_BEATS);
     let elsewhere: usize = pairs()
         .iter()
         .filter(|pair| pair.name != SOUND_CHANGE)
@@ -1583,24 +1624,42 @@ fn trill_notes(fixture: &Score) -> Vec<TrillNote> {
     found
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct KeyAt {
+    tick: usize,
+    key: u8,
+}
+
+impl KeyAt {
+    fn of(note: &NoteOn) -> KeyAt {
+        KeyAt {
+            tick: note.tick,
+            key: note.key,
+        }
+    }
+}
+
 fn trill_mismatches(fixture: &Score, smf: &[u8]) -> Vec<String> {
     let played = note_ons(smf);
     let mut mismatches = Vec::new();
     for trill in trill_notes(fixture) {
-        let expected: Vec<(usize, u8)> = (0..trill.length / trill.speed)
+        let expected: Vec<KeyAt> = (0..trill.length / trill.speed)
             .map(|step| {
                 let key = if step % 2 == 0 {
                     trill.principal
                 } else {
                     trill.auxiliary
                 };
-                (trill.onset + step * trill.speed, key)
+                KeyAt {
+                    tick: trill.onset + step * trill.speed,
+                    key,
+                }
             })
             .collect();
-        let heard: Vec<(usize, u8)> = played
+        let heard: Vec<KeyAt> = played
             .iter()
             .filter(|note| (trill.onset..trill.onset + trill.length).contains(&note.tick))
-            .map(|note| (note.tick, note.key))
+            .map(KeyAt::of)
             .collect();
         if heard != expected {
             mismatches.push(format!(
@@ -1662,10 +1721,10 @@ fn guitar_pros_export_plays_each_drum_note_at_its_kit_key_on_channel_10() {
                 let NoteKind::Percussion { articulation } = note.kind else {
                     panic!("a drum note");
                 };
-                expected.push((
+                expected.push(KeyAt {
                     tick,
-                    kit.articulations()[usize::from(articulation)].output_key,
-                ));
+                    key: kit.articulations()[usize::from(articulation)].output_key,
+                });
             }
             onset += beat.duration.length();
         }
@@ -1674,7 +1733,7 @@ fn guitar_pros_export_plays_each_drum_note_at_its_kit_key_on_channel_10() {
     let smf = std::fs::read(golden_path(DRUMS, EXPORT_MID)).expect("export.mid");
     let played = note_ons(&smf);
     assert!(played.iter().all(|note| note.channel == DRUM_CHANNEL));
-    let mut heard: Vec<(usize, u8)> = played.iter().map(|note| (note.tick, note.key)).collect();
+    let mut heard: Vec<KeyAt> = played.iter().map(KeyAt::of).collect();
     heard.sort_unstable();
     expected.sort_unstable();
     assert_eq!(heard, expected);

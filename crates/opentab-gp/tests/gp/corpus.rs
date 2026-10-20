@@ -15,58 +15,67 @@ use opentab_model::{
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
 const EXPECTED_FILES: usize = 27;
-const EXPECTED_TOTALS: [(&str, usize); 46] = [
-    ("tracks", 64),
-    ("master_bars", 1260),
-    ("bars", 2392),
-    ("voices", 3090),
-    ("beats", 15224),
-    ("notes", 17222),
-    ("bends", 52),
-    ("tremolo_bars", 2),
-    ("tremolo_bars_moving", 1),
-    ("whammy_payloads", 0),
-    ("trills", 0),
-    ("slides", 263),
-    ("tie_origins", 932),
-    ("strokes", 55),
-    ("staccato", 557),
-    ("accent_normal", 216),
-    ("accent_heavy", 206),
-    ("hopo_destination_payloads", 964),
-    ("harmonics", 117),
-    ("chord_names", 654),
-    ("grace_beats", 69),
-    ("dynamics_not_mf", 4998),
-    ("clefs_not_treble", 618),
-    ("tempo_units_not_quarter", 2),
-    ("linear_tempos", 4),
-    ("inexact_tempos", 0),
-    ("tempos_beyond_three_decimals", 1),
-    ("sounds", 66),
-    ("sound_automations", 67),
-    ("volume_automations", 79),
-    ("pan_automations", 65),
-    ("instrument_sets", 64),
-    ("midi_connections_not_default", 54),
-    ("direction_bars", 8),
-    ("target_segno", 2),
-    ("target_coda", 2),
-    ("jump_da_coda", 2),
-    ("jump_da_segno", 1),
-    ("jump_da_segno_al_coda", 1),
-    ("direction_payloads", 0),
-    ("triplet_feel_bars", 177),
-    ("triplet_feel_payloads", 0),
-    ("drum_kits", 10),
-    ("drum_elements", 540),
-    ("drum_articulations", 950),
-    ("drum_kit_payloads", 0),
+struct Count {
+    name: &'static str,
+    amount: usize,
+}
+
+const fn expected(name: &'static str, amount: usize) -> Count {
+    Count { name, amount }
+}
+
+const EXPECTED_TOTALS: [Count; 46] = [
+    expected("tracks", 64),
+    expected("master_bars", 1260),
+    expected("bars", 2392),
+    expected("voices", 3090),
+    expected("beats", 15224),
+    expected("notes", 17222),
+    expected("bends", 52),
+    expected("tremolo_bars", 2),
+    expected("tremolo_bars_moving", 1),
+    expected("whammy_payloads", 0),
+    expected("trills", 0),
+    expected("slides", 263),
+    expected("tie_origins", 932),
+    expected("strokes", 55),
+    expected("staccato", 557),
+    expected("accent_normal", 216),
+    expected("accent_heavy", 206),
+    expected("hopo_destination_payloads", 964),
+    expected("harmonics", 117),
+    expected("chord_names", 654),
+    expected("grace_beats", 69),
+    expected("dynamics_not_mf", 4998),
+    expected("clefs_not_treble", 618),
+    expected("tempo_units_not_quarter", 2),
+    expected("linear_tempos", 4),
+    expected("inexact_tempos", 0),
+    expected("tempos_beyond_three_decimals", 1),
+    expected("sounds", 66),
+    expected("sound_automations", 67),
+    expected("volume_automations", 79),
+    expected("pan_automations", 65),
+    expected("instrument_sets", 64),
+    expected("midi_connections_not_default", 54),
+    expected("direction_bars", 8),
+    expected("target_segno", 2),
+    expected("target_coda", 2),
+    expected("jump_da_coda", 2),
+    expected("jump_da_segno", 1),
+    expected("jump_da_segno_al_coda", 1),
+    expected("direction_payloads", 0),
+    expected("triplet_feel_bars", 177),
+    expected("triplet_feel_payloads", 0),
+    expected("drum_kits", 10),
+    expected("drum_elements", 540),
+    expected("drum_articulations", 950),
+    expected("drum_kit_payloads", 0),
 ];
 const OUTPUT_KEY: &str = "/OutputMidiNumber=";
 const THOUSANDTHS: i64 = 1000;
 const CORPUS_WHAMMIES: usize = 2;
-const EXPECTED_DIAGNOSTICS: [(&str, usize); 1] = [("IncompleteBar", 14)];
+const EXPECTED_DIAGNOSTICS: [Count; 1] = [expected("IncompleteBar", 14)];
 
 fn diagnostic_kind(diagnostic: &Diagnostic) -> String {
     let debug = format!("{diagnostic:?}");
@@ -281,12 +290,12 @@ fn every_corpus_example_reads() {
     assert!(failures.is_empty(), "{failures:#?}");
     let expected: BTreeMap<String, usize> = EXPECTED_TOTALS
         .iter()
-        .map(|(name, amount)| (name.to_string(), *amount))
+        .map(|known| (known.name.to_string(), known.amount))
         .collect();
     assert_eq!(totals, expected);
     let expected: BTreeMap<String, usize> = EXPECTED_DIAGNOSTICS
         .iter()
-        .map(|(name, amount)| (name.to_string(), *amount))
+        .map(|known| (known.name.to_string(), known.amount))
         .collect();
     assert_eq!(diagnostics, expected);
 }
@@ -409,8 +418,21 @@ fn every_corpus_example_survives_a_write() {
     assert_eq!(whammies, CORPUS_WHAMMIES);
 }
 
-const POSITION_HITS: [(&str, usize, usize); 3] =
-    [("tempo", 4, 1), ("strip", 4, 2), ("sound", 1, 0)];
+struct PositionHits {
+    kind: &'static str,
+    ours: usize,
+    other: usize,
+}
+
+const fn position_hits(kind: &'static str, ours: usize, other: usize) -> PositionHits {
+    PositionHits { kind, ours, other }
+}
+
+const POSITION_HITS: [PositionHits; 3] = [
+    position_hits("tempo", 4, 1),
+    position_hits("strip", 4, 2),
+    position_hits("sound", 1, 0),
+];
 const QUARTERS_PER_WHOLE: i64 = 4;
 
 fn onsets(score: &Score, index: usize) -> BTreeSet<Fraction> {
@@ -488,11 +510,12 @@ fn corpus_automations_inside_a_bar_land_on_beats_in_the_units_we_read() {
             }
         }
     }
-    for (kind, ours, other) in POSITION_HITS {
+    for PositionHits { kind, ours, other } in POSITION_HITS {
         let found = hits
             .get(kind)
             .expect("the corpus has this kind inside a bar");
-        assert_eq!((found.ours, found.other), (ours, other), "{kind}");
+        assert_eq!(found.ours, ours, "{kind}");
+        assert_eq!(found.other, other, "{kind}");
         assert!(found.ours > found.other, "{kind}");
     }
 }
