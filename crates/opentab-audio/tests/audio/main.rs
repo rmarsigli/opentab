@@ -15,6 +15,7 @@ mod sf2_bank;
 mod sf2_fuzz;
 mod sf2_guard;
 mod sf2_hashes;
+mod sf2_open;
 mod sfz;
 mod sfz_bank;
 mod sfz_decode;

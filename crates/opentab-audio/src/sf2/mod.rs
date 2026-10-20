@@ -6,12 +6,16 @@ mod map;
 mod pdta;
 #[deny(clippy::float_arithmetic)]
 mod riff;
+#[deny(clippy::float_arithmetic)]
+mod source;
 
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::io::Cursor;
+use std::fs::File;
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -33,6 +37,7 @@ use crate::{Bank, BankError, BankFormat, BankInstrument, SampleRate, Synth, TRAC
 
 pub const FAULT_LOG_LIMIT: usize = 256;
 const UNKNOWN_PANIC: &str = "the sound engine stopped without a message";
+const CHANGED_WHILE_READING: &str = "the file changed while it was being read";
 const BYTES_PER_POINT: usize = 2;
 const MAX_PROGRAM: u8 = 127;
 pub const MASTER_VOLUME: f32 = 4.0;
@@ -91,6 +96,12 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
         text.clone()
     } else {
         UNKNOWN_PANIC.to_owned()
+    }
+}
+
+fn unreadable(error: &std::io::Error) -> BankError {
+    BankError::Invalid {
+        reason: format!("the file cannot be read: {error}"),
     }
 }
 
@@ -172,8 +183,37 @@ impl Sf2Bank {
     pub fn load_with_limits(bytes: &[u8], limits: &Sf2Limits) -> Result<Sf2Bank, BankError> {
         let layout = riff::check(bytes, limits)?;
         let analysis = pdta::analyse(bytes, &layout, limits)?;
+        Sf2Bank::build(&mut Cursor::new(bytes), analysis, limits)
+    }
+
+    pub fn open(path: &Path) -> Result<Sf2Bank, BankError> {
+        Sf2Bank::open_with_limits(path, &Sf2Limits::DEFAULT)
+    }
+
+    pub fn open_with_limits(path: &Path, limits: &Sf2Limits) -> Result<Sf2Bank, BankError> {
+        let mut file = File::open(path).map_err(|error| unreadable(&error))?;
+        let sparse = source::sparse(&mut file, limits)?;
+        let layout = riff::check(&sparse, limits)?;
+        let analysis = pdta::analyse(&sparse, &layout, limits)?;
+        drop(sparse);
+        let size = file.metadata().map_err(|error| unreadable(&error))?.len();
+        if size != layout.file_bytes {
+            return Err(BankError::Invalid {
+                reason: CHANGED_WHILE_READING.to_owned(),
+            });
+        }
+        file.seek(SeekFrom::Start(0))
+            .map_err(|error| unreadable(&error))?;
+        Sf2Bank::build(&mut BufReader::new(file), analysis, limits)
+    }
+
+    fn build<R: Read>(
+        reader: &mut R,
+        analysis: pdta::Analysis,
+        limits: &Sf2Limits,
+    ) -> Result<Sf2Bank, BankError> {
         let loaded =
-            catch_unwind(|| SoundFont::new(&mut Cursor::new(bytes))).map_err(|payload| {
+            catch_unwind(AssertUnwindSafe(|| SoundFont::new(reader))).map_err(|payload| {
                 BankError::Panicked {
                     message: panic_message(payload.as_ref()),
                 }

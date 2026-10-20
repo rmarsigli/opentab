@@ -17,7 +17,7 @@ const KEYS: [u8; 6] = [0, 36, 42, 57, 69, 127];
 const BANKS: [u8; 3] = [0, 8, 120];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Mutation {
+pub(crate) enum Mutation {
     Byte { at: usize, value: u8 },
     Word { at: usize, value: u32 },
     Truncate { at: usize },
@@ -35,7 +35,7 @@ fn position() -> impl Strategy<Value = usize> {
     prop_oneof![3 => pdta_start()..length, 1 => 0..length]
 }
 
-fn mutation() -> impl Strategy<Value = Mutation> {
+pub(crate) fn mutation() -> impl Strategy<Value = Mutation> {
     prop_oneof![
         4 => (position(), any::<u8>()).prop_map(|(at, value)| Mutation::Byte { at, value }),
         3 => (position(), prop_oneof![Just(0u32), Just(u32::MAX), Just(0x7FFF), any::<u32>()])
@@ -44,7 +44,7 @@ fn mutation() -> impl Strategy<Value = Mutation> {
     ]
 }
 
-fn apply(mutations: &[Mutation]) -> Vec<u8> {
+pub(crate) fn apply(mutations: &[Mutation]) -> Vec<u8> {
     let mut bytes = tiny_bytes().to_vec();
     for mutation in mutations {
         match *mutation {

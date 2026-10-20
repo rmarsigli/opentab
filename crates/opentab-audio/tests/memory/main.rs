@@ -98,6 +98,33 @@ fn twenty_tracks_of_one_multi_megabyte_sf2_add_no_copy_of_its_sample_data() {
     assert!(bank.faults().is_empty());
 }
 
+fn opening_a_bank_from_its_path_keeps_no_copy_of_the_file() {
+    let dir = tempfile::Builder::new()
+        .prefix("sf2-")
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .expect("scratch");
+    let path = dir.path().join("padded.sf2");
+    let bytes = padded_sf2(PAD_FRAMES);
+    let file_bytes = bytes.len();
+    std::fs::write(&path, &bytes).expect("written");
+    drop(bytes);
+    let opening = Region::new(GLOBAL);
+    let bank = Sf2Bank::open(&path).expect("the padded bank opens");
+    let allocated = opening.change().bytes_allocated;
+    let samples = bank.sample_bytes();
+    assert!(samples >= MIN_SAMPLE_BYTES, "{samples} sample bytes");
+    assert!(
+        allocated < samples + samples / COPY_FRACTION + SLACK_BYTES,
+        "opening allocated {allocated} bytes for {samples} sample bytes"
+    );
+    assert!(
+        allocated + samples / COPY_FRACTION < file_bytes + samples,
+        "opening allocated {allocated} bytes, a file copy plus the samples is {}",
+        file_bytes + samples
+    );
+    println!("memory: opening a {file_bytes}-byte bank from its path allocated {allocated} bytes");
+}
+
 fn the_zone_bomb_is_refused_before_it_allocates() {
     let bomb = zone_bomb(BOMB_BAGS);
     let loading = Region::new(GLOBAL);
@@ -193,6 +220,7 @@ fn every_bypass_route_is_refused_before_it_allocates() {
 
 fn main() {
     twenty_tracks_of_one_multi_megabyte_sf2_add_no_copy_of_its_sample_data();
+    opening_a_bank_from_its_path_keeps_no_copy_of_the_file();
     the_zone_bomb_is_refused_before_it_allocates();
     every_bypass_route_is_refused_before_it_allocates();
     the_loader_estimate_covers_what_loading_allocates();
@@ -216,5 +244,5 @@ fn main() {
         "memory: SFZ transport blocks allocate {} times ({} bytes) after preparation",
         sfz.allocations, sfz.bytes_allocated
     );
-    println!("memory: 14 checks passed");
+    println!("memory: 15 checks passed");
 }

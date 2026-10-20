@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use super::source::Source;
 use crate::error::SF3_UNSUPPORTED;
 use crate::{BankError, Sf2Limits, UnsafeBank};
 
@@ -118,11 +119,11 @@ fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
 
-fn header(bytes: &[u8], at: usize, end: usize) -> Result<ChunkHeader, BankError> {
+fn header<S: Source + ?Sized>(bytes: &S, at: usize, end: usize) -> Result<ChunkHeader, BankError> {
     let fields = at
         .checked_add(HEADER_BYTES)
         .filter(|fields| *fields <= end)
-        .and_then(|fields| bytes.get(at..fields))
+        .and_then(|fields| bytes.slice(at..fields))
         .ok_or(refuse(UnsafeBank::ChunkOverflow))?;
     let mut id = [0u8; 4];
     id.copy_from_slice(&fields[..4]);
@@ -137,12 +138,19 @@ fn header(bytes: &[u8], at: usize, end: usize) -> Result<ChunkHeader, BankError>
     Ok(ChunkHeader { id, body, size })
 }
 
-fn check_info(bytes: &[u8], chunk: &ChunkHeader, walk: &mut Walk) -> Result<(), BankError> {
+fn check_info<S: Source + ?Sized>(
+    bytes: &S,
+    chunk: &ChunkHeader,
+    walk: &mut Walk,
+) -> Result<(), BankError> {
     if &chunk.id == b"ifil" || &chunk.id == b"iver" {
         if chunk.size != VERSION_BYTES {
             return Err(refuse(UnsafeBank::VersionSize));
         }
-        let major = u16::from_le_bytes([bytes[chunk.body], bytes[chunk.body + 1]]);
+        let version = bytes
+            .slice(chunk.body..chunk.body + 2)
+            .ok_or(refuse(UnsafeBank::ChunkOverflow))?;
+        let major = u16::from_le_bytes([version[0], version[1]]);
         if &chunk.id == b"ifil" && major == SF3_MAJOR {
             return Err(unsupported());
         }
@@ -163,10 +171,14 @@ fn once(slot: &mut Option<usize>, size: usize) -> Result<(), BankError> {
     Ok(())
 }
 
-fn check_samples(bytes: &[u8], chunk: &ChunkHeader, walk: &mut Walk) -> Result<(), BankError> {
+fn check_samples<S: Source + ?Sized>(
+    bytes: &S,
+    chunk: &ChunkHeader,
+    walk: &mut Walk,
+) -> Result<(), BankError> {
     match &chunk.id {
         b"smpl" => {
-            if bytes.get(chunk.body..chunk.body + chunk.size.min(OGG_MAGIC.len()))
+            if bytes.slice(chunk.body..chunk.body + chunk.size.min(OGG_MAGIC.len()))
                 == Some(OGG_MAGIC)
             {
                 return Err(unsupported());
@@ -194,8 +206,8 @@ fn check_table(chunk: &ChunkHeader, walk: &mut Walk) -> Result<(), BankError> {
     Ok(())
 }
 
-fn check_list(
-    bytes: &[u8],
+fn check_list<S: Source + ?Sized>(
+    bytes: &S,
     list: &ChunkHeader,
     expected: &[u8; 4],
     walk: &mut Walk,
@@ -203,7 +215,7 @@ fn check_list(
     if list.size < FORM_BYTES {
         return Err(refuse(UnsafeBank::ListType));
     }
-    if &bytes[list.body..list.body + FORM_BYTES] != expected {
+    if bytes.slice(list.body..list.body + FORM_BYTES) != Some(expected.as_slice()) {
         return Err(refuse(UnsafeBank::MissingChunk));
     }
     let end = list.body + list.size;
@@ -232,19 +244,22 @@ fn table(range: Option<Range<usize>>, spec: &TableSpec) -> Result<Table, BankErr
     })
 }
 
-pub(crate) fn check(bytes: &[u8], limits: &Sf2Limits) -> Result<Layout, BankError> {
-    let file_bytes = widen(bytes.len());
+pub(crate) fn check<S: Source + ?Sized>(
+    bytes: &S,
+    limits: &Sf2Limits,
+) -> Result<Layout, BankError> {
+    let file_bytes = widen(bytes.size());
     if file_bytes > limits.file_bytes {
         return Err(refuse(UnsafeBank::FileTooLarge {
             limit_mib: limits.file_bytes >> MIB_SHIFT,
         }));
     }
-    if bytes.get(..FORM_BYTES) != Some(b"RIFF")
-        || bytes.get(HEADER_BYTES..HEADER_BYTES + FORM_BYTES) != Some(b"sfbk")
+    if bytes.slice(0..FORM_BYTES) != Some(b"RIFF".as_slice())
+        || bytes.slice(HEADER_BYTES..HEADER_BYTES + FORM_BYTES) != Some(b"sfbk".as_slice())
     {
         return Err(invalid("the file is not a SoundFont (no RIFF sfbk header)"));
     }
-    let end = bytes.len();
+    let end = bytes.size();
     let mut at = HEADER_BYTES + FORM_BYTES;
     let mut walk = Walk::default();
     for expected in LISTS {

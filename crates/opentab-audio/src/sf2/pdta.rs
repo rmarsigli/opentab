@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use super::riff::{Layout, Table};
+use super::source::Source;
 use crate::{BankError, Sf2Limits, UnsafeBank};
 
 const PRESET_BAG_OFFSET: usize = 24;
@@ -83,23 +84,23 @@ pub(crate) struct Analysis {
 
 struct Records<'a> {
     bytes: &'a [u8],
-    start: usize,
     count: usize,
     width: usize,
 }
 
 impl<'a> Records<'a> {
-    fn new(bytes: &'a [u8], table: &Table) -> Records<'a> {
-        Records {
-            bytes,
-            start: table.range.start,
+    fn new<S: Source + ?Sized>(bytes: &'a S, table: &Table) -> Result<Records<'a>, BankError> {
+        Ok(Records {
+            bytes: bytes
+                .slice(table.range.clone())
+                .ok_or(refuse(UnsafeBank::ChunkOverflow))?,
             count: table.count,
             width: table.range.len() / table.count.max(1),
-        }
+        })
     }
 
     fn word(&self, record: usize, offset: usize) -> u16 {
-        let at = self.start + record * self.width + offset;
+        let at = record * self.width + offset;
         u16::from_le_bytes([self.bytes[at], self.bytes[at + 1]])
     }
 
@@ -275,8 +276,8 @@ fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
 
-pub(crate) fn analyse(
-    bytes: &[u8],
+pub(crate) fn analyse<S: Source + ?Sized>(
+    bytes: &S,
     layout: &Layout,
     limits: &Sf2Limits,
 ) -> Result<Analysis, BankError> {
@@ -290,12 +291,12 @@ pub(crate) fn analyse(
     let [phdr, pbag, pmod, pgen, inst, ibag, imod, igen, _] = &layout.tables;
     let preset_modulators = pmod.count;
     let instrument_modulators = imod.count;
-    let phdr = Records::new(bytes, phdr);
-    let pbag = Records::new(bytes, pbag);
-    let pgen = Records::new(bytes, pgen);
-    let inst = Records::new(bytes, inst);
-    let ibag = Records::new(bytes, ibag);
-    let igen = Records::new(bytes, igen);
+    let phdr = Records::new(bytes, phdr)?;
+    let pbag = Records::new(bytes, pbag)?;
+    let pgen = Records::new(bytes, pgen)?;
+    let inst = Records::new(bytes, inst)?;
+    let ibag = Records::new(bytes, ibag)?;
+    let igen = Records::new(bytes, igen)?;
 
     let preset_owners = phdr.column(PRESET_BAG_OFFSET);
     let instrument_owners = inst.column(INSTRUMENT_BAG_OFFSET);
