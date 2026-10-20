@@ -1,5 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use opentab_playback::{BEND_CENTRE, Channel, ChannelState, MidiMessage};
 
@@ -209,12 +210,21 @@ struct Started<'a> {
     sample: Arc<DecodedSample>,
 }
 
+#[derive(Debug, Clone)]
+enum PreparedSample {
+    Unprepared,
+    Ready(Arc<DecodedSample>),
+    Failed,
+}
+
 pub struct SfzSynth {
     shared: Arc<SfzShared>,
     rate: SampleRate,
     instance: u32,
     channels: [ChannelSfz; CHANNELS],
     voices: Vec<Voice>,
+    samples: Vec<PreparedSample>,
+    started: Vec<usize>,
     event: u64,
     random: u32,
     sequences: Vec<Vec<u8>>,
@@ -275,12 +285,17 @@ impl SfzSynth {
             .iter()
             .map(|instrument| vec![1; instrument.regions.len()])
             .collect();
+        let samples = vec![PreparedSample::Unprepared; shared.cache.len()];
+        let voices = Vec::with_capacity(shared.limits.voices.max(1));
+        let started = Vec::with_capacity(shared.limits.voices_per_note);
         SfzSynth {
             shared,
             rate,
             instance,
             channels: [ChannelSfz::default(); CHANNELS],
-            voices: Vec::new(),
+            voices,
+            samples,
+            started,
             event: 0,
             random: RANDOM_SEED,
             sequences,
@@ -289,6 +304,35 @@ impl SfzSynth {
 
     pub fn sounding(&self) -> usize {
         self.voices.len()
+    }
+
+    pub fn prepare_all(&mut self) {
+        for index in 0..self.samples.len() {
+            self.prepare_sample(index);
+        }
+    }
+
+    fn prepare_sample(&mut self, index: usize) {
+        if !matches!(self.samples.get(index), Some(PreparedSample::Unprepared)) {
+            return;
+        }
+        let fetched = self.shared.cache.fetch(index);
+        let prepared = match fetched.sample {
+            Ok(sample) => PreparedSample::Ready(sample),
+            Err(error) => {
+                if fetched.first_failure {
+                    self.shared.faults.push(SynthFault {
+                        instance: self.instance,
+                        stage: SynthStage::Handle,
+                        message: error.to_string(),
+                    });
+                }
+                PreparedSample::Failed
+            }
+        };
+        if let Some(slot) = self.samples.get_mut(index) {
+            *slot = prepared;
+        }
     }
 
     fn seconds(&self, seconds: f32) -> f32 {
@@ -387,7 +431,8 @@ impl SfzSynth {
         let random = self.draw();
         self.event += 1;
         let event = self.event;
-        let mut started: Vec<Started<'_>> = Vec::new();
+        let mut started = std::mem::take(&mut self.started);
+        started.clear();
         for (position, play) in instrument.regions.iter().enumerate() {
             let region = &play.region;
             if !region.accepts(key, velocity)
@@ -416,28 +461,35 @@ impl SfzSynth {
             if started.len() >= self.shared.limits.voices_per_note {
                 break;
             }
-            let fetched = shared.cache.fetch(play.sample);
-            match fetched.sample {
-                Ok(sample) => started.push(Started { region, sample }),
-                Err(error) => {
-                    if fetched.first_failure {
-                        shared.faults.push(SynthFault {
-                            instance: self.instance,
-                            stage: SynthStage::Handle,
-                            message: error.to_string(),
-                        });
-                    }
+            match self.samples.get(play.sample) {
+                Some(PreparedSample::Ready(_)) => started.push(position),
+                Some(PreparedSample::Failed) => {}
+                Some(PreparedSample::Unprepared) | None => {
+                    shared.unprepared.fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
-        for start in &started {
-            if start.region.group != 0 {
-                self.choke(start.region.group, event);
+        for position in &started {
+            if let Some(play) = instrument.regions.get(*position)
+                && play.region.group != 0
+            {
+                self.choke(play.region.group, event);
             }
         }
-        for start in started {
+        for position in &started {
+            let Some(play) = instrument.regions.get(*position) else {
+                continue;
+            };
+            let Some(PreparedSample::Ready(sample)) = self.samples.get(play.sample) else {
+                continue;
+            };
+            let start = Started {
+                region: &play.region,
+                sample: Arc::clone(sample),
+            };
             self.start(channel, key, velocity, event, start, &state.state);
         }
+        self.started = started;
     }
 
     fn choke(&mut self, group: u32, event: u64) {
@@ -642,7 +694,7 @@ impl Synth for SfzSynth {
     }
 
     fn prepare(&mut self, uses: &[SoundUse]) {
-        let mut decoded = vec![false; self.shared.cache.len()];
+        let shared = Arc::clone(&self.shared);
         for found in uses {
             let state = ChannelState {
                 bank: found.bank,
@@ -651,24 +703,12 @@ impl Synth for SfzSynth {
             };
             let Some(instrument) = self
                 .instrument_of(found.channel.get(), &state)
-                .and_then(|index| self.shared.instruments.get(index))
+                .and_then(|index| shared.instruments.get(index))
             else {
                 continue;
             };
             for play in &instrument.regions {
-                if let Some(seen) = decoded.get_mut(play.sample)
-                    && !*seen
-                {
-                    *seen = true;
-                    let fetched = self.shared.cache.fetch(play.sample);
-                    if let (Err(error), true) = (fetched.sample, fetched.first_failure) {
-                        self.shared.faults.push(SynthFault {
-                            instance: self.instance,
-                            stage: SynthStage::Handle,
-                            message: error.to_string(),
-                        });
-                    }
-                }
+                self.prepare_sample(play.sample);
             }
         }
     }

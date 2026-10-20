@@ -3,9 +3,10 @@ use std::fs;
 
 use opentab_audio::{
     Bank, BankError, SFZ_MAX_BANK_INCLUDES, SFZ_MAX_EXPANDED_BYTES, SFZ_MAX_VORBIS_ENTRIES,
-    SampleRate, SfzBank, SfzLimits, Synth, UnsafeBank, decode_audio, parse_sfz_text,
+    SampleRate, SfzBank, SfzLimits, SoundUse, Synth, UnsafeBank, decode_audio, parse_sfz_text,
     vorbis_setup_cost,
 };
+use opentab_model::MidiBank;
 use opentab_playback::{Channel, MidiMessage};
 use opentab_testkit::banks::{
     ExtraCodebook, FilledComments, FlacOverrides, FlacSpec, SAMPLE_RATE, VorbisSpec, WavOverrides,
@@ -67,7 +68,13 @@ pub fn twenty_tracks_of_one_sfz_bank_decode_each_sample_once() {
     let mut voices: Vec<Box<dyn Synth>> = (0..TRACKS)
         .map(|_| bank.instantiate(SampleRate::STUDIO))
         .collect();
+    let uses = [SoundUse {
+        channel,
+        bank: MidiBank::default(),
+        program: 0,
+    }];
     for voice in &mut voices {
+        voice.prepare(&uses);
         voice.handle(
             channel,
             &MidiMessage::NoteOn {

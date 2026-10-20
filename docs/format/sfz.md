@@ -236,7 +236,8 @@ Anything not in section 5 is parsed, discarded and recorded, so a user can see w
 ## 9. What the backend does with a bank
 
 - `SfzBank::load` walks the bank root (refusing any symbolic link), finds every `.sfz` file, preprocesses each one to learn which files others include, and parses every file that no other file includes, without decoding audio. Each such root file is an instrument named after its path relative to the root, without extension. A root that is not UTF-8 is reported and skipped.
-- Audio is decoded on a region's first note-on. For live output, an instrument can be decoded ahead of time (`preload`), so the audio thread never has to open a file or decode.
+- Audio is decoded before playback, never on note-on. A session prepares each backend instance with the instruments its track reaches (every program and bank at its note-ons), and the instance keeps its own list of the prepared samples. A note-on reads only that list: it takes no lock, opens no file and allocates nothing. A region whose sample was not prepared stays silent, and the bank counts it (`unprepared_count`). `prepare_all` prepares every sample of the bank, and `preload` decodes one instrument into the bank's shared cache.
+- Voice storage (128 voices, 32 per note-on event) is reserved when the backend instance is created, so starting a voice never grows it.
 - Voices are limited to 128 per backend instance and 32 per note-on event. When the limit is reached, the oldest voice that is releasing, else the oldest voice, is stolen.
 - Voices are keyed by MIDI channel: a note-off, pitch bend, all-notes-off or all-sound-off acts on the voices of its channel only.
 - Program change, bank select and the `loprog` and `hiprog` opcodes do not reach the SFZ text: they choose the instrument through the program map (section 10).

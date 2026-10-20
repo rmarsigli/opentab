@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use opentab_model::MidiBank;
 
@@ -73,6 +73,7 @@ pub(crate) struct SfzShared {
     pub(crate) cache: SampleCache,
     pub(crate) faults: FaultLog,
     pub(crate) limits: SfzLimits,
+    pub(crate) unprepared: AtomicU64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -422,6 +423,7 @@ impl SfzBank {
                 cache,
                 faults: FaultLog::default(),
                 limits: *limits,
+                unprepared: AtomicU64::new(0),
             }),
             root: canonical_root,
             skipped,
@@ -524,6 +526,10 @@ impl SfzBank {
 
     pub fn faults(&self) -> Vec<SynthFault> {
         self.shared.faults.snapshot()
+    }
+
+    pub fn unprepared_count(&self) -> u64 {
+        self.shared.unprepared.load(Ordering::Relaxed)
     }
 
     pub fn preload(&self, name: &str) -> Result<usize, BankError> {

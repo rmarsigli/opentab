@@ -2,9 +2,10 @@ use std::fs;
 use std::path::Path;
 
 use opentab_audio::{
-    Bank, BankFormat, IgnoreReason, LoopMode, OffMode, SampleRate, SfzBank, SfzScope, Synth,
-    Trigger,
+    Bank, BankFormat, IgnoreReason, LoopMode, OffMode, SampleRate, SfzBank, SfzScope, SoundUse,
+    Synth, Trigger,
 };
+use opentab_model::MidiBank;
 use opentab_playback::{BEND_RANGE_SEMITONES, Channel, MidiMessage, PITCH_BEND_RANGE_RPN};
 use opentab_testkit::banks::{SIDECAR_FILE, samples, wav16};
 
@@ -189,7 +190,9 @@ fn a_broken_sidecar_is_refused() {
 fn every_tiny_instrument_sounds_and_decoding_is_shared() {
     let bank = tiny_sfz_bank();
     let mut first = bank.synth(RATE);
+    first.prepare_all();
     let mut second = bank.synth(RATE);
+    second.prepare_all();
     for (program, key) in [(24u8, 57u8), (33, 40), (0, 72)] {
         for synth in [&mut first, &mut second] {
             synth.reset();
@@ -246,6 +249,7 @@ fn bend_follows_the_rpn_range() {
     let bank = tiny_sfz_bank();
     let crossings = |bend: u16, range: u8| {
         let mut synth = bank.synth(RATE);
+        synth.prepare_all();
         synth.handle(
             channel(0),
             &MidiMessage::Rpn {
@@ -277,6 +281,7 @@ fn bend_follows_the_rpn_range() {
 fn note_off_releases_and_one_shots_ignore_it() {
     let bank = tiny_sfz_bank();
     let mut synth = bank.synth(RATE);
+    synth.prepare_all();
     synth.handle(channel(0), &MidiMessage::Program { program: 33 });
     synth.handle(channel(0), &note_on(40, 100));
     render(&mut synth, 4800);
@@ -304,8 +309,38 @@ fn a_bank_without_a_drum_file_plays_no_drums() {
     assert_eq!(bank.melodic_instrument(24).as_deref(), Some("guitar"));
     assert!(bank.instruments().iter().all(|entry| entry.bank.msb() == 0));
     let mut synth = bank.synth(RATE);
+    synth.prepare_all();
     synth.handle(Channel::DRUMS, &note_on(38, 100));
     assert_eq!(synth.sounding(), 0);
     synth.handle(channel(0), &note_on(60, 100));
     assert_eq!(synth.sounding(), 1);
+}
+
+#[test]
+fn an_unprepared_sample_is_skipped_and_counted_and_never_decoded_on_note_on() {
+    let bank = tiny_sfz_bank();
+    let mut synth = bank.synth(RATE);
+    synth.handle(channel(0), &MidiMessage::Program { program: 24 });
+    synth.handle(channel(0), &note_on(57, 100));
+    assert_eq!(synth.sounding(), 0);
+    assert_eq!(energy(&render(&mut synth, 4800).0), 0.0);
+    assert_eq!(bank.decode_count(), 0);
+    let skipped = bank.unprepared_count();
+    assert!(skipped > 0);
+    synth.prepare(&[SoundUse {
+        channel: channel(0),
+        bank: MidiBank::default(),
+        program: 24,
+    }]);
+    let prepared = bank.decode_count();
+    assert!(prepared > 0);
+    synth.handle(channel(0), &note_on(57, 100));
+    assert!(synth.sounding() > 0);
+    assert!(energy(&render(&mut synth, 4800).0) > 1.0);
+    assert_eq!(bank.unprepared_count(), skipped);
+    synth.handle(channel(0), &MidiMessage::Program { program: 33 });
+    synth.handle(channel(0), &note_on(40, 100));
+    assert!(bank.unprepared_count() > skipped);
+    assert_eq!(bank.decode_count(), prepared);
+    assert!(bank.faults().is_empty(), "{:?}", bank.faults());
 }

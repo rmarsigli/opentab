@@ -74,6 +74,7 @@ fn cc(synth: &mut SfzSynth, controller: u8, value: u8) {
 
 fn played(bank: &TestBank, key: u8, velocity: u8, frames: usize) -> Vec<f32> {
     let mut synth = bank.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, key, velocity);
     render(&mut synth, frames).0
 }
@@ -114,6 +115,7 @@ fn hikey_and_lokey_select_regions() {
     );
     for key in [30u8, 59, 60, 90] {
         let mut synth = test.bank.synth(RATE);
+        synth.prepare_all();
         on(&mut synth, key, 100);
         assert_eq!(synth.sounding(), 1, "key {key}");
     }
@@ -130,6 +132,7 @@ fn key_sets_the_range_and_the_centre() {
     );
     let test = bank("<region> key=40 sample=kick.wav");
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 41, 100);
     assert_eq!(synth.sounding(), 0);
     on(&mut synth, 40, 100);
@@ -143,6 +146,7 @@ fn lovel_and_hivel_select_layers_and_an_inverted_range_never_sounds() {
     );
     for velocity in [1u8, 63, 64, 127] {
         let mut synth = test.bank.synth(RATE);
+        synth.prepare_all();
         on(&mut synth, 60, velocity);
         assert_eq!(synth.sounding(), 1, "velocity {velocity}");
     }
@@ -184,11 +188,13 @@ fn volume_amplitude_and_pan_set_the_level() {
     assert!((half / loud - 0.5).abs() < 0.01);
     let panned = bank(&looped_sine("pan=-100"));
     let mut synth = panned.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 69, 127);
     let (left, right) = render(&mut synth, SECOND / 4);
     assert!(energy(&right) < energy(&left) * 1e-6);
     let centre = bank(&looped_sine(""));
     let mut synth = centre.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 69, 127);
     let (left, right) = render(&mut synth, SECOND / 4);
     assert!((energy(&left) / energy(&right) - 1.0).abs() < 1e-6);
@@ -221,6 +227,7 @@ fn the_amplitude_envelope_follows_attack_hold_decay_sustain_and_release() {
         "ampeg_attack=0.1 ampeg_hold=0.1 ampeg_decay=0.1 ampeg_sustain=25 ampeg_release=0.2",
     ));
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 69, 127);
     let (left, _) = render(&mut synth, SECOND / 2);
     let block = |from: f64| {
@@ -249,6 +256,7 @@ fn loop_modes_decide_how_a_sample_ends() {
         "<region> sample=sine.wav loop_mode=loop_sustain loop_start=200 loop_end=599 pitch_keycenter=69 ampeg_release=5",
     );
     let mut synth = sustain.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 69, 127);
     render(&mut synth, SECOND / 10);
     off(&mut synth, 69);
@@ -256,6 +264,7 @@ fn loop_modes_decide_how_a_sample_ends() {
     assert!(sounding_length(&tail) < 600, "{}", sounding_length(&tail));
     let shot = bank("<region> sample=kick.wav loop_mode=one_shot");
     let mut synth = shot.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 60, 127);
     off(&mut synth, 60);
     let (tail, _) = render(&mut synth, SECOND);
@@ -289,6 +298,7 @@ fn a_closed_hat_chokes_the_open_hat_through_off_by() {
         "<group> group=1\n<region> key=42 sample=hat.wav loop_mode=one_shot\n<group> group=2 off_by=1\n<region> key=46 sample=open.wav loop_mode=one_shot\n",
     );
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 46, 127);
     render(&mut synth, 480);
     on(&mut synth, 42, 127);
@@ -296,6 +306,7 @@ fn a_closed_hat_chokes_the_open_hat_through_off_by() {
     render(&mut synth, SECOND / 50);
     assert_eq!(synth.sounding(), 1);
     let mut free = test.bank.synth(RATE);
+    free.prepare_all();
     on(&mut free, 46, 127);
     render(&mut free, 480);
     on(&mut free, 46, 127);
@@ -309,6 +320,7 @@ fn voices_of_one_note_never_choke_each_other() {
         "<group> group=1 off_by=1\n<region> key=42 sample=hat.wav\n<region> key=42 sample=snare.wav\n",
     );
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 42, 127);
     render(&mut synth, SECOND / 50);
     assert_eq!(synth.sounding(), 2);
@@ -324,6 +336,7 @@ fn off_mode_sets_the_choke_fade() {
             "<group> group=1\n<region> key=42 sample=hat.wav\n<group> group=2 off_by=1 ampeg_release=0.05 {mode}\n<region> key=46 sample=sine.wav loop_mode=loop_continuous loop_start=200 loop_end=599\n"
         ));
         let mut synth = test.bank.synth(RATE);
+        synth.prepare_all();
         on(&mut synth, 46, 127);
         render(&mut synth, 480);
         on(&mut synth, 42, 127);
@@ -353,6 +366,7 @@ fn lorand_and_hirand_pick_regions_deterministically() {
     );
     let picks = |bank: &TestBank| {
         let mut synth = bank.bank.synth(RATE);
+        synth.prepare_all();
         (0..64)
             .map(|_| {
                 synth.reset();
@@ -363,6 +377,7 @@ fn lorand_and_hirand_pick_regions_deterministically() {
     };
     assert!(picks(&test).iter().all(|count| *count == 1));
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     let mut lengths = Vec::new();
     for _ in 0..32 {
         on(&mut synth, 60, 100);
@@ -381,6 +396,7 @@ fn seq_length_and_seq_position_alternate_regions() {
         "<group> seq_length=2\n<region> seq_position=1 sample=kick.wav\n<region> seq_position=2 sample=hat.wav\n",
     );
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     let mut firsts = Vec::new();
     for _ in 0..4 {
         on(&mut synth, 60, 127);
@@ -404,6 +420,7 @@ fn trigger_first_and_legato_follow_held_notes_and_release_regions_are_dropped() 
         "<region> trigger=first sample=kick.wav\n<region> trigger=legato sample=hat.wav\n<region> trigger=release sample=snare.wav\n",
     );
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 60, 100);
     assert_eq!(synth.sounding(), 1);
     on(&mut synth, 62, 100);
@@ -430,17 +447,20 @@ fn trigger_first_and_legato_follow_held_notes_and_release_regions_are_dropped() 
 fn keyswitches_are_fixed_by_sw_default_or_the_lowest_sw_last() {
     let lowest = bank("<region> sw_last=24 sample=kick.wav\n<region> sw_last=25 sample=hat.wav\n");
     let mut synth = lowest.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 60, 100);
     assert_eq!(synth.sounding(), 1);
     let chosen = bank(
         "<global> sw_lokey=24 sw_hikey=26 sw_default=25\n<region> sw_last=24 sample=kick.wav\n<region> sw_last=25 sample=hat.wav\n<region> sample=snare.wav\n",
     );
     let mut synth = chosen.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 60, 100);
     assert_eq!(synth.sounding(), 2);
     let first = render(&mut synth, 1000).0;
     let reference = bank("<region> sample=hat.wav\n<region> sample=snare.wav\n");
     let mut hat_only = reference.bank.synth(RATE);
+    hat_only.prepare_all();
     on(&mut hat_only, 60, 100);
     assert_eq!(first, render(&mut hat_only, 1000).0);
 }
@@ -451,6 +471,7 @@ fn controller_ranges_use_set_cc_and_the_stream_but_never_rpn_controllers() {
         "<control> set_cc100=0 set_cc64=0\n<region> locc100=0 hicc100=63 sample=kick.wav\n<region> locc100=64 hicc100=127 sample=hat.wav\n<region> locc1=10 sample=snare.wav\n",
     );
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 60, 100);
     assert_eq!(synth.sounding(), 1);
     synth.handle(
@@ -494,9 +515,11 @@ fn rpn_and_nrpn_controllers_never_move_the_controller_state() {
             "<control> set_cc{controller}=0\n<region> hicc{controller}=63 sample=kick.wav\n<region> locc{controller}=64 sample=hat.wav\n"
         ));
         let mut reference = test.bank.synth(RATE);
+        reference.prepare_all();
         on(&mut reference, 60, 100);
         let expected = render(&mut reference, 2400).0;
         let mut synth = test.bank.synth(RATE);
+        synth.prepare_all();
         synth.handle(
             channel(),
             &MidiMessage::Rpn {
@@ -519,6 +542,7 @@ fn rpn_and_nrpn_controllers_never_move_the_controller_state() {
 fn the_controller_state_starts_from_set_cc() {
     let test = bank("<control> set_cc30=100\n<region> locc30=64 sample=kick.wav\n");
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     on(&mut synth, 60, 100);
     assert_eq!(synth.sounding(), 1);
     synth.handle(
@@ -693,6 +717,7 @@ fn the_ogg_and_flac_samples_play_through_regions() {
     let bank = SfzBank::load(&root).expect("loads");
     for key in [40u8, 70] {
         let mut synth = bank.synth(RATE);
+        synth.prepare_all();
         on(&mut synth, key, 120);
         assert!(energy(&render(&mut synth, 4800).0) > 1.0, "key {key}");
     }
@@ -702,6 +727,7 @@ fn the_ogg_and_flac_samples_play_through_regions() {
 fn voice_stealing_keeps_the_polyphony_cap() {
     let test = bank(&looped_sine(""));
     let mut synth = test.bank.synth(RATE);
+    synth.prepare_all();
     for index in 0..200u32 {
         on(&mut synth, 40 + (index % 60) as u8, 100);
     }

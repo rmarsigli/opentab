@@ -434,6 +434,7 @@ fn a_hostile_sample_is_refused_at_play_time_silenced_and_reported_once() {
     );
     let bank = SfzBank::load(&root).expect("loads");
     let mut synth = bank.synth(SampleRate::STUDIO);
+    synth.prepare_all();
     let channel = Channel::new(0).expect("channel");
     for _ in 0..3 {
         synth.handle(
