@@ -233,16 +233,11 @@ fn main() {
     sfz::symlink_bombs_are_refused_before_listing();
     sfz::include_bombs_stop_at_the_bank_include_cap();
     sfz::an_inherited_sample_is_shared_not_copied_per_region();
-    transport::the_transport_processes_blocks_without_allocating();
     let dir = tempfile::Builder::new()
         .prefix("sfz-")
         .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
         .expect("scratch");
     let root = opentab_testkit::banks::tiny_sfz(dir.path());
-    let sfz = transport::sfz_allocations_after_preparation(&root);
-    println!(
-        "memory: SFZ transport blocks allocate {} times ({} bytes) after preparation",
-        sfz.allocations, sfz.bytes_allocated
-    );
+    transport::the_transport_processes_blocks_without_allocating(&root);
     println!("memory: 15 checks passed");
 }
