@@ -114,15 +114,15 @@ pub fn capture(prepared: &mut Prepared) -> Result<RenderedAudio, CliError> {
     let remaining = scope
         .map(|scope| frames_to_end(session, scope, prepared.speed, rate))
         .unwrap_or_default();
-    if let Some(range) = range {
-        deliver(session, TransportCommand::Seek(range.first));
-    }
     if prepared.tracks.len() < prepared.names.len() {
         for track in &prepared.tracks {
             deliver(session, TransportCommand::Solo(*track, true));
         }
     }
-    deliver(session, TransportCommand::Play);
+    deliver(
+        session,
+        range.map_or(TransportCommand::Play, TransportCommand::PlayRange),
+    );
     let mut buffers = Buffers {
         left: Vec::new(),
         right: Vec::new(),
@@ -140,11 +140,7 @@ pub fn capture(prepared: &mut Prepared) -> Result<RenderedAudio, CliError> {
             }
             break;
         }
-        if let Some(range) = range
-            && status.state == TransportState::Playing
-            && status.played_bar > range.last
-        {
-            deliver(session, TransportCommand::Pause);
+        if status.state == TransportState::Paused {
             break;
         }
         size = block_size(&remaining, status.played_bar);

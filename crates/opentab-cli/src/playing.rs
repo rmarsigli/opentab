@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use opentab_audio::{
     AudioOutput, BarRange, QueueFull, Session, TransportCommand, TransportHandle, TransportState,
+    TransportStatus,
 };
 
 use crate::error::CliError;
@@ -46,10 +47,31 @@ fn halt<D: Device>(handle: &mut TransportHandle, device: &mut D, pacing: Pacing)
     CliError::Interrupted
 }
 
+fn finished(status: &TransportStatus) -> bool {
+    match status.state {
+        TransportState::Stopped => status.frame > 0,
+        TransportState::Paused => true,
+        TransportState::Playing | TransportState::CountIn => false,
+    }
+}
+
+fn commands(start: &Start) -> Vec<TransportCommand> {
+    let mut commands: Vec<TransportCommand> = start
+        .solo
+        .iter()
+        .map(|track| TransportCommand::Solo(*track, true))
+        .collect();
+    commands.push(
+        start
+            .range
+            .map_or(TransportCommand::Play, TransportCommand::PlayRange),
+    );
+    commands
+}
+
 fn wait<D: Device>(
     handle: &mut TransportHandle,
     device: &mut D,
-    start: &Start,
     interrupt: &AtomicBool,
     pacing: Pacing,
 ) -> Result<u64, CliError> {
@@ -57,16 +79,7 @@ fn wait<D: Device>(
         if interrupt.load(Ordering::SeqCst) {
             return Err(halt(handle, device, pacing));
         }
-        let status = handle.status();
-        if status.state == TransportState::Stopped && status.frame > 0 {
-            break;
-        }
-        if status.state == TransportState::Playing
-            && start
-                .range
-                .is_some_and(|range| status.played_bar > range.last)
-        {
-            send(handle, TransportCommand::Pause)?;
+        if finished(&handle.status()) {
             break;
         }
         if device.has_failed() {
@@ -96,15 +109,11 @@ pub fn perform<D: Device>(
     pacing: Pacing,
 ) -> Result<u64, CliError> {
     let (transport, mut handle) = session.split();
-    if let Some(range) = start.range {
-        send(&mut handle, TransportCommand::Seek(range.first))?;
+    for command in commands(start) {
+        send(&mut handle, command)?;
     }
-    for track in &start.solo {
-        send(&mut handle, TransportCommand::Solo(*track, true))?;
-    }
-    send(&mut handle, TransportCommand::Play)?;
     device.start(transport)?;
-    let frames = wait(&mut handle, device, start, interrupt, pacing)?;
+    let frames = wait(&mut handle, device, interrupt, pacing)?;
     let _ = device.stop();
     Ok(frames)
 }
@@ -127,6 +136,7 @@ mod tests {
     const POLL: Duration = Duration::from_millis(50);
     const PAUSE_LIMIT: u32 = 100_000;
     const FRAMES_PER_PAUSE: u64 = 2_400;
+    const ODD_FRAMES: u64 = 7_000;
 
     struct Trip {
         after: u32,
@@ -249,7 +259,7 @@ mod tests {
     #[test]
     fn a_score_that_ended_before_the_first_poll_needs_no_poll() {
         let (_dir, path) = short_score();
-        let (session, start) = start_of(&path, &[]);
+        let (session, _start) = start_of(&path, &[]);
         let mut device = Stepped::new(100_000, None);
         let (transport, mut handle) = session.split();
         handle.send(TransportCommand::Play).expect("queued");
@@ -257,14 +267,8 @@ mod tests {
         device.output.step(100_000);
         assert_eq!(handle.status().state, TransportState::Stopped);
         let interrupt = AtomicBool::new(false);
-        let frames = wait(
-            &mut handle,
-            &mut device,
-            &start,
-            &interrupt,
-            pacing(Duration::ZERO),
-        )
-        .expect("waited");
+        let frames =
+            wait(&mut handle, &mut device, &interrupt, pacing(Duration::ZERO)).expect("waited");
         assert_eq!(device.pauses, 0);
         assert!(frames > 0);
     }
@@ -316,7 +320,7 @@ mod tests {
     #[test]
     fn a_stop_is_applied_before_the_output_is_released() {
         let path = fixture("repeats.gp");
-        let (session, start) = start_of(&path, &[]);
+        let (session, _start) = start_of(&path, &[]);
         let (transport, mut handle) = session.split();
         let mut device = Stepped::new(FRAMES_PER_PAUSE, None);
         handle.send(TransportCommand::Play).expect("queued");
@@ -324,8 +328,7 @@ mod tests {
         device.pause(POLL);
         assert_eq!(handle.status().state, TransportState::Playing);
         let flag = AtomicBool::new(true);
-        let error =
-            wait(&mut handle, &mut device, &start, &flag, pacing(POLL)).expect_err("interrupted");
+        let error = wait(&mut handle, &mut device, &flag, pacing(POLL)).expect_err("interrupted");
         assert!(matches!(error, CliError::Interrupted));
         assert_eq!(handle.status().state, TransportState::Stopped);
         assert!(device.stopped);
@@ -353,19 +356,43 @@ mod tests {
     }
 
     #[test]
-    fn a_ranged_play_pauses_after_its_last_bar() {
+    fn the_start_solos_then_plays_the_range_or_the_whole_score() {
+        let range = BarRange { first: 1, last: 2 };
+        let ranged = Start {
+            range: Some(range),
+            solo: vec![0, 2],
+        };
+        assert_eq!(
+            commands(&ranged),
+            vec![
+                TransportCommand::Solo(0, true),
+                TransportCommand::Solo(2, true),
+                TransportCommand::PlayRange(range),
+            ]
+        );
+        let whole = Start {
+            range: None,
+            solo: Vec::new(),
+        };
+        assert_eq!(commands(&whole), vec![TransportCommand::Play]);
+    }
+
+    #[test]
+    fn a_ranged_play_is_paused_by_the_transport_at_its_last_bar() {
         let path = fixture("repeats.gp");
-        let (session, start) = start_of(&path, &["--bars", "2"]);
-        let (transport, mut handle) = session.split();
-        let mut device = Stepped::new(FRAMES_PER_PAUSE, None);
-        handle.send(TransportCommand::Seek(1)).expect("queued");
-        handle.send(TransportCommand::Play).expect("queued");
-        device.start(transport).expect("started");
-        let interrupt = AtomicBool::new(false);
-        let frames =
-            wait(&mut handle, &mut device, &start, &interrupt, pacing(POLL)).expect("waited");
-        assert_eq!(handle.status().state, TransportState::Paused);
-        assert!(frames >= 96_000, "{frames}");
-        assert!(frames < 96_000 + 3 * FRAMES_PER_PAUSE, "{frames}");
+        for (frames_per_pause, until) in [(FRAMES_PER_PAUSE, 96_000), (ODD_FRAMES, 98_000)] {
+            let (session, start) = start_of(&path, &["--bars", "2"]);
+            let (transport, mut handle) = session.split();
+            let mut device = Stepped::new(frames_per_pause, None);
+            for command in commands(&start) {
+                handle.send(command).expect("queued");
+            }
+            device.start(transport).expect("started");
+            let interrupt = AtomicBool::new(false);
+            let frames =
+                wait(&mut handle, &mut device, &interrupt, pacing(Duration::ZERO)).expect("waited");
+            assert_eq!(handle.status().state, TransportState::Paused);
+            assert_eq!(frames, until, "{frames_per_pause}");
+        }
     }
 }
