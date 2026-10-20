@@ -1348,3 +1348,45 @@ fn the_count_in_ends_on_the_first_note_of_a_track_that_is_heard() {
         }
     }
 }
+
+#[test]
+fn the_song_end_inside_a_loop_wraps_to_the_loop_start() {
+    let mut performance = performance(&fixture("repeats.gp"), Profile::Musical);
+    let last = performance.order.bars.last().cloned().expect("a bar");
+    let start = ScoreTime::new(performance.order.end().whole_notes() + Fraction::new_raw(1, 4))
+        .expect("time");
+    performance.order.bars.push(PlayedBar {
+        source: last.source,
+        start,
+        length: Fraction::new_raw(0, 1),
+        pass: last.pass,
+    });
+    let tail = performance.order.bars.len() - 1;
+    let mut session = Session::new(
+        performance.clone(),
+        built_in_voices(&performance, RATE),
+        config(RATE),
+    )
+    .expect("session");
+    let mut left = vec![0.0f32; 512];
+    let mut right = vec![0.0f32; 512];
+    session
+        .handle
+        .send(TransportCommand::Loop(range(tail, tail)))
+        .expect("send");
+    session.handle.send(TransportCommand::Play).expect("send");
+    for _ in 0..8 {
+        session.transport.process(&mut left, &mut right);
+        let status = session.handle.status();
+        assert_eq!(status.state, opentab_audio::TransportState::Playing);
+        assert_eq!(status.played_bar, tail);
+    }
+    session
+        .handle
+        .send(TransportCommand::ClearLoop)
+        .expect("send");
+    session.transport.process(&mut left, &mut right);
+    let status = session.handle.status();
+    assert_eq!(status.state, opentab_audio::TransportState::Stopped);
+    assert_eq!(status.played_bar, 0);
+}

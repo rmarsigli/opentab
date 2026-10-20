@@ -793,18 +793,18 @@ impl Transport {
             }
             self.next_click += 1;
         }
-        if let Some(span) = self.span
-            && !self.wrapped
-            && is_due(span.end_unit, position, step)
-        {
-            self.move_to(span.range.first);
-            self.chase_now();
-            self.wrapped = true;
-            return true;
+        let ended = self.next_event >= self.timeline.events.len()
+            && is_due(self.timeline.end, position, step);
+        if let Some(span) = self.span {
+            if !self.wrapped && (ended || is_due(span.end_unit, position, step)) {
+                self.move_to(span.range.first);
+                self.chase_now();
+                self.wrapped = true;
+                return true;
+            }
+            return false;
         }
-        if self.next_event >= self.timeline.events.len()
-            && is_due(self.timeline.end, position, step)
-        {
+        if ended {
             self.silence();
             self.state = TransportState::Stopped;
             if self.timeline.bar_count() > 0 {
