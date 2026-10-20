@@ -22,9 +22,16 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: alsa headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: fmt
         run: cargo fmt --all --check
       - name: clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: clippy live
+        run: cargo clippy --locked -p opentab-audio --features live --all-targets -- -D warnings
+      - name: build live
+        run: cargo build --locked -p opentab-audio --features live
       - name: test
         run: cargo test --locked --workspace --no-fail-fast

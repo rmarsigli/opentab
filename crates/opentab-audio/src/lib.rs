@@ -8,6 +8,9 @@ mod bank;
 mod command;
 mod error;
 mod gm;
+#[cfg(feature = "live")]
+mod live;
+mod output;
 mod rate;
 mod render;
 mod schedule;
@@ -25,6 +28,9 @@ pub use builtin::{DRUM_DECAY_MS, MELODIC_RELEASE_MS, OUTPUT_FRACTION_BITS, Sound
 pub use bus::{BUS_FRACTION_BITS, Limiter, LimiterSettings};
 pub use command::{BarRange, COMMAND_CAPACITY, QueueFull, TransportCommand};
 pub use error::{AudioError, BankError, SF3_UNSUPPORTED, UnsafeBank};
+#[cfg(feature = "live")]
+pub use live::CpalOutput;
+pub use output::{AudioOutput, NULL_TICK_MILLIS, NullClock, NullOutput, OutputError};
 pub use rate::SampleRate;
 pub use render::{
     BLOCK_FRAMES, MAX_FRAMES, RENDER_TAIL_MS, RenderedAudio, TRACK_HEADROOM, full_length,

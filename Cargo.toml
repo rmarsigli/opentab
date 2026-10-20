@@ -48,6 +48,7 @@ hound = "=3.5.1"
 claxon = "=0.4.3"
 lewton = { version = "=0.10.2", default-features = false, features = ["ogg"] }
 ogg = { version = "=0.8.0", default-features = false }
+cpal = { version = "=0.18.2", default-features = false }
 
 [profile.dev.package.rustysynth]
 opt-level = 3

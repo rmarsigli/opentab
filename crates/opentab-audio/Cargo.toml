@@ -6,7 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+live = ["dep:cpal"]
+
 [dependencies]
+cpal = { workspace = true, optional = true }
 opentab-model = { path = "../opentab-model" }
 opentab-playback = { path = "../opentab-playback" }
 rustysynth.workspace = true
