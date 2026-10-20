@@ -1,3 +1,5 @@
+use opentab_model::{TextForm, unwritable_character};
+
 use crate::dom::{self, Element, Node};
 use crate::error::{GpError, Refusal};
 
@@ -59,11 +61,6 @@ impl<T> Within<T> for Result<T, Refusal> {
     }
 }
 
-fn is_text_char(character: char) -> bool {
-    matches!(character,
-        '\t' | '\n' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..)
-}
-
 fn is_name_start(character: char) -> bool {
     matches!(character,
         ':' | 'A'..='Z' | '_' | 'a'..='z'
@@ -96,11 +93,8 @@ pub(crate) fn depth(root: &Element) -> usize {
     deepest
 }
 
-pub(crate) fn check_escaped(text: &str) -> Result<(), Refusal> {
-    match text
-        .chars()
-        .find(|character| *character != '\r' && !is_text_char(*character))
-    {
+fn check_form(text: &str, form: TextForm) -> Result<(), Refusal> {
+    match unwritable_character(text, form) {
         Some(character) => Err(Refusal::Character {
             code: u32::from(character),
         }),
@@ -108,13 +102,12 @@ pub(crate) fn check_escaped(text: &str) -> Result<(), Refusal> {
     }
 }
 
+pub(crate) fn check_escaped(text: &str) -> Result<(), Refusal> {
+    check_form(text, TextForm::Escaped)
+}
+
 pub(crate) fn check_text(text: &str) -> Result<(), Refusal> {
-    match text.chars().find(|character| !is_text_char(*character)) {
-        Some(character) => Err(Refusal::Character {
-            code: u32::from(character),
-        }),
-        None => Ok(()),
-    }
+    check_form(text, TextForm::Literal)
 }
 
 pub(crate) fn text(name: &str, value: &str) -> Result<Element, Refusal> {

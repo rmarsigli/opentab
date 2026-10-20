@@ -6,8 +6,8 @@ use crate::fraction::{checked_sum, deserialize_non_negative};
 use crate::{
     AutomationValue, Bar, BarId, Beat, BeatId, DirectionJump, DirectionTarget, ElementId, Fraction,
     InstrumentKind, JumpDestination, MAX_DRUM_BEAT_NOTES, MasterBar, MasterBarId, NoteId, NoteKind,
-    Score, SoundRef, Staff, StaffId, Track, TrackId, Voice, VoiceId, automations_in_order,
-    check_program, on_automation_grid,
+    Score, SoundRef, Staff, StaffId, TextForm, Track, TrackId, Voice, VoiceId,
+    automations_in_order, check_program, on_automation_grid, unwritable_character,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -140,6 +140,11 @@ pub enum Diagnostic {
         jump: DirectionJump,
         target: DirectionTarget,
     },
+    UnwritableText {
+        element: Option<ElementId>,
+        field: String,
+        code: u32,
+    },
 }
 
 pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
@@ -149,13 +154,16 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
         limit: score.ids.peek(),
         diagnostics: Vec::new(),
     };
+    report.meta(score);
     for master_bar in &score.master_bars {
         report.id(master_bar.id.0);
         report.tempo_changes(master_bar);
+        report.marker(master_bar);
     }
     report.directions(&score.master_bars);
     for track in &score.tracks {
         report.id(track.id.0);
+        report.track_texts(track);
         report.instrument(track);
         report.automations(score, track);
         for staff in &track.staves {
@@ -209,6 +217,70 @@ impl Report {
             }
         } else if id >= self.limit {
             self.diagnostics.push(Diagnostic::IdAboveAllocator { id });
+        }
+    }
+
+    fn text(&mut self, element: Option<ElementId>, field: &str, text: &str, form: TextForm) {
+        if let Some(character) = unwritable_character(text, form) {
+            self.diagnostics.push(Diagnostic::UnwritableText {
+                element,
+                field: field.to_string(),
+                code: u32::from(character),
+            });
+        }
+    }
+
+    fn meta(&mut self, score: &Score) {
+        let meta = &score.meta;
+        let literal = TextForm::Literal;
+        self.text(None, "meta.title", &meta.title, literal);
+        self.text(None, "meta.subtitle", &meta.subtitle, literal);
+        self.text(None, "meta.artist", &meta.artist, literal);
+        self.text(None, "meta.album", &meta.album, literal);
+        self.text(None, "meta.words", &meta.words, literal);
+        self.text(None, "meta.music", &meta.music, literal);
+        self.text(None, "meta.copyright", &meta.copyright, literal);
+        self.text(None, "meta.tab_author", &meta.tab_author, literal);
+        self.text(None, "meta.instructions", &meta.instructions, literal);
+        self.text(None, "meta.notices", &meta.notices, literal);
+    }
+
+    fn marker(&mut self, master_bar: &MasterBar) {
+        if let Some(marker) = &master_bar.marker {
+            let id = Some(master_bar.id.0);
+            self.text(id, "marker.letter", &marker.letter, TextForm::Literal);
+            self.text(id, "marker.text", &marker.text, TextForm::Literal);
+        }
+    }
+
+    fn track_texts(&mut self, track: &Track) {
+        let id = Some(track.id.0);
+        self.text(id, "name", &track.name, TextForm::Literal);
+        self.text(id, "short_name", &track.short_name, TextForm::Literal);
+        for (index, sound) in track.sounds.iter().enumerate() {
+            let field = format!("sounds[{index}].name");
+            self.text(id, &field, &sound.name, TextForm::Literal);
+        }
+        let Some(kit) = &track.drum_kit else {
+            return;
+        };
+        let escaped = TextForm::Escaped;
+        for element in kit.elements() {
+            for text in [&element.name, &element.kind, &element.soundbank] {
+                self.text(id, "drum_kit", text, escaped);
+            }
+        }
+        for articulation in kit.articulations() {
+            for text in [
+                &articulation.name,
+                &articulation.technique_symbol,
+                &articulation.rse_sound,
+            ] {
+                self.text(id, "drum_kit", text, escaped);
+            }
+            for name in &articulation.noteheads {
+                self.text(id, "drum_kit", name, escaped);
+            }
         }
     }
 
@@ -463,6 +535,9 @@ impl Report {
         self.id(voice.id.0);
         for beat in &voice.beats {
             self.id(beat.id.0);
+            if let Some(text) = &beat.effects.text {
+                self.text(Some(beat.id.0), "effects.text", text, TextForm::Literal);
+            }
             for note in &beat.notes {
                 self.id(note.id.0);
                 self.note(track, note.id, note.kind, expected.articulations);

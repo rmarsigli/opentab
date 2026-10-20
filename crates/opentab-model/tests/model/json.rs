@@ -193,6 +193,11 @@ fn rich_score_round_trips_losslessly() {
     assert_eq!(
         diagnose(&score),
         vec![
+            Diagnostic::UnwritableText {
+                element: None,
+                field: "meta.artist".to_string(),
+                code: 0,
+            },
             Diagnostic::InexactTempo {
                 master_bar: score.master_bars[0].id,
                 position: Fraction::new(3, 8),
@@ -427,14 +432,22 @@ fn mismatched_staff_from_json_is_diagnosed() {
     value["master_bars"] = json!([]);
     let score = from_json(&value.to_string()).unwrap();
     let diagnostics = diagnose(&score);
-    assert_eq!(diagnostics.len(), 4);
+    assert_eq!(diagnostics.len(), 5);
+    assert_eq!(
+        diagnostics[0],
+        Diagnostic::UnwritableText {
+            element: None,
+            field: "meta.artist".to_string(),
+            code: 0,
+        }
+    );
     let mismatches = diagnostics
         .iter()
         .filter(|d| matches!(d, Diagnostic::StaffBarCountMismatch { master_bars: 0, .. }))
         .count();
     assert_eq!(mismatches, 2);
     assert_eq!(
-        &diagnostics[2..],
+        &diagnostics[3..],
         &[
             Diagnostic::OrphanExtension { id: ElementId(1) },
             Diagnostic::OrphanExtension {

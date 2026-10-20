@@ -789,3 +789,31 @@ fn a_tempo_without_an_exact_value_is_reported_where_it_sits() {
         diagnose(&score)[0]
     );
 }
+
+#[test]
+fn text_an_xml_document_cannot_hold_is_reported_where_it_sits() {
+    let mut score = four_four(&quarters(4));
+    score.meta.title = "a\u{1}".to_string();
+    score.tracks[0].name = "b\r".to_string();
+    score.tracks[0].short_name = "tab\tand\nline".to_string();
+    let track = score.tracks[0].id.0;
+    assert_eq!(
+        diagnose(&score),
+        vec![
+            Diagnostic::UnwritableText {
+                element: None,
+                field: "meta.title".to_string(),
+                code: 1,
+            },
+            Diagnostic::UnwritableText {
+                element: Some(track),
+                field: "name".to_string(),
+                code: 13,
+            },
+        ]
+    );
+    assert_eq!(
+        opentab_model::unwritable_character("b\r", opentab_model::TextForm::Escaped),
+        None
+    );
+}

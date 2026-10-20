@@ -14,6 +14,7 @@ mod master_bar;
 mod midi;
 mod play_order;
 mod score;
+mod text;
 mod track;
 
 pub use blank::blank_score;
@@ -49,6 +50,7 @@ pub use midi::{
 };
 pub use play_order::{MAX_PLAYED_BARS, PlayedSource, SourceOrder, source_order};
 pub use score::{BeatPath, NotePath, Score, ScoreMeta, VoicePath};
+pub use text::{TextForm, unwritable_character};
 pub use track::{
     Bar, Beat, Clef, Instrument, InstrumentKind, Note, NoteKind, Pitch, Staff, Track, Transpose,
     TrillTuning, Tuning, Voice, VoiceSlot,
