@@ -242,3 +242,33 @@ fn tempo_commands_refuse_a_tempo_without_an_exact_value() {
         CommandError::InvalidValue { .. }
     ));
 }
+
+#[test]
+fn a_master_bar_holding_an_inexact_tempo_is_removed_and_restored() {
+    let mut fx = fixture();
+    fx.score.master_bars[1].tempo_changes = vec![
+        change(Fraction::from_integer(0), 128.488_062_080_115_01),
+        change(Fraction::new(1, 2), 120.123_456_7),
+    ];
+    assert!(
+        fx.score.master_bars[1].tempo_changes[0]
+            .bpm
+            .exact()
+            .is_none()
+    );
+    let original = fx.score.clone();
+    let inverse = apply(&mut fx.score, &Command::RemoveMasterBar { index: 1 }).unwrap();
+    assert_eq!(fx.score.master_bars.len(), 1);
+    apply(&mut fx.score, &inverse).unwrap();
+    assert_eq!(fx.score, original);
+    let mut late = inverse.clone();
+    let Command::RestoreMasterBar { master_bar, .. } = &mut late else {
+        panic!("restore_master_bar expected");
+    };
+    master_bar.tempo_changes[1].position = Fraction::from_integer(1);
+    apply(&mut fx.score, &Command::RemoveMasterBar { index: 1 }).unwrap();
+    assert!(matches!(
+        rejected(&mut fx.score, &late),
+        CommandError::InvalidValue { .. }
+    ));
+}

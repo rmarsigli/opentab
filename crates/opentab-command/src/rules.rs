@@ -182,10 +182,19 @@ pub(crate) fn check_tempo_changes(
     time_signature: TimeSignature,
     tempo_changes: &[TempoChange],
 ) -> Result<(), CommandError> {
+    for change in tempo_changes {
+        check_exact(change.bpm)?;
+    }
+    check_tempo_positions(time_signature, tempo_changes)
+}
+
+pub(crate) fn check_tempo_positions(
+    time_signature: TimeSignature,
+    tempo_changes: &[TempoChange],
+) -> Result<(), CommandError> {
     let start = Fraction::from_integer(0);
     let end = time_signature.bar_length();
     for change in tempo_changes {
-        check_exact(change.bpm)?;
         let position = change.position;
         if *position.denom() <= 0 || position < start || position >= end {
             return Err(CommandError::invalid(format!(

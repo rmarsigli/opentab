@@ -9,7 +9,7 @@ use crate::midi::{
     check_removable_automations, check_restorable_automations, put_automations, take_automations,
 };
 use crate::rules::{
-    Owner, already_broken, check_bar, check_tempo_changes, clef_for_new_bar, empty_bar,
+    Owner, already_broken, check_bar, check_tempo_positions, clef_for_new_bar, empty_bar,
 };
 use crate::{AutomationEntry, Command, CommandError, ExtensionEntry};
 
@@ -56,7 +56,7 @@ fn check_contents<'a, I>(score: &Score, master_bar: &MasterBar, bars: I) -> Resu
 where
     I: Iterator<Item = &'a Bar>,
 {
-    check_tempo_changes(master_bar.time_signature, &master_bar.tempo_changes)?;
+    check_tempo_positions(master_bar.time_signature, &master_bar.tempo_changes)?;
     let owners = score
         .tracks
         .iter()
