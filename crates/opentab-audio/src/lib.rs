@@ -5,6 +5,7 @@ mod builtin;
 mod bus;
 
 mod bank;
+mod catalogue_file;
 mod chase;
 mod command;
 mod error;
@@ -28,6 +29,10 @@ mod wav;
 pub use bank::{BuiltInBank, BuiltInSynth};
 pub use builtin::{DRUM_DECAY_MS, MELODIC_RELEASE_MS, OUTPUT_FRACTION_BITS, SoundingVoice};
 pub use bus::{BUS_FRACTION_BITS, Limiter, LimiterSettings};
+pub use catalogue_file::{
+    CATALOGUE_MAX_BYTES, CATALOGUE_VARIABLE, CatalogueFileError, catalogue_from_file,
+    catalogue_override,
+};
 pub use command::{BarRange, COMMAND_CAPACITY, QueueFull, TransportCommand};
 pub use error::{AudioError, BankError, SF3_UNSUPPORTED, UnsafeBank};
 #[cfg(feature = "live")]

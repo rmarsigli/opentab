@@ -2,7 +2,6 @@ mod apply;
 mod audio;
 mod bank_store;
 mod capture;
-mod catalogue_file;
 mod cli;
 mod convert;
 mod error;

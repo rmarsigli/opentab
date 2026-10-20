@@ -7,7 +7,7 @@ use opentab_testkit::http::{LoopbackServer, Reply};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::support::{path_str, run_in, temp};
+use crate::support::{path_str, run_in, run_with_catalogue, temp};
 
 const PATH: &str = "/bank.bin";
 
@@ -234,6 +234,47 @@ fn a_raw_sf2_installs_from_the_loopback_server_and_marks_the_catalogue() {
     assert_eq!(server.requests(), vec![PATH.to_owned()]);
     let banks = soundbank(dir.path(), &["list", "--json"]).json();
     assert_eq!(banks["banks"][0]["id"], json!("hosted-sf2"));
+}
+
+#[test]
+fn the_catalogue_variable_replaces_the_catalogue_unless_a_file_is_given() {
+    let dir = temp();
+    let hosted = sf2_hosted();
+    let server = LoopbackServer::start(vec![Reply::ok(PATH, hosted.bytes.clone())]);
+    let file = catalogue_file(
+        dir.path(),
+        vec![record(&hosted, &server.url(PATH), &hosted.bytes)],
+    );
+    let listed = run_with_catalogue(dir.path(), &file, &["soundbank", "catalogue", "--json"]);
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    let items = listed.json()["catalogue"].as_array().unwrap().clone();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["id"], json!("hosted-sf2"));
+    let gone = dir.path().join("gone.json");
+    let overridden = run_with_catalogue(
+        dir.path(),
+        &gone,
+        &[
+            "soundbank",
+            "catalogue",
+            "--catalogue",
+            path_str(&file),
+            "--json",
+        ],
+    );
+    assert_eq!(overridden.code, 0, "{}", overridden.stderr);
+    assert_eq!(overridden.json()["catalogue"][0]["id"], json!("hosted-sf2"));
+    let missing = run_with_catalogue(dir.path(), &gone, &["soundbank", "catalogue", "--json"]);
+    assert_eq!(missing.code, 2);
+    assert_eq!(missing.json()["error"]["kind"], json!("io"));
+    let installed = run_with_catalogue(
+        dir.path(),
+        &file,
+        &["soundbank", "install", "hosted-sf2", "--json"],
+    );
+    assert_eq!(installed.code, 0, "{}", installed.stderr);
+    assert_eq!(installed.json()["installed"]["id"], json!("hosted-sf2"));
+    assert_eq!(server.requests(), vec![PATH.to_owned()]);
 }
 
 #[test]

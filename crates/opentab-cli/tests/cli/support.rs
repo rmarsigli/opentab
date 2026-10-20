@@ -35,6 +35,17 @@ pub fn run_in(data: &Path, args: &[&str]) -> Run {
     let output = Command::new(env!("CARGO_BIN_EXE_opentab"))
         .args(args)
         .env("OPENTAB_DATA_DIR", data)
+        .env_remove("OPENTAB_CATALOGUE")
+        .output()
+        .expect("spawn opentab");
+    summarise(output)
+}
+
+pub fn run_with_catalogue(data: &Path, catalogue: &Path, args: &[&str]) -> Run {
+    let output = Command::new(env!("CARGO_BIN_EXE_opentab"))
+        .args(args)
+        .env("OPENTAB_DATA_DIR", data)
+        .env("OPENTAB_CATALOGUE", catalogue)
         .output()
         .expect("spawn opentab");
     summarise(output)

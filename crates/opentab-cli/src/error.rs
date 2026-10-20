@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
-use opentab_audio::{AudioError, BankError, InstallError, OutputError};
+use opentab_audio::{AudioError, BankError, CatalogueFileError, InstallError, OutputError};
 use opentab_command::CommandError;
 use opentab_files::FileError;
 use opentab_model::ModelError;
 use opentab_playback::PlaybackError;
 use serde::Serialize;
+
+use crate::text::escape_controls;
 
 pub const EXIT_USAGE: u8 = 1;
 pub const EXIT_INPUT: u8 = 2;
@@ -68,6 +70,17 @@ impl From<BankError> for CliError {
     fn from(error: BankError) -> CliError {
         CliError::SoundBank {
             message: error.to_string(),
+        }
+    }
+}
+
+impl From<CatalogueFileError> for CliError {
+    fn from(error: CatalogueFileError) -> CliError {
+        match error {
+            CatalogueFileError::Io { path, message } => CliError::Io { path, message },
+            CatalogueFileError::Invalid { .. } => CliError::InvalidInput {
+                message: escape_controls(&error.to_string()),
+            },
         }
     }
 }
