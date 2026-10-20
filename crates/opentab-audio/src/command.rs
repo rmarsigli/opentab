@@ -175,3 +175,86 @@ impl CommandReceiver {
         Some(word.and_then(decode))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::{BarRange, COMMAND_CAPACITY, TransportCommand, command_queue, decode, encode};
+    use opentab_playback::Speed;
+
+    const SENT: usize = 200_000;
+
+    fn arb_command() -> impl Strategy<Value = TransportCommand> {
+        let index = prop_oneof![0usize..4096, any::<usize>()];
+        prop_oneof![
+            Just(TransportCommand::Play),
+            Just(TransportCommand::Pause),
+            Just(TransportCommand::Stop),
+            Just(TransportCommand::ClearLoop),
+            index.clone().prop_map(TransportCommand::Seek),
+            (0usize..1 << 20, 0usize..1 << 20)
+                .prop_map(|(first, last)| TransportCommand::Loop(BarRange { first, last })),
+            (25u16..=200)
+                .prop_map(|percent| TransportCommand::Speed(Speed::new(percent).expect("speed"))),
+            (index.clone(), any::<bool>())
+                .prop_map(|(track, on)| TransportCommand::Mute(track, on)),
+            (index, any::<bool>()).prop_map(|(track, on)| TransportCommand::Solo(track, on)),
+            any::<bool>().prop_map(TransportCommand::Metronome),
+            any::<bool>().prop_map(TransportCommand::CountIn),
+        ]
+    }
+
+    fn huge(index: usize) -> bool {
+        index >= 1 << 28
+    }
+
+    proptest! {
+        #[test]
+        fn every_command_survives_the_queue_word(command in arb_command()) {
+            let decoded = decode(encode(command)).expect("decodes");
+            match (command, decoded) {
+                (TransportCommand::Seek(sent), TransportCommand::Seek(got))
+                | (TransportCommand::Mute(sent, _), TransportCommand::Mute(got, _))
+                | (TransportCommand::Solo(sent, _), TransportCommand::Solo(got, _))
+                    if huge(sent) =>
+                {
+                    prop_assert!(huge(got));
+                }
+                _ => prop_assert_eq!(decoded, command),
+            }
+        }
+    }
+
+    #[test]
+    fn the_queue_refuses_beyond_its_capacity_and_keeps_order_across_threads() {
+        let (mut sender, mut receiver) = command_queue();
+        for bar in 0..COMMAND_CAPACITY {
+            sender.send(TransportCommand::Seek(bar)).expect("room");
+        }
+        assert!(sender.send(TransportCommand::Play).is_err());
+        assert_eq!(receiver.receive(), Some(Some(TransportCommand::Seek(0))));
+        sender.send(TransportCommand::Play).expect("room again");
+        while receiver.receive().is_some() {}
+        let producer = std::thread::spawn(move || {
+            for bar in 0..SENT {
+                while sender.send(TransportCommand::Seek(bar)).is_err() {
+                    std::thread::yield_now();
+                }
+            }
+        });
+        let mut next = 0;
+        while next < SENT {
+            match receiver.receive() {
+                Some(Some(TransportCommand::Seek(bar))) => {
+                    assert_eq!(bar, next);
+                    next += 1;
+                }
+                Some(other) => panic!("unexpected {other:?}"),
+                None => std::thread::yield_now(),
+            }
+        }
+        producer.join().expect("producer");
+        assert_eq!(receiver.receive(), None);
+    }
+}
