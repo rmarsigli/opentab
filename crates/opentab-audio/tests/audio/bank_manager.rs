@@ -348,6 +348,30 @@ fn a_folder_import_skips_a_stray_link_beside_its_sf2() {
 
 #[cfg(unix)]
 #[test]
+fn a_stray_link_named_like_an_sfz_does_not_hide_the_sf2() {
+    let dir = scratch_dir();
+    let downloads = dir.path().join("Downloads");
+    fs::create_dir_all(&downloads).expect("folder");
+    write_tiny_sf2(&downloads, "My Bank.sf2");
+    std::os::unix::fs::symlink("/etc/hostname", downloads.join("Preset.sfz")).expect("sfz link");
+    let mut manager = manager_in(dir.path());
+    let bank = manager.import(&downloads).expect("the bank imports");
+    assert_eq!(bank.format, BankFormat::Sf2);
+    assert_eq!(
+        bank_files(&manager, &bank)
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>(),
+        [String::from("My Bank.sf2")]
+    );
+    let lonely = dir.path().join("Lonely");
+    fs::create_dir_all(&lonely).expect("folder");
+    std::os::unix::fs::symlink("/etc/hostname", lonely.join("Preset.sfz")).expect("sfz link");
+    assert_eq!(refused(manager.import(&lonely)), UnsafeBank::BankSymlink);
+}
+
+#[cfg(unix)]
+#[test]
 fn a_link_the_bank_uses_is_refused() {
     let dir = scratch_dir();
     let source = sfz_without_sidecar(dir.path());
@@ -385,7 +409,7 @@ fn a_special_file_the_bank_uses_is_refused() {
 
 #[cfg(unix)]
 #[test]
-fn an_include_swapped_for_a_pipe_is_refused_and_never_read_in_place() {
+fn a_pipe_standing_in_for_an_include_is_refused_as_a_special_file() {
     let dir = scratch_dir();
     let source = sfz_without_sidecar(dir.path());
     let include = source.join("Programs/includes/hats.txt");
@@ -491,6 +515,88 @@ fn imports_stop_at_the_named_limits() {
             case.reason,
             "{:?}",
             case.files
+        );
+        assert_clean(&manager);
+    }
+}
+
+#[test]
+fn unrelated_deep_or_long_named_entries_are_skipped_beside_a_bank() {
+    let unrelated = [
+        "notes/a/b/readme.txt",
+        "a-very-long-file-name-that-goes-on-and-on.txt",
+        "a-very-long-folder-name-that-goes-on-and-on/readme.txt",
+    ];
+    for name in unrelated {
+        let dir = scratch_dir();
+        let source = folder_of(
+            dir.path(),
+            &[file("a.sfz", 30), file("b.wav", 10), file(name, 1)],
+        );
+        let mut manager = manager_in(dir.path()).with_limits(small_limits());
+        let bank = manager.import(&source).expect(name);
+        let mut copied = tree(&bank.path);
+        assert!(copied.remove(SIDECAR_NAME).is_some());
+        assert_eq!(
+            copied.keys().cloned().collect::<Vec<String>>(),
+            [String::from("a.sfz"), String::from("b.wav")],
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn the_too_many_entries_refusal_tells_the_user_to_pick_the_banks_own_folder() {
+    let dir = scratch_dir();
+    let source = folder_of(
+        dir.path(),
+        &[
+            file("a.sfz", 1),
+            file("b", 1),
+            file("c", 1),
+            file("d", 1),
+            file("e", 1),
+        ],
+    );
+    let mut manager = manager_in(dir.path()).with_limits(small_limits());
+    let message = manager.import(&source).expect_err("refused").to_string();
+    assert!(message.contains("4 files and folders"), "{message}");
+    assert!(message.contains("the sound bank's own folder"), "{message}");
+}
+
+struct BankLimitCase {
+    name: &'static str,
+    reason: UnsafeBank,
+}
+
+#[test]
+fn deep_or_long_named_entries_that_are_banks_are_still_refused() {
+    let cases = [
+        BankLimitCase {
+            name: "deep/a/b/other.sf2",
+            reason: UnsafeBank::FolderTooDeep { limit: 2 },
+        },
+        BankLimitCase {
+            name: "a-very-long-folder-name-that-goes-on-and-on/bank.sf2",
+            reason: UnsafeBank::NameTooLong { limit: 40 },
+        },
+        BankLimitCase {
+            name: "a-very-long-folder-name-that-goes-on-and-on.sfz",
+            reason: UnsafeBank::NameTooLong { limit: 40 },
+        },
+    ];
+    for case in cases {
+        let dir = scratch_dir();
+        let source = folder_of(
+            dir.path(),
+            &[file("a.sfz", 30), file("b.wav", 10), file(case.name, 1)],
+        );
+        let mut manager = manager_in(dir.path()).with_limits(small_limits());
+        assert_eq!(
+            refused(manager.import(&source)),
+            case.reason,
+            "{}",
+            case.name
         );
         assert_clean(&manager);
     }
@@ -970,6 +1076,46 @@ fn a_zip_that_unpacks_far_beyond_its_size_is_refused() {
     assert_clean(&manager);
 }
 
+#[cfg(windows)]
+#[test]
+fn a_wof_compressed_sf2_imports_through_the_reparse_reopen() {
+    use std::os::windows::fs::MetadataExt;
+    const REPARSE_POINT: u32 = 0x400;
+    let dir = scratch_dir();
+    let downloads = dir.path().join("Downloads");
+    fs::create_dir_all(&downloads).expect("folder");
+    let bank = write_tiny_sf2(&downloads, "Compressed.sf2");
+    let compressed = std::process::Command::new("compact")
+        .arg("/c")
+        .arg("/exe:xpress4k")
+        .arg(&bank)
+        .output();
+    match compressed {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => {
+            eprintln!("skipped: compact exited with {}", output.status);
+            return;
+        }
+        Err(error) => {
+            eprintln!("skipped: compact did not start: {error}");
+            return;
+        }
+    }
+    let attributes = fs::symlink_metadata(&bank)
+        .expect("metadata")
+        .file_attributes();
+    if attributes & REPARSE_POINT == 0 {
+        eprintln!("skipped: compact left no reparse point on the file");
+        return;
+    }
+    let mut manager = manager_in(dir.path());
+    let imported = manager.import(&downloads).expect("the bank imports");
+    assert_eq!(
+        bank_files(&manager, &imported).get("Compressed.sf2"),
+        Some(&tiny_bytes().to_vec())
+    );
+}
+
 #[test]
 fn a_store_from_a_newer_opentab_is_reported_and_left_untouched() {
     let dir = scratch_dir();
@@ -998,6 +1144,12 @@ fn a_store_from_a_newer_opentab_is_reported_and_left_untouched() {
         reopened.import(&source),
         Err(BankError::Storage { .. })
     ));
+    let nothing = dir.path().join("Nothing");
+    fs::create_dir_all(&nothing).expect("folder");
+    match reopened.import(&nothing) {
+        Err(BankError::Storage { message }) => assert!(message.contains("newer"), "{message}"),
+        other => panic!("expected the newer-store refusal before any survey, got {other:?}"),
+    }
     assert!(matches!(
         reopened.assign(opentab_model::InstrumentFamily::Piano, BankRef::BuiltIn),
         Err(BankError::Storage { .. })

@@ -832,6 +832,33 @@ fn a_cancel_before_the_download_never_connects() {
 }
 
 #[test]
+fn a_store_from_a_newer_opentab_refuses_an_install_before_any_download() {
+    let dir = scratch_dir();
+    let server = LoopbackServer::start(vec![Reply::ok(PATH, tiny_bytes().to_vec())]);
+    let entry = entry_for(
+        "tiny",
+        BankFormat::Sf2,
+        ArchiveKind::Raw,
+        &server.url(PATH),
+        tiny_bytes(),
+    );
+    let manager = manager_with(dir.path(), vec![entry.clone()]);
+    let registry = manager.root().join(opentab_audio::REGISTRY_NAME);
+    let newer = b"{\"version\": 2, \"banks\": [], \"shelves\": []}".to_vec();
+    fs::write(&registry, &newer).expect("newer registry");
+    let mut reopened = manager_with(dir.path(), vec![entry]);
+    match reopened.install(&id("tiny"), &mut ignore) {
+        Err(InstallError::Bank(BankError::Storage { message })) => {
+            assert!(message.contains("newer"), "{message}");
+        }
+        other => panic!("expected the newer-store refusal, got {other:?}"),
+    }
+    assert_eq!(server.requests(), Vec::<String>::new());
+    assert_eq!(fs::read(&registry).expect("kept"), newer);
+    assert_eq!(listing(&reopened.staging_dir()), Vec::<String>::new());
+}
+
+#[test]
 fn a_loopback_redirect_is_not_followed() {
     let dir = scratch_dir();
     let server = LoopbackServer::start(vec![
