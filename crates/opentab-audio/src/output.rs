@@ -64,6 +64,12 @@ enum NullRun {
     RealTime(RealTimeRun),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NullBlock<'a> {
+    pub left: &'a [f32],
+    pub right: &'a [f32],
+}
+
 pub struct NullOutput {
     rate: SampleRate,
     clock: NullClock,
@@ -131,9 +137,12 @@ impl NullOutput {
         true
     }
 
-    pub fn last_block(&self) -> Option<(&[f32], &[f32])> {
+    pub fn last_block(&self) -> Option<NullBlock<'_>> {
         match &self.run {
-            NullRun::Manual(run) => Some((&run.left, &run.right)),
+            NullRun::Manual(run) => Some(NullBlock {
+                left: &run.left,
+                right: &run.right,
+            }),
             NullRun::Idle | NullRun::RealTime(_) => None,
         }
     }

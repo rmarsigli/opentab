@@ -2,7 +2,9 @@ use std::rc::Rc;
 
 use crate::sfz::limits::{KIB, SfzLimits};
 use crate::sfz::listing::{IgnoreReason, Listing, SfzScope};
-use crate::sfz::region::{CcRange, Envelope, LoopMode, OffMode, SfzRegion, Trigger, VelocityPoint};
+use crate::sfz::region::{
+    CcRange, Envelope, InitialController, LoopMode, OffMode, SfzRegion, Trigger, VelocityPoint,
+};
 use crate::{BankError, UnsafeBank};
 
 const MAX_NOTE: i64 = 127;
@@ -228,7 +230,7 @@ enum Header {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Control {
     pub(crate) default_path: String,
-    pub(crate) set_cc: Vec<(u8, u8)>,
+    pub(crate) set_cc: Vec<InitialController>,
     pub(crate) sw_default: Option<u8>,
 }
 
@@ -516,8 +518,13 @@ fn apply_numbered(
         if assign.scope != SfzScope::Control {
             assign.unsupported();
         } else if let Some(initial) = assign.byte(value) {
-            control.set_cc.retain(|pair| pair.0 != controller);
-            control.set_cc.push((controller, initial));
+            control
+                .set_cc
+                .retain(|entry| entry.controller != controller);
+            control.set_cc.push(InitialController {
+                controller,
+                value: initial,
+            });
         }
     } else if !is_silent(name) {
         assign.unsupported();
@@ -651,13 +658,30 @@ struct Scopes {
     header: Header,
 }
 
+struct ScopeSettings<'a> {
+    settings: &'a mut Settings,
+    scope: SfzScope,
+}
+
 impl Scopes {
-    fn current(&mut self) -> Option<(&mut Settings, SfzScope)> {
+    fn current(&mut self) -> Option<ScopeSettings<'_>> {
         match self.header {
-            Header::Global => Some((&mut self.global, SfzScope::Global)),
-            Header::Master => Some((&mut self.master, SfzScope::Master)),
-            Header::Group => Some((&mut self.group, SfzScope::Group)),
-            Header::Region => Some((&mut self.region, SfzScope::Region)),
+            Header::Global => Some(ScopeSettings {
+                settings: &mut self.global,
+                scope: SfzScope::Global,
+            }),
+            Header::Master => Some(ScopeSettings {
+                settings: &mut self.master,
+                scope: SfzScope::Master,
+            }),
+            Header::Group => Some(ScopeSettings {
+                settings: &mut self.group,
+                scope: SfzScope::Group,
+            }),
+            Header::Region => Some(ScopeSettings {
+                settings: &mut self.region,
+                scope: SfzScope::Region,
+            }),
             Header::Control | Header::Ignored | Header::Before => None,
         }
     }
@@ -864,7 +888,7 @@ fn apply_token(
             }
         }
         _ => {
-            let Some((settings, scope)) = scopes.current() else {
+            let Some(ScopeSettings { settings, scope }) = scopes.current() else {
                 return Ok(());
             };
             if name == "sample" && value.len() > limits.path_bytes {

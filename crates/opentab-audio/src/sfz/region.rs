@@ -27,6 +27,12 @@ pub struct VelocityPoint {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct InitialController {
+    pub controller: u8,
+    pub value: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CcRange {
     pub controller: u8,
     pub low: u8,

@@ -36,7 +36,17 @@ pub(crate) fn refusal(problem: PathProblem, limits: &SfzLimits) -> Option<BankEr
 }
 
 type FolderIndex = HashMap<String, Vec<OsString>>;
-type ResolveKey = (PathBuf, String);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct ResolveKey {
+    pub(crate) base: PathBuf,
+    pub(crate) text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PendingFolder {
+    folder: PathBuf,
+    depth: u64,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReadProblem {
@@ -171,9 +181,12 @@ impl BankFs {
 
     pub(crate) fn sfz_files(&self, limits: &SfzLimits) -> Result<Vec<PathBuf>, BankError> {
         let mut found = Vec::new();
-        let mut pending: Vec<(PathBuf, u64)> = vec![(self.root.clone(), 0)];
+        let mut pending: Vec<PendingFolder> = vec![PendingFolder {
+            folder: self.root.clone(),
+            depth: 0,
+        }];
         let mut entries: u64 = 0;
-        while let Some((folder, depth)) = pending.pop() {
+        while let Some(PendingFolder { folder, depth }) = pending.pop() {
             let listing =
                 fs::read_dir(&folder).map_err(|_| unsafe_bank(UnsafeBank::UnreadableFolder))?;
             for entry in listing {
@@ -197,7 +210,10 @@ impl BankFs {
                             limit: limits.folder_depth,
                         }));
                     }
-                    pending.push((path, depth + 1));
+                    pending.push(PendingFolder {
+                        folder: path,
+                        depth: depth + 1,
+                    });
                 } else if kind.is_file()
                     && path
                         .extension()
@@ -270,7 +286,10 @@ impl BankFs {
     }
 
     pub(crate) fn resolve(&mut self, base: &Path, text: &str) -> Result<PathBuf, PathProblem> {
-        let key = (base.to_path_buf(), text.to_owned());
+        let key = ResolveKey {
+            base: base.to_path_buf(),
+            text: text.to_owned(),
+        };
         if let Some(found) = self.resolved.get(&key) {
             return found.clone();
         }
@@ -286,7 +305,8 @@ impl BankFs {
         let stored = outcome
             .as_ref()
             .map_or(0, |path| path.as_os_str().len() as u64);
-        let entry = (key.0.as_os_str().len() + key.1.len()) as u64 + stored + CACHE_ENTRY_BYTES;
+        let entry =
+            (key.base.as_os_str().len() + key.text.len()) as u64 + stored + CACHE_ENTRY_BYTES;
         self.cache_bytes = self.cache_bytes.saturating_add(entry);
         if self.cache_bytes > self.cache_cap {
             return Err(PathProblem::Budget);

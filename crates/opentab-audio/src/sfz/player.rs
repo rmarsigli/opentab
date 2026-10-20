@@ -83,7 +83,7 @@ struct Voice {
     step: f64,
     static_cents: f64,
     end: f64,
-    loop_range: Option<(f64, f64)>,
+    loop_range: Option<LoopRange>,
     loop_mode: LoopMode,
     gain_left: f32,
     gain_right: f32,
@@ -165,7 +165,7 @@ impl Voice {
             .unwrap_or(0.0)
     }
 
-    fn next(&mut self) -> Option<(f32, f32)> {
+    fn next(&mut self) -> Option<Stereo> {
         if self.position >= self.end || self.faded() {
             return None;
         }
@@ -173,7 +173,7 @@ impl Voice {
         let fraction = (self.position - index as f64) as f32;
         let looping = self.looping();
         let following = match self.loop_range {
-            Some((start, end)) if looping && index as f64 + 1.0 >= end => start as usize,
+            Some(range) if looping && index as f64 + 1.0 >= range.end => range.start as usize,
             _ => index + 1,
         };
         let read = |channel: usize| {
@@ -194,14 +194,17 @@ impl Voice {
             }
         }
         self.position += self.step;
-        if let Some((start, end)) = self.loop_range
+        if let Some(range) = self.loop_range
             && looping
-            && self.position >= end
+            && self.position >= range.end
         {
-            let length = end - start;
-            self.position = start + (self.position - end) % length;
+            let length = range.end - range.start;
+            self.position = range.start + (self.position - range.end) % length;
         }
-        Some((left * gain * self.gain_left, right * gain * self.gain_right))
+        Some(Stereo {
+            left: left * gain * self.gain_left,
+            right: right * gain * self.gain_right,
+        })
     }
 }
 
@@ -245,21 +248,36 @@ fn decibels(volume: f32) -> f32 {
     10f32.powf(volume / 20.0)
 }
 
-fn pan_gains(pan: f32) -> (f32, f32) {
-    let angle = (pan + 100.0) / 200.0 * std::f32::consts::FRAC_PI_2;
-    (
-        angle.cos() * std::f32::consts::SQRT_2,
-        angle.sin() * std::f32::consts::SQRT_2,
-    )
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LoopRange {
+    start: f64,
+    end: f64,
 }
 
-fn channel_gains(state: &ChannelState) -> (f32, f32) {
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Stereo {
+    left: f32,
+    right: f32,
+}
+
+fn pan_gains(pan: f32) -> Stereo {
+    let angle = (pan + 100.0) / 200.0 * std::f32::consts::FRAC_PI_2;
+    Stereo {
+        left: angle.cos() * std::f32::consts::SQRT_2,
+        right: angle.sin() * std::f32::consts::SQRT_2,
+    }
+}
+
+fn channel_gains(state: &ChannelState) -> Stereo {
     let volume = f32::from(state.volume).min(MAX_LEVEL) / MAX_LEVEL;
     let base = volume * volume;
     let pan = f32::from(state.pan).min(MAX_LEVEL);
     let left = ((MAX_LEVEL - pan) / PAN_LEFT_SPAN).min(1.0);
     let right = (pan / PAN_CENTRE).min(1.0);
-    (base * left, base * right)
+    Stereo {
+        left: base * left,
+        right: base * right,
+    }
 }
 
 fn bend_cents(state: &ChannelState) -> f64 {
@@ -372,8 +390,8 @@ impl SfzSynth {
             instrument
                 .set_cc
                 .iter()
-                .find(|pair| pair.0 == controller)
-                .map_or(0, |pair| pair.1)
+                .find(|entry| entry.controller == controller)
+                .map_or(0, |entry| entry.value)
         }
     }
 
@@ -527,7 +545,10 @@ impl SfzSynth {
             (LoopMode::Continuous | LoopMode::Sustain, start, finish) => {
                 let loop_start = start.map_or(0.0, |frame| frame as f64).min(end);
                 let loop_end = finish.map_or(end, |frame| (frame as f64 + 1.0).min(end));
-                (loop_end - loop_start >= 1.0).then_some((loop_start, loop_end))
+                (loop_end - loop_start >= 1.0).then_some(LoopRange {
+                    start: loop_start,
+                    end: loop_end,
+                })
             }
             _ => None,
         };
@@ -539,7 +560,7 @@ impl SfzSynth {
         let step = base_step * ((static_cents + bend_cents(state)) / CENTS_PER_OCTAVE).exp2();
         let gain =
             decibels(region.volume) * region.amplitude / 100.0 * region.velocity_gain(velocity);
-        let (pan_left, pan_right) = pan_gains(region.pan);
+        let pan = pan_gains(region.pan);
         let shape = Shape {
             attack: self.seconds(region.ampeg.attack),
             hold: self.seconds(region.ampeg.hold),
@@ -559,8 +580,8 @@ impl SfzSynth {
             end,
             loop_range,
             loop_mode: region.loop_mode,
-            gain_left: gain * pan_left,
-            gain_right: gain * pan_right,
+            gain_left: gain * pan.left,
+            gain_right: gain * pan.right,
             shape,
             stage: Stage::Attack,
             stage_done: 0.0,
@@ -724,13 +745,13 @@ impl Synth for SfzSynth {
             let Some(state) = channels.get(usize::from(voice.channel)) else {
                 return false;
             };
-            let (channel_left, channel_right) = channel_gains(&state.state);
+            let gains = channel_gains(&state.state);
             for (out_left, out_right) in left.iter_mut().zip(right.iter_mut()) {
-                let Some((sample_left, sample_right)) = voice.next() else {
+                let Some(sample) = voice.next() else {
                     return false;
                 };
-                *out_left += sample_left * channel_left;
-                *out_right += sample_right * channel_right;
+                *out_left += sample.left * gains.left;
+                *out_right += sample.right * gains.right;
             }
             true
         });

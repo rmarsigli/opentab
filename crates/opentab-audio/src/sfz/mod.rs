@@ -33,7 +33,9 @@ pub use limits::{
 pub use listing::{IgnoreReason, IgnoredOpcode, SfzScope};
 pub use mapping::{SIDECAR_NAME, SIDECAR_VERSION};
 pub use player::{SFZ_MASTER_GAIN, SfzSynth};
-pub use region::{CcRange, Envelope, LoopMode, OffMode, SfzRegion, Trigger, VelocityPoint};
+pub use region::{
+    CcRange, Envelope, InitialController, LoopMode, OffMode, SfzRegion, Trigger, VelocityPoint,
+};
 pub use vorbis::VorbisSetupCost;
 
 use cache::SampleCache;
@@ -41,7 +43,7 @@ use limits::{KIB, MIB};
 use listing::Listing;
 use mapping::ProgramMap;
 use parse::{parse, parse_measured, region_cost};
-use paths::{BankFs, PathProblem, ReadProblem, read_capped, refusal};
+use paths::{BankFs, PathProblem, ReadProblem, ResolveKey, read_capped, refusal};
 use text::{FsIncludes, MemoryIncludes, Preprocessor, decode_text};
 
 use crate::sf2::{FaultLog, SynthFault};
@@ -61,7 +63,7 @@ pub(crate) struct SfzInstrument {
     pub(crate) name: String,
     pub(crate) file: String,
     pub(crate) regions: Vec<PlayRegion>,
-    pub(crate) set_cc: Vec<(u8, u8)>,
+    pub(crate) set_cc: Vec<InitialController>,
     pub(crate) active_switch: Option<u8>,
     pub(crate) listing: Listing,
 }
@@ -87,7 +89,7 @@ pub struct SfzText {
     pub regions: Vec<SfzRegion>,
     pub ignored: Vec<IgnoredOpcode>,
     pub default_path: String,
-    pub set_cc: Vec<(u8, u8)>,
+    pub set_cc: Vec<InitialController>,
     pub sw_default: Option<u8>,
     pub expanded_bytes: usize,
     pub read_bytes: u64,
@@ -213,7 +215,7 @@ struct Loader<'a> {
     loader_bytes: u64,
     samples: Vec<PathBuf>,
     sample_index: HashMap<PathBuf, usize>,
-    resolved: HashMap<(PathBuf, String), Result<usize, IgnoreReason>>,
+    resolved: HashMap<ResolveKey, Result<usize, IgnoreReason>>,
     include_count: u64,
 }
 
@@ -276,7 +278,10 @@ impl Loader<'_> {
         text: &str,
     ) -> Result<Result<usize, IgnoreReason>, BankError> {
         self.count_text(text.len())?;
-        let key = (root_dir.to_path_buf(), text.to_owned());
+        let key = ResolveKey {
+            base: root_dir.to_path_buf(),
+            text: text.to_owned(),
+        };
         if let Some(found) = self.resolved.get(&key) {
             return Ok(*found);
         }
@@ -304,7 +309,7 @@ impl Loader<'_> {
         };
         self.loader_bytes = self
             .loader_bytes
-            .saturating_add((key.0.as_os_str().len() + key.1.len()) as u64 * 2);
+            .saturating_add((key.base.as_os_str().len() + key.text.len()) as u64 * 2);
         self.resolved.insert(key, outcome);
         Ok(outcome)
     }
