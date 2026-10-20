@@ -9,6 +9,7 @@ const MAX_ACCIDENTALS: i8 = 7;
 const MAX_DENOMINATOR: u8 = 64;
 const MAX_TEMPO_DECIMALS: usize = 6;
 const DECIMAL_BASE: i128 = 10;
+const ROUNDING_DIGIT: u8 = b'5';
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "TimeSignatureRepr")]
@@ -138,12 +139,22 @@ impl Tempo {
 
     pub fn exact(self) -> Option<Fraction> {
         let text = self.0.to_string();
-        let (whole, decimals) = text.split_once('.').unwrap_or((text.as_str(), ""));
-        if decimals.len() > MAX_TEMPO_DECIMALS || whole.is_empty() {
+        let places = text.split_once('.').map_or(0, |parts| parts.1.len());
+        if places > MAX_TEMPO_DECIMALS {
             return None;
         }
+        self.rounded(MAX_TEMPO_DECIMALS)
+    }
+
+    pub fn rounded(self, places: usize) -> Option<Fraction> {
+        let text = self.0.to_string();
+        let (whole, decimals) = text.split_once('.').unwrap_or((text.as_str(), ""));
+        if whole.is_empty() {
+            return None;
+        }
+        let kept = decimals.get(..places).unwrap_or(decimals);
         let mut numer: i128 = 0;
-        for byte in whole.bytes().chain(decimals.bytes()) {
+        for byte in whole.bytes().chain(kept.bytes()) {
             if !byte.is_ascii_digit() {
                 return None;
             }
@@ -151,8 +162,15 @@ impl Tempo {
                 .checked_mul(DECIMAL_BASE)?
                 .checked_add(i128::from(byte - b'0'))?;
         }
-        let places = u32::try_from(decimals.len()).ok()?;
-        let denom = DECIMAL_BASE.checked_pow(places)?;
+        let round_up = decimals
+            .as_bytes()
+            .get(places)
+            .is_some_and(|digit| *digit >= ROUNDING_DIGIT);
+        if round_up {
+            numer = numer.checked_add(1)?;
+        }
+        let exponent = u32::try_from(kept.len()).ok()?;
+        let denom = DECIMAL_BASE.checked_pow(exponent)?;
         let exact = Fraction::new(i64::try_from(numer).ok()?, i64::try_from(denom).ok()?);
         (exact > Fraction::from_integer(0)).then_some(exact)
     }

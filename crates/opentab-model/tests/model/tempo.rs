@@ -114,3 +114,33 @@ fn a_seventeen_digit_tempo_has_no_exact_value_and_is_diagnosed() {
     assert_eq!(exact_of("1"), Some(Fraction::from_integer(1)));
     assert_eq!(exact_of("133.1234"), Some(Fraction::new(1_331_234, 10_000)));
 }
+
+const MILLION: i64 = 1_000_000;
+
+#[test]
+fn rounding_keeps_every_millionth_tempo_exact() {
+    for millionths in (MILLION..=1000 * MILLION).step_by(9_973) {
+        let tempo = Tempo::new(millionths as f64 / MILLION as f64).unwrap();
+        let expected = Fraction::new(millionths, MILLION);
+        assert_eq!(tempo.rounded(6), Some(expected), "{millionths}");
+        assert_eq!(tempo.exact(), Some(expected), "{millionths}");
+    }
+}
+
+#[test]
+fn rounding_a_seventh_decimal_goes_half_up() {
+    for tenths in (10 * MILLION..=10_000 * MILLION).step_by(99_991) {
+        let tempo = Tempo::new(tenths as f64 / (10 * MILLION) as f64).unwrap();
+        let expected = Fraction::new((tenths + 5) / 10, MILLION);
+        assert_eq!(tempo.rounded(6), Some(expected), "{tenths}");
+        if tenths % 10 != 0 {
+            assert_eq!(tempo.exact(), None, "{tenths}");
+        }
+    }
+    let noise = Tempo::new(100.000_000_000_000_01).unwrap();
+    assert_eq!(noise.rounded(6), Some(Fraction::from_integer(100)));
+    assert_eq!(noise.rounded(0), Some(Fraction::from_integer(100)));
+    let half = Tempo::new(120.5).unwrap();
+    assert_eq!(half.rounded(0), Some(Fraction::from_integer(121)));
+    assert_eq!(half.rounded(1), Some(Fraction::new(241, 2)));
+}

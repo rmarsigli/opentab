@@ -7,8 +7,6 @@ use crate::{PlaybackError, ScoreTime, Seconds, Speed};
 
 pub const DEFAULT_QUARTERS_PER_MINUTE: i64 = 120;
 pub const MAX_PLAYBACK_DECIMALS: usize = 6;
-const DECIMAL_BASE: i128 = 10;
-const ROUNDING_DIGIT: u8 = b'5';
 const SECONDS_PER_WHOLE_AT_ONE_QPM: i128 = 240;
 const MICROSECONDS_PER_MINUTE: i128 = 60_000_000;
 
@@ -71,41 +69,7 @@ pub fn quarters_per_unit(unit: TempoUnit) -> Fraction {
 }
 
 pub fn playback_bpm(tempo: Tempo) -> Option<Fraction> {
-    tempo
-        .exact()
-        .or_else(|| nearest_millionth(&format!("{tempo:?}")))
-}
-
-fn nearest_millionth(text: &str) -> Option<Fraction> {
-    let digits: String = text
-        .chars()
-        .filter(|c| c.is_ascii_digit() || *c == '.')
-        .collect();
-    let (whole, decimals) = digits.split_once('.').unwrap_or((digits.as_str(), ""));
-    if whole.is_empty() || decimals.contains('.') {
-        return None;
-    }
-    let kept = decimals.get(..MAX_PLAYBACK_DECIMALS).unwrap_or(decimals);
-    let mut numer: i128 = 0;
-    for byte in whole.bytes().chain(kept.bytes()) {
-        numer = numer
-            .checked_mul(DECIMAL_BASE)?
-            .checked_add(i128::from(byte - b'0'))?;
-    }
-    for _ in kept.len()..MAX_PLAYBACK_DECIMALS {
-        numer = numer.checked_mul(DECIMAL_BASE)?;
-    }
-    let round_up = decimals
-        .as_bytes()
-        .get(MAX_PLAYBACK_DECIMALS)
-        .is_some_and(|digit| *digit >= ROUNDING_DIGIT);
-    if round_up {
-        numer = numer.checked_add(1)?;
-    }
-    let places = u32::try_from(MAX_PLAYBACK_DECIMALS).ok()?;
-    let denom = DECIMAL_BASE.checked_pow(places)?;
-    let exact = Exact::new(numer, denom).ok()?.fraction().ok()?;
-    (exact > Fraction::new_raw(0, 1)).then_some(exact)
+    tempo.rounded(MAX_PLAYBACK_DECIMALS)
 }
 
 pub fn quarters_per_minute(change: &TempoChange) -> Option<Fraction> {
