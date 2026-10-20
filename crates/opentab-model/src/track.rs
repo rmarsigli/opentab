@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Automation, BarId, BeatEffects, BeatId, DrumKit, Duration, InstrumentSet, ModelError,
-    NoteEffects, NoteId, Sound, StaffId, TrackId, TrackMidi, VoiceId,
+    NoteEffects, NoteId, Sound, StaffId, TrackId, TrackMidi, Trill, VoiceId,
 };
 
 const MAX_MIDI_NOTE: u8 = 127;
@@ -195,17 +195,19 @@ impl Track {
         }
     }
 
+    pub fn trill_tuning(&self) -> TrillTuning<'_> {
+        TrillTuning {
+            strings: &self.tuning.strings,
+            capo: self.capo,
+        }
+    }
+
+    pub fn trill_number_of(&self, note: &Note) -> Option<u16> {
+        self.trill_tuning().number(note.kind, note.effects.trill?)
+    }
+
     pub fn trill_pitch_of(&self, note: &Note) -> Option<Pitch> {
-        let trill = note.effects.trill?;
-        let NoteKind::Fretted { string, .. } = note.kind else {
-            return None;
-        };
-        let open = self.tuning.strings.get(usize::from(string))?;
-        let midi = u16::from(open.0) + u16::from(self.capo) + u16::from(trill.fret);
-        u8::try_from(midi)
-            .ok()
-            .filter(|value| *value <= MAX_MIDI_NOTE)
-            .map(Pitch)
+        self.trill_tuning().pitch(note.kind, note.effects.trill?)
     }
 
     pub fn trill_fits(&self, note: &Note) -> bool {
@@ -219,6 +221,33 @@ impl Track {
         let open = self.tuning.strings.get(usize::from(string))?;
         let midi = u16::from(open.0) + u16::from(self.capo) + u16::from(fret);
         u8::try_from(midi)
+            .ok()
+            .filter(|value| *value <= MAX_MIDI_NOTE)
+            .map(Pitch)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrillTuning<'t> {
+    pub strings: &'t [Pitch],
+    pub capo: u8,
+}
+
+impl TrillTuning<'_> {
+    pub fn base(&self, kind: NoteKind) -> Option<u16> {
+        let NoteKind::Fretted { string, .. } = kind else {
+            return None;
+        };
+        let open = self.strings.get(usize::from(string))?;
+        Some(u16::from(open.0) + u16::from(self.capo))
+    }
+
+    pub fn number(&self, kind: NoteKind, trill: Trill) -> Option<u16> {
+        Some(self.base(kind)? + u16::from(trill.fret))
+    }
+
+    pub fn pitch(&self, kind: NoteKind, trill: Trill) -> Option<Pitch> {
+        u8::try_from(self.number(kind, trill)?)
             .ok()
             .filter(|value| *value <= MAX_MIDI_NOTE)
             .map(Pitch)

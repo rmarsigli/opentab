@@ -51,5 +51,5 @@ pub use play_order::{MAX_PLAYED_BARS, PlayedSource, SourceOrder, source_order};
 pub use score::{BeatPath, NotePath, Score, ScoreMeta, VoicePath};
 pub use track::{
     Bar, Beat, Clef, Instrument, InstrumentKind, Note, NoteKind, Pitch, Staff, Track, Transpose,
-    Tuning, Voice, VoiceSlot,
+    TrillTuning, Tuning, Voice, VoiceSlot,
 };

@@ -114,6 +114,26 @@ fn a_trill_sounds_open_string_plus_capo_plus_its_fret() {
 }
 
 #[test]
+fn one_trill_rule_gives_the_sounding_number_and_the_midi_pitch() {
+    for fret in 0..=u8::MAX {
+        let score = trilled(fret);
+        let track = &score.tracks[0];
+        let first = &track.staves[0].bars[0].voices[0].beats[0].notes[0];
+        let number = 64 + u16::from(fret);
+        assert_eq!(track.trill_number_of(first), Some(number));
+        let pitch = u8::try_from(number)
+            .ok()
+            .filter(|key| *key <= 127)
+            .map(Pitch);
+        assert_eq!(track.trill_pitch_of(first), pitch);
+        assert_eq!(track.trill_fits(first), pitch.is_some());
+        let tuning = track.trill_tuning();
+        assert_eq!(tuning.base(first.kind), Some(64));
+        assert_eq!(tuning.base(NoteKind::Percussion { articulation: 0 }), None);
+    }
+}
+
+#[test]
 fn a_trill_above_midi_127_or_on_a_drum_note_is_diagnosed() {
     assert_eq!(diagnose(&trilled(63)), Vec::new());
     let high = trilled(64);

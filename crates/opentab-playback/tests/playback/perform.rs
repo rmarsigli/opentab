@@ -724,6 +724,38 @@ fn a_trill_alternates_from_the_principal_at_its_speed() {
 }
 
 #[test]
+fn a_trill_on_a_capoed_track_counts_the_capo_on_both_notes() {
+    let mut builder = Builder::new(1);
+    let track = builder.track(InstrumentKind::Fretted, &[64, 59, 55, 50, 45, 40], 2);
+    builder.voice(
+        track,
+        0,
+        0,
+        vec![
+            beat(
+                NoteValue::Quarter,
+                vec![with(fretted(0, 5), |effects| {
+                    effects.trill = Some(Trill {
+                        fret: 7,
+                        speed: TrillSpeed::new(NoteValue::Eighth).expect("speed"),
+                    });
+                })],
+            ),
+            rest(NoteValue::Quarter),
+            rest(NoteValue::Half),
+        ],
+    );
+    let performance = perform(&builder.score, &GP).expect("perform");
+    assert_eq!(
+        shape(&heard(&performance, track)),
+        vec![
+            note(frac(0, 1), frac(1, 8), 71),
+            note(frac(1, 8), frac(1, 4), 73),
+        ]
+    );
+}
+
+#[test]
 fn harmonics_sound_at_guitar_pros_pitches() {
     let harmonic = |kind: HarmonicKind, fret: Fraction| Harmonic { kind, fret };
     let cases = [

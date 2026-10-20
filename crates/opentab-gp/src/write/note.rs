@@ -1,5 +1,6 @@
 use opentab_model::{
     Beat, Bend, Finger, Fraction, Harmonic, KeySignature, Note, NoteEffects, NoteKind, Tap, Trill,
+    TrillTuning,
 };
 
 use crate::canon::{self, CONCERT_PITCH, MIDI, TRANSPOSED_PITCH};
@@ -19,7 +20,6 @@ const FLOAT_DECIMALS: u32 = 6;
 const MAX_DECIMALS: u32 = 30;
 const PROPERTIES: &str = "Properties";
 const X_PROPERTIES: &str = "XProperties";
-const MAX_MIDI: u8 = 127;
 
 fn flag(name: &str) -> Element {
     Element::property(name, Element::new("Enable"))
@@ -203,19 +203,14 @@ fn properties(
 }
 
 fn trill_pitch(staff: &StaffContext, kind: NoteKind, trill: Trill) -> Result<u8, Fail> {
-    let refusal = || Fail::new(Refusal::TrillPitch { fret: trill.fret });
-    let NoteKind::Fretted { string, .. } = kind else {
-        return Err(refusal());
+    let tuning = TrillTuning {
+        strings: &staff.track_tuning,
+        capo: staff.track_capo,
     };
-    let open = staff
-        .track_tuning
-        .get(usize::from(string))
-        .ok_or_else(refusal)?;
-    let pitch = u16::from(open.0) + u16::from(staff.track_capo) + u16::from(trill.fret);
-    u8::try_from(pitch)
-        .ok()
-        .filter(|pitch| *pitch <= MAX_MIDI)
-        .ok_or_else(refusal)
+    tuning
+        .pitch(kind, trill)
+        .map(|pitch| pitch.0)
+        .ok_or_else(|| Fail::new(Refusal::TrillPitch { fret: trill.fret }))
 }
 
 fn finger(name: &str, finger: Option<Finger>) -> Option<Element> {

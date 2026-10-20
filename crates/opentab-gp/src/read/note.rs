@@ -1,6 +1,6 @@
 use opentab_model::{
     Accent, Beat, Bend, BendPoint, Harmonic, InstrumentKind, KeySignature, Note, NoteEffects,
-    NoteId, NoteKind, Tap, Trill, TrillSpeed,
+    NoteId, NoteKind, Tap, Trill, TrillSpeed, TrillTuning,
 };
 
 use crate::canon;
@@ -343,11 +343,11 @@ fn trill_read(element: &Element, kind: NoteKind, staff: &StaffFrame<'_>) -> Tril
     let speed = speeds.first().copied();
     let mapped = (|| {
         let pitch = number::integer::<u8>(&auxiliary.text())?;
-        let NoteKind::Fretted { string, .. } = kind else {
-            return None;
+        let tuning = TrillTuning {
+            strings: staff.track_tuning,
+            capo: staff.track_capo,
         };
-        let open = staff.track_tuning.get(usize::from(string))?;
-        let base = u16::from(open.0) + u16::from(staff.track_capo);
+        let base = tuning.base(kind)?;
         let fret = u8::try_from(u16::from(pitch).checked_sub(base)?).ok()?;
         let ticks = match speed {
             Some(speed) => number::integer::<u16>(&single_text(speed, "Int")?)?,

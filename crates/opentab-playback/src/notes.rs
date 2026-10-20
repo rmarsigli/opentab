@@ -1142,14 +1142,9 @@ impl<'a> TrackWriter<'a> {
     }
 
     fn trill_key(&mut self, note: &Note, at: Exact) -> Result<Option<u8>, PlaybackError> {
-        let (Some(trill), NoteKind::Fretted { string, .. }) = (note.effects.trill, note.kind)
-        else {
-            return Ok(None);
-        };
-        let Some(open) = self.track.tuning.strings.get(usize::from(string)) else {
-            return Ok(None);
-        };
-        let pitch = u16::from(open.0) + u16::from(self.track.capo) + u16::from(trill.fret);
-        self.out_of_range(at, pitch)
+        match self.track.trill_number_of(note) {
+            Some(pitch) => self.out_of_range(at, pitch),
+            None => Ok(None),
+        }
     }
 }
