@@ -1,7 +1,8 @@
 use opentab_audio::{
-    RENDER_TAIL_MS, RenderedAudio, Session, TransportCommand, TransportState, frame_at,
+    BarRange, RENDER_TAIL_MS, RenderedAudio, SampleRate, Session, TransportCommand, TransportState,
+    frame_at,
 };
-use opentab_playback::ScoreTime;
+use opentab_playback::{ScoreTime, Speed};
 
 use crate::error::CliError;
 use crate::sound::Prepared;
@@ -28,6 +29,11 @@ impl Buffers {
         session
             .transport
             .process(&mut self.left[start..], &mut self.right[start..]);
+    }
+
+    fn drop_last(&mut self) {
+        self.left.pop();
+        self.right.pop();
     }
 
     fn frames(&self) -> u64 {
@@ -67,6 +73,34 @@ fn estimate(prepared: &Prepared) -> Option<u64> {
     Some(end.saturating_sub(start))
 }
 
+fn bar_end(session: &Session, bar: usize) -> ScoreTime {
+    let order = &session.transport.performance().order;
+    match order.bars.get(bar + 1) {
+        Some(next) => next.start,
+        None => order.end(),
+    }
+}
+
+fn frames_to_end(session: &Session, range: BarRange, speed: Speed, rate: SampleRate) -> Vec<u64> {
+    let tempo = &session.transport.performance().tempo;
+    let Ok(end) = frame_at(tempo, bar_end(session, range.last), speed, rate) else {
+        return Vec::new();
+    };
+    (0..=range.last)
+        .map(|bar| {
+            let finish = frame_at(tempo, bar_end(session, bar), speed, rate).unwrap_or(end);
+            end.saturating_sub(finish)
+        })
+        .collect()
+}
+
+fn block_size(remaining: &[u64], played_bar: usize) -> usize {
+    let frames = remaining.get(played_bar).copied().unwrap_or(1);
+    usize::try_from(frames)
+        .unwrap_or(BLOCK_FRAMES)
+        .clamp(1, BLOCK_FRAMES)
+}
+
 pub fn capture(prepared: &mut Prepared) -> Result<RenderedAudio, CliError> {
     let limit = limit_frames(&prepared.session);
     if estimate(prepared).is_some_and(|frames| frames > limit) {
@@ -75,6 +109,11 @@ pub fn capture(prepared: &mut Prepared) -> Result<RenderedAudio, CliError> {
     let rate = prepared.session.transport.rate();
     let range = prepared.range;
     let session = &mut prepared.session;
+    let bars = session.transport.performance().order.bars.len();
+    let scope = range.or_else(|| bars.checked_sub(1).map(|last| BarRange { first: 0, last }));
+    let remaining = scope
+        .map(|scope| frames_to_end(session, scope, prepared.speed, rate))
+        .unwrap_or_default();
     if let Some(range) = range {
         deliver(session, TransportCommand::Seek(range.first));
     }
@@ -96,21 +135,19 @@ pub fn capture(prepared: &mut Prepared) -> Result<RenderedAudio, CliError> {
         }
         let status = session.handle.status();
         if status.state == TransportState::Stopped {
+            if size == 1 {
+                buffers.drop_last();
+            }
             break;
         }
-        if let Some(range) = range {
-            if status.state == TransportState::Playing && status.played_bar > range.last {
-                deliver(session, TransportCommand::Pause);
-                break;
-            }
-            size = if status.played_bar + 1 >= range.last {
-                1
-            } else {
-                BLOCK_FRAMES
-            };
-        } else {
-            size = BLOCK_FRAMES;
+        if let Some(range) = range
+            && status.state == TransportState::Playing
+            && status.played_bar > range.last
+        {
+            deliver(session, TransportCommand::Pause);
+            break;
         }
+        size = block_size(&remaining, status.played_bar);
     }
     let mut tail = rate.frames_of_millis(RENDER_TAIL_MS);
     while tail > 0 {

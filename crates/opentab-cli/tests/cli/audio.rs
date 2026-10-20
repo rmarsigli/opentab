@@ -2,11 +2,34 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-use crate::support::{gp_fixture, path_str, run_in, temp};
+use crate::support::{gp_fixture, path_str, read_json, run_in, temp};
 
 const RATE: u32 = 48_000;
 const BAR_FRAMES: u64 = 2 * RATE as u64;
 const TAIL_FRAMES: u64 = 3 * RATE as u64;
+const LONG_BAR_FRAMES: u64 = 11_520;
+const SHORT_BAR_FRAMES: u64 = 180;
+const HELP_ORDER: [usize; 6] = [1, 2, 1, 2, 3, 4];
+
+struct HelpExample {
+    bars: &'static str,
+    plays: &'static [usize],
+}
+
+const HELP_EXAMPLES: [HelpExample; 3] = [
+    HelpExample {
+        bars: "2",
+        plays: &[2],
+    },
+    HelpExample {
+        bars: "3-4",
+        plays: &[3, 4],
+    },
+    HelpExample {
+        bars: "1-2",
+        plays: &[1, 2, 1, 2],
+    },
+];
 
 struct Wav {
     channels: u16,
@@ -59,9 +82,12 @@ impl Rendered {
 }
 
 fn audio(data: &Path, fixture: &str, name: &str, extra: &[&str]) -> Rendered {
+    audio_of(data, &gp_fixture(fixture), name, extra)
+}
+
+fn audio_of(data: &Path, input: &Path, name: &str, extra: &[&str]) -> Rendered {
     let out = data.join(name);
-    let input = gp_fixture(fixture);
-    let mut args = vec!["audio", path_str(&input), "--out", path_str(&out), "--json"];
+    let mut args = vec!["audio", path_str(input), "--out", path_str(&out), "--json"];
     args.extend(extra);
     let result = run_in(data, &args);
     assert_eq!(result.code, 0, "{extra:?}: {}", result.stderr);
@@ -69,6 +95,57 @@ fn audio(data: &Path, fixture: &str, name: &str, extra: &[&str]) -> Rendered {
         body: result.json(),
         path: out,
     }
+}
+
+fn insert_bar(index: usize, numerator: u8, denominator: u8) -> String {
+    json!({"op": "insert_master_bar", "index": index, "time_signature": {"numerator": numerator, "denominator": denominator}}).to_string()
+}
+
+fn built_score(dir: &Path, name: &str, lines: &[String]) -> PathBuf {
+    let score = dir.join(name);
+    let created = run_in(dir, &["new", "--out", path_str(&score)]);
+    assert_eq!(created.code, 0, "{}", created.stderr);
+    let commands = dir.join(format!("{name}.jsonl"));
+    std::fs::write(&commands, lines.join("\n")).unwrap();
+    let applied = run_in(
+        dir,
+        &[
+            "apply",
+            path_str(&score),
+            path_str(&commands),
+            "--out",
+            path_str(&score),
+        ],
+    );
+    assert_eq!(applied.code, 0, "{}", applied.stderr);
+    score
+}
+
+fn short_bars_score(dir: &Path) -> PathBuf {
+    let mut lines = vec![json!({"op": "set_tempo", "master_bar": 0, "bpm": 1000}).to_string()];
+    for index in 1..5 {
+        lines.push(insert_bar(index, 1, 64));
+    }
+    built_score(dir, "short.opentab.json", &lines)
+}
+
+fn repeated_score(dir: &Path) -> PathBuf {
+    let lines: Vec<String> = (1..4).map(|index| insert_bar(index, 4, 4)).collect();
+    let plain = built_score(dir, "plain.opentab.json", &lines);
+    let mut body = read_json(&plain);
+    body["master_bars"][0]["repeat_start"] = json!(true);
+    body["master_bars"][1]["repeat_end"] = json!(2);
+    let repeated = dir.join("repeated.opentab.json");
+    std::fs::write(&repeated, body.to_string()).unwrap();
+    repeated
+}
+
+fn spaced(numbers: &[usize]) -> String {
+    numbers
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn failure(data: &Path, fixture: &str, extra: &[&str]) -> (i32, Value) {
@@ -122,8 +199,9 @@ fn audio_writes_a_stereo_48_khz_wav_that_the_json_describes() {
         rendered.played(),
         json!([1, 2, 1, 2, 1, 2, 3, 4, 3, 4, 3, 5, 6, 7, 8, 8])
     );
+    assert_eq!(rendered.frames(), 16 * BAR_FRAMES + TAIL_FRAMES);
     let seconds = rendered.body["seconds"].as_f64().unwrap();
-    assert!((seconds - 35.0).abs() < 0.001, "{seconds}");
+    assert!((seconds - 35.0).abs() < 1e-9, "{seconds}");
     assert_eq!(
         rendered.body["backends"],
         json!([{"track": 1, "format": "built_in", "bank": "built-in", "fallback": null}])
@@ -158,6 +236,8 @@ fn bars_are_source_bars_counted_from_one_and_follow_the_repeats() {
     assert_eq!(after.frames(), 2 * BAR_FRAMES + TAIL_FRAMES);
     let last = audio(dir.path(), "repeats.gp", "last.wav", &["--bars", "8"]);
     assert_eq!(last.played(), json!([8, 8]));
+    assert_eq!(last.frames(), 2 * BAR_FRAMES + TAIL_FRAMES);
+    assert_eq!(last.wav().samples.len() as u64, 2 * last.frames());
 }
 
 #[test]
@@ -573,4 +653,192 @@ fn the_help_documents_what_bars_means() {
         "{}",
         result.stdout
     );
+}
+
+#[test]
+fn a_range_ending_on_very_short_bars_stops_on_the_frame_without_leaking_the_next_bar() {
+    let dir = temp();
+    let score = short_bars_score(dir.path());
+    for (speed, divisor) in [("100", 1), ("200", 2)] {
+        let long = LONG_BAR_FRAMES / divisor;
+        let short = SHORT_BAR_FRAMES / divisor;
+        let through_four = audio_of(
+            dir.path(),
+            &score,
+            "a.wav",
+            &["--bars", "1-4", "--speed", speed],
+        );
+        assert_eq!(through_four.played(), json!([1, 2, 3, 4]));
+        assert_eq!(through_four.frames(), long + 3 * short + TAIL_FRAMES);
+        let middle = audio_of(
+            dir.path(),
+            &score,
+            "b.wav",
+            &["--bars", "2-3", "--speed", speed],
+        );
+        assert_eq!(middle.frames(), 2 * short + TAIL_FRAMES);
+        let single = audio_of(
+            dir.path(),
+            &score,
+            "c.wav",
+            &["--bars", "4", "--speed", speed],
+        );
+        assert_eq!(single.frames(), short + TAIL_FRAMES);
+    }
+}
+
+#[test]
+fn a_range_ending_on_the_last_played_bar_has_its_full_bar_and_the_tail() {
+    let dir = temp();
+    let score = short_bars_score(dir.path());
+    for (speed, divisor) in [("100", 1), ("200", 2)] {
+        let long = LONG_BAR_FRAMES / divisor;
+        let short = SHORT_BAR_FRAMES / divisor;
+        let whole = audio_of(dir.path(), &score, "w.wav", &["--speed", speed]);
+        assert_eq!(whole.frames(), long + 4 * short + TAIL_FRAMES);
+        let end = audio_of(
+            dir.path(),
+            &score,
+            "e.wav",
+            &["--bars", "3-5", "--speed", speed],
+        );
+        assert_eq!(end.played(), json!([3, 4, 5]));
+        assert_eq!(end.frames(), 3 * short + TAIL_FRAMES);
+        let last = audio_of(
+            dir.path(),
+            &score,
+            "l.wav",
+            &["--bars", "5", "--speed", speed],
+        );
+        assert_eq!(last.frames(), short + TAIL_FRAMES);
+        assert_eq!(last.wav().samples.len() as u64, 2 * last.frames());
+    }
+}
+
+#[test]
+fn a_count_in_before_short_bars_adds_exactly_its_bar() {
+    let dir = temp();
+    let score = short_bars_score(dir.path());
+    let plain = audio_of(dir.path(), &score, "p.wav", &["--bars", "1-4"]);
+    let counted = audio_of(
+        dir.path(),
+        &score,
+        "c.wav",
+        &["--bars", "1-4", "--count-in"],
+    );
+    assert_eq!(counted.frames(), plain.frames() + LONG_BAR_FRAMES);
+}
+
+#[test]
+fn the_help_example_of_bars_is_what_the_bars_play() {
+    let dir = temp();
+    let score = repeated_score(dir.path());
+    let whole = audio_of(dir.path(), &score, "whole.wav", &[]);
+    assert_eq!(whole.played(), json!(HELP_ORDER));
+    let help = run_in(dir.path(), &["audio", "--help"]);
+    assert_eq!(help.code, 0);
+    let flat = help.stdout.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(&format!("in a score played as {}", spaced(&HELP_ORDER))),
+        "{flat}"
+    );
+    for example in &HELP_EXAMPLES {
+        let rendered = audio_of(dir.path(), &score, "example.wav", &["--bars", example.bars]);
+        assert_eq!(rendered.played(), json!(example.plays), "{}", example.bars);
+        let sentence = format!("--bars {} plays {}", example.bars, spaced(example.plays));
+        assert!(flat.contains(&sentence), "{sentence}: {flat}");
+    }
+}
+
+#[test]
+fn a_built_in_render_does_not_create_the_data_folder() {
+    let dir = temp();
+    let data = dir.path().join("data");
+    let input = gp_fixture("repeats.gp");
+    let out = dir.path().join("plain.wav");
+    let plain = run_in(
+        &data,
+        &[
+            "audio",
+            path_str(&input),
+            "--out",
+            path_str(&out),
+            "--bars",
+            "1",
+            "--json",
+        ],
+    );
+    assert_eq!(plain.code, 0, "{}", plain.stderr);
+    assert!(!data.exists());
+    let body = plain.json();
+    assert_eq!(body["backends"][0]["bank"], json!("built-in"));
+    assert_eq!(body["backends"][0]["fallback"], Value::Null);
+    assert!(read_wav(&out).peak > 1000);
+    let named = run_in(
+        &data,
+        &[
+            "audio",
+            path_str(&input),
+            "--out",
+            path_str(&out),
+            "--bars",
+            "1",
+            "--soundbank",
+            "no-such-bank",
+            "--json",
+        ],
+    );
+    assert_eq!(named.code, 0, "{}", named.stderr);
+    assert!(data.join("banks").is_dir());
+    assert!(
+        named.json()["backends"][0]["fallback"]
+            .as_str()
+            .unwrap()
+            .contains("no-such-bank")
+    );
+}
+
+#[test]
+fn an_unusable_data_folder_is_a_reported_fallback_unless_a_bank_is_asked_for() {
+    let dir = temp();
+    let data = dir.path().join("not-a-folder");
+    std::fs::write(&data, b"file").unwrap();
+    let input = gp_fixture("repeats.gp");
+    let out = dir.path().join("plain.wav");
+    let plain = run_in(
+        &data,
+        &[
+            "audio",
+            path_str(&input),
+            "--out",
+            path_str(&out),
+            "--bars",
+            "1",
+            "--json",
+        ],
+    );
+    assert_eq!(plain.code, 0, "{}", plain.stderr);
+    let backend = &plain.json()["backends"][0];
+    assert_eq!(backend["bank"], json!("built-in"));
+    assert!(
+        backend["fallback"]
+            .as_str()
+            .unwrap()
+            .contains("sound bank folder cannot be used"),
+        "{backend}"
+    );
+    let asked = run_in(
+        &data,
+        &[
+            "audio",
+            path_str(&input),
+            "--out",
+            path_str(&out),
+            "--soundbank",
+            "some-bank",
+            "--json",
+        ],
+    );
+    assert_eq!(asked.code, 2);
+    assert_eq!(asked.json()["error"]["kind"], json!("sound_bank"));
 }

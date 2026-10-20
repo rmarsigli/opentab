@@ -94,7 +94,7 @@ const RENDER_AFTER_HELP: &str = "Examples:\n  opentab render song.gp --format sv
 JSON result: {\"pages\": <count>, \"systems\": <count>, \"bars\": <count>, \"staff_space\": <micrometres>, \"crowded\": [<bar numbers from 1>], \"dropped\": [{\"bar\": <number from 1>, \"kind\": \"title|tempo|section|chord|text|dynamic\"}], \"title_page\": <true when page 1 holds only the title block>, \"unrendered\": [<sorted feature names, such as \"bends\", \"fermatas\", \"lyrics\">], \"files\": [<written paths in page order>]}\n\
 A dropped title block has no \"bar\": {\"kind\": \"title\"}.";
 
-const BARS_SEMANTICS: &str = "--bars A-B (or a single A) picks SOURCE bars: the master bars of the score, counted from 1 as in `opentab info` and `render --bars`. Repeats, endings and jumps are followed, so the sound is the first contiguous run of played bars whose source bar lies in A-B: in a score played as 1 2 3 2 3 4, --bars 2-3 is the first pass, played bars 2 and 3, and --bars 4 is the last bar. A range none of whose bars is ever played is an error.";
+const BARS_SEMANTICS: &str = "--bars A-B (or a single A) picks SOURCE bars: the master bars of the score, counted from 1 as in `opentab info` and `render --bars`. Repeats, endings and jumps are followed, so the sound is the first contiguous run of played bars whose source bar lies in A-B: in a score played as 1 2 1 2 3 4, --bars 2 plays 2, --bars 3-4 plays 3 4 and --bars 1-2 plays 1 2 1 2. A range none of whose bars is ever played is an error.";
 
 const EXPORT_ABOUT: &str = "Export a score as a Standard MIDI file";
 

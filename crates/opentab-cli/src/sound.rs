@@ -1,5 +1,6 @@
 use opentab_audio::{
-    BankFormat, BankRef, BarRange, SampleRate, Session, SessionConfig, TrackBackend, played_range,
+    BUILT_IN_BANK_NAME, BankFormat, BankRef, BarRange, BuiltInSynth, LoadedVoices, SampleRate,
+    Session, SessionConfig, Synth, TrackBackend, default_data_dir, played_range,
 };
 use opentab_files as files;
 use opentab_model::{Score, SoundOverride};
@@ -326,7 +327,52 @@ fn force_bank(score: &mut Score, bank: &BankRef) {
         .collect();
 }
 
+pub fn built_in_voices(tracks: usize, rate: SampleRate, fallback: Option<String>) -> LoadedVoices {
+    let voices: Vec<Box<dyn Synth>> = (0..tracks)
+        .map(|_| Box::new(BuiltInSynth::new(rate)) as Box<dyn Synth>)
+        .collect();
+    let backends = (0..tracks)
+        .map(|track| TrackBackend {
+            track,
+            format: BankFormat::BuiltIn,
+            bank: BUILT_IN_BANK_NAME.to_string(),
+            fallback: fallback.clone(),
+        })
+        .collect();
+    LoadedVoices { voices, backends }
+}
+
+fn load_voices(score: &Score, rate: SampleRate) -> Result<LoadedVoices, CliError> {
+    let wanted = !score.sound_overrides.is_empty();
+    let stored = default_data_dir().is_some_and(|root| root.exists());
+    if !wanted && !stored {
+        return Ok(built_in_voices(score.tracks.len(), rate, None));
+    }
+    match bank_store::open(None) {
+        Ok(manager) => {
+            let plan = manager.resolve(score);
+            Ok(manager.load_voices(&plan, rate))
+        }
+        Err(error) if !wanted => {
+            let reason = format!(
+                "the sound bank folder cannot be used: {}",
+                error.body().message
+            );
+            Ok(built_in_voices(score.tracks.len(), rate, Some(reason)))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 pub fn prepare(args: &PlaybackArgs, rate: SampleRate) -> Result<Prepared, CliError> {
+    prepare_with(args, rate, |score| load_voices(score, rate))
+}
+
+pub fn prepare_with(
+    args: &PlaybackArgs,
+    rate: SampleRate,
+    voices: impl FnOnce(&Score) -> Result<LoadedVoices, CliError>,
+) -> Result<Prepared, CliError> {
     let mut score = files::read_score(&args.path)?;
     let tracks = select_tracks(&score, &args.tracks)?;
     let profile = args.profile.profile();
@@ -336,12 +382,10 @@ pub fn prepare(args: &PlaybackArgs, rate: SampleRate) -> Result<Prepared, CliErr
         None => None,
     };
     let speed = Speed::new(args.speed)?;
-    let manager = bank_store::open(None)?;
     if let Some(bank) = &args.soundbank {
         force_bank(&mut score, bank);
     }
-    let plan = manager.resolve(&score);
-    let loaded = manager.load_voices(&plan, rate);
+    let loaded = voices(&score)?;
     let config = SessionConfig {
         rate,
         speed,
