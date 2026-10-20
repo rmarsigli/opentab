@@ -231,6 +231,8 @@ pub fn run(
         SoundbankAction::List => output::emit(&list(&manager), json),
         SoundbankAction::Catalogue => output::emit(&catalogue(&manager), json),
         SoundbankAction::Import { path } => {
+            std::fs::symlink_metadata(&path)
+                .map_err(|error| opentab_files::FileError::io(&path, &error))?;
             let bank = manager.import(&path)?;
             output::emit(
                 &Rendered {

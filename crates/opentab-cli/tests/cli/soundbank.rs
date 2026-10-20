@@ -176,7 +176,7 @@ fn a_file_that_is_not_a_sound_bank_is_refused() {
     let gone = dir.path().join("gone.sf2");
     let result = soundbank(dir.path(), &["import", path_str(&gone), "--json"]);
     assert_eq!(result.code, 2);
-    assert_eq!(result.json()["error"]["kind"], json!("sound_bank"));
+    assert_eq!(result.json()["error"]["kind"], json!("io"));
     let listed = soundbank(dir.path(), &["list", "--json"]).json();
     assert_eq!(listed["banks"], json!([]));
 }
