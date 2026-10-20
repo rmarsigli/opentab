@@ -46,19 +46,17 @@ pub fn played_range(order: &PlayOrder, sources: BarRange) -> Option<BarRange> {
     if sources.first > sources.last {
         return None;
     }
-    let first = (sources.first..=sources.last)
-        .filter_map(|source| order.played_of(source).first().copied())
-        .min()?;
-    let inside = |index: usize| {
+    let inside = |index: &usize| {
         order
             .bars
-            .get(index)
+            .get(*index)
             .is_some_and(|bar| (sources.first..=sources.last).contains(&bar.source))
     };
-    let mut last = first;
-    while inside(last + 1) {
-        last += 1;
-    }
+    let first = (0..order.bars.len()).find(inside)?;
+    let last = (first..order.bars.len())
+        .take_while(inside)
+        .last()
+        .unwrap_or(first);
     Some(BarRange { first, last })
 }
 

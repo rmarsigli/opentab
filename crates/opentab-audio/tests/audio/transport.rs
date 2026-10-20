@@ -554,6 +554,22 @@ fn a_source_bar_range_maps_to_its_first_contiguous_run_of_played_bars() {
     assert_eq!(played_range(&order, range(1, 1)), Some(range(1, 1)));
     assert_eq!(played_range(&order, range(4, 9)), None);
     assert_eq!(played_range(&order, range(2, 1)), None);
+    assert_eq!(
+        played_range(&order, range(2, usize::MAX)),
+        Some(range(2, 2))
+    );
+    assert_eq!(played_range(&order, range(usize::MAX, usize::MAX)), None);
+    for first in 0..5 {
+        for last in first..5 {
+            let expected = (first..=last)
+                .filter_map(|source| order.played_of(source).first().copied())
+                .min();
+            assert_eq!(
+                played_range(&order, range(first, last)).map(|run| run.first),
+                expected
+            );
+        }
+    }
     let repeats = performance(&fixture("repeats.gp"), Profile::Musical);
     let sources = repeats.order.sources();
     let runs = |source: usize| -> Vec<usize> {
