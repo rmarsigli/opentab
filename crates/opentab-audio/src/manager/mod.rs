@@ -333,9 +333,6 @@ impl BankManager {
         }
         let mut path = self.root.join(BANKS_FOLDER).join(stored.id.as_str());
         for part in parts {
-            if part.is_empty() || part == "." || part == ".." || part.contains('\\') {
-                return None;
-            }
             path.push(part);
         }
         let normal = path.strip_prefix(&self.root).is_ok_and(|relative| {
