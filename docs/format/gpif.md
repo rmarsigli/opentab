@@ -36,6 +36,8 @@ How GP writes the archive:
 
 GP also accepts other ways of writing the archive. We rebuilt an example with stored entries, with no data descriptors, with timestamps of 1980-01-01, without the directory entries and with the entries in a different order. GP opened every variant [b-rebuilt, b-rebuilt-stored, e2-order-stored].
 
+How OpenTab writes the archive: the entries in container order, files deflated at level 6, directories stored and empty, no data descriptors, a 1980-01-01 timestamp, no extra fields and no comments, "made by" Unix with modes 0644 and 0755. The writer builds the zip bytes itself and deflates with `miniz_oxide`, pinned to an exact version, so the bytes never depend on which `flate2` backend another crate of the build turns on. A test writes every committed fixture back byte for byte.
+
 ### 1.1 Minimal container
 
 We found the minimal set by deleting one entry at a time from an example, then by building archives from nothing:

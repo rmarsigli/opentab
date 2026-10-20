@@ -1029,3 +1029,23 @@ fn an_empty_drum_kit_is_refused() {
         Some(gm_drum_kit())
     );
 }
+
+#[test]
+fn every_committed_fixture_is_written_back_byte_for_byte() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/gp");
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .expect("fixtures/gp")
+        .map(|entry| entry.expect("entry").path())
+        .collect();
+    paths.sort();
+    for path in &paths {
+        let committed = std::fs::read(path).expect("fixture");
+        let score = read_gp(&committed).expect("read");
+        assert!(
+            write_gp(&score).expect("write") == committed,
+            "{}",
+            path.display()
+        );
+    }
+    assert_eq!(paths.len(), 35);
+}

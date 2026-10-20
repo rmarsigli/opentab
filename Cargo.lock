@@ -1241,7 +1241,9 @@ dependencies = [
 name = "opentab-gp"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "flate2",
+ "miniz_oxide 0.9.1",
  "opentab-command",
  "opentab-model",
  "opentab-testkit",

@@ -8,22 +8,20 @@ mod payload;
 mod state;
 mod track;
 mod xml;
+mod zipped;
 
 use std::collections::BTreeSet;
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 
 use opentab_model::{ContainerEntry, Score};
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, DateTime, System, ZipArchive, ZipWriter};
+use zip::ZipArchive;
 
 use crate::archive::{SCORE_ENTRY, minimal_container};
 use crate::error::{GpError, Refusal};
 use crate::overrides::{self, OVERRIDES_ENTRY};
+use crate::write::zipped::{ZipEntry, ZipFailure, ZipKind};
 
 const DIRECTORY_SUFFIX: char = '/';
-const ARCHIVE_SYSTEM: System = System::Unix;
-const FILE_PERMISSIONS: u32 = 0o644;
-const DIRECTORY_PERMISSIONS: u32 = 0o755;
 
 pub fn write_gp(score: &Score) -> Result<Vec<u8>, GpError> {
     let mut entries = container(score)?;
@@ -108,39 +106,34 @@ fn write_failure(error: impl std::fmt::Display) -> GpError {
 }
 
 fn write_archive(entries: &[ContainerEntry], gpif: &[u8]) -> Result<Vec<u8>, GpError> {
-    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
-    let deflated = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .last_modified_time(DateTime::default())
-        .system(ARCHIVE_SYSTEM)
-        .unix_permissions(FILE_PERMISSIONS);
-    let stored = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Stored)
-        .last_modified_time(DateTime::default())
-        .system(ARCHIVE_SYSTEM)
-        .unix_permissions(DIRECTORY_PERMISSIONS);
-    for (index, entry) in entries.iter().enumerate() {
-        let name = entry.name();
-        let rejected = |_| {
-            refuse(
-                index,
-                Refusal::EntryName {
-                    name: name.to_string(),
-                },
-            )
-        };
-        let data: &[u8] = match entry {
-            ContainerEntry::Score { .. } => gpif,
-            ContainerEntry::File { data, .. } => &data.0,
-        };
-        if entry.is_score() || !name.ends_with(DIRECTORY_SUFFIX) {
-            writer.start_file(name, deflated).map_err(rejected)?;
-            writer.write_all(data).map_err(write_failure)?;
-        } else {
-            writer.add_directory(name, stored).map_err(rejected)?;
-        }
-    }
-    let bytes = writer.finish().map_err(write_failure)?.into_inner();
+    let zipped: Vec<ZipEntry<'_>> = entries
+        .iter()
+        .map(|entry| {
+            let name = entry.name();
+            let data: &[u8] = match entry {
+                ContainerEntry::Score { .. } => gpif,
+                ContainerEntry::File { data, .. } => &data.0,
+            };
+            let kind = if entry.is_score() || !name.ends_with(DIRECTORY_SUFFIX) {
+                ZipKind::File
+            } else {
+                ZipKind::Directory
+            };
+            ZipEntry { name, data, kind }
+        })
+        .collect();
+    let bytes = zipped::zip(&zipped).map_err(|failure| match failure {
+        ZipFailure::Name { index } => refuse(
+            index,
+            Refusal::EntryName {
+                name: entries
+                    .get(index)
+                    .map(|entry| entry.name().to_string())
+                    .unwrap_or_default(),
+            },
+        ),
+        ZipFailure::TooLarge => write_failure("the archive is too large for a zip without zip64"),
+    })?;
     check_names(entries, &bytes)?;
     Ok(bytes)
 }

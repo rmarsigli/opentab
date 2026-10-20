@@ -142,9 +142,7 @@ mod tests {
     use opentab_gp::read_gp;
     use opentab_model::diagnose;
     use std::collections::BTreeMap;
-    use std::io::{Cursor, Read};
     use std::path::Path;
-    use zip::CompressionMethod;
 
     const DIAGNOSED: [(&str, usize); 5] = [
         ("directions-dangling.gp", 3),
@@ -184,29 +182,6 @@ mod tests {
         }
     }
 
-    #[derive(Debug, PartialEq, Eq)]
-    struct ArchiveEntry {
-        name: String,
-        method: CompressionMethod,
-        data: Vec<u8>,
-    }
-
-    fn entries(bytes: &[u8]) -> Vec<ArchiveEntry> {
-        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).expect("a zip container");
-        let mut out = Vec::new();
-        for index in 0..archive.len() {
-            let mut file = archive.by_index(index).expect("an entry");
-            let mut data = Vec::new();
-            file.read_to_end(&mut data).expect("entry data");
-            out.push(ArchiveEntry {
-                name: file.name().to_string(),
-                method: file.compression(),
-                data,
-            });
-        }
-        out
-    }
-
     #[test]
     fn rendering_twice_gives_identical_bytes() {
         let first = render().expect("render");
@@ -242,7 +217,7 @@ mod tests {
         for item in rendered {
             let committed = std::fs::read(dir.join(item.file)).expect("fixture");
             assert!(
-                entries(&committed) == entries(&item.bytes),
+                committed == item.bytes,
                 "{} is stale; run cargo xtask fixtures",
                 item.file
             );
