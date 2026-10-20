@@ -8,7 +8,7 @@
   <encoding>
    <encoding-date>1970-01-01</encoding-date>
    <software>Guitar Pro 8.1.5</software>
-   <supports element="print" attribute="new-system" type="yes" value="yes"/>
+   <supports type="yes" attribute="new-system" value="yes" element="print"/>
   </encoding>
  </identification>
  <defaults>
@@ -22,7 +22,7 @@
   </page-layout>
  </defaults>
  <credit>
-  <credit-words default-y="1790" default-x="655" font-size="24" justify="center" valign="top">Note effects</credit-words>
+  <credit-words font-size="24" default-y="1790" default-x="655" valign="top" justify="center">Note effects</credit-words>
  </credit>
  <part-list>
   <score-part id="P1">
@@ -753,7 +753,7 @@
     <staff>1</staff>
     <notations>
      <technical>
-      <hammer-on number="1" type="start">H</hammer-on>
+      <hammer-on type="start" number="1">H</hammer-on>
 <?GP 
 <root>
 <string>4</string>
@@ -799,7 +799,7 @@
     <staff>1</staff>
     <notations>
      <technical>
-      <hammer-on number="1" type="start">H</hammer-on>
+      <hammer-on type="start" number="1">H</hammer-on>
 <?GP 
 <root>
 <string>4</string>
@@ -854,7 +854,7 @@
     <staff>2</staff>
     <notations>
      <technical>
-      <hammer-on number="1" type="start">H</hammer-on>
+      <hammer-on type="start" number="1">H</hammer-on>
       <string>4</string>
       <fret>5</fret>
      </technical>
@@ -890,7 +890,7 @@
     <staff>2</staff>
     <notations>
      <technical>
-      <hammer-on number="1" type="start">H</hammer-on>
+      <hammer-on type="start" number="1">H</hammer-on>
       <string>4</string>
       <fret>7</fret>
      </technical>
@@ -951,7 +951,7 @@
 </root>
 ?>
      </technical>
-     <slide number="4" type="start"/>
+     <slide type="start" number="4"/>
     </notations>
    </note>
    <note>
@@ -974,7 +974,7 @@
 </root>
 ?>
      </technical>
-     <slide number="4" type="stop"/>
+     <slide type="stop" number="4"/>
     </notations>
    </note>
    <note>
@@ -998,7 +998,7 @@
 ?>
      </technical>
      <slur type="start"/>
-     <slide number="4" type="start"/>
+     <slide type="start" number="4"/>
     </notations>
    </note>
    <note>
@@ -1022,7 +1022,7 @@
 ?>
      </technical>
      <slur type="stop"/>
-     <slide number="4" type="stop"/>
+     <slide type="stop" number="4"/>
     </notations>
    </note>
    <backup>
@@ -1050,7 +1050,7 @@
       <string>3</string>
       <fret>5</fret>
      </technical>
-     <slide number="4" type="start"/>
+     <slide type="start" number="4"/>
     </notations>
    </note>
    <note>
@@ -1068,7 +1068,7 @@
       <string>3</string>
       <fret>7</fret>
      </technical>
-     <slide number="4" type="stop"/>
+     <slide type="stop" number="4"/>
     </notations>
    </note>
    <note>
@@ -1087,7 +1087,7 @@
       <fret>7</fret>
      </technical>
      <slur type="start"/>
-     <slide number="4" type="start"/>
+     <slide type="start" number="4"/>
     </notations>
    </note>
    <note>
@@ -1106,7 +1106,7 @@
       <fret>5</fret>
      </technical>
      <slur type="stop"/>
-     <slide number="4" type="stop"/>
+     <slide type="stop" number="4"/>
     </notations>
    </note>
   </measure>

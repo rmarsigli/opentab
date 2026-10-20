@@ -655,7 +655,7 @@
     },
     {
       "fixture": "note-effects.gp",
-      "sha256": "d648d378d628b53ba85689b16dc0ba53ac59777bd6b0131a7176f7dc63338ab8",
+      "sha256": "cb184d1494ebd1f8fc421befebf99d9101beb0ec17c2208633cf4ed4b06fb7bc",
       "outputs": [
         {
           "path": "export.gp5",
@@ -669,7 +669,7 @@
         },
         {
           "path": "export.musicxml",
-          "sha256": "59c620e67d3deb17cfeae7dbcf7d464fadf0c62e6d982fcea34da7bde8a756b3",
+          "sha256": "76e824b990c46a4ca0fa4a7e0e31b0bccd652ddc3d0a4cb3e8c64a4a61ab735c",
           "byte_identical": true
         },
         {

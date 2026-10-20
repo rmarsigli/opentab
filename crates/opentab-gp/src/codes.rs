@@ -173,12 +173,12 @@ pub(crate) const MASTER_BAR_ORDER: [&str; 11] = [
 ];
 
 pub(crate) const NOTE_ORDER: [&str; 11] = [
-    "Trill",
+    "LetRing",
     "Vibrato",
     "AntiAccent",
-    "LetRing",
     "Accent",
     "Tie",
+    "Trill",
     "LeftFingering",
     "RightFingering",
     "InstrumentArticulation",
@@ -292,7 +292,84 @@ pub(crate) fn slide_bits(slide: Slide) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
+
+    const GUITAR_PRO_NOTE_CHILDREN: [&[&str]; 8] = [
+        &[
+            "LetRing",
+            "Vibrato",
+            "Accent",
+            "Trill",
+            "InstrumentArticulation",
+            "Properties",
+        ],
+        &[
+            "LetRing",
+            "Vibrato",
+            "AntiAccent",
+            "LeftFingering",
+            "RightFingering",
+            "InstrumentArticulation",
+            "Properties",
+        ],
+        &[
+            "AntiAccent",
+            "Tie",
+            "Trill",
+            "InstrumentArticulation",
+            "Properties",
+        ],
+        &[
+            "LetRing",
+            "Vibrato",
+            "Accent",
+            "Tie",
+            "LeftFingering",
+            "RightFingering",
+            "InstrumentArticulation",
+            "Properties",
+        ],
+        &["Vibrato", "Tie", "InstrumentArticulation", "Properties"],
+        &[
+            "Tie",
+            "RightFingering",
+            "InstrumentArticulation",
+            "Properties",
+        ],
+        &[
+            "Tie",
+            "LeftFingering",
+            "InstrumentArticulation",
+            "Properties",
+        ],
+        &[
+            "Trill",
+            "InstrumentArticulation",
+            "Properties",
+            "XProperties",
+        ],
+    ];
+
+    #[test]
+    fn the_note_order_sorts_every_child_list_guitar_pro_wrote() {
+        let mut covered = BTreeSet::new();
+        for children in GUITAR_PRO_NOTE_CHILDREN {
+            let ranks: Vec<usize> = children
+                .iter()
+                .map(|name| {
+                    NOTE_ORDER
+                        .iter()
+                        .position(|known| known == name)
+                        .expect("known")
+                })
+                .collect();
+            assert!(ranks.is_sorted_by(|a, b| a < b), "{children:?}");
+            covered.extend(ranks);
+        }
+        assert_eq!(covered.len(), NOTE_ORDER.len());
+    }
 
     #[test]
     fn every_slide_has_its_own_bit() {

@@ -504,12 +504,12 @@ fn effect_references_follow_shared_beats_and_notes() {
 }
 
 pub const NOTE_ORDER: [&str; 11] = [
-    "Trill",
+    "LetRing",
     "Vibrato",
     "AntiAccent",
-    "LetRing",
     "Accent",
     "Tie",
+    "Trill",
     "LeftFingering",
     "RightFingering",
     "InstrumentArticulation",
@@ -575,7 +575,44 @@ struct NotePair {
     second: String,
 }
 
-const LEDGERED_SWAP: [&str; 2] = ["LetRing", "Vibrato"];
+struct OrderEvidence {
+    first: &'static str,
+    second: &'static str,
+    source: &'static str,
+}
+
+const WITNESSED_OUTSIDE_THE_GOLDENS: [OrderEvidence; 6] = [
+    OrderEvidence {
+        first: "Vibrato",
+        second: "AntiAccent",
+        source: "m3-w1b-n1",
+    },
+    OrderEvidence {
+        first: "AntiAccent",
+        second: "Accent",
+        source: "never together: GP drops the ghost of an accented note",
+    },
+    OrderEvidence {
+        first: "Accent",
+        second: "Tie",
+        source: "m3-w1b-n2",
+    },
+    OrderEvidence {
+        first: "Tie",
+        second: "Trill",
+        source: "m3-w1b-n2",
+    },
+    OrderEvidence {
+        first: "Trill",
+        second: "LeftFingering",
+        source: "never together: GP drops the trill of a fingered note",
+    },
+    OrderEvidence {
+        first: "LeftFingering",
+        second: "RightFingering",
+        source: "m3-w1b-n1",
+    },
+];
 
 fn note_pairs(gpif: &str, pairs: &mut BTreeSet<NotePair>) -> usize {
     let notes = note_children(gpif);
@@ -608,49 +645,87 @@ fn files_under(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     paths
 }
 
-#[test]
-fn the_note_order_agrees_with_every_pair_guitar_pro_and_our_writer_wrote() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+struct GoldenPairs {
+    pairs: BTreeSet<NotePair>,
+    notes: usize,
+}
+
+fn golden_note_pairs(root: &std::path::Path) -> GoldenPairs {
     let mut guitar_pro = BTreeSet::new();
-    let mut gp_notes = 0usize;
+    let mut notes = 0usize;
     for golden in files_under(&root.join("goldens/gp")) {
         let resave = golden.join("resave.gpif");
         if resave.is_file() {
             let text = std::fs::read_to_string(&resave).expect("resave.gpif");
-            gp_notes += note_pairs(&text, &mut guitar_pro);
+            notes += note_pairs(&text, &mut guitar_pro);
         }
     }
+    GoldenPairs {
+        pairs: guitar_pro,
+        notes,
+    }
+}
+
+fn pair(first: &str, second: &str) -> NotePair {
+    NotePair {
+        first: first.to_string(),
+        second: second.to_string(),
+    }
+}
+
+#[test]
+fn every_neighbour_in_the_note_order_is_witnessed_by_guitar_pro() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let GoldenPairs {
+        pairs: guitar_pro,
+        notes,
+    } = golden_note_pairs(&root);
+    assert!(notes >= 464, "{notes} notes in the goldens");
+    for neighbours in NOTE_ORDER.windows(2) {
+        let found = pair(neighbours[0], neighbours[1]);
+        let elsewhere = WITNESSED_OUTSIDE_THE_GOLDENS
+            .iter()
+            .find(|evidence| evidence.first == neighbours[0] && evidence.second == neighbours[1]);
+        match elsewhere {
+            Some(evidence) => assert!(
+                !guitar_pro.contains(&found),
+                "{found:?} is now in a golden; drop {}",
+                evidence.source
+            ),
+            None => assert!(guitar_pro.contains(&found), "no GP resave writes {found:?}"),
+        }
+    }
+    for evidence in &WITNESSED_OUTSIDE_THE_GOLDENS {
+        assert_eq!(rank(evidence.first) + 1, rank(evidence.second));
+    }
+    for written in &guitar_pro {
+        assert!(
+            rank(&written.first) < rank(&written.second),
+            "GP wrote {written:?}"
+        );
+    }
+}
+
+#[test]
+fn our_writer_never_reverses_a_pair_guitar_pro_wrote() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let guitar_pro = golden_note_pairs(&root).pairs;
     let mut ours = BTreeSet::new();
     for fixture in files_under(&root.join("fixtures/gp")) {
         let score = opentab_gp::read_gp(&std::fs::read(&fixture).expect("fixture")).expect("read");
         let bytes = opentab_gp::write_gp(&score).expect("write");
         note_pairs(&crate::anchors::gpif_text(&bytes), &mut ours);
     }
-    assert!(gp_notes >= 464, "{gp_notes} notes in the goldens");
-    let swap = NotePair {
-        first: LEDGERED_SWAP[0].to_string(),
-        second: LEDGERED_SWAP[1].to_string(),
-    };
-    let swapped = NotePair {
-        first: swap.second.clone(),
-        second: swap.first.clone(),
-    };
-    assert!(guitar_pro.contains(&swap));
-    assert!(ours.contains(&swapped));
-    for pair in &guitar_pro {
-        if *pair != swap {
-            assert!(rank(&pair.first) < rank(&pair.second), "GP wrote {pair:?}");
-            assert!(
-                !ours.contains(&NotePair {
-                    first: pair.second.clone(),
-                    second: pair.first.clone(),
-                }),
-                "our writer reverses {pair:?}"
-            );
-        }
-    }
-    for pair in &ours {
-        assert!(rank(&pair.first) < rank(&pair.second), "we wrote {pair:?}");
+    assert!(ours.contains(&pair("LetRing", "Vibrato")));
+    for written in &ours {
+        assert!(
+            !guitar_pro.contains(&pair(&written.second, &written.first)),
+            "our writer reverses {written:?}"
+        );
+        assert!(
+            rank(&written.first) < rank(&written.second),
+            "we wrote {written:?}"
+        );
     }
 }
 
