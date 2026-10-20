@@ -621,3 +621,39 @@ fn an_sfz_session_decodes_every_sample_it_plays_before_the_first_block() {
         assert!(bank.faults().is_empty(), "{:?}", bank.faults());
     }
 }
+
+#[test]
+fn the_render_report_names_the_played_bars_length_and_backends() {
+    let performance = performance(&fixture("repeats.gp"), Profile::Musical);
+    let mut session = Session::new(
+        performance.clone(),
+        built_in_voices(&performance, RATE),
+        config(RATE),
+    )
+    .expect("session");
+    let script = [step(0, TransportCommand::Loop(range(1, 2)))];
+    let frames = 4 * range_frames(&performance, range(1, 2), Speed::NORMAL, RATE).expect("frames");
+    render_session(&mut session, &script, frames).expect("render");
+    let backends: Vec<opentab_audio::TrackBackend> = (0..performance.tracks.len())
+        .map(opentab_audio::TrackBackend::built_in)
+        .collect();
+    let report = session.report(backends.clone());
+    assert_eq!(report.played_bars, vec![1, 2]);
+    assert_eq!(
+        report.seconds,
+        Fraction::new(i64::try_from(frames).expect("frames"), i64::from(RATE.hz()))
+    );
+    assert_eq!(report.backends, backends);
+    assert_eq!(report.backends[0].bank, opentab_audio::BUILT_IN_BANK_NAME);
+    assert_eq!(report.unplayed, performance.unplayed);
+    assert_eq!(report.warnings, performance.warnings);
+    let mut whole = Session::new(
+        performance.clone(),
+        built_in_voices(&performance, RATE),
+        config(RATE),
+    )
+    .expect("session");
+    render_session(&mut whole, &[], song_frames(&performance, 100) + 10).expect("render");
+    let all: Vec<usize> = (0..performance.order.bars.len()).collect();
+    assert_eq!(whole.report(Vec::new()).played_bars, all);
+}

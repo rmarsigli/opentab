@@ -160,3 +160,38 @@ fn the_real_time_null_output_starts_and_returns_its_transport_when_stopped() {
     assert!(transport.clock() >= second);
     assert_eq!(output.stop().map(|transport| transport.clock()), None);
 }
+
+#[test]
+fn the_status_reports_the_count_in_until_the_first_bar_starts() {
+    let performance = performance(&fixture("repeats.gp"), Profile::Musical);
+    let config = opentab_audio::SessionConfig {
+        count_in: true,
+        ..config(RATE)
+    };
+    let session = Session::new(
+        performance.clone(),
+        built_in_voices(&performance, RATE),
+        config,
+    )
+    .expect("session");
+    let (transport, mut handle) = session.split();
+    let mut output = NullOutput::manual(RATE);
+    output.start(transport).expect("start");
+    handle.send(TransportCommand::Play).expect("send");
+    let bar = opentab_audio::range_frames(
+        &performance,
+        opentab_audio::BarRange { first: 0, last: 0 },
+        Speed::NORMAL,
+        RATE,
+    )
+    .expect("bar");
+    output.step(bar);
+    let counting = handle.status();
+    assert_eq!(counting.state, TransportState::CountIn);
+    assert_eq!(
+        (counting.played_bar, counting.offset),
+        (0, opentab_model::Fraction::new_raw(0, 1))
+    );
+    output.step(1);
+    assert_eq!(handle.status().state, TransportState::Playing);
+}

@@ -648,7 +648,11 @@ impl Transport {
     }
 
     fn visit(&mut self) {
-        while self.bar + 1 < self.timeline.bar_count()
+        let ceiling = match self.span {
+            Some(span) if self.bar <= span.range.last => span.range.last + 1,
+            _ => self.timeline.bar_count(),
+        };
+        while self.bar + 1 < ceiling
             && self
                 .timeline
                 .bars
