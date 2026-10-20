@@ -661,7 +661,6 @@ impl BankManager {
             return Ok(self.installed(stored));
         }
         check_download_url(&entry.url)?;
-        cancel.check()?;
         let staging = self.stage()?;
         let download = staging.path.join(DOWNLOAD_NAME);
         download::fetch(

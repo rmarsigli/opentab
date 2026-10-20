@@ -326,6 +326,15 @@ struct Pending {
     source: PathBuf,
     relative: PathBuf,
     depth: u64,
+    identity: Option<FileIdentity>,
+}
+
+fn same_folder(path: &Path, expected: FileIdentity) -> Result<(), BankError> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| storage(path, &error))?;
+    if is_link(&metadata) || !metadata.is_dir() || identity(&metadata) != expected {
+        return Err(refuse(UnsafeBank::BankChanged));
+    }
+    Ok(())
 }
 
 pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankError> {
@@ -335,6 +344,7 @@ pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankEr
         source: root.to_path_buf(),
         relative: PathBuf::new(),
         depth: 0,
+        identity: None,
     }];
     while let Some(folder) = pending.pop() {
         let listing =
@@ -356,6 +366,7 @@ pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankEr
                     source: path,
                     relative: relative.clone(),
                     depth: folder.depth + 1,
+                    identity: Some(identity(&metadata)),
                 });
             }
             entries.push(Listed {
@@ -364,6 +375,9 @@ pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankEr
                 bytes: metadata.len(),
                 identity: identity(&metadata),
             });
+        }
+        if let Some(expected) = folder.identity {
+            same_folder(&folder.source, expected)?;
         }
     }
     entries.sort_by(|left, right| left.relative.cmp(&right.relative));
@@ -520,6 +534,24 @@ mod tests {
             Err(refuse(UnsafeBank::BankChanged))
         );
         assert!(!target.join("Samples/a.wav").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_swapped_for_a_link_during_the_walk_is_refused() {
+        let dir = tempfile::tempdir().expect("scratch");
+        let folder = dir.path().join("Samples");
+        let elsewhere = dir.path().join("elsewhere");
+        fs::create_dir_all(&folder).expect("folder");
+        fs::create_dir_all(&elsewhere).expect("elsewhere");
+        let listed = identity(&fs::symlink_metadata(&folder).expect("folder"));
+        assert_eq!(same_folder(&folder, listed), Ok(()));
+        fs::remove_dir(&folder).expect("removed");
+        std::os::unix::fs::symlink(&elsewhere, &folder).expect("link");
+        assert_eq!(
+            same_folder(&folder, listed),
+            Err(refuse(UnsafeBank::BankChanged))
+        );
     }
 
     #[test]
