@@ -29,14 +29,22 @@ pub struct StoreProblem {
 enum ReadFailure {
     Unreadable(BankError),
     Damaged(BankError),
+    Newer(BankError),
 }
 
 impl ReadFailure {
     fn error(self) -> BankError {
         match self {
-            ReadFailure::Unreadable(error) | ReadFailure::Damaged(error) => error,
+            ReadFailure::Unreadable(error)
+            | ReadFailure::Damaged(error)
+            | ReadFailure::Newer(error) => error,
         }
     }
+}
+
+#[derive(Deserialize)]
+struct Versioned {
+    version: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,10 +164,7 @@ fn broken(path: &Path, reason: impl std::fmt::Display) -> BankError {
     }
 }
 
-fn read_checked<T: DeserializeOwned + Default>(
-    path: &Path,
-    version: fn(&T) -> u32,
-) -> Result<T, ReadFailure> {
+fn read_checked<T: DeserializeOwned + Default>(path: &Path) -> Result<T, ReadFailure> {
     let file = match File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(T::default()),
@@ -172,25 +177,31 @@ fn read_checked<T: DeserializeOwned + Default>(
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > STORE_MAX_BYTES {
         return Err(ReadFailure::Damaged(broken(path, "the file is too large")));
     }
-    let value: T = serde_json::from_slice(&bytes)
+    let versioned: Versioned = serde_json::from_slice(&bytes)
         .map_err(|error| ReadFailure::Damaged(broken(path, error)))?;
-    if version(&value) != STORE_VERSION {
+    if versioned.version > STORE_VERSION {
+        return Err(ReadFailure::Newer(BankError::Storage {
+            message: format!(
+                "{} was written by a newer version of OpenTab (store version {}); this version reads version {STORE_VERSION}, so it leaves the file unchanged and cannot change your sound banks until you update OpenTab",
+                path.display(),
+                versioned.version
+            ),
+        }));
+    }
+    if versioned.version != STORE_VERSION {
         return Err(ReadFailure::Damaged(broken(
             path,
             format!(
                 "it has version {}, and OpenTab reads version {STORE_VERSION}",
-                version(&value)
+                versioned.version
             ),
         )));
     }
-    Ok(value)
+    serde_json::from_slice(&bytes).map_err(|error| ReadFailure::Damaged(broken(path, error)))
 }
 
-pub(crate) fn read<T: DeserializeOwned + Default>(
-    path: &Path,
-    version: fn(&T) -> u32,
-) -> Result<T, BankError> {
-    read_checked(path, version).map_err(ReadFailure::error)
+pub(crate) fn read<T: DeserializeOwned + Default>(path: &Path) -> Result<T, BankError> {
+    read_checked(path).map_err(ReadFailure::error)
 }
 
 fn set_aside(path: &Path) -> std::io::Result<PathBuf> {
@@ -213,10 +224,9 @@ fn set_aside(path: &Path) -> std::io::Result<PathBuf> {
 
 pub(crate) fn read_or_set_aside<T: DeserializeOwned + Default>(
     path: &Path,
-    version: fn(&T) -> u32,
     problems: &mut Vec<StoreProblem>,
 ) -> T {
-    match read_checked(path, version) {
+    match read_checked(path) {
         Ok(value) => value,
         Err(ReadFailure::Damaged(error)) => {
             let moved = set_aside(path);
@@ -231,7 +241,7 @@ pub(crate) fn read_or_set_aside<T: DeserializeOwned + Default>(
             });
             T::default()
         }
-        Err(ReadFailure::Unreadable(error)) => {
+        Err(ReadFailure::Unreadable(error) | ReadFailure::Newer(error)) => {
             problems.push(StoreProblem {
                 path: path.to_path_buf(),
                 moved_to: None,

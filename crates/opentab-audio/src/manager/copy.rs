@@ -216,8 +216,44 @@ pub(crate) fn identity(metadata: &Metadata) -> FileIdentity {
     }
 }
 
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Reparse {
+    surrogate: bool,
+    attributes: u32,
+}
+
+impl Reparse {
+    fn of(metadata: &Metadata) -> Reparse {
+        Reparse {
+            surrogate: metadata.file_type().is_symlink(),
+            attributes: attributes(metadata),
+        }
+    }
+
+    fn is_link(self) -> bool {
+        self.surrogate
+    }
+
+    fn is_placeholder(self) -> bool {
+        !self.surrogate && self.attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+}
+
+#[cfg(windows)]
+fn attributes(metadata: &Metadata) -> u32 {
+    use std::os::windows::fs::MetadataExt;
+    metadata.file_attributes()
+}
+
+#[cfg(not(windows))]
+fn attributes(_metadata: &Metadata) -> u32 {
+    0
+}
+
 #[cfg(unix)]
-fn open_source(path: &Path) -> io::Result<File> {
+fn open_unfollowed(path: &Path) -> io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
     OpenOptions::new()
         .read(true)
@@ -229,7 +265,7 @@ fn open_source(path: &Path) -> io::Result<File> {
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
 #[cfg(windows)]
-fn open_source(path: &Path) -> io::Result<File> {
+fn open_unfollowed(path: &Path) -> io::Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
     OpenOptions::new()
         .read(true)
@@ -238,8 +274,17 @@ fn open_source(path: &Path) -> io::Result<File> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn open_source(path: &Path) -> io::Result<File> {
+fn open_unfollowed(path: &Path) -> io::Result<File> {
     File::open(path)
+}
+
+fn open_source(path: &Path) -> io::Result<File> {
+    let file = open_unfollowed(path)?;
+    if Reparse::of(&file.metadata()?).is_placeholder() {
+        drop(file);
+        return File::open(path);
+    }
+    Ok(file)
 }
 
 #[cfg(unix)]
@@ -252,25 +297,26 @@ fn is_link_refusal(_error: &io::Error) -> bool {
     false
 }
 
-#[cfg(windows)]
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-
-#[cfg(windows)]
 fn is_link(metadata: &Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    metadata.file_type().is_symlink()
-        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-}
-
-#[cfg(not(windows))]
-fn is_link(metadata: &Metadata) -> bool {
-    metadata.file_type().is_symlink()
+    Reparse::of(metadata).is_link()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ListedKind {
     File,
     Folder,
+    Link,
+    Special,
+}
+
+impl ListedKind {
+    pub(crate) fn refusal(self) -> Option<UnsafeBank> {
+        match self {
+            ListedKind::File | ListedKind::Folder => None,
+            ListedKind::Link => Some(UnsafeBank::BankSymlink),
+            ListedKind::Special => Some(UnsafeBank::SpecialFile),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,30 +342,34 @@ impl Survey {
     }
 }
 
-fn listed_kind(metadata: &Metadata) -> Result<ListedKind, BankError> {
+fn listed_kind(metadata: &Metadata) -> ListedKind {
     if is_link(metadata) {
-        return Err(refuse(UnsafeBank::BankSymlink));
+        return ListedKind::Link;
     }
     if metadata.is_dir() {
-        return Ok(ListedKind::Folder);
+        return ListedKind::Folder;
     }
     if metadata.is_file() {
-        return Ok(ListedKind::File);
+        return ListedKind::File;
     }
-    Err(refuse(UnsafeBank::SpecialFile))
+    ListedKind::Special
 }
 
 pub(crate) fn listed_file(path: &Path, relative: PathBuf) -> Result<Listed, BankError> {
     let metadata = fs::symlink_metadata(path).map_err(|error| storage(path, &error))?;
-    match listed_kind(&metadata)? {
-        ListedKind::File => Ok(Listed {
-            relative,
-            kind: ListedKind::File,
-            bytes: metadata.len(),
-            identity: identity(&metadata),
-        }),
-        ListedKind::Folder => Err(refuse(UnsafeBank::SpecialFile)),
+    let kind = listed_kind(&metadata);
+    if let Some(reason) = kind.refusal() {
+        return Err(refuse(reason));
     }
+    if kind != ListedKind::File {
+        return Err(refuse(UnsafeBank::SpecialFile));
+    }
+    Ok(Listed {
+        relative,
+        kind,
+        bytes: metadata.len(),
+        identity: identity(&metadata),
+    })
 }
 
 struct Pending {
@@ -339,6 +389,7 @@ fn same_folder(path: &Path, expected: FileIdentity) -> Result<(), BankError> {
 
 pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankError> {
     let mut budget = Budget::new(limits);
+    let mut skipped = Budget::new(limits);
     let mut entries = Vec::new();
     let mut pending = vec![Pending {
         source: root.to_path_buf(),
@@ -351,15 +402,19 @@ pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankEr
             fs::read_dir(&folder.source).map_err(|error| storage(&folder.source, &error))?;
         for entry in listing {
             let entry = entry.map_err(|error| storage(&folder.source, &error))?;
-            budget.entry()?;
             let relative = folder.relative.join(entry.file_name());
             budget.name(&relative)?;
             if is_mac_metadata(Path::new(&entry.file_name())) {
+                skipped.entry()?;
                 continue;
             }
             let path = entry.path();
             let metadata = fs::symlink_metadata(&path).map_err(|error| storage(&path, &error))?;
-            let kind = listed_kind(&metadata)?;
+            let kind = listed_kind(&metadata);
+            match kind {
+                ListedKind::File | ListedKind::Folder => budget.entry()?,
+                ListedKind::Link | ListedKind::Special => skipped.entry()?,
+            }
             if kind == ListedKind::Folder {
                 budget.depth(folder.depth + 1)?;
                 pending.push(Pending {
@@ -397,13 +452,18 @@ fn budget_files(files: &[Listed], budget: &Budget) -> Result<(), BankError> {
     Ok(())
 }
 
-pub(crate) fn copy_listed(
-    source: &Path,
-    listed: &Listed,
-    target: &Path,
-    budget: &mut Budget,
-) -> Result<(), BankError> {
-    let mut file = open_source(source).map_err(|error| {
+#[cfg(test)]
+thread_local! {
+    static COPIED: std::cell::RefCell<Vec<PathBuf>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+pub(crate) fn take_copied() -> Vec<PathBuf> {
+    COPIED.with(std::cell::RefCell::take)
+}
+
+fn open_listed(source: &Path, listed: &Listed) -> Result<File, BankError> {
+    let file = open_source(source).map_err(|error| {
         if is_link_refusal(&error) {
             refuse(UnsafeBank::BankSymlink)
         } else {
@@ -420,8 +480,37 @@ pub(crate) fn copy_listed(
     if identity(&metadata) != listed.identity {
         return Err(refuse(UnsafeBank::BankChanged));
     }
-    budget.declared(metadata.len(), budget.bytes.saturating_add(metadata.len()))?;
+    Ok(file)
+}
+
+pub(crate) fn copy_listed(
+    source: &Path,
+    listed: &Listed,
+    target: &Path,
+    budget: &mut Budget,
+) -> Result<(), BankError> {
+    if let Some(reason) = listed.kind.refusal() {
+        return Err(refuse(reason));
+    }
+    let mut file = open_listed(source, listed)?;
+    budget.declared(listed.bytes, budget.bytes.saturating_add(listed.bytes))?;
+    #[cfg(test)]
+    COPIED.with(|copied| copied.borrow_mut().push(listed.relative.clone()));
     budget.write(&mut file, target)?;
+    Ok(())
+}
+
+pub(crate) fn copy_head(
+    source: &Path,
+    listed: &Listed,
+    target: &Path,
+    budget: &mut Budget,
+    limit: u64,
+) -> Result<(), BankError> {
+    let file = open_listed(source, listed)?;
+    let head = listed.bytes.min(limit);
+    budget.declared(head, budget.bytes.saturating_add(head))?;
+    budget.write(&mut file.take(limit), target)?;
     Ok(())
 }
 
@@ -571,6 +660,69 @@ mod tests {
             ),
             Err(refuse(UnsafeBank::BankChanged))
         );
+    }
+
+    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
+    const FILE_ATTRIBUTE_ARCHIVE: u32 = 0x20;
+    const FILE_ATTRIBUTE_OFFLINE: u32 = 0x1000;
+    const FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS: u32 = 0x0040_0000;
+
+    #[test]
+    fn only_name_surrogate_reparse_points_count_as_links() {
+        let cloud = Reparse {
+            surrogate: false,
+            attributes: FILE_ATTRIBUTE_ARCHIVE
+                | FILE_ATTRIBUTE_REPARSE_POINT
+                | FILE_ATTRIBUTE_OFFLINE
+                | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS,
+        };
+        assert!(!cloud.is_link());
+        assert!(cloud.is_placeholder());
+        let junction = Reparse {
+            surrogate: true,
+            attributes: FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT,
+        };
+        assert!(junction.is_link());
+        assert!(!junction.is_placeholder());
+        let plain = Reparse {
+            surrogate: false,
+            attributes: FILE_ATTRIBUTE_ARCHIVE,
+        };
+        assert!(!plain.is_link());
+        assert!(!plain.is_placeholder());
+    }
+
+    #[test]
+    fn a_regular_file_opens_without_a_reparse_view() {
+        let dir = tempfile::tempdir().expect("scratch");
+        fs::write(dir.path().join("a.sf2"), b"plain").expect("file");
+        let metadata = fs::symlink_metadata(dir.path().join("a.sf2")).expect("listed");
+        assert_eq!(listed_kind(&metadata), ListedKind::File);
+        assert!(!Reparse::of(&metadata).is_placeholder());
+        let file = open_source(&dir.path().join("a.sf2")).expect("opens");
+        assert!(file.metadata().expect("opened").is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_is_listed_as_a_link_and_never_walked() {
+        let dir = tempfile::tempdir().expect("scratch");
+        let source = dir.path().join("source");
+        let elsewhere = dir.path().join("elsewhere");
+        fs::create_dir_all(&source).expect("source");
+        fs::create_dir_all(&elsewhere).expect("elsewhere");
+        fs::write(elsewhere.join("private.wav"), b"private").expect("private");
+        let made = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(source.join("Samples"))
+            .arg(&elsewhere)
+            .status();
+        assert!(made.is_ok_and(|status| status.success()), "mklink /J works");
+        let listing = survey(&source, ImportLimits::DEFAULT).expect("survey");
+        let kinds: Vec<ListedKind> = listing.entries.iter().map(|entry| entry.kind).collect();
+        assert_eq!(kinds, [ListedKind::Link]);
     }
 
     #[test]

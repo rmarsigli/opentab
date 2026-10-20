@@ -24,6 +24,8 @@ pub const DOWNLOAD_STALL_SECONDS: u64 = 30;
 pub const DOWNLOAD_DEADLINE_FLOOR_SECONDS: u64 = 60;
 pub const DOWNLOAD_MIN_BYTES_PER_SECOND: u64 = 32 * 1024;
 pub const DOWNLOAD_REDIRECTS: u32 = 10;
+pub const DOWNLOAD_MAX_WAIT_SECONDS: u64 = 7 * 24 * 60 * 60;
+const MAX_WAIT: Duration = Duration::from_secs(DOWNLOAD_MAX_WAIT_SECONDS);
 const CHUNK_BYTES: usize = 64 * 1024;
 const USER_AGENT: &str = "OpenTab";
 const HTTP_OK: u16 = 200;
@@ -50,6 +52,17 @@ impl DownloadTimeouts {
         let seconds = size.div_ceil(self.min_bytes_per_second.max(1));
         self.deadline_floor
             .saturating_add(Duration::from_secs(seconds))
+            .min(MAX_WAIT)
+    }
+
+    pub fn clamped(&self) -> DownloadTimeouts {
+        DownloadTimeouts {
+            connect: self.connect.min(MAX_WAIT),
+            response: self.response.min(MAX_WAIT),
+            stall: self.stall.min(MAX_WAIT),
+            deadline_floor: self.deadline_floor.min(MAX_WAIT),
+            min_bytes_per_second: self.min_bytes_per_second,
+        }
     }
 }
 
@@ -120,12 +133,24 @@ pub fn check_download_url(url: &str) -> Result<(), InstallError> {
 #[derive(Debug)]
 struct StallConnector {
     stall: Duration,
+    dropped: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
 struct StallTransport {
     inner: Box<dyn Transport>,
     stall: Duration,
+    dropped: Arc<AtomicBool>,
+}
+
+fn is_drop(error: &ureq::Error) -> bool {
+    matches!(
+        error,
+        ureq::Error::Io(inner) if matches!(
+            inner.kind(),
+            io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+        )
+    )
 }
 
 fn bounded(timeout: NextTimeout, stall: Duration) -> NextTimeout {
@@ -149,6 +174,7 @@ impl Connector<Box<dyn Transport>> for StallConnector {
         Ok(chained.map(|inner| StallTransport {
             inner,
             stall: self.stall,
+            dropped: Arc::clone(&self.dropped),
         }))
     }
 }
@@ -164,7 +190,13 @@ impl Transport for StallTransport {
     }
 
     fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
-        self.inner.await_input(bounded(timeout, self.stall))
+        let outcome = self.inner.await_input(bounded(timeout, self.stall));
+        if let Err(error) = &outcome
+            && is_drop(error)
+        {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+        outcome
     }
 
     fn is_open(&mut self) -> bool {
@@ -180,6 +212,7 @@ fn agent_config(route: Route, timeouts: &DownloadTimeouts, size: u64) -> Config 
     let builder = Agent::config_builder()
         .http_status_as_error(false)
         .user_agent(USER_AGENT)
+        .timeout_resolve(Some(timeouts.connect))
         .timeout_connect(Some(timeouts.connect))
         .timeout_recv_response(Some(timeouts.response))
         .timeout_recv_body(Some(timeouts.deadline(size)));
@@ -190,9 +223,10 @@ fn agent_config(route: Route, timeouts: &DownloadTimeouts, size: u64) -> Config 
     .build()
 }
 
-fn agent(config: Config, timeouts: &DownloadTimeouts) -> Agent {
+fn agent(config: Config, timeouts: &DownloadTimeouts, dropped: &Arc<AtomicBool>) -> Agent {
     let connector = DefaultConnector::new().chain(StallConnector {
         stall: timeouts.stall,
+        dropped: Arc::clone(dropped),
     });
     Agent::with_parts(config, connector, DefaultResolver::default())
 }
@@ -212,14 +246,6 @@ fn request_error(url: &str, error: ureq::Error) -> InstallError {
             message: other.to_string(),
         },
     }
-}
-
-fn timed_out(error: &io::Error) -> bool {
-    error.kind() == io::ErrorKind::TimedOut
-        || error
-            .get_ref()
-            .and_then(|inner| inner.downcast_ref::<ureq::Error>())
-            .is_some_and(|inner| matches!(inner, ureq::Error::Timeout(_)))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -245,8 +271,10 @@ pub(crate) fn fetch(
 ) -> Result<(), InstallError> {
     let route = route(expected.url)?;
     control.cancel.check()?;
-    let config = agent_config(route, control.timeouts, expected.size);
-    let response = agent(config, control.timeouts)
+    let timeouts = control.timeouts.clamped();
+    let config = agent_config(route, &timeouts, expected.size);
+    let dropped = Arc::new(AtomicBool::new(false));
+    let response = agent(config, &timeouts, &dropped)
         .get(expected.url)
         .call()
         .map_err(|error| request_error(expected.url, error))?;
@@ -285,15 +313,9 @@ pub(crate) fn fetch(
             Ok(0) => break,
             Ok(read) => read,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(error) if timed_out(&error) => {
+            Err(error) => {
                 return Err(InstallError::Offline {
                     message: error.to_string(),
-                });
-            }
-            Err(_) => {
-                return Err(InstallError::Truncated {
-                    expected: expected.size,
-                    received,
                 });
             }
         };
@@ -311,6 +333,11 @@ pub(crate) fn fetch(
             stage: InstallStage::Downloading,
             done: received,
             total: expected.size,
+        });
+    }
+    if received < expected.size && dropped.load(Ordering::SeqCst) {
+        return Err(InstallError::Offline {
+            message: String::from("the connection was reset before the download finished"),
         });
     }
     if received < expected.size {
@@ -363,11 +390,16 @@ mod tests {
         let server = LoopbackServer::start(vec![Reply::ok(PATH, b"plain".to_vec())]);
         let url = server.url(PATH);
         let timeouts = DownloadTimeouts::DEFAULT;
-        let outcome = agent(agent_config(Route::Secure, &timeouts, 5), &timeouts)
-            .get(&url)
-            .call()
-            .map(|response| response.status().as_u16())
-            .map_err(|error| request_error(&url, error));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let outcome = agent(
+            agent_config(Route::Secure, &timeouts, 5),
+            &timeouts,
+            &dropped,
+        )
+        .get(&url)
+        .call()
+        .map(|response| response.status().as_u16())
+        .map_err(|error| request_error(&url, error));
         assert_eq!(outcome, Err(InstallError::Insecure { url: url.clone() }));
         assert_eq!(server.requests(), Vec::<String>::new());
     }
@@ -387,6 +419,68 @@ mod tests {
             timeouts.deadline(215_614_036),
             Duration::from_secs(DOWNLOAD_DEADLINE_FLOOR_SECONDS + 6_581)
         );
+    }
+
+    #[test]
+    fn huge_timeouts_are_clamped_to_a_week() {
+        let huge = DownloadTimeouts {
+            connect: Duration::MAX,
+            response: Duration::MAX,
+            stall: Duration::MAX,
+            deadline_floor: Duration::MAX,
+            min_bytes_per_second: 1,
+        };
+        let week = Duration::from_secs(DOWNLOAD_MAX_WAIT_SECONDS);
+        assert_eq!(
+            huge.clamped(),
+            DownloadTimeouts {
+                connect: week,
+                response: week,
+                stall: week,
+                deadline_floor: week,
+                min_bytes_per_second: 1,
+            }
+        );
+        assert_eq!(huge.deadline(u64::MAX), week);
+        assert_eq!(DownloadTimeouts::DEFAULT.deadline(u64::MAX), week);
+        assert_eq!(
+            DownloadTimeouts::DEFAULT.clamped(),
+            DownloadTimeouts::DEFAULT
+        );
+    }
+
+    #[test]
+    fn the_name_lookup_is_bounded_by_the_connect_timeout() {
+        for route in [Route::Secure, Route::Loopback] {
+            let config = agent_config(route, &DownloadTimeouts::DEFAULT, 1);
+            assert_eq!(
+                config.timeouts().resolve,
+                Some(Duration::from_secs(DOWNLOAD_CONNECT_SECONDS))
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_reset_or_an_abort_marks_the_connection_dropped() {
+        let kinds = [
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::ConnectionAborted,
+        ];
+        for kind in kinds {
+            assert!(is_drop(&ureq::Error::Io(io::Error::from(kind))), "{kind:?}");
+        }
+        let others = [
+            io::ErrorKind::UnexpectedEof,
+            io::ErrorKind::TimedOut,
+            io::ErrorKind::Other,
+        ];
+        for kind in others {
+            assert!(
+                !is_drop(&ureq::Error::Io(io::Error::from(kind))),
+                "{kind:?}"
+            );
+        }
+        assert!(!is_drop(&ureq::Error::ConnectionFailed));
     }
 
     #[test]

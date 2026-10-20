@@ -26,6 +26,14 @@ const ALLOWED_METHODS: [&[u8]; 5] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Unpacked {
+    pub(crate) done: u64,
+    pub(crate) total: u64,
+}
+
+pub(crate) type Step<'a> = dyn FnMut(Unpacked) -> Result<(), BankError> + 'a;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EntryKind {
     File,
     Folder,
@@ -144,7 +152,12 @@ fn canonical_root(target: &Path) -> Result<PathBuf, BankError> {
         .map_err(|error| storage(target, &error))
 }
 
-pub(crate) fn unzip(archive: &Path, target: &Path, budget: &mut Budget) -> Result<(), BankError> {
+pub(crate) fn unzip(
+    archive: &Path,
+    target: &Path,
+    budget: &mut Budget,
+    step: &mut Step<'_>,
+) -> Result<(), BankError> {
     budget.unpacking(archive_bytes(archive)?);
     let file = File::open(archive).map_err(|error| storage(archive, &error))?;
     let mut zip = ZipArchive::new(BufReader::new(file)).map_err(|error| invalid("zip", error))?;
@@ -188,6 +201,10 @@ pub(crate) fn unzip(archive: &Path, target: &Path, budget: &mut Budget) -> Resul
                     .map_err(|error| invalid("zip", error))?;
                 let path = place(&root, &planned.relative)?;
                 budget.write(&mut entry, &path)?;
+                step(Unpacked {
+                    done: budget.written(),
+                    total: declared,
+                })?;
             }
         }
     }
@@ -221,7 +238,12 @@ struct Planned {
     kind: EntryKind,
 }
 
-pub(crate) fn unseven(archive: &Path, target: &Path, budget: &mut Budget) -> Result<(), BankError> {
+pub(crate) fn unseven(
+    archive: &Path,
+    target: &Path,
+    budget: &mut Budget,
+    step: &mut Step<'_>,
+) -> Result<(), BankError> {
     budget.unpacking(archive_bytes(archive)?);
     let file = File::open(archive).map_err(|error| storage(archive, &error))?;
     let mut reader = ArchiveReader::new(BufReader::new(file), Password::empty())
@@ -266,8 +288,17 @@ pub(crate) fn unseven(archive: &Path, target: &Path, budget: &mut Budget) -> Res
     let root = canonical_root(target)?;
     let mut failure: Option<BankError> = None;
     let outcome = reader.for_each_entries(|entry, data| {
-        let step = extract_seven(entry, data, &plan, &root, budget);
-        match step {
+        let unpacked = extract_seven(entry, data, &plan, &root, budget).and_then(|wrote| {
+            if wrote {
+                step(Unpacked {
+                    done: budget.written(),
+                    total: declared,
+                })
+            } else {
+                Ok(())
+            }
+        });
+        match unpacked {
             Ok(()) => Ok(true),
             Err(error) => {
                 failure = Some(error);
@@ -289,18 +320,18 @@ fn extract_seven(
     plan: &HashMap<String, Planned>,
     root: &Path,
     budget: &mut Budget,
-) -> Result<(), BankError> {
+) -> Result<bool, BankError> {
     let Some(planned) = plan.get(&entry.name) else {
         return Err(refuse(UnsafeBank::ArchiveEscape));
     };
     let Some(relative) = &planned.relative else {
-        return Ok(());
+        return Ok(false);
     };
     match planned.kind {
-        EntryKind::Folder => make_folder(root, relative),
+        EntryKind::Folder => make_folder(root, relative).map(|()| false),
         EntryKind::File => {
             let path = place(root, relative)?;
-            budget.write(data, &path).map(|_| ())
+            budget.write(data, &path).map(|_| true)
         }
     }
 }
@@ -344,7 +375,7 @@ mod tests {
         let target = dir.path().join("target");
         fs::create_dir_all(&target).expect("target");
         let mut budget = Budget::new(ImportLimits::DEFAULT);
-        let outcome = unzip(&archive, &target, &mut budget);
+        let outcome = unzip(&archive, &target, &mut budget, &mut |_| Ok(()));
         let mut left: Vec<String> = fs::read_dir(&target)
             .expect("listing")
             .filter_map(Result::ok)
@@ -501,7 +532,7 @@ mod tests {
         fs::write(&archive, one_entry_zip("a/x.sfz", b"escaped")).expect("zip");
         let mut budget = Budget::new(ImportLimits::DEFAULT);
         assert_eq!(
-            unzip(&archive, &target, &mut budget),
+            unzip(&archive, &target, &mut budget, &mut |_| Ok(())),
             Err(refuse(UnsafeBank::ArchiveEscape))
         );
         assert!(!outside.join("x.sfz").exists());
@@ -522,7 +553,7 @@ mod tests {
         fs::create_dir_all(&target).expect("target");
         let mut budget = Budget::new(ImportLimits::DEFAULT);
         assert_eq!(
-            unzip(&archive, &target, &mut budget),
+            unzip(&archive, &target, &mut budget, &mut |_| Ok(())),
             Err(refuse(UnsafeBank::BankFileTooLarge { limit_mib: 1024 }))
         );
         assert!(!target.join("a.sfz").exists());

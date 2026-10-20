@@ -10,7 +10,7 @@ mod location;
 mod plan;
 mod store;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -20,9 +20,9 @@ use opentab_model::{InstrumentFamily, Score};
 pub use catalogue::{ArchiveKind, CatalogueEntry, default_catalogue};
 pub use detect::{SidecarProgram, SidecarRecord, sidecar_for};
 pub use download::{
-    DOWNLOAD_CONNECT_SECONDS, DOWNLOAD_DEADLINE_FLOOR_SECONDS, DOWNLOAD_MIN_BYTES_PER_SECOND,
-    DOWNLOAD_REDIRECTS, DOWNLOAD_RESPONSE_SECONDS, DOWNLOAD_STALL_SECONDS, DownloadTimeouts,
-    InstallCancel, check_download_url,
+    DOWNLOAD_CONNECT_SECONDS, DOWNLOAD_DEADLINE_FLOOR_SECONDS, DOWNLOAD_MAX_WAIT_SECONDS,
+    DOWNLOAD_MIN_BYTES_PER_SECOND, DOWNLOAD_REDIRECTS, DOWNLOAD_RESPONSE_SECONDS,
+    DOWNLOAD_STALL_SECONDS, DownloadTimeouts, InstallCancel, check_download_url,
 };
 pub use id::{BANK_ID_MAX_BYTES, BankId, BankRef};
 pub use install::{InstallError, InstallProgress, InstallStage};
@@ -36,19 +36,26 @@ pub use store::{
     BankSource, DAMAGED_SUFFIX, PREFERENCES_NAME, REGISTRY_NAME, STORE_VERSION, StoreProblem,
 };
 
-use copy::{Budget, Listed, ListedKind, copy_files, listed_file, refuse, storage};
+use archive::Unpacked;
+use copy::{
+    Budget, Listed, ListedKind, Survey, copy_files, copy_head, listed_file, refuse, storage,
+};
 use detect::Detected;
 use download::{Expected, Fetch};
 use store::{Preferences, Registry, StoredBank, StoredFormat};
 
 use crate::{
-    Bank, BankError, BankFormat, BankInstrument, BuiltInSynth, SF3_UNSUPPORTED, SampleRate,
-    Sf2Bank, SfzBank, Synth, TrackBackend, UnsafeBank,
+    Bank, BankError, BankFormat, BankInstrument, BuiltInSynth, SF3_UNSUPPORTED, SFZ_MAX_FILE_BYTES,
+    SIDECAR_NAME, SampleRate, Sf2Bank, SfzBank, Synth, TrackBackend, UnsafeBank,
 };
 
 pub const BANKS_FOLDER: &str = "banks";
 pub const STAGING_FOLDER: &str = "staging";
 const CONTENT_FOLDER: &str = "content";
+const PROBE_FOLDER: &str = "probe";
+const SFZ_EXTENSION: &str = "sfz";
+const SAMPLE_EXTENSIONS: [&str; 4] = ["wav", "flac", "ogg", "oga"];
+const INSTALL_CANCELLED: &str = "the install was cancelled";
 const DOWNLOAD_NAME: &str = "download.part";
 pub const LOCK_NAME: &str = ".lock";
 const SNIFF_BYTES: usize = 12;
@@ -245,6 +252,34 @@ fn portable(relative: &Path) -> Result<String, BankError> {
     Ok(parts.join("/"))
 }
 
+fn is_sample(relative: &Path) -> bool {
+    SAMPLE_EXTENSIONS
+        .iter()
+        .any(|extension| extension_is(relative, extension))
+}
+
+fn placeholder(path: &Path) -> Result<(), BankError> {
+    if let Some(parent) = path.parent() {
+        create_folder(parent)?;
+    }
+    File::create(path)
+        .map(drop)
+        .map_err(|error| storage(path, &error))
+}
+
+fn cancelled_marker() -> BankError {
+    BankError::Invalid {
+        reason: INSTALL_CANCELLED.to_owned(),
+    }
+}
+
+fn interrupted(cancel: &InstallCancel, error: BankError) -> InstallError {
+    if cancel.is_cancelled() {
+        return InstallError::Cancelled;
+    }
+    InstallError::Bank(error)
+}
+
 fn load_bank(format: BankFormat, path: &Path) -> Result<Box<dyn Bank>, BankError> {
     match format {
         BankFormat::Sf2 => Ok(Box::new(Sf2Bank::open(path)?)),
@@ -272,16 +307,9 @@ impl BankManager {
         lock.lock().map_err(|error| storage(&lock_path, &error))?;
         let mut problems = Vec::new();
         clear_stale(&staging, &mut problems);
-        let registry: Registry = store::read_or_set_aside(
-            &root.join(REGISTRY_NAME),
-            |registry: &Registry| registry.version,
-            &mut problems,
-        );
-        let preferences: Preferences = store::read_or_set_aside(
-            &root.join(PREFERENCES_NAME),
-            |preferences: &Preferences| preferences.version,
-            &mut problems,
-        );
+        let registry: Registry = store::read_or_set_aside(&root.join(REGISTRY_NAME), &mut problems);
+        let preferences: Preferences =
+            store::read_or_set_aside(&root.join(PREFERENCES_NAME), &mut problems);
         drop(lock);
         Ok(BankManager {
             root,
@@ -348,13 +376,8 @@ impl BankManager {
     }
 
     fn refresh(&mut self) -> Result<(), BankError> {
-        self.registry = store::read(&self.root.join(REGISTRY_NAME), |registry: &Registry| {
-            registry.version
-        })?;
-        self.preferences = store::read(
-            &self.root.join(PREFERENCES_NAME),
-            |preferences: &Preferences| preferences.version,
-        )?;
+        self.registry = store::read(&self.root.join(REGISTRY_NAME))?;
+        self.preferences = store::read(&self.root.join(PREFERENCES_NAME))?;
         Ok(())
     }
 
@@ -438,22 +461,94 @@ impl BankManager {
 
     fn folder_files(&self, source: &Path) -> Result<Vec<Listed>, BankError> {
         let survey = copy::survey(source, self.limits)?;
-        let wanted = match detect::classify(&survey)? {
-            Detected::Sf2 { file } => vec![file],
-            Detected::Sfz { root, .. } => SfzBank::referenced_files(&root)?,
-        };
-        let mut files = Vec::with_capacity(wanted.len());
-        for path in wanted {
-            let listed = path
-                .strip_prefix(source)
-                .ok()
-                .and_then(|relative| survey.find(relative))
-                .ok_or_else(|| refuse(UnsafeBank::BankChanged))?;
-            if listed.kind == ListedKind::File {
-                files.push(listed.clone());
+        match detect::classify(&survey)? {
+            Detected::Sf2 { file } => {
+                let listed = file
+                    .strip_prefix(source)
+                    .ok()
+                    .and_then(|relative| survey.find(relative))
+                    .ok_or_else(|| refuse(UnsafeBank::BankChanged))?;
+                Ok(vec![listed.clone()])
+            }
+            Detected::Sfz { root, .. } => {
+                let base = root
+                    .strip_prefix(source)
+                    .map_err(|_| refuse(UnsafeBank::BankChanged))?;
+                self.sfz_references(&survey, base)
             }
         }
-        Ok(files)
+    }
+
+    fn sfz_references(&self, survey: &Survey, base: &Path) -> Result<Vec<Listed>, BankError> {
+        let staging = self.stage()?;
+        let probe = staging.path.join(PROBE_FOLDER);
+        create_folder(&probe)?;
+        let under: Vec<&Listed> = survey
+            .entries
+            .iter()
+            .filter(|entry| entry.relative.starts_with(base))
+            .collect();
+        for entry in &under {
+            let path = probe.join(&entry.relative);
+            match entry.kind {
+                ListedKind::Folder => create_folder(&path)?,
+                ListedKind::File | ListedKind::Link | ListedKind::Special => placeholder(&path)?,
+            }
+        }
+        let probe = probe
+            .canonicalize()
+            .map_err(|error| storage(&probe, &error))?;
+        let sidecar = base.join(SIDECAR_NAME);
+        let mut wanted: Vec<&Listed> = under
+            .iter()
+            .copied()
+            .filter(|entry| {
+                entry.kind != ListedKind::Folder
+                    && (extension_is(&entry.relative, SFZ_EXTENSION) || entry.relative == sidecar)
+            })
+            .collect();
+        let mut budget = Budget::new(self.limits);
+        let mut filled: HashSet<PathBuf> = HashSet::new();
+        loop {
+            for listed in wanted {
+                if let Some(reason) = listed.kind.refusal() {
+                    return Err(refuse(reason));
+                }
+                let target = probe.join(&listed.relative);
+                fs::remove_file(&target).map_err(|error| storage(&target, &error))?;
+                copy_head(
+                    &survey.root.join(&listed.relative),
+                    listed,
+                    &target,
+                    &mut budget,
+                    SFZ_MAX_FILE_BYTES.saturating_add(1),
+                )?;
+                filled.insert(listed.relative.clone());
+            }
+            let mut files = Vec::new();
+            let mut next = Vec::new();
+            for path in SfzBank::referenced_files(&probe.join(base))? {
+                let listed = path
+                    .strip_prefix(&probe)
+                    .ok()
+                    .and_then(|relative| survey.find(relative))
+                    .ok_or_else(|| refuse(UnsafeBank::BankChanged))?;
+                if let Some(reason) = listed.kind.refusal() {
+                    return Err(refuse(reason));
+                }
+                if listed.kind != ListedKind::File {
+                    continue;
+                }
+                if !filled.contains(&listed.relative) && !is_sample(&listed.relative) {
+                    next.push(listed);
+                }
+                files.push(listed.clone());
+            }
+            if next.is_empty() {
+                return Ok(files);
+            }
+            wanted = next;
+        }
     }
 
     pub fn import(&mut self, path: &Path) -> Result<InstalledBank, BankError> {
@@ -473,7 +568,7 @@ impl BankManager {
                     let staging = self.stage()?;
                     let content = staging.path.join(CONTENT_FOLDER);
                     create_folder(&content)?;
-                    archive::unzip(&source, &content, &mut budget)?;
+                    archive::unzip(&source, &content, &mut budget, &mut |_| Ok(()))?;
                     staging
                 }
                 FileKind::Sf2 => {
@@ -522,16 +617,12 @@ impl BankManager {
             source: BankSource::Imported,
             bytes: budget.written(),
         };
-        self.finish(staging, &content, finished)
+        let validated = self.validate(&content)?;
+        self.finish(staging, &content, finished, validated)
     }
 
-    fn finish(
-        &mut self,
-        staging: Staging,
-        content: &Path,
-        finished: Finished,
-    ) -> Result<InstalledBank, BankError> {
-        let validated = match detect::detect(content, self.limits)? {
+    fn validate(&self, content: &Path) -> Result<Validated, BankError> {
+        Ok(match detect::detect(content, self.limits)? {
             Detected::Sf2 { file } => {
                 let bank = Sf2Bank::open(&file)?;
                 Validated {
@@ -554,7 +645,16 @@ impl BankManager {
                     path: root,
                 }
             }
-        };
+        })
+    }
+
+    fn finish(
+        &mut self,
+        staging: Staging,
+        content: &Path,
+        finished: Finished,
+        validated: Validated,
+    ) -> Result<InstalledBank, BankError> {
         let format = validated.format;
         let title = validated.title;
         let instruments = validated.instruments;
@@ -685,6 +785,17 @@ impl BankManager {
         let content = staging.path.join(CONTENT_FOLDER);
         create_folder(&content)?;
         let mut budget = Budget::new(self.limits);
+        let mut step = |unpacked: Unpacked| {
+            progress(InstallProgress {
+                stage: InstallStage::Unpacking,
+                done: unpacked.done,
+                total: unpacked.total,
+            });
+            if cancel.is_cancelled() {
+                return Err(cancelled_marker());
+            }
+            Ok(())
+        };
         let bytes = match entry.archive {
             ArchiveKind::Raw => {
                 let target = content.join(format!("{}.sf2", entry.id));
@@ -692,17 +803,21 @@ impl BankManager {
                 entry.size
             }
             ArchiveKind::Zip => {
-                archive::unzip(&download, &content, &mut budget)?;
+                archive::unzip(&download, &content, &mut budget, &mut step)
+                    .map_err(|error| interrupted(cancel, error))?;
                 budget.written()
             }
             ArchiveKind::SevenZip => {
-                archive::unseven(&download, &content, &mut budget)?;
+                archive::unseven(&download, &content, &mut budget, &mut step)
+                    .map_err(|error| interrupted(cancel, error))?;
                 budget.written()
             }
         };
         if fs::symlink_metadata(&download).is_ok() {
             fs::remove_file(&download).map_err(|error| storage(&download, &error))?;
         }
+        cancel.check()?;
+        let validated = self.validate(&content)?;
         progress(InstallProgress {
             stage: InstallStage::Registering,
             done: entry.size,
@@ -716,7 +831,7 @@ impl BankManager {
             source: BankSource::Catalogue,
             bytes,
         };
-        Ok(self.finish(staging, &content, finished)?)
+        Ok(self.finish(staging, &content, finished, validated)?)
     }
 
     pub fn assign(&mut self, family: InstrumentFamily, bank: BankRef) -> Result<(), BankError> {
@@ -869,5 +984,87 @@ impl BankManager {
             });
         }
         LoadedVoices { voices, backends }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const INSTRUMENT: &[u8] = b"<region> sample=a-first.wav\n<region> sample=b.wav\n";
+
+    struct Written {
+        name: &'static str,
+        bytes: usize,
+    }
+
+    struct Counted {
+        outcome: Result<InstalledBank, BankError>,
+        copied: Vec<PathBuf>,
+    }
+
+    fn import_counting(sample_bytes: usize) -> Counted {
+        let dir = tempfile::tempdir().expect("scratch");
+        let root = dir.path().join("bank");
+        fs::create_dir_all(&root).expect("folder");
+        let files = [
+            Written {
+                name: "a.sfz",
+                bytes: 300,
+            },
+            Written {
+                name: "a-first.wav",
+                bytes: sample_bytes,
+            },
+            Written {
+                name: "b.wav",
+                bytes: sample_bytes,
+            },
+            Written {
+                name: "unrelated.txt",
+                bytes: 50,
+            },
+        ];
+        for file in files {
+            let mut data = vec![b' '; file.bytes];
+            if file.name.ends_with(".sfz") {
+                data[..INSTRUMENT.len()].copy_from_slice(INSTRUMENT);
+            }
+            fs::write(root.join(file.name), data).expect("file");
+        }
+        let limits = ImportLimits {
+            total_bytes: 1_000,
+            file_bytes: 600,
+            ..ImportLimits::DEFAULT
+        };
+        let mut manager = BankManager::with_catalogue(&dir.path().join("data"), Vec::new())
+            .expect("opens")
+            .with_limits(limits);
+        copy::take_copied();
+        let outcome = manager.import(&root);
+        Counted {
+            outcome,
+            copied: copy::take_copied(),
+        }
+    }
+
+    #[test]
+    fn an_over_budget_folder_is_refused_before_any_bank_file_is_copied() {
+        let within = import_counting(100);
+        assert!(within.outcome.is_ok(), "{:?}", within.outcome);
+        assert_eq!(
+            within.copied,
+            [
+                PathBuf::from("a-first.wav"),
+                PathBuf::from("a.sfz"),
+                PathBuf::from("b.wav")
+            ]
+        );
+        let over = import_counting(400);
+        assert_eq!(
+            over.outcome,
+            Err(refuse(UnsafeBank::BankTooLarge { limit_mib: 0 }))
+        );
+        assert_eq!(over.copied, Vec::<PathBuf>::new());
     }
 }

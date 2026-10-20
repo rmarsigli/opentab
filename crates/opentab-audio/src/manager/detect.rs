@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::manager::copy::{Listed, ListedKind, Survey, storage, survey};
 use crate::manager::limits::ImportLimits;
-use crate::{BankError, SF3_UNSUPPORTED, SIDECAR_NAME, SIDECAR_VERSION};
+use crate::{BankError, SF3_UNSUPPORTED, SIDECAR_NAME, SIDECAR_VERSION, UnsafeBank};
 
 const SF2_EXTENSION: &str = "sf2";
 const SF3_EXTENSION: &str = "sf3";
@@ -194,6 +194,7 @@ struct Found {
     sfz: Vec<String>,
     sf2: Vec<PathBuf>,
     sf3: usize,
+    unusable_sf2: Option<UnsafeBank>,
 }
 
 fn has_extension(path: &Path, wanted: &str) -> bool {
@@ -232,7 +233,7 @@ pub(crate) fn classify(survey: &Survey) -> Result<Detected, BankError> {
     let root = descend(survey);
     let mut found = Found::default();
     for entry in &survey.entries {
-        if entry.kind != ListedKind::File {
+        if entry.kind == ListedKind::Folder {
             continue;
         }
         let Ok(inside) = entry.relative.strip_prefix(&root) else {
@@ -240,6 +241,10 @@ pub(crate) fn classify(survey: &Survey) -> Result<Detected, BankError> {
         };
         if has_extension(inside, SFZ_EXTENSION) {
             found.sfz.push(portable_name(inside));
+        } else if let Some(reason) = entry.kind.refusal() {
+            if has_extension(inside, SF2_EXTENSION) {
+                found.unusable_sf2.get_or_insert(reason);
+            }
         } else if has_extension(inside, SF2_EXTENSION) {
             found.sf2.push(survey.root.join(&entry.relative));
         } else if has_extension(inside, SF3_EXTENSION) {
@@ -253,6 +258,11 @@ pub(crate) fn classify(survey: &Survey) -> Result<Detected, BankError> {
             root: survey.root.join(root),
             files: found.sfz,
         });
+    }
+    if found.sf2.is_empty()
+        && let Some(reason) = found.unusable_sf2
+    {
+        return Err(BankError::Unsafe { reason });
     }
     match found.sf2.as_slice() {
         [file] => Ok(Detected::Sf2 { file: file.clone() }),
