@@ -4,6 +4,8 @@ use base64::engine::general_purpose::STANDARD;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+pub const SOUND_OVERRIDES_ENTRY: &str = "Content/OpenTab/sound-overrides.json";
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Base64Bytes(pub Vec<u8>);
 

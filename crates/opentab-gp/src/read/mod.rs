@@ -27,7 +27,7 @@ const BYTE_ORDER_MARK: &[u8] = b"\xEF\xBB\xBF";
 pub fn read_gp(bytes: &[u8]) -> Result<Score, GpError> {
     let mut archive = read_archive(bytes)?;
     let mut score = read_gpif(&archive.score)?;
-    score.sound_overrides = overrides::take(&mut archive.entries, &score)?;
+    score.sound_overrides = overrides::take(&mut archive.entries, &score);
     if archive.entries != minimal_container() {
         score.container = archive.entries;
     }

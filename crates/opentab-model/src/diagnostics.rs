@@ -6,8 +6,8 @@ use crate::fraction::{checked_sum, deserialize_non_negative};
 use crate::{
     AutomationValue, Bar, BarId, Beat, BeatId, DirectionJump, DirectionTarget, ElementId, Fraction,
     InstrumentKind, JumpDestination, MAX_DRUM_BEAT_NOTES, MasterBar, MasterBarId, NoteId, NoteKind,
-    Score, SoundRef, Staff, StaffId, TextForm, Track, TrackId, Voice, VoiceId,
-    automations_in_order, check_program, on_automation_grid, unwritable_character,
+    SOUND_OVERRIDES_ENTRY, Score, SoundRef, Staff, StaffId, TextForm, Track, TrackId, Voice,
+    VoiceId, automations_in_order, check_program, on_automation_grid, unwritable_character,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -145,6 +145,7 @@ pub enum Diagnostic {
         field: String,
         code: u32,
     },
+    UnreadSoundOverrides,
 }
 
 pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
@@ -184,6 +185,13 @@ pub fn diagnose(score: &Score) -> Vec<Diagnostic> {
                 .diagnostics
                 .push(Diagnostic::DuplicateSoundOverride { track: entry.track });
         }
+    }
+    if score
+        .container
+        .iter()
+        .any(|entry| entry.name() == SOUND_OVERRIDES_ENTRY)
+    {
+        report.diagnostics.push(Diagnostic::UnreadSoundOverrides);
     }
     for id in score.extensions.0.keys() {
         if !report.seen.contains(id) {

@@ -18,7 +18,7 @@ mod text;
 mod track;
 
 pub use blank::blank_score;
-pub use container::{Base64Bytes, ContainerEntry};
+pub use container::{Base64Bytes, ContainerEntry, SOUND_OVERRIDES_ENTRY};
 pub use diagnostics::{Diagnostic, diagnose};
 pub use directions::{
     DIRECTION_JUMPS, DIRECTION_TARGETS, DirectionJump, DirectionTarget, Directions, JumpDestination,

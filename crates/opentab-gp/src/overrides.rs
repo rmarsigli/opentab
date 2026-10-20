@@ -1,11 +1,12 @@
 use opentab_model::{
-    Base64Bytes, ContainerEntry, ModelError, Score, SoundOverride, TrackId, check_sound_overrides,
+    Base64Bytes, ContainerEntry, ModelError, SOUND_OVERRIDES_ENTRY, Score, SoundOverride,
+    check_sound_overrides,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::error::{GpError, Refusal};
 
-pub(crate) const OVERRIDES_ENTRY: &str = "Content/OpenTab/sound-overrides.json";
+pub(crate) const OVERRIDES_ENTRY: &str = SOUND_OVERRIDES_ENTRY;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -20,43 +21,37 @@ struct OverrideEntry {
     bank: String,
 }
 
-fn entry_error(reason: String) -> GpError {
-    GpError::Entry {
-        entry: OVERRIDES_ENTRY.to_string(),
-        reason,
-    }
-}
-
-pub(crate) fn take(
-    entries: &mut Vec<ContainerEntry>,
-    score: &Score,
-) -> Result<Vec<SoundOverride>, GpError> {
-    let Some(position) = entries
-        .iter()
-        .position(|entry| entry.name() == OVERRIDES_ENTRY)
-    else {
-        return Ok(Vec::new());
-    };
-    let entry = entries.remove(position);
-    let ContainerEntry::File { data, .. } = entry else {
-        return Ok(Vec::new());
-    };
-    let file: OverrideFile =
-        serde_json::from_slice(&data.0).map_err(|error| entry_error(error.to_string()))?;
+fn parse(data: &[u8], score: &Score) -> Option<Vec<SoundOverride>> {
+    let file: OverrideFile = serde_json::from_slice(data).ok()?;
     let mut overrides = Vec::with_capacity(file.sound_overrides.len());
     for item in file.sound_overrides {
-        let track: TrackId = score
-            .tracks
-            .get(item.track)
-            .map(|track| track.id)
-            .ok_or_else(|| entry_error(format!("track {} does not exist", item.track)))?;
+        let track = score.tracks.get(item.track)?.id;
         overrides.push(SoundOverride {
             track,
             bank: item.bank,
         });
     }
-    check_sound_overrides(&overrides).map_err(|error| entry_error(error.to_string()))?;
-    Ok(overrides)
+    check_sound_overrides(&overrides).ok()?;
+    Some(overrides)
+}
+
+pub(crate) fn take(entries: &mut Vec<ContainerEntry>, score: &Score) -> Vec<SoundOverride> {
+    let Some(position) = entries
+        .iter()
+        .position(|entry| entry.name() == OVERRIDES_ENTRY)
+    else {
+        return Vec::new();
+    };
+    let ContainerEntry::File { data, .. } = &entries[position] else {
+        return Vec::new();
+    };
+    match parse(&data.0, score) {
+        Some(overrides) => {
+            entries.remove(position);
+            overrides
+        }
+        None => Vec::new(),
+    }
 }
 
 pub(crate) fn entry(score: &Score) -> Result<Option<ContainerEntry>, GpError> {

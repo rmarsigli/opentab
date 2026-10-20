@@ -11,7 +11,7 @@ use zip::ZipArchive;
 use crate::anchors::gpif_text;
 use crate::support::{Doc, payloads, read_gpif, track};
 
-const OVERRIDES_ENTRY: &str = "Content/OpenTab/sound-overrides.json";
+const OVERRIDES_ENTRY: &str = opentab_model::SOUND_OVERRIDES_ENTRY;
 
 fn with_track(track: &str) -> Score {
     Doc {
@@ -478,16 +478,38 @@ fn sound_overrides_travel_in_one_container_entry_of_ours() {
 }
 
 #[test]
-fn a_broken_override_entry_is_an_error() {
+fn a_broken_override_entry_is_kept_diagnosed_and_dropped_on_write() {
     let gpif = Doc::default().render();
-    for data in ["{", "{\"sound_overrides\":[{\"track\":3,\"bank\":\"x\"}]}"] {
+    for data in [
+        "{",
+        "{\"sound_overrides\":[{\"track\":3,\"bank\":\"x\"}]}",
+        "{\"sound_overrides\":[{\"track\":0,\"bank\":\"a\"},{\"track\":0,\"bank\":\"b\"}]}",
+        "{\"sound_overrides\":[],\"extra\":1}",
+    ] {
         let bytes = crate::support::archive(&[
             ("VERSION", b"7.0"),
             ("Content/score.gpif", gpif.as_bytes()),
             (OVERRIDES_ENTRY, data.as_bytes()),
         ]);
+        let score = read_gp(&bytes).expect(data);
+        assert!(score.sound_overrides.is_empty(), "{data}");
+        assert_eq!(
+            score.container.last(),
+            Some(&ContainerEntry::File {
+                name: OVERRIDES_ENTRY.to_string(),
+                data: Base64Bytes(data.as_bytes().to_vec()),
+            }),
+            "{data}"
+        );
+        assert_eq!(
+            diagnose(&score),
+            vec![opentab_model::Diagnostic::UnreadSoundOverrides],
+            "{data}"
+        );
+        let written = write_gp(&score).expect(data);
+        assert_eq!(entry_names(&written), ["VERSION", "Content/score.gpif"]);
         assert!(
-            matches!(read_gp(&bytes), Err(GpError::Entry { ref entry, .. }) if entry == OVERRIDES_ENTRY),
+            diagnose(&read_gp(&written).expect(data)).is_empty(),
             "{data}"
         );
     }
@@ -736,7 +758,7 @@ fn parameters_beyond_six_places_round_to_millionths_and_keep_their_text() {
 }
 
 #[test]
-fn out_of_range_programs_and_twin_overrides_are_read_errors() {
+fn out_of_range_programs_are_read_errors() {
     for track in [
         "<Sounds><Sound><MIDI><Program>200</Program></MIDI></Sound></Sounds>",
         "<Sounds><Sound><Name><![CDATA[x]]></Name><MIDI><Program>128</Program></MIDI></Sound></Sounds>",
@@ -748,12 +770,4 @@ fn out_of_range_programs_and_twin_overrides_are_read_errors() {
         .error();
         assert!(error.to_string().contains("outside 0..=127"), "{error}");
     }
-    let gpif = Doc::default().render();
-    let twins = br#"{"sound_overrides":[{"track":0,"bank":"a"},{"track":0,"bank":"b"}]}"#;
-    let bytes = crate::support::archive(&[
-        ("VERSION", b"7.0"),
-        ("Content/score.gpif", gpif.as_bytes()),
-        (OVERRIDES_ENTRY, twins),
-    ]);
-    assert!(matches!(read_gp(&bytes), Err(GpError::Entry { .. })));
 }
