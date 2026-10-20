@@ -1062,6 +1062,7 @@ dependencies = [
  "cpal",
  "hound",
  "lewton",
+ "midly",
  "num-rational",
  "ogg",
  "opentab-gp",

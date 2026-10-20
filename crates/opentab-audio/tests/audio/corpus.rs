@@ -1,11 +1,16 @@
 use std::path::PathBuf;
 
-use opentab_audio::{Bank, BuiltInBank, SampleRate, frame_at};
+use opentab_audio::{
+    Bank, BarRange, BuiltInBank, SampleRate, ScriptStep, Session, TransportCommand, frame_at,
+    render_session,
+};
 use opentab_gp::read_gp;
-use opentab_playback::Speed;
+use opentab_playback::{MidiMessage, Speed, export_midi};
 
+use crate::recording::{heard, notes, recorders};
 use crate::support::{
-    PROFILES, bank_voices, performance, profile_name, render_frames, tiny_bank, tiny_sfz_bank,
+    PROFILES, bank_voices, config, performance, profile_name, render_frames, tiny_bank,
+    tiny_sfz_bank,
 };
 
 const CORPUS_VARIABLE: &str = "OPENTAB_CORPUS";
@@ -93,4 +98,86 @@ fn render_corpus(bank: &dyn Bank) {
         }
     }
     assert_eq!(rendered, 2 * EXPECTED_FILES);
+}
+
+#[test]
+fn every_corpus_example_plays_paired_notes_through_the_transport_and_exports_midi() {
+    let Some(paths) = corpus() else {
+        return;
+    };
+    assert_eq!(paths.len(), EXPECTED_FILES);
+    let rate = SampleRate::STUDIO;
+    let mut checked = 0;
+    for path in &paths {
+        let score = read_gp(&std::fs::read(path).expect("read")).expect("parse");
+        for profile in PROFILES {
+            let performance = performance(&score, profile);
+            let bars = performance.order.bars.len();
+            let cut = performance
+                .order
+                .bars
+                .get(PLAYED_BARS)
+                .map_or(performance.order.end(), |bar| bar.start);
+            let frames = frame_at(&performance.tempo, cut, Speed::NORMAL, rate).expect("frame")
+                + rate.frames_of_millis(TAIL_MS);
+            let seek = bars.saturating_sub(1).min(2);
+            let first = bars.saturating_sub(1).min(1);
+            let last = bars.saturating_sub(1).min(first + 1);
+            let script = [
+                ScriptStep {
+                    frame: frames / 4,
+                    command: TransportCommand::Seek(seek),
+                },
+                ScriptStep {
+                    frame: frames / 2,
+                    command: TransportCommand::Loop(BarRange { first, last }),
+                },
+                ScriptStep {
+                    frame: frames - 1,
+                    command: TransportCommand::Stop,
+                },
+            ];
+            let recorded = recorders(&performance);
+            let mut session =
+                Session::new(performance.clone(), recorded.voices, config(rate)).expect("session");
+            render_session(&mut session, &script, frames).expect("render");
+            let mut started = 0;
+            for log in &recorded.logs {
+                for note in notes(&heard(log)) {
+                    assert!(
+                        note.off.is_some(),
+                        "{} {}: {note:?} is left on",
+                        path.display(),
+                        profile_name(profile)
+                    );
+                    started += 1;
+                }
+            }
+            assert!(started > 0, "{} plays no note", path.display());
+            let smf = export_midi(&score, profile).expect("export");
+            let parsed = midly::Smf::parse(&smf).expect("the exported MIDI reparses");
+            let exported = parsed
+                .tracks
+                .iter()
+                .flatten()
+                .filter(|event| {
+                    matches!(
+                        event.kind,
+                        midly::TrackEventKind::Midi {
+                            message: midly::MidiMessage::NoteOn { vel, .. },
+                            ..
+                        } if vel.as_int() > 0
+                    )
+                })
+                .count();
+            let performed = performance
+                .events
+                .iter()
+                .filter(|event| matches!(event.message, MidiMessage::NoteOn { velocity, .. } if velocity > 0))
+                .count();
+            assert_eq!(exported, performed, "{}", path.display());
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 2 * EXPECTED_FILES);
 }
