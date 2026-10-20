@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use sevenz_rust2::{ArchiveEntry, ArchiveReader, Password};
 use zip::ZipArchive;
@@ -66,12 +66,6 @@ pub(crate) fn confine(name: &str, budget: &Budget) -> Result<Option<PathBuf>, Ba
         }
         relative.push(part);
         depth += 1;
-    }
-    if !relative
-        .components()
-        .all(|component| matches!(component, Component::Normal(_)))
-    {
-        return Err(refuse(UnsafeBank::ArchiveEscape));
     }
     if depth == 0 {
         return Ok(None);
@@ -265,6 +259,35 @@ mod tests {
             .expect("entry");
         writer.write_all(data).expect("data");
         writer.finish().expect("finished").into_inner()
+    }
+
+    #[test]
+    fn lexical_confinement_refuses_every_escape() {
+        let budget = Budget::new(ImportLimits::DEFAULT);
+        for name in [
+            "../evil.sfz",
+            "a/../../evil.sfz",
+            "a/..",
+            "..",
+            "/evil.sfz",
+            "\\evil.sfz",
+            "..\\evil.sfz",
+            "C:/evil.sfz",
+            "C:evil.sfz",
+            "a/b:c.sfz",
+            "a\0b.sfz",
+        ] {
+            assert_eq!(
+                confine(name, &budget),
+                Err(refuse(UnsafeBank::ArchiveEscape)),
+                "{name:?}"
+            );
+        }
+        assert_eq!(
+            confine("./a//b/./c.sfz", &budget),
+            Ok(Some(PathBuf::from("a/b/c.sfz")))
+        );
+        assert_eq!(confine("./", &budget), Ok(None));
     }
 
     #[cfg(unix)]
