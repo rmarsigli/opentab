@@ -35,7 +35,7 @@ toml = "0.8"
 tempfile = "3"
 base64 = "0.22"
 quick-xml = "0.42"
-zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2"] }
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 ttf-parser = { version = "0.25.1", default-features = false, features = ["std"] }
 resvg = { version = "0.48.1", default-features = false }
@@ -49,6 +49,11 @@ claxon = "=0.4.3"
 lewton = { version = "=0.10.2", default-features = false, features = ["ogg"] }
 ogg = { version = "=0.8.0", default-features = false }
 cpal = { version = "=0.18.2", default-features = false }
+ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
+dirs = "=7.0.0"
+libc = "0.2"
+bzip2 = "=0.6.1"
+sevenz-rust2 = { version = "=0.20.2", default-features = false, features = ["bzip2", "deflate"] }
 
 [profile.dev.package.rustysynth]
 opt-level = 3

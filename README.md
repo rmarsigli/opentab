@@ -141,6 +141,14 @@ OpenTab draws music symbols and text as outlines from two bundled fonts, stored 
 
 Licensed under either of the MIT licence (`LICENSE-MIT`) or the Apache License, Version 2.0 (`LICENSE-APACHE`), at your option.
 
+Notes on dependencies with other licences:
+
+- `ring` (through `rustls`, used by the `ureq` downloader) is licensed under Apache-2.0 AND ISC and contains C and assembly code built with a C compiler.
+- `option-ext` (through `dirs`) is licensed under MPL-2.0, a file-level copyleft. OpenTab uses it unmodified.
+- `webpki-roots` ships the Mozilla root certificates under CDLA-Permissive-2.0.
+
+Sound banks in the catalogue are not bundled. OpenTab downloads one only when the user asks, and the Sounds screen shows each bank's own licence and attribution (MIT, CC0-1.0, CC-BY-4.0 or CC-BY-SA-4.0). The licence texts shown are stored under `crates/opentab-audio/catalogue/`.
+
 ## Trademark
 
 OpenTab is an independent project and is not affiliated with, endorsed by or sponsored by Arobas Music. Guitar Pro is a trademark of Arobas Music. No Guitar Pro code, assets, sounds or trademarks are used in this project.

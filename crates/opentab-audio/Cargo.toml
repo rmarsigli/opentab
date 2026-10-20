@@ -20,10 +20,19 @@ lewton.workspace = true
 ogg.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true
+sevenz-rust2.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
+ureq.workspace = true
+zip.workspace = true
+dirs.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
 
 [dev-dependencies]
 midly.workspace = true
+opentab-command = { path = "../opentab-command" }
 opentab-gp = { path = "../opentab-gp" }
 opentab-testkit = { path = "../opentab-testkit" }
 num-rational.workspace = true
