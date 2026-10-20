@@ -130,7 +130,17 @@ fn mutants_config_keeps_only_settings_the_arguments_do_not_override() {
     let keys: Vec<&str> = table.keys().map(String::as_str).collect();
     assert_eq!(
         keys,
-        ["build_timeout_multiplier", "cap_lints", "exclude_re"]
+        [
+            "build_timeout_multiplier",
+            "cap_lints",
+            "exclude_globs",
+            "exclude_re"
+        ]
+    );
+    assert_eq!(
+        table["exclude_globs"].as_array().map(Vec::len),
+        Some(1),
+        "only the cpal adapter is excluded by path"
     );
     let args = mutants_args(&output_dir(Path::new("/work")), None, false);
     for overridden in ["timeout_multiplier", "minimum_test_timeout", "jobs"] {
@@ -138,6 +148,7 @@ fn mutants_config_keeps_only_settings_the_arguments_do_not_override() {
     }
     assert!(args.iter().any(|arg| arg == "--timeout"));
     assert!(!args.iter().any(|arg| arg.starts_with("--build-timeout")));
+    assert!(!args.iter().any(|arg| arg.starts_with("--exclude")));
 }
 
 #[test]
