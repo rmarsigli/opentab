@@ -48,7 +48,23 @@ fn a_session_opens_renders_edits_undoes_and_exports_a_gp_that_reads_back_equal()
     assert_eq!(
         names,
         [
-            "open", "info", "render", "apply", "undo", "redo", "export", "close"
+            "open",
+            "info",
+            "render",
+            "apply",
+            "undo",
+            "redo",
+            "export",
+            "close",
+            "export_midi",
+            "render_audio",
+            "play",
+            "stop",
+            "status",
+            "soundbanks",
+            "import_soundbank",
+            "install_soundbank",
+            "assign_soundbank"
         ]
     );
     for tool in listed["result"]["tools"].as_array().unwrap() {

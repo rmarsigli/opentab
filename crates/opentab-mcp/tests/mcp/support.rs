@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{Receiver, channel};
 use std::thread;
@@ -27,7 +27,15 @@ pub struct ToolReply {
 
 impl Server {
     pub fn spawn() -> Server {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_opentab-mcp"))
+        Server::spawn_with(None)
+    }
+
+    pub fn spawn_with(data_dir: Option<&Path>) -> Server {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_opentab-mcp"));
+        if let Some(dir) = data_dir {
+            command.env("OPENTAB_DATA_DIR", dir);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -54,6 +62,12 @@ impl Server {
 
     pub fn start() -> Server {
         let mut server = Server::spawn();
+        server.initialize();
+        server
+    }
+
+    pub fn start_in(data_dir: &Path) -> Server {
+        let mut server = Server::spawn_with(Some(data_dir));
         server.initialize();
         server
     }
@@ -177,6 +191,15 @@ impl ToolReply {
         assert!(self.is_error(), "expected a tool error: {}", self.result);
         let envelope = self.text(0);
         envelope["error"].clone()
+    }
+
+    pub fn wav(&self, index: usize) -> Vec<u8> {
+        let part = &self.result["content"][index];
+        assert_eq!(part["type"], "audio", "{}", self.result);
+        assert_eq!(part["mimeType"], "audio/wav");
+        STANDARD
+            .decode(part["data"].as_str().expect("base64 data"))
+            .expect("valid base64")
     }
 
     pub fn png(&self, index: usize) -> Vec<u8> {
