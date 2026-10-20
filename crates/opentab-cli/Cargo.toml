@@ -11,7 +11,7 @@ name = "opentab"
 path = "src/main.rs"
 
 [features]
-live = ["opentab-audio/live"]
+live = ["opentab-audio/live", "dep:ctrlc"]
 
 [dependencies]
 opentab-audio = { path = "../opentab-audio" }
@@ -25,6 +25,7 @@ opentab-render = { path = "../opentab-render" }
 clap = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
+ctrlc = { workspace = true, optional = true }
 
 [dev-dependencies]
 opentab-testkit = { path = "../opentab-testkit" }

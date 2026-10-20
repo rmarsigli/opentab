@@ -52,6 +52,7 @@ cpal = { version = "=0.18.2", default-features = false }
 ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
 dirs = "=7.0.0"
 libc = "=0.2.191"
+ctrlc = "=3.4.7"
 bzip2 = "=0.6.1"
 sevenz-rust2 = { version = "=0.20.2", default-features = false, features = ["bzip2", "deflate"] }
 
