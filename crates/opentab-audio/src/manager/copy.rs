@@ -373,7 +373,7 @@ pub(crate) fn survey(root: &Path, limits: ImportLimits) -> Result<Survey, BankEr
     })
 }
 
-pub(crate) fn budget_files(files: &[Listed], budget: &Budget) -> Result<(), BankError> {
+fn budget_files(files: &[Listed], budget: &Budget) -> Result<(), BankError> {
     budget.entries(u64::try_from(files.len()).unwrap_or(u64::MAX))?;
     let mut total = 0u64;
     for file in files {

@@ -462,7 +462,6 @@ impl BankManager {
         let mut budget = Budget::new(self.limits);
         let staging = if metadata.is_dir() {
             let files = self.folder_files(&source)?;
-            copy::budget_files(&files, &budget)?;
             let staging = self.stage()?;
             let content = staging.path.join(CONTENT_FOLDER);
             create_folder(&content)?;
@@ -485,7 +484,6 @@ impl BankManager {
                     let name = source.file_name().ok_or_else(unnamed)?;
                     let listed = listed_file(&source, PathBuf::from(name))?;
                     let files = [listed];
-                    copy::budget_files(&files, &budget)?;
                     let staging = self.stage()?;
                     let content = staging.path.join(CONTENT_FOLDER);
                     create_folder(&content)?;
