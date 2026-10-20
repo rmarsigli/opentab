@@ -1150,17 +1150,6 @@ fn a_bend_sounding_at_the_loop_end_is_reset_at_the_wrap() {
     assert!(checked > 0);
 }
 
-fn events_in_bar(performance: &Performance, bar: usize) -> u64 {
-    let bars = &performance.order.bars;
-    let start = bars[bar].start;
-    let end = bars.get(bar + 1).map(|next| next.start);
-    performance
-        .events
-        .iter()
-        .filter(|event| event.at >= start && end.is_none_or(|end| event.at < end))
-        .count() as u64
-}
-
 fn events_before_bar(performance: &Performance, bar: usize) -> u64 {
     let start = performance.order.bars[bar].start;
     performance
@@ -1171,7 +1160,7 @@ fn events_before_bar(performance: &Performance, bar: usize) -> u64 {
 }
 
 #[test]
-fn a_seek_or_a_loop_wrap_chases_at_most_the_events_of_one_bar() {
+fn a_seek_or_a_loop_wrap_to_a_bar_start_chases_no_events() {
     let mut scan_would_exceed = false;
     for name in SEEK_FIXTURES {
         let performance = performance(&fixture(name), Profile::Musical);
@@ -1195,12 +1184,8 @@ fn a_seek_or_a_loop_wrap_chases_at_most_the_events_of_one_bar() {
             session.transport.process(&mut left, &mut right);
             assert_eq!(session.handle.status().played_bar, bar, "{name}");
             let steps = session.transport.chase_steps() - before;
-            assert!(
-                steps <= events_in_bar(&performance, bar),
-                "{name} bar {bar}: {steps} steps"
-            );
-            scan_would_exceed |=
-                events_before_bar(&performance, bar) > events_in_bar(&performance, bar);
+            assert_eq!(steps, 0, "{name} bar {bar}: {steps} steps");
+            scan_would_exceed |= events_before_bar(&performance, bar) > 0;
         }
         if bars < 2 {
             continue;
@@ -1213,17 +1198,23 @@ fn a_seek_or_a_loop_wrap_chases_at_most_the_events_of_one_bar() {
         session.transport.process(&mut left, &mut right);
         let mut wraps = 0;
         let mut previous = session.handle.status().played_bar;
+        let period =
+            range_frames(&performance, range(first, bars - 1), speed(100), RATE).expect("period");
+        let cap = 3 * period / 512 + 8;
+        let mut blocks = 0;
         while wraps < 2 {
+            blocks += 1;
+            assert!(
+                blocks <= cap,
+                "{name}: {wraps} wraps in {blocks} blocks, the loop never wrapped"
+            );
             let before = session.transport.chase_steps();
             session.transport.process(&mut left, &mut right);
             let now = session.handle.status().played_bar;
             if now < previous {
                 wraps += 1;
                 let steps = session.transport.chase_steps() - before;
-                assert!(
-                    steps <= events_in_bar(&performance, first),
-                    "{name} wrap {wraps}: {steps} steps"
-                );
+                assert_eq!(steps, 0, "{name} wrap {wraps}: {steps} steps");
             } else {
                 assert_eq!(session.transport.chase_steps(), before, "{name}");
             }
@@ -1349,9 +1340,8 @@ fn the_count_in_ends_on_the_first_note_of_a_track_that_is_heard() {
     }
 }
 
-#[test]
-fn the_song_end_inside_a_loop_wraps_to_the_loop_start() {
-    let mut performance = performance(&fixture("repeats.gp"), Profile::Musical);
+fn with_zero_length_tail(name: &str) -> Performance {
+    let mut performance = performance(&fixture(name), Profile::Musical);
     let last = performance.order.bars.last().cloned().expect("a bar");
     let start = ScoreTime::new(performance.order.end().whole_notes() + Fraction::new_raw(1, 4))
         .expect("time");
@@ -1361,13 +1351,76 @@ fn the_song_end_inside_a_loop_wraps_to_the_loop_start() {
         length: Fraction::new_raw(0, 1),
         pass: last.pass,
     });
-    let tail = performance.order.bars.len() - 1;
-    let mut session = Session::new(
+    performance
+}
+
+fn silent_session(performance: &Performance) -> Session {
+    Session::new(
         performance.clone(),
-        built_in_voices(&performance, RATE),
+        built_in_voices(performance, RATE),
         config(RATE),
     )
-    .expect("session");
+    .expect("session")
+}
+
+#[test]
+fn the_song_end_inside_a_loop_wraps_to_the_loop_start() {
+    let performance = with_zero_length_tail("repeats.gp");
+    let tail = performance.order.bars.len() - 1;
+    let mut session = silent_session(&performance);
+    let mut left = vec![0.0f32; 512];
+    let mut right = vec![0.0f32; 512];
+    let span = range(tail - 1, tail);
+    let period = range_frames(&performance, span, speed(100), RATE).expect("period");
+    let cap = 3 * period / 512 + 8;
+    session
+        .handle
+        .send(TransportCommand::Loop(span))
+        .expect("send");
+    session.handle.send(TransportCommand::Play).expect("send");
+    let mut wraps = 0;
+    let mut previous = tail - 1;
+    let mut blocks = 0;
+    while wraps < 2 {
+        blocks += 1;
+        assert!(
+            blocks <= cap,
+            "{wraps} wraps in {blocks} blocks, the loop never wrapped at the song end"
+        );
+        session.transport.process(&mut left, &mut right);
+        let status = session.handle.status();
+        assert_eq!(status.state, opentab_audio::TransportState::Playing);
+        assert!(status.played_bar >= tail - 1);
+        if status.played_bar < previous {
+            wraps += 1;
+        }
+        previous = status.played_bar;
+    }
+    session
+        .handle
+        .send(TransportCommand::ClearLoop)
+        .expect("send");
+    let song = song_frames(&performance, 100) / 512 + 8;
+    let mut blocks = 0;
+    loop {
+        blocks += 1;
+        assert!(
+            blocks <= song,
+            "the song never stopped after the loop was cleared"
+        );
+        session.transport.process(&mut left, &mut right);
+        if session.handle.status().state == opentab_audio::TransportState::Stopped {
+            break;
+        }
+    }
+    assert_eq!(session.handle.status().played_bar, 0);
+}
+
+#[test]
+fn a_loop_over_a_zero_length_range_is_refused() {
+    let performance = with_zero_length_tail("repeats.gp");
+    let tail = performance.order.bars.len() - 1;
+    let mut session = silent_session(&performance);
     let mut left = vec![0.0f32; 512];
     let mut right = vec![0.0f32; 512];
     session
@@ -1379,14 +1432,90 @@ fn the_song_end_inside_a_loop_wraps_to_the_loop_start() {
         session.transport.process(&mut left, &mut right);
         let status = session.handle.status();
         assert_eq!(status.state, opentab_audio::TransportState::Playing);
-        assert_eq!(status.played_bar, tail);
+        assert_eq!(status.played_bar, 0);
     }
-    session
-        .handle
-        .send(TransportCommand::ClearLoop)
-        .expect("send");
-    session.transport.process(&mut left, &mut right);
-    let status = session.handle.status();
-    assert_eq!(status.state, opentab_audio::TransportState::Stopped);
-    assert_eq!(status.played_bar, 0);
+}
+
+#[test]
+fn a_mute_or_solo_during_the_count_in_aims_it_at_the_first_note_still_heard() {
+    let percent = 100u16;
+    let mut found: Vec<QuietFirst> = Vec::new();
+    for name in fixture_names() {
+        let tracks = performance(&fixture(&name), Profile::Musical).tracks.len();
+        for late in 0..tracks.min(2) {
+            let performance = with_late_track(&name, late);
+            let all = count_in_expectation(&performance, 0, percent);
+            for track in 0..tracks {
+                let mut hearing = vec![true; tracks];
+                hearing[track] = false;
+                if count_in_heard_by(&performance, 0, percent, &hearing).lead > all.lead {
+                    found.push(QuietFirst {
+                        name: name.clone(),
+                        performance: performance.clone(),
+                        bar: 0,
+                        track,
+                    });
+                }
+            }
+        }
+    }
+    assert!(!found.is_empty());
+    for case in &found {
+        let performance = &case.performance;
+        let tracks = performance.tracks.len();
+        let others: Vec<usize> = (0..tracks).filter(|track| *track != case.track).collect();
+        let mut hearing = vec![true; tracks];
+        hearing[case.track] = false;
+        let before = count_in_expectation(performance, case.bar, percent);
+        let after = count_in_heard_by(performance, case.bar, percent, &hearing);
+        let bar = &performance.order.bars[case.bar];
+        let tempo = &performance.tempo;
+        let length = unit_of(
+            tempo,
+            ScoreTime::new(bar.start.whole_notes() + bar.length).expect("time"),
+            RATE,
+        ) - unit_of(tempo, bar.start, RATE);
+        let count_in = length / u64::from(percent);
+        let cut = (1..8)
+            .map(|part| count_in * part / 8)
+            .find(|cut| {
+                before
+                    .clicks
+                    .iter()
+                    .chain(&after.clicks)
+                    .all(|click| click.frame.abs_diff(*cut) > 2)
+            })
+            .expect("a frame between the clicks");
+        for solo in [false, true] {
+            let commands: Vec<TransportCommand> = if solo {
+                others
+                    .iter()
+                    .map(|track| TransportCommand::Solo(*track, true))
+                    .collect()
+            } else {
+                vec![TransportCommand::Mute(case.track, true)]
+            };
+            let script: Vec<ScriptStep> =
+                commands.iter().map(|command| step(cut, *command)).collect();
+            let ClickRecording { logs, clicks } = record_script_with_click(
+                performance,
+                count_in_config(percent),
+                &script,
+                count_in + 10,
+            );
+            let expected: Vec<HeardClick> = before
+                .clicks
+                .iter()
+                .filter(|click| click.frame < cut)
+                .chain(after.clicks.iter().filter(|click| click.frame >= cut))
+                .copied()
+                .collect();
+            assert_eq!(clicks_of(&clicks), expected, "{} solo {solo}", case.name);
+            let first = others
+                .iter()
+                .filter_map(|track| first_note_frame(&logs[*track]))
+                .min();
+            assert_eq!(first, Some(count_in), "{} solo {solo}", case.name);
+        }
+    }
 }

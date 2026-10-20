@@ -112,6 +112,7 @@ struct CountInRun {
     split_click: usize,
     end_click: usize,
     struck: usize,
+    settled: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -486,11 +487,13 @@ impl Transport {
                 if let Some(flag) = self.muted.get_mut(track) {
                     *flag = muted;
                 }
+                self.reaim();
             }
             TransportCommand::Solo(track, soloed) => {
                 if let Some(flag) = self.soloed.get_mut(track) {
                     *flag = soloed;
                 }
+                self.reaim();
             }
             TransportCommand::Metronome(on) => self.metronome = on,
             TransportCommand::CountIn(on) => self.counts_in = on,
@@ -501,12 +504,16 @@ impl Transport {
         if range.first > range.last || range.last >= self.timeline.bar_count() {
             return;
         }
-        let (Some(end_unit), Some(end)) = (
+        let (Some(start_unit), Some(end_unit), Some(end)) = (
+            self.timeline.bars.get(range.first).copied(),
             self.timeline.bars.get(range.last + 1).copied(),
             self.end_of_bar(range.last),
         ) else {
             return;
         };
+        if end_unit <= start_unit {
+            return;
+        }
         self.span = Some(LoopSpan {
             range,
             end,
@@ -578,7 +585,33 @@ impl Transport {
             split_click,
             end_click,
             struck: 0,
+            settled: None,
         })
+    }
+
+    fn reaim(&mut self) {
+        if self.state != TransportState::CountIn {
+            return;
+        }
+        let Some(fresh) = self.count_in_run() else {
+            return;
+        };
+        let step = self.step;
+        let Some(run) = self.count_in.as_mut() else {
+            return;
+        };
+        run.lead = fresh.lead;
+        run.split_click = fresh.split_click;
+        run.struck = 0;
+        let Some(settled) = run.settled else {
+            return;
+        };
+        while let Some(next) = run.next(&self.timeline.clicks) {
+            if !is_due(next.due, settled, step) {
+                break;
+            }
+            run.struck += 1;
+        }
     }
 
     fn track_audible(&self, track: usize, soloing: bool) -> bool {
@@ -738,6 +771,7 @@ impl Transport {
             strike(self.click.as_mut(), click.downbeat);
             run.struck += 1;
         }
+        run.settled = Some(run.elapsed);
         if is_due(run.length, run.elapsed, step) {
             let ended = *run;
             self.count_in = None;
