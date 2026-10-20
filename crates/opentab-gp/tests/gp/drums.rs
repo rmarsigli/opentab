@@ -143,6 +143,17 @@ fn a_percussion_track_built_from_scratch_is_written_with_the_general_midi_kit() 
     assert_eq!(read_gp(&bytes).expect("reread"), again);
 }
 
+#[test]
+fn a_percussion_track_without_a_tuning_is_written_with_six_zero_strings() {
+    let mut score = from_scratch(&[0, 1]);
+    score.tracks[0].tuning.strings.clear();
+    let gpif = gpif_text(&write_gp(&score).expect("write"));
+    assert_eq!(texts(&gpif, "Pitches"), ["0 0 0 0 0 0"]);
+    score.tracks[0].tuning.strings = vec![Pitch(0); 6];
+    let explicit = gpif_text(&write_gp(&score).expect("write"));
+    assert_eq!(explicit, gpif);
+}
+
 fn articulations_of(score: &Score) -> Vec<u16> {
     score.tracks[0].staves[0]
         .bars
