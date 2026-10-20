@@ -10,7 +10,12 @@ publish.workspace = true
 name = "opentab-mcp"
 path = "src/main.rs"
 
+[features]
+live = ["opentab-audio/live"]
+
 [dependencies]
+opentab-audio = { path = "../opentab-audio" }
+opentab-playback = { path = "../opentab-playback" }
 opentab-model = { path = "../opentab-model" }
 opentab-command = { path = "../opentab-command" }
 opentab-gp = { path = "../opentab-gp" }
@@ -24,8 +29,11 @@ serde_json.workspace = true
 base64.workspace = true
 
 [dev-dependencies]
+opentab-testkit = { path = "../opentab-testkit" }
 tempfile.workspace = true
 resvg.workspace = true
+hound.workspace = true
+midly.workspace = true
 
 [lints]
 workspace = true

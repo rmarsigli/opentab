@@ -1250,12 +1250,17 @@ name = "opentab-mcp"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "hound",
+ "midly",
+ "opentab-audio",
  "opentab-command",
  "opentab-files",
  "opentab-gp",
  "opentab-layout",
  "opentab-model",
+ "opentab-playback",
  "opentab-render",
+ "opentab-testkit",
  "resvg",
  "rmcp",
  "serde",
