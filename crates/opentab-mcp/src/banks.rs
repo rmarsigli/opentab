@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 
 use opentab_audio::{
-    ArchiveKind, BankManager, BankRef, BankSource, CatalogueEntry, InstalledBank, default_data_dir,
+    ArchiveKind, BankId, BankManager, BankRef, BankSource, CatalogueEntry, InstalledBank,
+    catalogue_from_file, catalogue_override, default_data_dir,
 };
+use opentab_files::FileError;
 use opentab_model::InstrumentFamily;
 use serde::Serialize;
 
@@ -76,7 +78,26 @@ pub fn open_manager() -> Result<BankManager, ToolError> {
             "OpenTab cannot find a folder for its data; set the OPENTAB_DATA_DIR environment variable to one",
         ));
     };
-    Ok(BankManager::open(&root)?)
+    match catalogue_override() {
+        None => Ok(BankManager::open(&root)?),
+        Some(path) => {
+            let entries = catalogue_from_file(&path)?;
+            Ok(BankManager::with_catalogue(&root, entries)?)
+        }
+    }
+}
+
+pub fn families() -> Vec<InstrumentFamily> {
+    let mut families: Vec<InstrumentFamily> = (0u8..128)
+        .step_by(8)
+        .map(InstrumentFamily::of_program)
+        .collect();
+    families.push(InstrumentFamily::Drums);
+    families
+}
+
+fn bank_name<T>(parsed: Result<T, opentab_audio::BankError>) -> Result<T, ToolError> {
+    parsed.map_err(|error| ToolError::invalid_input(error.to_string()))
 }
 
 fn source_name(source: BankSource) -> &'static str {
@@ -129,9 +150,11 @@ pub fn family_name(family: InstrumentFamily) -> String {
 fn parse_family(text: &str) -> Result<InstrumentFamily, ToolError> {
     let normal = text.to_ascii_lowercase().replace('-', "_");
     serde_json::from_value(serde_json::Value::String(normal)).map_err(|_| {
+        let names: Vec<String> = families().into_iter().map(family_name).collect();
         ToolError::invalid_input(format!(
-            "{} is not an instrument family; use one of piano, chromatic_percussion, organ, guitar, bass, strings, ensemble, brass, reed, pipe, synth_lead, synth_pad, synth_effects, ethnic, percussive, sound_effects, drums",
-            echo(text)
+            "{} is not an instrument family; use one of {}",
+            echo(text),
+            names.join(", ")
         ))
     })
 }
@@ -168,15 +191,17 @@ pub fn list() -> Result<Listing, ToolError> {
 }
 
 pub fn import(args: OpenArgs) -> Result<Imported, ToolError> {
+    let path = std::path::Path::new(&args.path);
+    std::fs::symlink_metadata(path).map_err(|error| FileError::io(path, &error))?;
     let mut manager = open_manager()?;
-    let bank = manager.import(std::path::Path::new(&args.path))?;
+    let bank = manager.import(path)?;
     Ok(Imported {
         imported: bank_wire(&bank),
     })
 }
 
 pub fn install(args: InstallArgs) -> Result<Installed, ToolError> {
-    let id = opentab_audio::BankId::new(&args.id)?;
+    let id = bank_name(BankId::new(&args.id))?;
     let mut manager = open_manager()?;
     let bank = manager.install(&id, &mut |_| {})?;
     Ok(Installed {
@@ -186,7 +211,7 @@ pub fn install(args: InstallArgs) -> Result<Installed, ToolError> {
 
 pub fn assign(args: AssignArgs) -> Result<Assigned, ToolError> {
     let family = parse_family(&args.instrument)?;
-    let bank = BankRef::parse(&args.bank)?;
+    let bank = bank_name(BankRef::parse(&args.bank))?;
     let mut manager = open_manager()?;
     manager.assign(family, bank.clone())?;
     Ok(Assigned {
@@ -212,5 +237,21 @@ mod tests {
         let error = parse_family("banjo").unwrap_err();
         assert_eq!(error.kind, "invalid_input");
         assert!(error.message.contains("\"banjo\""));
+        assert!(
+            error.message.ends_with("sound_effects, drums"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn the_family_list_comes_from_the_model_and_every_name_parses_back() {
+        let listed = families();
+        assert_eq!(listed.len(), 17);
+        assert_eq!(listed.first(), Some(&InstrumentFamily::Piano));
+        assert_eq!(listed.last(), Some(&InstrumentFamily::Drums));
+        for family in listed {
+            assert_eq!(parse_family(&family_name(family)).unwrap(), family);
+        }
     }
 }

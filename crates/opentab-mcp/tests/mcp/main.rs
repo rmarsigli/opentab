@@ -1,3 +1,4 @@
+mod banks;
 mod misuse;
 mod session;
 mod sound;

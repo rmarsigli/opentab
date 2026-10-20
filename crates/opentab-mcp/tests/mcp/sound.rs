@@ -612,11 +612,17 @@ fn soundbank_misuse_is_a_clear_error_and_changes_nothing() {
         "import_soundbank",
         json!({"path": data.path().join("missing.sf2").display().to_string()}),
     );
-    assert_eq!(error["kind"], "sound_bank");
+    assert_eq!(error["kind"], "io");
+    assert!(message(&error).contains("missing.sf2"), "{error}");
     let error = server.fails("install_soundbank", json!({"id": "no-such-bank"}));
     assert_eq!(error["kind"], "sound_bank");
     let error = server.fails("install_soundbank", json!({"id": "Not A Valid Id"}));
-    assert_eq!(error["kind"], "sound_bank");
+    assert_eq!(error["kind"], "invalid_input");
+    let error = server.fails(
+        "assign_soundbank",
+        json!({"instrument": "guitar", "bank": "Not A Valid Id"}),
+    );
+    assert_eq!(error["kind"], "invalid_input");
     let error = server.fails(
         "assign_soundbank",
         json!({"instrument": "banjo", "bank": "built-in"}),

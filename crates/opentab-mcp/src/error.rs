@@ -1,4 +1,4 @@
-use opentab_audio::{AudioError, BankError, InstallError, OutputError};
+use opentab_audio::{AudioError, BankError, CatalogueFileError, InstallError, OutputError};
 use opentab_command::CommandError;
 use opentab_files::FileError;
 use opentab_playback::PlaybackError;
@@ -114,9 +114,28 @@ impl From<BankError> for ToolError {
     }
 }
 
+pub const INSECURE_ADDRESS: &str = "insecure_address";
+
 impl From<InstallError> for ToolError {
     fn from(error: InstallError) -> ToolError {
-        ToolError::new("sound_bank", error.to_string())
+        let policy = matches!(
+            error,
+            InstallError::Insecure { .. } | InstallError::Address { .. }
+        );
+        ToolError {
+            sub_kind: policy.then(|| INSECURE_ADDRESS.to_owned()),
+            ..ToolError::new("sound_bank", error.to_string())
+        }
+    }
+}
+
+impl From<CatalogueFileError> for ToolError {
+    fn from(error: CatalogueFileError) -> ToolError {
+        let kind = match error {
+            CatalogueFileError::Io { .. } => "io",
+            CatalogueFileError::Invalid { .. } => "invalid_input",
+        };
+        ToolError::new(kind, error.to_string())
     }
 }
 

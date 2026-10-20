@@ -31,9 +31,17 @@ impl Server {
     }
 
     pub fn spawn_with(data_dir: Option<&Path>) -> Server {
+        Server::spawn_env(data_dir, None)
+    }
+
+    pub fn spawn_env(data_dir: Option<&Path>, catalogue: Option<&Path>) -> Server {
         let mut command = Command::new(env!("CARGO_BIN_EXE_opentab-mcp"));
+        command.env_remove("OPENTAB_CATALOGUE");
         if let Some(dir) = data_dir {
             command.env("OPENTAB_DATA_DIR", dir);
+        }
+        if let Some(file) = catalogue {
+            command.env("OPENTAB_CATALOGUE", file);
         }
         let mut child = command
             .stdin(Stdio::piped())
@@ -68,6 +76,12 @@ impl Server {
 
     pub fn start_in(data_dir: &Path) -> Server {
         let mut server = Server::spawn_with(Some(data_dir));
+        server.initialize();
+        server
+    }
+
+    pub fn start_with_catalogue(data_dir: &Path, catalogue: &Path) -> Server {
+        let mut server = Server::spawn_env(Some(data_dir), Some(catalogue));
         server.initialize();
         server
     }
