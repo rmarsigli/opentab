@@ -9,6 +9,7 @@ mod output;
 mod recording;
 mod render;
 mod schedule;
+mod session_hashes;
 mod sf2;
 mod sf2_bank;
 mod sf2_fuzz;

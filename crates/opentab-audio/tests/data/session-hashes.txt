@@ -1,0 +1,5 @@
+loop repeats.gp built-in d5b3fbecb9ccb580da9a263622076706bc63c77ad661fdfdb2cc709081affbca
+speed multi-track.gp built-in 9792552be2a552916a6311912bad00d53a576eb8aede51ed75b610caf378257e
+count-in repeats.gp built-in 8c26f776682268791fffc588bb0a6ec3b0c4e5cae26173256dc330b8ff08f6ed
+mute-solo multi-track.gp built-in b336ced0d3a55bf5de5193079db32c568404d7b9cae8aa33f93a1b3fc5b18c58
+seek note-effects.gp built-in 84c1f62b338b306ad0b4b40d52768a609ff5ebda08eb802ec325432bca0cdc7b
