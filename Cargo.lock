@@ -1174,15 +1174,21 @@ name = "opentab-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "hound",
  "insta",
+ "midly",
+ "opentab-audio",
  "opentab-command",
  "opentab-files",
  "opentab-gp",
  "opentab-layout",
  "opentab-model",
+ "opentab-playback",
  "opentab-render",
+ "opentab-testkit",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 
