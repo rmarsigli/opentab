@@ -6,7 +6,7 @@ use opentab_gp::read_gp;
 use opentab_model::{
     Automation, AutomationValue, Beat, BeatId, BendPoint, ElementId, Fraction, IdAllocator,
     InstrumentKind, Note, NoteId, NoteKind, OpaquePayload, Score, Sound, SoundRef, Tempo,
-    TempoChange, TempoUnit, Track, TremoloBar, VoiceSlot, to_json,
+    TempoChange, TempoUnit, Track, TremoloBar, Voice, VoiceSlot, to_json,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -526,19 +526,9 @@ fn gp_drops_empty_voices(fixture: &mut Score, _golden: &mut Score) {
 }
 
 fn gp_drops_let_ring_on_staccato_notes(fixture: &mut Score, _golden: &mut Score) {
-    for track in &mut fixture.tracks {
-        for staff in &mut track.staves {
-            for bar in &mut staff.bars {
-                for voice in &mut bar.voices {
-                    for beat in &mut voice.beats {
-                        for note in &mut beat.notes {
-                            if note.effects.staccato {
-                                note.effects.let_ring = false;
-                            }
-                        }
-                    }
-                }
-            }
+    for note in notes_mut(fixture) {
+        if note.effects.staccato {
+            note.effects.let_ring = false;
         }
     }
 }
@@ -824,6 +814,29 @@ fn gp_raises_the_revision_for_trills_under_a_capo(fixture: &mut Score, golden: &
     });
 }
 
+fn renumbered_voice(voice: &mut Voice, next: &mut impl FnMut() -> ElementId) {
+    voice.id = next().into();
+    for beat in &mut voice.beats {
+        beat.id = next().into();
+        for note in &mut beat.notes {
+            note.id = next().into();
+        }
+    }
+}
+
+fn renumbered_track(track: &mut Track, next: &mut impl FnMut() -> ElementId) {
+    track.id = next().into();
+    for staff in &mut track.staves {
+        staff.id = next().into();
+        for bar in &mut staff.bars {
+            bar.id = next().into();
+            for voice in &mut bar.voices {
+                renumbered_voice(voice, next);
+            }
+        }
+    }
+}
+
 fn renumbered(score: &mut Score) {
     let mut ids = IdAllocator::default();
     let mut next = || ids.next().unwrap_or(ElementId(0));
@@ -831,22 +844,7 @@ fn renumbered(score: &mut Score) {
         master_bar.id = next().into();
     }
     for track in &mut score.tracks {
-        track.id = next().into();
-        for staff in &mut track.staves {
-            staff.id = next().into();
-            for bar in &mut staff.bars {
-                bar.id = next().into();
-                for voice in &mut bar.voices {
-                    voice.id = next().into();
-                    for beat in &mut voice.beats {
-                        beat.id = next().into();
-                        for note in &mut beat.notes {
-                            note.id = next().into();
-                        }
-                    }
-                }
-            }
-        }
+        renumbered_track(track, &mut next);
     }
     score.ids = ids;
 }
@@ -1170,6 +1168,12 @@ fn payload_kinds_name_their_parent_guard_and_element() {
     }));
 }
 
+#[derive(Debug)]
+struct ChangedNote<'n> {
+    mine: &'n Note,
+    gp: &'n Note,
+}
+
 #[test]
 fn guitar_pro_drops_the_ghost_flag_only_on_accented_notes() {
     let pair = pairs()
@@ -1180,13 +1184,14 @@ fn guitar_pro_drops_the_ghost_flag_only_on_accented_notes() {
     let ours = notes_of(&fixture);
     let theirs = notes_of(&golden);
     assert_eq!(ours.len(), theirs.len());
-    let changed: Vec<(&&Note, &&Note)> = ours
+    let changed: Vec<ChangedNote<'_>> = ours
         .iter()
         .zip(&theirs)
-        .filter(|(mine, gp)| mine.effects != gp.effects)
+        .map(|(mine, gp)| ChangedNote { mine, gp })
+        .filter(|pair| pair.mine.effects != pair.gp.effects)
         .collect();
     assert_eq!(changed.len(), GHOSTS_DROPPED_WITH_ACCENTS, "{changed:?}");
-    for (mine, gp) in changed {
+    for ChangedNote { mine, gp } in changed {
         assert!(accented_ghost(mine), "{mine:?}");
         assert!(!gp.effects.ghost, "{gp:?}");
         let mut expected = mine.effects.clone();
