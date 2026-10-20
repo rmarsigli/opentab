@@ -133,14 +133,25 @@ proptest! {
         bar_pick in 0usize..10_000,
         frame_pick in 1u64..10_000,
         percent in 25u16..=200,
+        paused in any::<bool>(),
     ) {
         let profile = if musical { Profile::Musical } else { Profile::Gp };
         let performance = performance(&fixture(SEEK_FIXTURES[fixture_index]), profile);
         let bar = bar_pick % performance.order.bars.len();
         let frame = 1 + frame_pick * song_frames(&performance, percent).saturating_sub(2) / 10_000;
-        let script = [step(frame, TransportCommand::Seek(bar))];
-        let logs = record(&performance, session_config(percent), &script, frame + 1);
-        assert_restored(&performance, &logs, bar, frame, percent)?;
+        let resumed = frame + 777;
+        let script = if paused {
+            vec![
+                step(frame, TransportCommand::Pause),
+                step(frame, TransportCommand::Seek(bar)),
+                step(resumed, TransportCommand::Play),
+            ]
+        } else {
+            vec![step(frame, TransportCommand::Seek(bar))]
+        };
+        let checked = if paused { resumed } else { frame };
+        let logs = record(&performance, session_config(percent), &script, checked + 1);
+        assert_restored(&performance, &logs, bar, checked, percent)?;
     }
 
     #[test]
