@@ -1,4 +1,5 @@
 mod sfz;
+mod transport;
 
 use std::alloc::System;
 
@@ -13,7 +14,7 @@ use proptest::test_runner::{Config, TestRunner};
 use stats_alloc::{INSTRUMENTED_SYSTEM, Region, Stats, StatsAlloc};
 
 #[global_allocator]
-static GLOBAL: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
+pub static GLOBAL: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
 
 const TRACKS: usize = 20;
 const PAD_FRAMES: u32 = 4 * 1024 * 1024;
@@ -204,5 +205,16 @@ fn main() {
     sfz::symlink_bombs_are_refused_before_listing();
     sfz::include_bombs_stop_at_the_bank_include_cap();
     sfz::an_inherited_sample_is_shared_not_copied_per_region();
-    println!("memory: 13 checks passed");
+    transport::the_transport_processes_blocks_without_allocating();
+    let dir = tempfile::Builder::new()
+        .prefix("sfz-")
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .expect("scratch");
+    let root = opentab_testkit::banks::tiny_sfz(dir.path());
+    let sfz = transport::sfz_allocations_after_preparation(&root);
+    println!(
+        "memory: SFZ transport blocks allocate {} times ({} bytes) after preparation",
+        sfz.allocations, sfz.bytes_allocated
+    );
+    println!("memory: 14 checks passed");
 }
