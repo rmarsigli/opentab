@@ -72,7 +72,7 @@ Ranges are the accepted ones; out-of-range values are clamped. Defaults apply wh
 
 | Opcode | Type, range | Default | Meaning | Survey |
 |---|---|---|---|---|
-| `sample` | path | none | Audio file of the region; rules in section 6. Names starting with `*` are generators (`*sine`, `*silence`): the region is dropped and listed | 20 |
+| `sample` | path | none | Audio file of the region; rules in section 6. Names starting with `*` are generators (`*sine`, `*silence`): the region is dropped and listed. A value longer than 1 KiB refuses the bank (section 11) | 20 |
 | `default_path` | text, `control` only | empty | Prepended, verbatim, to every `sample` value; it needs its trailing separator | 4 |
 | `key` | note 0..127 | none | Sets `lokey`, `hikey` and `pitch_keycenter` to the same note | 13 |
 | `lokey`, `hikey` | note 0..127 | 0, 127 | Inclusive key range. `lokey` greater than `hikey` is a valid empty range: the region never sounds | 16 |
@@ -252,7 +252,7 @@ SFZ files carry no program numbers, so a bank maps General MIDI programs to its 
 
 ## 11. Limits
 
-Every limit is a named constant and refuses the bank with a message that names it. Sizes are checked before the memory they guard is allocated; counts are checked as each item is added. Loading work is bounded by these limits rather than by the bank's shape: comments are removed in one pass; a variable is looked up only among the lengths of defined names, each at most 64 bytes; each path, after variables, is at most 1 KiB and its text counts against the bank text limit; each distinct path is resolved once (hits and misses are both remembered), and the number of distinct paths is capped; each folder is listed and lower-cased once into an index, so a case-insensitive miss costs one lookup in that index. The remembered results are charged to the memory kept per bank. Each name added to the list of section 8 is charged to that memory before it is stored, in both passes over the text, and an instrument lists at most 4,096 distinct names; a breach refuses the bank. Inheritance merges velocity curve points and controller ranges through fixed tables of 128 slots, so opening a header or closing a region costs a fixed number of steps (at most 2,304 slot visits for a region, header included), never a cost that grows with the scopes above it; every region, with or without a sample, counts against the region limit before it inherits. The total work is roughly proportional to the text read, plus that fixed cost per header and region, plus the folder entries listed, plus each path occurrence times the length of its key and canonical result (a hit still builds and hashes its key; an include hit also checks, opens and re-checks the file, a few system calls on a path of at most about 4 KiB), with path occurrences bounded by the region and include limits. Real libraries sit far below each one: the survey's largest file is 210 KB, its largest instrument 8,902 regions and 0.95 MB of expanded text, its deepest include chain 3 levels, and its longest samples a few tens of seconds.
+Every limit is a named constant and refuses the bank with a message that names it. Sizes are checked before the memory they guard is allocated; counts are checked as each item is added. Loading work is bounded by these limits rather than by the bank's shape: comments are removed in one pass; a variable is looked up only among the lengths of defined names, each at most 64 bytes; each path, after variables, is at most 1 KiB and its text counts against the bank text limit; a `sample` value longer than 1 KiB under `<global>`, `<master>`, `<group>` or `<region>` refuses the bank before it is stored, in every form (a `*` generator and a value with an unresolved `$` included), and a region shares the `sample` value it inherits from a scope above it instead of copying it; each distinct path is resolved once (hits and misses are both remembered), and the number of distinct paths is capped; each folder is listed and lower-cased once into an index, so a case-insensitive miss costs one lookup in that index. The remembered results are charged to the memory kept per bank. Each name added to the list of section 8 is charged to that memory before it is stored, in both passes over the text, and an instrument lists at most 4,096 distinct names (a name listed under several scopes or reasons counts once); a breach refuses the bank. Inheritance merges velocity curve points and controller ranges through fixed tables of 128 slots, so opening a header costs a fixed number of steps and closing a region costs at most 2,304 slot visits (header included) plus one copy of its path of at most 1 KiB, never a cost that grows with the scopes above it; every region, with or without a sample, counts against the region limit before it inherits. The total work is roughly proportional to the text read, plus that fixed cost per header and region, plus the folder entries listed, plus each path occurrence times the length of its key and canonical result (a hit still builds and hashes its key; an include hit also checks, opens and re-checks the file, a few system calls on a path of at most about 4 KiB), with path occurrences bounded by the region and include limits. Real libraries sit far below each one: the survey's largest file is 210 KB, its largest instrument 8,902 regions and 0.95 MB of expanded text, its deepest include chain 3 levels, and its longest samples a few tens of seconds.
 
 | Limit | Value |
 |---|---|
@@ -263,12 +263,12 @@ Every limit is a named constant and refuses the bank with a message that names i
 | Include depth, includes per instrument | 8, 4,096 |
 | Include occurrences per bank, both passes counted | 16,384 (the survey's 8 libraries hold 2,875 include lines in all) |
 | Definitions per instrument, their text, one name | 16,384, 1 MiB, 64 bytes (a longer name is ignored and listed) |
-| One line of text | 64 KiB |
-| One sample or include path, after variables and `default_path` | 1 KiB |
+| One line of text, as read and again after variables and includes are expanded | 64 KiB |
+| One `sample` value as written, and one sample or include path after variables and `default_path` | 1 KiB |
 | Distinct path lookups per bank | 65,536 |
 | Text read per instrument, includes counted each time | 32 MiB |
 | Folder entries listed for case-insensitive lookups, per bank | 1,048,576 |
-| Distinct ignored names listed per instrument (section 8) | 4,096 |
+| Distinct ignored names listed per instrument (section 8), each counted once whatever its scopes and reasons | 4,096 |
 | Entries in the bank folder, folder depth | 200,000, 16 |
 | `.sfz` files in the bank | 8,192 |
 | Memory kept for regions and lists, per bank | 256 MiB |
