@@ -771,3 +771,32 @@ fn out_of_range_programs_are_read_errors() {
         assert!(error.to_string().contains("outside 0..=127"), "{error}");
     }
 }
+
+#[test]
+fn twin_sound_names_the_writer_tells_apart_survive_an_edit_and_its_undo() {
+    let sounds = format!(
+        "<Sounds>{}{}</Sounds>",
+        sound("Clean", "Stringed/Clean", 0),
+        sound("Clean", "Stringed/Other", 30)
+    );
+    let automations = format!(
+        "<Automations>{}</Automations>",
+        automation("Sound", "0", "<![CDATA[Stringed/Other;Clean;Factory]]>"),
+    );
+    let mut score = with_track(&format!("{sounds}{automations}"));
+    assert_eq!(
+        track(&score).automations[0].value,
+        AutomationValue::Sound(SoundRef(1))
+    );
+    let original = write_gp(&score).expect("the writer tells the twins apart");
+    let mut history = opentab_command::History::new();
+    let track = score.tracks[0].id;
+    history
+        .execute(
+            &mut score,
+            opentab_command::Command::RemoveAutomation { track, index: 0 },
+        )
+        .expect("remove");
+    assert!(history.undo(&mut score).expect("undo"));
+    assert_eq!(write_gp(&score).expect("write"), original);
+}

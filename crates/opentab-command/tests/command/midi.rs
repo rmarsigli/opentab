@@ -468,3 +468,57 @@ fn restores_follow_the_forward_rules() {
     };
     assert!(message.contains("run diagnose"), "{message}");
 }
+
+fn with_twin_sounds() -> Fixture {
+    let mut fx = fixture();
+    let track = &mut fx.score.tracks[0];
+    let twin = Sound {
+        name: "Clean".to_string(),
+        program: track.instrument.midi_program,
+        bank: track.midi.bank,
+    };
+    track.sounds = vec![twin.clone(), twin];
+    let mut second = sound_at(&fx, 1);
+    second.value = AutomationValue::Sound(SoundRef(1));
+    fx.score.tracks[0].automations = vec![sound_at(&fx, 0), second];
+    fx
+}
+
+#[test]
+fn twin_sound_names_never_block_an_edit_or_its_undo() {
+    let mut fx = with_twin_sounds();
+    let original = fx.score.clone();
+    let inverse = apply(&mut fx.score, &Command::RemoveMasterBar { index: 1 }).unwrap();
+    apply(&mut fx.score, &inverse).unwrap();
+    assert_eq!(fx.score, original);
+    let track = fx.guitar;
+    let inverse = apply(
+        &mut fx.score,
+        &Command::RemoveAutomation { track, index: 1 },
+    )
+    .unwrap();
+    apply(&mut fx.score, &inverse).unwrap();
+    assert_eq!(fx.score, original);
+    let mut third = sound_at(&fx, 1);
+    third.position = Fraction::new(1, 2);
+    third.value = AutomationValue::Sound(SoundRef(1));
+    let insert = Command::InsertAutomation {
+        track,
+        index: 2,
+        automation: third,
+    };
+    let inverse = apply(&mut fx.score, &insert).unwrap();
+    apply(&mut fx.score, &inverse).unwrap();
+    assert_eq!(fx.score, original);
+    let mut missing = sound_at(&fx, 1);
+    missing.value = AutomationValue::Sound(SoundRef(2));
+    let insert = Command::InsertAutomation {
+        track,
+        index: 2,
+        automation: missing,
+    };
+    assert!(matches!(
+        rejected(&mut fx, &insert),
+        CommandError::InvalidValue { .. }
+    ));
+}

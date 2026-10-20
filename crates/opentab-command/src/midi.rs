@@ -124,21 +124,10 @@ fn check_value(track: &Track, automation: &Automation) -> Result<(), CommandErro
     let AutomationValue::Sound(sound) = automation.value else {
         return Ok(());
     };
-    let Some(named) = track.sounds.get(sound.0) else {
+    if track.sounds.get(sound.0).is_none() {
         return Err(CommandError::invalid(format!(
             "track {} has no sound {}",
             track.id.0.0, sound.0
-        )));
-    };
-    let twins = track
-        .sounds
-        .iter()
-        .filter(|other| other.name == named.name)
-        .count();
-    if twins > 1 {
-        return Err(CommandError::invalid(format!(
-            "sound {} of track {} shares its name with another sound",
-            sound.0, track.id.0.0
         )));
     }
     Ok(())
