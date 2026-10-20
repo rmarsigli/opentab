@@ -44,9 +44,9 @@ pub use master_bar::{
     TripletFeel,
 };
 pub use midi::{
-    AUTOMATION_GRID, Automation, AutomationValue, Balance, InstrumentFamily, InstrumentSet, Level,
-    MAX_PROGRAM, MidiBank, MidiChannel, Sound, SoundOverride, SoundRef, TrackMidi,
-    automations_in_order, check_program, on_automation_grid,
+    AUTOMATION_GRID, Automation, AutomationLane, AutomationValue, Balance, InstrumentFamily,
+    InstrumentSet, Level, MAX_PROGRAM, MidiBank, MidiChannel, Sound, SoundOverride, SoundRef,
+    TrackMidi, automations_in_order, check_program, on_automation_grid,
 };
 pub use play_order::{MAX_PLAYED_BARS, PlayedSource, SourceOrder, source_order};
 pub use score::{BeatPath, NotePath, Score, ScoreMeta, VoicePath};

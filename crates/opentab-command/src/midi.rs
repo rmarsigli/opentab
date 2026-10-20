@@ -165,7 +165,7 @@ fn check_order(track: &Track) -> Result<(), CommandError> {
         return Ok(());
     }
     Err(already_broken(CommandError::invalid(format!(
-        "track {} lists a sound automation before a volume or pan automation",
+        "track {} does not list its pan, volume and sound automations in that order",
         track.id.0.0
     ))))
 }
@@ -181,7 +181,7 @@ fn check_placement(
         return Ok(());
     }
     Err(CommandError::invalid(format!(
-        "index {index} would put a volume or pan automation after a sound automation"
+        "index {index} would break the pan, volume, sound automation order"
     )))
 }
 

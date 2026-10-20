@@ -199,7 +199,7 @@ impl Builder {
             .into_iter()
             .filter_map(|automation_seed| automation(automation_seed, &master_bars, &sounds))
             .collect();
-        automations.sort_by_key(|automation| matches!(automation.value, AutomationValue::Sound(_)));
+        automations.sort_by_key(|automation| automation.value.lane());
         let staves = seed
             .staves
             .into_iter()

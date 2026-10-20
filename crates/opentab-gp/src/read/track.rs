@@ -240,6 +240,7 @@ fn read_track(
         ..connection(&fields.midi, fields.instrument.kind)
     };
     let mut automations = fields.strip.automations;
+    automations.sort_by_key(|automation| automation.value.lane());
     automations.extend(fields.automations);
     let mut track = Track {
         id,

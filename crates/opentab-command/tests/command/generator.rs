@@ -1,6 +1,6 @@
 use opentab_command::{Command, MetaField};
 use opentab_model::{
-    Automation, AutomationValue, Balance, BarId, Beat, BeatId, BeatPath, BendPoint,
+    Automation, AutomationLane, AutomationValue, Balance, BarId, Beat, BeatId, BeatPath, BendPoint,
     DIRECTION_JUMPS, DIRECTION_TARGETS, Directions, DrumKit, Duration, ElementId, Fraction,
     InstrumentKind, Level, MasterBarId, MidiBank, MidiChannel, Note, NoteEffects, NoteId, NoteKind,
     NoteValue, Score, Sound, SoundRef, StaffId, TRIPLET_FEELS, Tempo, TempoChange, TempoUnit,
@@ -420,14 +420,20 @@ fn automation_index(score: &Score, track: TrackId, pick: Pick, value: &ValueSeed
     if !pick.valid {
         return insert_index(pick, len);
     }
-    let first_sound = automations
+    let lane = match value {
+        ValueSeed::Pan(_) => AutomationLane::Pan,
+        ValueSeed::Volume(_) => AutomationLane::Volume,
+        ValueSeed::Sound(_) => AutomationLane::Sound,
+    };
+    let start = automations
         .iter()
-        .position(|automation| matches!(automation.value, AutomationValue::Sound(_)))
+        .position(|automation| automation.value.lane() >= lane)
         .unwrap_or(len);
-    match value {
-        ValueSeed::Sound(_) => first_sound + pick.selector % (len - first_sound + 1),
-        ValueSeed::Volume(_) | ValueSeed::Pan(_) => pick.selector % (first_sound + 1),
-    }
+    let end = automations
+        .iter()
+        .position(|automation| automation.value.lane() > lane)
+        .unwrap_or(len);
+    start + pick.selector % (end - start + 1)
 }
 
 fn sounds_of(score: &Score, track: TrackId) -> usize {

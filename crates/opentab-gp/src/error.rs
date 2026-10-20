@@ -162,7 +162,7 @@ pub enum Refusal {
     AmbiguousSound { index: usize },
     #[error("a sound override names track {track}, which the score does not contain")]
     SoundOverrideTrack { track: u64 },
-    #[error("the track lists a sound automation before a volume or pan automation")]
+    #[error("the track does not list its pan, volume and sound automations in that order")]
     AutomationOrder,
 }
 

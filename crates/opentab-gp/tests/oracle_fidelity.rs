@@ -140,7 +140,7 @@ struct Normalisation {
     apply: Normalise,
 }
 
-const NORMALISATIONS: [Normalisation; 19] = [
+const NORMALISATIONS: [Normalisation; 18] = [
     Normalisation {
         name: "gp_writes_its_own_defaults",
         apply: gp_writes_its_own_defaults,
@@ -192,10 +192,6 @@ const NORMALISATIONS: [Normalisation; 19] = [
     Normalisation {
         name: "gp_keeps_only_the_last_copy_of_each_direction",
         apply: gp_keeps_only_the_last_copy_of_each_direction,
-    },
-    Normalisation {
-        name: "gp_writes_the_pan_lane_before_the_volume_lane",
-        apply: gp_writes_the_pan_lane_before_the_volume_lane,
     },
     Normalisation {
         name: "gp_drops_our_sound_overrides",
@@ -633,27 +629,6 @@ fn gp_keeps_only_the_last_copy_of_each_direction(fixture: &mut Score, _golden: &
         let directions = &mut master_bar.directions;
         directions.targets.retain(|target| targets.insert(*target));
         directions.jumps.retain(|jump| jumps.insert(*jump));
-    }
-}
-
-fn lane(automation: &Automation) -> u8 {
-    match automation.value {
-        AutomationValue::Pan(_) => 0,
-        AutomationValue::Volume(_) => 1,
-        AutomationValue::Sound(_) => 2,
-    }
-}
-
-fn gp_writes_the_pan_lane_before_the_volume_lane(fixture: &mut Score, golden: &mut Score) {
-    for track in &golden.tracks {
-        assert!(
-            track.automations.is_sorted_by_key(lane),
-            "{}: GP's lanes are not pan, volume, sound",
-            track.name
-        );
-    }
-    for track in &mut fixture.tracks {
-        track.automations.sort_by_key(lane);
     }
 }
 

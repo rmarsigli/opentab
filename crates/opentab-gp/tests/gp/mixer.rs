@@ -133,12 +133,16 @@ fn parameter_twelve_is_the_volume_and_eleven_the_pan() {
     assert_eq!(
         values,
         vec![
-            AutomationValue::Volume(Level::new(812_500).unwrap()),
             AutomationValue::Pan(Balance::new(100_000).unwrap()),
+            AutomationValue::Volume(Level::new(812_500).unwrap()),
         ]
     );
-    assert_eq!(track.automations[1].position, Fraction::new(1, 2));
+    assert_eq!(track.automations[0].position, Fraction::new(1, 2));
     round_trip(&score);
+    let text = gpif_text(&write_gp(&score).expect("write"));
+    let pan = text.find("<Type>DSPParam_11</Type>").expect("pan lane");
+    let volume = text.find("<Type>DSPParam_12</Type>").expect("volume lane");
+    assert!(pan < volume);
 }
 
 #[test]
@@ -604,6 +608,19 @@ fn the_writer_refuses_midi_data_gpif_cannot_hold() {
         at(
             Fraction::from_integer(0),
             AutomationValue::Volume(Level::FULL),
+        ),
+    ];
+    assert_eq!(refusal(&order), Refusal::AutomationOrder);
+    order.tracks[0].automations.reverse();
+    assert!(write_gp(&order).is_ok());
+    order.tracks[0].automations = vec![
+        at(
+            Fraction::from_integer(0),
+            AutomationValue::Volume(Level::FULL),
+        ),
+        at(
+            Fraction::from_integer(0),
+            AutomationValue::Pan(Balance::CENTRE),
         ),
     ];
     assert_eq!(refusal(&order), Refusal::AutomationOrder);

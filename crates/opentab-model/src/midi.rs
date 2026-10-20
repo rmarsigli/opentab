@@ -28,16 +28,25 @@ pub fn check_program(program: u8) -> Result<u8, ModelError> {
     Ok(program)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AutomationLane {
+    Pan,
+    Volume,
+    Sound,
+}
+
+impl AutomationValue {
+    pub fn lane(&self) -> AutomationLane {
+        match self {
+            AutomationValue::Pan(_) => AutomationLane::Pan,
+            AutomationValue::Volume(_) => AutomationLane::Volume,
+            AutomationValue::Sound(_) => AutomationLane::Sound,
+        }
+    }
+}
+
 pub fn automations_in_order(automations: &[Automation]) -> bool {
-    let first_sound = automations
-        .iter()
-        .position(|automation| matches!(automation.value, AutomationValue::Sound(_)));
-    first_sound.is_none_or(|first| {
-        automations
-            .iter()
-            .skip(first)
-            .all(|automation| matches!(automation.value, AutomationValue::Sound(_)))
-    })
+    automations.is_sorted_by_key(|automation| automation.value.lane())
 }
 
 pub fn on_automation_grid(position: Fraction) -> bool {

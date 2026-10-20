@@ -1,7 +1,8 @@
 use opentab_model::{
-    Automation, AutomationValue, Balance, Diagnostic, ElementId, Fraction, InstrumentFamily,
-    InstrumentKind, InstrumentSet, Level, MasterBarId, MidiBank, MidiChannel, ModelError, Score,
-    Sound, SoundOverride, SoundRef, TrackId, TrackMidi, diagnose, from_json, to_json,
+    Automation, AutomationLane, AutomationValue, Balance, Diagnostic, ElementId, Fraction,
+    InstrumentFamily, InstrumentKind, InstrumentSet, Level, MasterBarId, MidiBank, MidiChannel,
+    ModelError, Score, Sound, SoundOverride, SoundRef, TrackId, TrackMidi, automations_in_order,
+    diagnose, from_json, to_json,
 };
 use serde_json::{Value, json};
 
@@ -369,4 +370,39 @@ fn a_missing_set_is_derived_from_the_family_table() {
             "{program}"
         );
     }
+}
+
+#[test]
+fn automations_follow_the_pan_volume_and_sound_lanes() {
+    let master_bar = MasterBarId(ElementId(1));
+    let at = |value| Automation {
+        master_bar,
+        position: Fraction::from_integer(0),
+        linear: false,
+        visible: true,
+        value,
+    };
+    let pan = at(AutomationValue::Pan(Balance::CENTRE));
+    let volume = at(AutomationValue::Volume(Level::FULL));
+    let sound = at(AutomationValue::Sound(SoundRef(0)));
+    let lanes = [&pan, &volume, &sound];
+    for first in lanes {
+        for second in lanes {
+            let pair = [first.clone(), second.clone()];
+            assert_eq!(
+                automations_in_order(&pair),
+                first.value.lane() <= second.value.lane(),
+                "{pair:?}"
+            );
+        }
+    }
+    assert!(AutomationLane::Pan < AutomationLane::Volume);
+    assert!(AutomationLane::Volume < AutomationLane::Sound);
+    assert!(automations_in_order(&[
+        pan.clone(),
+        pan,
+        volume.clone(),
+        volume,
+        sound
+    ]));
 }

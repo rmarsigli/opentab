@@ -154,10 +154,10 @@ pub fn mixer() -> Result<Score, FixtureError> {
         &mut sketch,
         guitar,
         vec![
-            point(1, start, AutomationValue::Volume(level(400_000)?)),
-            ramp,
             point(1, half, AutomationValue::Pan(balance(0)?)),
             point(3, start, AutomationValue::Pan(balance(1_000_000)?)),
+            point(1, start, AutomationValue::Volume(level(400_000)?)),
+            ramp,
         ],
     )?;
     let mut hidden = point(2, start, AutomationValue::Pan(balance(500_000)?));
@@ -166,8 +166,8 @@ pub fn mixer() -> Result<Score, FixtureError> {
         &mut sketch,
         bass,
         vec![
-            point(1, start, AutomationValue::Volume(level(812_500)?)),
             hidden,
+            point(1, start, AutomationValue::Volume(level(812_500)?)),
         ],
     )?;
     Ok(sketch.finish())
