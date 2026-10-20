@@ -1089,12 +1089,19 @@ fn a_bend_sounding_at_the_loop_end_is_reset_at_the_wrap() {
                 .iter()
                 .filter(|event| event.at >= start && event.at < end)
                 .rfind(|event| matches!(event.message, MidiMessage::PitchBend { .. }))?;
-            matches!(last.message, MidiMessage::PitchBend { value } if value != BEND_CENTRE)
-                .then_some(BendAtSeam {
-                    bar,
-                    track: last.track,
-                    channel: last.channel,
-                })
+            let reset_at_start = performance.events.iter().any(|event| {
+                event.at == start
+                    && event.track == last.track
+                    && event.channel == last.channel
+                    && matches!(event.message, MidiMessage::PitchBend { .. })
+            });
+            (!reset_at_start
+                && matches!(last.message, MidiMessage::PitchBend { value } if value != BEND_CENTRE))
+            .then_some(BendAtSeam {
+                bar,
+                track: last.track,
+                channel: last.channel,
+            })
         }) else {
             continue;
         };
