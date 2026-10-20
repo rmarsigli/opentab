@@ -539,7 +539,7 @@ Notation used in this table:
 - "id" means GPIF ids are read as references and re-assigned in document order when writing. Model ids come from the model's allocator.
 - "→ opaque" means the GPIF data stays as an opaque payload of the owning element, with enough position information to restore its place among its siblings.
 - A modelled value that has no GPIF encoding is never guessed: the writer refuses it with an "unsupported" error.
-- "CDATA" text (titles, names, markers, beat text, sound names) cannot hold a character outside XML 1.0's `Char` or a carriage return; drum kit text is escaped, so it may hold a carriage return. The writer refuses such text (`Character`), and diagnose reports it (`unwritable_text`, with the owning element and field). Both use one rule, `opentab_model::unwritable_character`.
+- "CDATA" text (titles, names, markers, beat text, sound names) cannot hold a character outside XML 1.0's `Char` or a carriage return; drum kit text and the chord names the writer adds to a staff's diagrams are escaped, so they may hold a carriage return. The writer refuses such text (`Character`), and diagnose reports it (`unwritable_text`, with the owning element and field). Both use one rule, `opentab_model::unwritable_character`.
 
 ### Score and metadata
 
