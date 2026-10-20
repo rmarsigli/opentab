@@ -362,6 +362,7 @@ fn export_midi_and_render_audio_use_the_edited_score() {
     );
 }
 
+#[cfg(not(feature = "live"))]
 fn status(server: &mut Server) -> Value {
     server.ok("status", json!({}))
 }
