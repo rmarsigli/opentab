@@ -7,6 +7,7 @@ use opentab_model::Fraction;
 use opentab_playback::{Performance, PlayedPosition, Profile, ScoreTime, Speed};
 
 use crate::support::{built_in_voices, config, fixture, performance};
+use crate::transport::with_pickup;
 
 const RATE: SampleRate = SampleRate::STUDIO;
 const PERCENT: i128 = 100;
@@ -255,6 +256,58 @@ fn the_status_reports_the_count_in_until_the_first_bar_starts() {
     );
     output.step(1);
     assert_eq!(handle.status().state, TransportState::Playing);
+}
+
+fn assert_at_bar_start(status: TransportStatus, state: TransportState) {
+    assert_eq!(status.state, state);
+    assert_eq!(status.played_bar, 0);
+    assert_eq!(status.offset, Fraction::new_raw(0, 1));
+}
+
+#[test]
+fn a_count_in_into_a_pickup_reports_the_bar_start_until_the_song_plays() {
+    let performance = with_pickup("note-effects.gp");
+    let config = SessionConfig {
+        count_in: true,
+        ..config(RATE)
+    };
+    let session = Session::new(
+        performance.clone(),
+        built_in_voices(&performance, RATE),
+        config,
+    )
+    .expect("session");
+    let (transport, mut handle) = session.split();
+    let mut output = NullOutput::manual(RATE);
+    output.start(transport).expect("start");
+    let bar = opentab_audio::range_frames(
+        &performance,
+        opentab_audio::BarRange { first: 0, last: 0 },
+        Speed::NORMAL,
+        RATE,
+    )
+    .expect("bar");
+    handle.send(TransportCommand::Play).expect("send");
+    let chunk = bar / 7;
+    for _ in 0..3 {
+        output.step(chunk);
+        assert_at_bar_start(handle.status(), TransportState::CountIn);
+    }
+    handle.send(TransportCommand::Pause).expect("send");
+    output.step(1);
+    assert_at_bar_start(handle.status(), TransportState::Paused);
+    handle.send(TransportCommand::Play).expect("send");
+    for _ in 0..7 {
+        output.step(chunk);
+        assert_at_bar_start(handle.status(), TransportState::CountIn);
+    }
+    output.step(bar - 7 * chunk);
+    assert_at_bar_start(handle.status(), TransportState::CountIn);
+    output.step(1);
+    let playing = handle.status();
+    assert_eq!(playing.state, TransportState::Playing);
+    assert_eq!(playing.played_bar, 0);
+    assert!(playing.offset > Fraction::new_raw(0, 1));
 }
 
 fn downbeat_frame(performance: &Performance, bar: usize, percent: u16) -> u64 {

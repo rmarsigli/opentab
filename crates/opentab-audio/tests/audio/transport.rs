@@ -607,7 +607,7 @@ fn the_count_in_plays_one_bar_of_accented_clicks_before_the_song() {
     }
 }
 
-fn with_pickup(name: &str) -> Performance {
+pub fn with_pickup(name: &str) -> Performance {
     let mut score = fixture(name);
     score.anacrusis = true;
     for track in &mut score.tracks {

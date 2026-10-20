@@ -543,13 +543,6 @@ impl Transport {
         } else {
             None
         };
-        if let Some(run) = self.count_in
-            && run.lead > 0
-        {
-            let entry = run.origin.saturating_add(run.lead);
-            self.position = entry;
-            self.next_click = self.timeline.clicks.partition_point(|unit| *unit < entry);
-        }
         self.state = if self.count_in.is_some() {
             TransportState::CountIn
         } else {
@@ -721,6 +714,14 @@ impl Transport {
         }
     }
 
+    fn enter(&mut self, run: CountInRun) {
+        if run.lead > 0 {
+            let entry = run.origin.saturating_add(run.lead);
+            self.position = entry;
+            self.next_click = self.timeline.clicks.partition_point(|unit| *unit < entry);
+        }
+    }
+
     fn settle_count_in(&mut self) -> bool {
         let step = self.step;
         let Some(run) = self.count_in.as_mut() else {
@@ -738,7 +739,9 @@ impl Transport {
             run.struck += 1;
         }
         if is_due(run.length, run.elapsed, step) {
+            let ended = *run;
             self.count_in = None;
+            self.enter(ended);
             self.state = TransportState::Playing;
             return true;
         }
