@@ -848,7 +848,7 @@ On scores built from scratch we also saw the following. Each case is a file in `
 ## 14. Committed goldens
 
 The oracle harness saves every fixture through GP and exports it. The repository commits only output that holds no GP-authored assets:
-- `resave.gpif`: only `Content/score.gpif`, taken from GP's re-save;
+- `resave.gpif`: only `Content/score.gpif`, taken from GP's re-save, with the content of every `NotationPatch` element emptied: `publish` keeps the element and its attributes but drops its children, because GP's drum notation patch holds Arobas-authored articulation names and notation data. The fidelity test normalises the element away, so a drum golden does not compare kit notation;
 - `export.mid`;
 - `export.musicxml`;
 - `export.gp5`;
