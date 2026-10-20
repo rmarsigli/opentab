@@ -1,5 +1,6 @@
 use opentab_model::{
-    Automation, AutomationValue, Balance, Level, MasterBar, Track, TrackMidi, check_program,
+    Automation, AutomationValue, Balance, Level, MasterBar, Track, TrackMidi, automations_in_order,
+    check_program,
 };
 
 use crate::canon::{self, AutomationParts};
@@ -53,6 +54,9 @@ pub(crate) fn check_track(track: &Track) -> Result<(), Refusal> {
         && (first.program != instrument.midi_program || first.bank != track.midi.bank)
     {
         return Err(Refusal::FirstSound);
+    }
+    if !automations_in_order(&track.automations) {
+        return Err(Refusal::AutomationOrder);
     }
     Ok(())
 }

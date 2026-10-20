@@ -568,6 +568,25 @@ fn the_writer_refuses_midi_data_gpif_cannot_hold() {
         refusal(&twice),
         Refusal::DuplicateSoundOverride { track: track.0.0 }
     );
+    let mut order = base.clone();
+    order.tracks[0].sounds = vec![Sound {
+        name: "First".to_string(),
+        program: order.tracks[0].instrument.midi_program,
+        bank: order.tracks[0].midi.bank,
+    }];
+    order.tracks[0].automations = vec![
+        at(
+            Fraction::from_integer(0),
+            AutomationValue::Sound(SoundRef(0)),
+        ),
+        at(
+            Fraction::from_integer(0),
+            AutomationValue::Volume(Level::FULL),
+        ),
+    ];
+    assert_eq!(refusal(&order), Refusal::AutomationOrder);
+    order.tracks[0].automations.reverse();
+    assert!(write_gp(&order).is_ok());
 }
 
 #[test]

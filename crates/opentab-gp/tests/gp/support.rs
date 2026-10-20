@@ -212,5 +212,6 @@ pub fn documented(reason: &Refusal) -> bool {
             | Refusal::SoundRef { .. }
             | Refusal::AmbiguousSound { .. }
             | Refusal::SoundOverrideTrack { .. }
+            | Refusal::AutomationOrder
     )
 }
