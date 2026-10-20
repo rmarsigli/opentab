@@ -18,6 +18,7 @@ pub enum TransportCommand {
     Stop,
     Seek(usize),
     Loop(BarRange),
+    PlayRange(BarRange),
     ClearLoop,
     Speed(Speed),
     Mute(usize, bool),
@@ -50,6 +51,7 @@ const MUTE: u64 = 7;
 const SOLO: u64 = 8;
 const METRONOME: u64 = 9;
 const COUNT_IN: u64 = 10;
+const PLAY_RANGE: u64 = 11;
 
 fn saturate(value: usize, max: u64) -> u64 {
     u64::try_from(value).map_or(max, |value| value.min(max))
@@ -63,6 +65,17 @@ fn flagged(index: usize, flag: bool) -> u64 {
     (saturate(index, PAYLOAD_MAX >> 1) << 1) | u64::from(flag)
 }
 
+fn halves(range: BarRange) -> u64 {
+    (saturate(range.first, HALF_MAX) << HALF_BITS) | saturate(range.last, HALF_MAX)
+}
+
+fn split(payload: u64) -> BarRange {
+    BarRange {
+        first: widen(payload >> HALF_BITS),
+        last: widen(payload & HALF_MAX),
+    }
+}
+
 fn pack(tag: u64, payload: u64) -> u64 {
     (tag << PAYLOAD_BITS) | (payload & PAYLOAD_MAX)
 }
@@ -73,10 +86,8 @@ pub(crate) fn encode(command: TransportCommand) -> u64 {
         TransportCommand::Pause => pack(PAUSE, 0),
         TransportCommand::Stop => pack(STOP, 0),
         TransportCommand::Seek(bar) => pack(SEEK, saturate(bar, PAYLOAD_MAX)),
-        TransportCommand::Loop(range) => pack(
-            LOOP,
-            (saturate(range.first, HALF_MAX) << HALF_BITS) | saturate(range.last, HALF_MAX),
-        ),
+        TransportCommand::Loop(range) => pack(LOOP, halves(range)),
+        TransportCommand::PlayRange(range) => pack(PLAY_RANGE, halves(range)),
         TransportCommand::ClearLoop => pack(CLEAR_LOOP, 0),
         TransportCommand::Speed(speed) => pack(SPEED, u64::from(speed.percent())),
         TransportCommand::Mute(track, muted) => pack(MUTE, flagged(track, muted)),
@@ -93,10 +104,8 @@ pub(crate) fn decode(word: u64) -> Option<TransportCommand> {
         PAUSE => TransportCommand::Pause,
         STOP => TransportCommand::Stop,
         SEEK => TransportCommand::Seek(widen(payload)),
-        LOOP => TransportCommand::Loop(BarRange {
-            first: widen(payload >> HALF_BITS),
-            last: widen(payload & HALF_MAX),
-        }),
+        LOOP => TransportCommand::Loop(split(payload)),
+        PLAY_RANGE => TransportCommand::PlayRange(split(payload)),
         CLEAR_LOOP => TransportCommand::ClearLoop,
         SPEED => TransportCommand::Speed(Speed::new(u16::try_from(payload).ok()?).ok()?),
         MUTE => TransportCommand::Mute(widen(payload >> 1), payload & 1 == 1),
@@ -210,6 +219,8 @@ mod tests {
             index.clone().prop_map(TransportCommand::Seek),
             (0usize..1 << 20, 0usize..1 << 20)
                 .prop_map(|(first, last)| TransportCommand::Loop(BarRange { first, last })),
+            (0usize..1 << 20, 0usize..1 << 20)
+                .prop_map(|(first, last)| TransportCommand::PlayRange(BarRange { first, last })),
             (25u16..=200)
                 .prop_map(|percent| TransportCommand::Speed(Speed::new(percent).expect("speed"))),
             (index.clone(), any::<bool>())

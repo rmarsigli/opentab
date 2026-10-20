@@ -100,6 +100,7 @@ struct LoopSpan {
     range: BarRange,
     end: ScoreTime,
     end_unit: u64,
+    once: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -420,6 +421,9 @@ impl Transport {
             self.advance(run as u64);
             done += run;
         }
+        if self.range_due() {
+            self.end_range();
+        }
         self.clock = self.clock.saturating_add(frames as u64);
         self.publish();
     }
@@ -481,6 +485,7 @@ impl Transport {
                 }
             }
             TransportCommand::Loop(range) => self.set_loop(range),
+            TransportCommand::PlayRange(range) => self.play_range(range),
             TransportCommand::ClearLoop => self.span = None,
             TransportCommand::Speed(speed) => self.step = step_of(speed),
             TransportCommand::Mute(track, muted) => {
@@ -500,29 +505,60 @@ impl Transport {
         }
     }
 
-    fn set_loop(&mut self, range: BarRange) {
+    fn span_of(&self, range: BarRange, once: bool) -> Option<LoopSpan> {
         if range.first > range.last || range.last >= self.timeline.bar_count() {
-            return;
+            return None;
         }
         let (Some(start_unit), Some(end_unit), Some(end)) = (
             self.timeline.bars.get(range.first).copied(),
             self.timeline.bars.get(range.last + 1).copied(),
             self.end_of_bar(range.last),
         ) else {
-            return;
+            return None;
         };
         if end_unit <= start_unit {
-            return;
+            return None;
         }
-        self.span = Some(LoopSpan {
+        Some(LoopSpan {
             range,
             end,
             end_unit,
-        });
+            once,
+        })
+    }
+
+    fn set_loop(&mut self, range: BarRange) {
+        let Some(span) = self.span_of(range, false) else {
+            return;
+        };
+        self.span = Some(span);
         if !(range.first..=range.last).contains(&self.bar) {
             self.move_to(range.first);
             self.recount();
         }
+    }
+
+    fn play_range(&mut self, range: BarRange) {
+        let Some(span) = self.span_of(range, true) else {
+            return;
+        };
+        self.span = (range.last + 1 < self.timeline.bar_count()).then_some(span);
+        self.move_to(range.first);
+        self.start();
+    }
+
+    fn range_due(&self) -> bool {
+        self.state == TransportState::Playing
+            && self
+                .span
+                .is_some_and(|span| span.once && is_due(span.end_unit, self.position, self.step))
+    }
+
+    fn end_range(&mut self) {
+        self.silence();
+        self.count_in = None;
+        self.span = None;
+        self.state = TransportState::Paused;
     }
 
     fn end_of_bar(&self, bar: usize) -> Option<ScoreTime> {
@@ -802,6 +838,10 @@ impl Transport {
     }
 
     fn settle_playing(&mut self) -> bool {
+        if self.range_due() {
+            self.end_range();
+            return false;
+        }
         self.visit();
         let (position, step) = (self.position, self.step);
         let limit = self.span.map(|span| span.end);
@@ -830,7 +870,7 @@ impl Transport {
         let ended = self.next_event >= self.timeline.events.len()
             && is_due(self.timeline.end, position, step);
         if let Some(span) = self.span {
-            if !self.wrapped && (ended || is_due(span.end_unit, position, step)) {
+            if !span.once && !self.wrapped && (ended || is_due(span.end_unit, position, step)) {
                 self.move_to(span.range.first);
                 self.chase_now();
                 self.wrapped = true;

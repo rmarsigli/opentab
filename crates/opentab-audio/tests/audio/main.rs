@@ -9,6 +9,7 @@ mod floats;
 mod hashes;
 mod levels;
 mod output;
+mod play_range;
 mod recording;
 mod render;
 mod schedule;

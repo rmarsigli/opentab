@@ -17,9 +17,11 @@ const ODD_BLOCKS: [usize; 6] = [1, 127, 512, 513, 1_000, 64];
 const FIXTURES: [&str; 3] = ["note-effects.gp", "repeats.gp", "mixer.gp"];
 const LOOP: BarRange = BarRange { first: 1, last: 2 };
 const LOOP_SPEED: u16 = 150;
+const RANGE: BarRange = BarRange { first: 0, last: 0 };
+const RANGE_FROM_BLOCK: usize = 601;
 const WRAPS: usize = 2;
 const MIN_NOTE: Fraction = Fraction::new_raw(1, 8);
-const TAIL: [TailStep; 12] = [
+const TAIL: [TailStep; 13] = [
     TailStep {
         block: 0,
         command: TransportCommand::Metronome(true),
@@ -68,6 +70,10 @@ const TAIL: [TailStep; 12] = [
         block: 600,
         command: TransportCommand::Metronome(false),
     },
+    TailStep {
+        block: 601,
+        command: TransportCommand::PlayRange(RANGE),
+    },
 ];
 const TAIL_SPEEDS: [TailSpeed; 2] = [
     TailSpeed {
@@ -79,7 +85,7 @@ const TAIL_SPEEDS: [TailSpeed; 2] = [
         percent: 200,
     },
 ];
-const TAIL_BLOCKS: usize = 800;
+const TAIL_BLOCKS: usize = 1_000;
 
 #[derive(Debug, Clone, Copy)]
 struct TailStep {
@@ -123,6 +129,7 @@ struct Driven {
     wraps: usize,
     tail_blocks: usize,
     peak_positive: bool,
+    range_paused: bool,
 }
 
 fn fixture(name: &str) -> Performance {
@@ -229,6 +236,7 @@ fn drive(bank: &dyn Bank, performance: &Performance) -> Outcome {
         wraps: 0,
         tail_blocks: 0,
         peak_positive: false,
+        range_paused: false,
     };
     let mut phase = Phase::SpeedMidNote;
     let mut previous = handle.status();
@@ -272,6 +280,8 @@ fn drive(bank: &dyn Bank, performance: &Performance) -> Outcome {
             }
             Phase::Tail(step) if step >= TAIL_BLOCKS => Phase::Done,
             Phase::Tail(step) => {
+                driven.range_paused |=
+                    step > RANGE_FROM_BLOCK && status.state == TransportState::Paused;
                 tail_commands(&mut handle, step);
                 driven.tail_blocks = step;
                 Phase::Tail(step + 1)
@@ -303,6 +313,7 @@ pub fn the_transport_processes_blocks_without_allocating(sfz_root: &Path) {
                     wraps: WRAPS,
                     tail_blocks: TAIL_BLOCKS - 1,
                     peak_positive: true,
+                    range_paused: true,
                 },
                 "{name} {label}"
             );
